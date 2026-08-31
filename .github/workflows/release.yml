@@ -47,6 +47,7 @@ jobs:
         run: |
           python -m PyInstaller --onefile --windowed `
             --name dlss5-autopilot `
+            --version-file version_info.txt `
             --distpath dist `
             --noconfirm `
             dlss5_autopilot.py
