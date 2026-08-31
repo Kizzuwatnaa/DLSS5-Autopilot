@@ -450,6 +450,37 @@ check("and uninstall after a switch leaves nothing of ours",
       _left == ["Game.exe", "sl.interposer.dll"], str(_left))
 shutil.rmtree(_d, ignore_errors=True)
 
+section("6f. reshade can be loaded under another name")
+check("every reshade proxy name is explained",
+      set(installer.RESHADE_PROXY_HELP) == set(installer.RESHADE_PROXIES))
+check("the api still decides by default",
+      installer._proxy_name("DX11") == "dxgi.dll"
+      and installer._proxy_name("OpenGL") == "opengl32.dll")
+check("an explicit choice wins",
+      installer._proxy_name("DX11", "d3d11.dll") == "d3d11.dll")
+check("a name reshade does not support is ignored",
+      installer._proxy_name("DX11", "nonsense.dll") == "dxgi.dll")
+
+_d = Path(tempfile.mkdtemp(prefix="rproxy_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+_g = games.manual(_d)
+installer.install(_g, installer.Options(path=dlss.BRIDGE, native_dlss=True,
+                                        reshade_proxy="d3d11.dll"),
+                  on_log=lambda t: None)
+check("reshade is installed under the chosen name",
+      (_g.install_dir / "d3d11.dll").is_file()
+      and not (_g.install_dir / "dxgi.dll").exists())
+_man = json.loads((_g.install_dir / installer.MANIFEST).read_text(encoding="utf8"))
+check("the manifest records the reshade name used",
+      _man["proxy"] == "d3d11.dll", _man["proxy"])
+installer.uninstall(_g, on_log=lambda t: None)
+_left = sorted(p.relative_to(_g.install_dir).as_posix()
+               for p in _g.install_dir.rglob("*") if p.is_file())
+check("uninstall removes it under that name too",
+      _left == ["Game.exe", "sl.interposer.dll"], str(_left))
+shutil.rmtree(_d, ignore_errors=True)
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))

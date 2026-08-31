@@ -99,6 +99,7 @@ class Options:
     ignore_gpu_mismatch: bool = False
     path: str = FEEDER                      # native / bridge / feeder
     opti_proxy: str = ""                    # "" = pick a free name for this game
+    reshade_proxy: str = ""                 # "" = choose from the API
     native_dlss: bool = False               # game ships its own DLSS
 
 
@@ -169,7 +170,32 @@ def _is_reshade(path: Path) -> bool:
         return False
 
 
-def _proxy_name(api: str) -> str:
+# The names ReShade can be installed under. It is the same DLL each time; the
+# name decides which system library it stands in for, and therefore when in
+# start-up the game loads it.
+#
+# This matters more than it looks. A game that imports dxgi.dll statically -
+# MGS V does - has our proxy loaded by Windows before any of its own code
+# runs, which is the earliest and least forgiving moment. One that loads dxgi
+# later through LoadLibrary - Total War: Warhammer III does - picks it up when
+# it is good and ready. When a game will not start, changing the name it
+# comes in under is the first thing to try.
+RESHADE_PROXIES = ("dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d10.dll",
+                   "d3d9.dll", "opengl32.dll")
+
+RESHADE_PROXY_HELP = {
+    "dxgi.dll": "default for Direct3D 10/11/12",
+    "d3d11.dll": "try this if a D3D11 game will not start with dxgi",
+    "d3d12.dll": "D3D12 alternative to dxgi",
+    "d3d10.dll": "D3D10 only",
+    "d3d9.dll": "DirectX 9, after dgVoodoo2 translation",
+    "opengl32.dll": "the only option for OpenGL",
+}
+
+
+def _proxy_name(api: str, chosen: str = "") -> str:
+    if chosen in RESHADE_PROXIES:
+        return chosen
     return "opengl32.dll" if api == "OpenGL" else "dxgi.dll"
 
 
@@ -531,7 +557,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     root = g.install_dir
     rep = Report()
     x64 = g.bitness == 64
-    proxy = _proxy_name(g.api)
+    proxy = _proxy_name(g.api, opt.reshade_proxy)
     host = root / HOST_DIR
 
     level, why_rel = reliability(g, opt.path)

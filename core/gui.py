@@ -529,7 +529,7 @@ class App:
         ok, why = installer.check_supported(g)
         sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
         level, why_rel = installer.reliability(g, sup.recommended)
-        proxy = installer._proxy_name(g.api)
+        proxy = installer._proxy_name(g.api, self._opts().reshade_proxy)
         lines = [f"exe    {g.exe}",
                  f"arch   {g.bit_label}  api {g.api}  ({g.api_why})",
                  f"route  {dlss.LABELS[sup.recommended]}  [{level}]"]
@@ -604,6 +604,17 @@ class App:
                     for n in optiscaler.PROXY_NAMES])
         self.cb_proxy.current(0)
         self.cb_proxy.bind("<<ComboboxSelected>>", self._on_proxy)
+
+        # ReShade is loaded the same way, under the name of a system DLL. When
+        # a game will not start at all, this is the first thing worth changing.
+        self.lbl_rproxy = tk.Label(inner, text="reshade loads as", bg=PANEL,
+                                   fg=DIM, font=font(9))
+        self.cb_rproxy = ttk.Combobox(
+            inner, state="readonly",
+            values=["auto - from the graphics api"] +
+                   [f"{n}  -  {installer.RESHADE_PROXY_HELP[n]}"
+                    for n in installer.RESHADE_PROXIES])
+        self.cb_rproxy.current(0)
 
         row(4, "dlss5 add-on")
         self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["loading..."])
@@ -844,16 +855,21 @@ class App:
         opti = path == dlss.OPTI
         # OptiScaler is loaded by the game under one of several names; the
         # feeder's motion-vector provider sits in the same place on screen.
+        # Row 3 carries whichever of the three this route actually needs:
+        # OptiScaler's proxy name, or the feeder's motion-vector provider,
+        # or - on the routes that use ReShade but not the feeder - the name
+        # ReShade itself is loaded under.
+        for w in (self.lbl_mv, self.cb_prov, self.lbl_proxy, self.cb_proxy,
+                  self.lbl_rproxy, self.cb_rproxy):
+            w.grid_remove()
         if opti:
-            self.lbl_mv.grid_remove()
-            self.cb_prov.grid_remove()
-            self.lbl_proxy.grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
-            self.cb_proxy.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+            pair = (self.lbl_proxy, self.cb_proxy)
+        elif feeder:
+            pair = (self.lbl_mv, self.cb_prov)
         else:
-            self.lbl_proxy.grid_remove()
-            self.cb_proxy.grid_remove()
-            self.lbl_mv.grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
-            self.cb_prov.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+            pair = (self.lbl_rproxy, self.cb_rproxy)
+        pair[0].grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
+        pair[1].grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
         # Motion vectors, work area and DLSS preset belong to the feeder's
         # synthetic contract; the other routes hook the game's real DLSS calls
         # and ignore all three.
@@ -956,7 +972,7 @@ class App:
             short = g.exe.name
         self.pathlbl.config(
             text=f"{short}   ::   {g.bit_label} {g.api}  ->  "
-                 f"reshade = {installer._proxy_name(g.api)}{extra}")
+                 f"reshade = {installer._proxy_name(g.api, self._opts().reshade_proxy)}{extra}")
 
     def _enter_install(self) -> None:
         g = self.game
@@ -1075,6 +1091,8 @@ class App:
             native_dlss=bool(self.support and self.support.native_dlss),
             opti_proxy=("" if self.cb_proxy.current() <= 0
                         else optiscaler.PROXY_NAMES[self.cb_proxy.current() - 1]),
+            reshade_proxy=("" if self.cb_rproxy.current() <= 0
+                           else installer.RESHADE_PROXIES[self.cb_rproxy.current() - 1]),
         )
 
     # ---------------------------------------------------------------- actions
