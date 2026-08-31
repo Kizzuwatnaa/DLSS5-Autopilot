@@ -135,8 +135,35 @@ def analyse(install_dir: Path) -> Report:
 
     # --- what loaded ----------------------------------------------------
     if rtext:
+        loaded = []
         for m in re.finditer(r'Registered add-on "([^"]+)" v(\S+)', rtext):
             rep.add(OK, f"ReShade loaded add-on: {m.group(1)} {m.group(2)}")
+            loaded.append(m.group(1))
+
+        # ReShade loads every .addon64 in the folder. The feeder and the
+        # bridge each establish a DLSS contract of their own, so both at once
+        # is not a slow path - it is two things fighting, and the game can die
+        # before it ever creates a swapchain.
+        feeder_on = any("Feed" in n for n in loaded)
+        bridge_on = any("Bridge" in n for n in loaded)
+        if feeder_on and bridge_on:
+            rep.add(BAD, "Both the feeder and the bridge add-on are loaded.",
+                    "Only one route may be installed at a time. This is "
+                    "usually an orphan from an earlier install that the "
+                    "manifest never recorded. Uninstall, check no "
+                    "dlss5-feed.addon64 or dlss5-bridge.addon64 is left in "
+                    "the folder, then install again.")
+
+        # The game exiting before a swapchain exists means it never got to
+        # rendering at all - nothing downstream of this is worth reading.
+        if "Registered add-on" in rtext and "Exiting" in rtext \
+                and "CreateSwapChain" not in rtext and "Presenting" not in rtext:
+            rep.add(BAD, "The game closed before it drew a single frame.",
+                    "ReShade attached and the device was created, but no swap "
+                    "chain ever was, so the game quit during start-up. That "
+                    "points at something in the folder stopping it rather "
+                    "than at the DLSS setup. Uninstall and check the game "
+                    "starts on its own first.")
         if "Registered add-on" not in rtext:
             rep.add(BAD, "ReShade loaded no add-ons.",
                     "Add-on support requires the ReShade build WITH add-ons, "

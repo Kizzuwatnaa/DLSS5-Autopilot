@@ -104,6 +104,31 @@ out of the notes for installs made by earlier releases. A different build
 family — `-RTX40` against an `SF` build — is reported as different, not as
 outdated, because that is a choice rather than a version behind.
 
+## If your antivirus says something
+
+It may, and the README now explains exactly why.
+
+Windows Defender has **Block at First Sight** on by default. A file it has
+never seen — unsigned, downloaded by a handful of people so far — is held
+while it asks Microsoft's cloud, and for a brand new binary the cloud answers
+with a generic machine-learning guess. Those are the verdicts ending in `!ml`.
+Once enough machines have seen the file the verdict flips and it scans clean
+from then on, without the file changing. That is why a release can be flagged
+on day one and clean on day two, and why the SHA-256 matters more than any
+scanner result.
+
+The **components** are a separate and more likely case. `renodx-dlss5.addon64`,
+`nvngx_dlssnr.dll` and OptiScaler are unsigned, freshly built, uncommon, and
+hook graphics APIs. Defender has called a renodx build `Trojan:Win32/Ulthar.A!ml`
+and OptiScaler `Trojan:Win32/Fonzi.A!ml`. That is about those files, and would
+happen identically if you installed them by hand.
+
+**This caused a real failure that looked like nothing.** Quarantine takes the
+file *after* it is written, so the install reported success and the game then
+did nothing. The installer now checks every file it wrote is still on disk, and
+when one has gone it names it and says this is almost certainly antivirus, and
+that restoring it and excluding the folder is the fix.
+
 ## You do not have to trust the .exe
 
 Releases are now built by **GitHub Actions**, on GitHub's runners, from the

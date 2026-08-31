@@ -50,6 +50,31 @@ BRIDGE_ADDON = "dlss5-bridge.addon64"
 BRIDGE_CFG = "dlss5-bridge.cfg"
 
 BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+# An add-on from another route, moved out of the way. A separate suffix on
+# purpose: BACKUP_SUFFIX means "put this back on uninstall", which is the one
+# thing that must not happen to a file that was causing a conflict.
+ORPHAN_SUFFIX = ".dlss5-autopilot-orphan"
+
+# Written by the components while the game runs, so they exist only because
+# something was installed - but they are created after the install, which
+# means the manifest has never heard of them and uninstall used to leave every
+# one behind. Each is regenerated from scratch on the next launch, so removing
+# them loses nothing even in the unlikely case one predates us.
+RUNTIME_ARTIFACTS = (
+    "ReShade.log",              # ReShade, every launch
+    "dlss5-feed.log",           # the feeder add-on
+    "dlss5-feed-host.log",
+    "dlss5-bridge.log",
+    "OptiScaler.log",
+    "nvngx.log",                # NGX itself
+    "nvngx_dlssnr.log",
+    "nvngx_dlss.log",
+)
+
+# OptiScaler keeps its logs in a folder of its own. A game could plausibly
+# have a folder by that name, so only OptiScaler's own files are taken out of
+# it, and the folder itself only if that empties it.
+OPTI_LOG_DIR = "Logs"
 
 # The project was called "dlss5kur" up to v1.1. Anyone upgrading has installs
 # recorded under the old names; without these the new build would not see them
@@ -86,6 +111,9 @@ class Report:
     # component name -> version installed, recorded in the manifest so a
     # game set up weeks ago can be told what has moved on since.
     components: dict = field(default_factory=dict)
+    # Relative paths a PREVIOUS install of ours put in this folder. They must
+    # never be backed up as "the game's own file" - see _backup.
+    preinstalled: set = field(default_factory=set)
 
 
 # ---------------------------------------------------------------- reliability
@@ -168,9 +196,20 @@ def _backup(dst: Path, rep: Report, root: Path) -> None:
 
     If the game ships its own nvngx_dlss.dll and we replace it, uninstalling
     must be able to put it back - otherwise the game loses its DLSS for good.
+
+    A file a PREVIOUS install of ours wrote is emphatically not the game's.
+    Backing one up made uninstall RESTORE it instead of deleting it, so after
+    installing twice the folder came out of an uninstall still fully set up -
+    dxgi.dll, the add-ons and a 165 MB nvngx_dlssnr.dll all put back. That is
+    the "uninstall does not remove everything" people were seeing.
     """
     if not dst.is_file():
         return
+    try:
+        if str(dst.relative_to(root)).replace("\\", "/") in rep.preinstalled:
+            return
+    except ValueError:
+        pass
     bak = dst.with_name(dst.name + BACKUP_SUFFIX)
     try:
         rel = str(bak.relative_to(root))
@@ -301,19 +340,99 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
 
 # ---------------------------------------------------------------- install
 
-def _previous_route(root: Path) -> str | None:
-    """Which route is recorded as installed here, if any."""
+def _previous_manifest(root: Path) -> dict | None:
+    """The install record already in this folder, ours or an older release's."""
     for name in (MANIFEST,) + LEGACY_MANIFESTS:
         p = root / name
         if not p.is_file():
             continue
         try:
-            data = json.loads(p.read_text(encoding="utf8"))
+            return json.loads(p.read_text(encoding="utf8"))
         except (OSError, json.JSONDecodeError):
             continue
-        # v1.0-v1.2 wrote no route at all; everything then was the feeder.
-        return data.get("path") or FEEDER
     return None
+
+
+def _previous_route(root: Path) -> str | None:
+    """Which route is recorded as installed here, if any."""
+    data = _previous_manifest(root)
+    if data is None:
+        return None
+    # v1.0-v1.2 wrote no route at all; everything then was the feeder.
+    return data.get("path") or FEEDER
+
+
+def _previously_ours(root: Path) -> set:
+    """Relative paths an earlier install of ours wrote here.
+
+    Read before anything is touched, because these must be overwritten rather
+    than "preserved" - preserving one turns uninstall into a reinstall.
+    """
+    data = _previous_manifest(root) or {}
+    files = data.get("files") or data.get("dosyalar") or []
+    out = set()
+    for f in files:
+        f = str(f).replace("\\", "/")
+        if any(f.endswith(s) for s in (BACKUP_SUFFIX,) + LEGACY_BACKUP_SUFFIXES):
+            continue
+        out.add(f)
+    return out
+
+
+# Every add-on this tool ever installs, and the route each belongs to.
+# ReShade loads EVERY .addon64 in the folder, so two of these present at once
+# means two of them try to establish a DLSS contract in the same process.
+# Only the add-ons themselves: a stray .cfg conflicts with nothing, and
+# removing one would be taking away a file that may well be the user's.
+ROUTE_ADDONS = {
+    FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32),
+    BRIDGE: (BRIDGE_ADDON,),
+}
+
+
+def _purge_foreign_addons(root: Path, keep: str, rep: Report, log) -> None:
+    """Remove add-ons belonging to a route we are not installing.
+
+    Uninstalling the recorded route handles the ordinary case, but only when
+    the manifest is accurate. An install interrupted half way, a manifest
+    written by a release that did not record the route, or a folder set up
+    twice can all leave an add-on behind that nothing knows about - and
+    ReShade will still load it.
+
+    Seen in the wild: MGS V had dlss5-bridge.addon64 recorded and
+    dlss5-feed.addon64 orphaned beside it. Both registered, both tried to
+    build a contract, and the game exited before it ever created a swapchain.
+    """
+    for route, names in ROUTE_ADDONS.items():
+        if route == keep:
+            continue
+        for name in names:
+            p = root / name
+            if not p.is_file():
+                continue
+            ours = name in rep.preinstalled
+            try:
+                if ours:
+                    # Ours, from an install we recorded: just take it away.
+                    # A backup would make uninstall restore the conflict.
+                    aside = p.with_name(p.name + ORPHAN_SUFFIX)
+                    if aside.exists():
+                        p.unlink()
+                    else:
+                        p.rename(aside)
+                        rep.written.append(aside.name)
+                else:
+                    # Might be the user's own build. Preserve it the normal
+                    # way so uninstall puts it back, then move it out of
+                    # ReShade's reach for now.
+                    _backup(p, rep, root)
+                    p.unlink()
+                rep.notes.append(f"moved aside an orphaned {route} add-on: {name}")
+                log(f"      moved {name} out of the way - it is a {route} "
+                    f"add-on and ReShade would load it alongside this one")
+            except OSError:
+                log(f"      WARNING: {name} belongs to the {route} route and "
+                    f"could not be moved; the two will conflict")
 
 
 def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
@@ -323,6 +442,16 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
     Also written when an install FAILS part way: without it the orphaned files
     could not be cleaned up afterwards.
     """
+    # Carry forward what an earlier install left that this one did not touch.
+    # Without this the record only covers the LAST install, so a file written
+    # the first time and merely left alone the second - nvngx_dlss.dll, say -
+    # was orphaned and no uninstall could ever remove it.
+    for rel in sorted(rep.preinstalled):
+        if rel in rep.written:
+            continue
+        if (root / rel).exists():
+            rep.written.append(rel)
+
     try:
         (root / MANIFEST).write_text(json.dumps({
             "version": 1,
@@ -432,6 +561,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # including a ReShade.ini that would sit next to OptiScaler and confuse
     # everything - and the new manifest would not list them, so a later
     # uninstall could never clean them up either.
+    # Read before anything is written: what is here that we put here.
+    rep.preinstalled = _previously_ours(root)
+
     previous = _previous_route(root)
     if previous and previous != opt.path:
         log(f"[0] removing the previous {previous} install first")
@@ -439,6 +571,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             pass
         log(f"    the {previous} route was removed; installing {opt.path}")
         rep.notes.append(f"replaced a previous {previous} install")
+
+    # Belt and braces: whatever the manifest said, no add-on from another
+    # route may be left in the folder. ReShade loads them all.
+    _purge_foreign_addons(root, opt.path, rep, log)
 
     steps = plan(g, opt)
     n = len(steps)
@@ -892,6 +1028,35 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         shutil.rmtree(hostdir, ignore_errors=True)
         removed.append(HOST_DIR + "/")
         log(f"removed: {HOST_DIR}/")
+
+    # Logs the components write while the game runs. They appear after the
+    # install, so the manifest has never heard of them, and every uninstall
+    # used to leave the lot behind.
+    for name in RUNTIME_ARTIFACTS:
+        p = root / name
+        try:
+            if p.is_file():
+                p.unlink()
+                removed.append(name)
+                log(f"removed: {name} (log)")
+        except OSError:
+            pass
+    # OptiScaler's own log folder: take out its files, and the folder only if
+    # that leaves it empty - a game could have a folder of the same name.
+    logs = root / OPTI_LOG_DIR
+    try:
+        if logs.is_dir():
+            for f in list(logs.glob("*")):
+                if f.is_file() and (f.name.lower().startswith("optiscaler")
+                                    or f.suffix.lower() == ".log"):
+                    f.unlink()
+                    removed.append(f"{OPTI_LOG_DIR}/{f.name}")
+            if not any(logs.iterdir()):
+                logs.rmdir()
+                removed.append(OPTI_LOG_DIR + "/")
+                log(f"removed: {OPTI_LOG_DIR}/")
+    except OSError:
+        pass
 
     reshade_ini.remove_our_techniques(root)
 

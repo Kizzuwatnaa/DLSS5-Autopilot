@@ -332,9 +332,46 @@ handful of the ~70 engines on VirusTotal will usually say something like
 that does nothing at all. It is a false positive, and it is the price of
 shipping a single .exe with no installer.
 
-Windows Defender, which is what almost everyone actually runs, reports no
-threat. If you would rather not take the .exe at all, **run it from source** —
-it is plain Python with no third-party packages:
+**"It warned me once and now it doesn't."** That is not you imagining it, and
+it is worth understanding because it will happen to some of you.
+
+Windows Defender ships with **Block at First Sight** turned on. When it meets
+a file it has never seen before — unsigned, and downloaded by only a handful
+of people so far — it holds the file and asks Microsoft's cloud. For a brand
+new binary the cloud model has nothing to go on but shape, and it answers with
+a generic machine-learning verdict. Those are the ones whose names end in
+`!ml`: `Wacatac.C!ml`, `Ulthar.A!ml`, `Fonzi.A!ml`. Not a signature match — a
+guess. Once the file has been seen by enough machines the verdict flips and
+the same file scans clean from then on.
+
+So a fresh release can be flagged on the first day and clean a day later,
+without the file changing at all. That is why the SHA-256 above matters more
+than any scanner result: it tells you whether you have the file GitHub built.
+
+Two things you can do rather than guess:
+
+- **Check the hash** against `SHA256SUMS.txt`, and verify the attestation.
+- **Report a false positive to Microsoft** at
+  <https://www.microsoft.com/en-us/wdsi/filesubmission> — it is free, takes a
+  minute, and a confirmed false positive is corrected for everyone.
+
+A detection on the **components** is a separate matter and a more likely one.
+`renodx-dlss5.addon64`, `nvngx_dlssnr.dll` and OptiScaler are unsigned,
+freshly built, uncommon, and they hook into graphics APIs — everything the
+heuristics are looking for. Defender has called a renodx build
+`Trojan:Win32/Ulthar.A!ml` and OptiScaler `Trojan:Win32/Fonzi.A!ml`. Those
+detections are about that software, not about this tool, and they would happen
+just the same if you installed those files by hand.
+
+That has a practical consequence: antivirus quarantines the file **after** it
+is written, so the install reports success and the game then does nothing.
+Since v1.3 the installer checks every file it wrote is still on disk and says
+so plainly when one has gone. The fix is to restore it from quarantine and add
+the game folder to your antivirus exclusions.
+
+Nothing in this repository is signed, because a code signing certificate costs
+money the project does not have. If you would rather not take the .exe at all,
+**run it from source** — it is plain Python with no third-party packages:
 
 ```
 git clone https://github.com/Kizzuwatnaa/DLSS5-Autopilot

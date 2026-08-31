@@ -390,6 +390,66 @@ check("a missing written file is detectable", _miss == ["definitely-not-here.dll
 installer.uninstall(_g, on_log=lambda t: None)
 shutil.rmtree(_d, ignore_errors=True)
 
+section("6e. no two routes' add-ons in one folder, no logs left behind")
+# Seen in MGS V: a bridge install recorded in the manifest with an orphaned
+# dlss5-feed.addon64 beside it. ReShade loads every .addon64, so both
+# registered, both tried to build a contract, and the game exited before it
+# ever created a swap chain.
+_d = Path(tempfile.mkdtemp(prefix="orphan_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+_g = games.manual(_d)
+installer.install(_g, installer.Options(path=dlss.BRIDGE, native_dlss=True),
+                  on_log=lambda t: None)
+# an orphan no manifest knows about
+(_g.install_dir / installer.FEEDER_ADDON64).write_bytes(b"MZ" + bytes(1000))
+(_g.install_dir / "dlss5-feed.cfg").write_text("orphan")
+installer.install(_g, installer.Options(path=dlss.BRIDGE, native_dlss=True),
+                  on_log=lambda t: None)
+check("an orphaned add-on from another route is removed",
+      not (_g.install_dir / installer.FEEDER_ADDON64).is_file())
+check("only one route's add-on remains",
+      (_g.install_dir / installer.BRIDGE_ADDON).is_file())
+
+# every log the components write must go on uninstall
+for _n in ("ReShade.log", "dlss5-feed.log", "OptiScaler.log", "nvngx.log"):
+    (_g.install_dir / _n).write_text("runtime")
+(_g.install_dir / "Logs").mkdir(exist_ok=True)
+(_g.install_dir / "Logs" / "OptiScaler-x.log").write_text("x")
+installer.uninstall(_g, on_log=lambda t: None)
+_left = sorted(p.relative_to(_g.install_dir).as_posix()
+               for p in _g.install_dir.rglob("*") if p.is_file())
+# The orphan came back because we cannot prove it was ours - uninstall's job
+# is to return the folder to how it was, and an add-on with no ReShade beside
+# it does nothing. What must NOT survive is any log or anything we wrote.
+check("uninstall leaves no runtime logs behind",
+      not [f for f in _left if f.endswith(".log")], str(_left))
+check("uninstall removes everything this tool wrote",
+      not [f for f in _left if f in (installer.BRIDGE_ADDON, "dxgi.dll",
+                                     installer.RENODX, installer.DLSSNR,
+                                     installer.MANIFEST)], str(_left))
+check("a file we could not prove was ours is put back",
+      (_g.install_dir / installer.FEEDER_ADDON64).is_file())
+shutil.rmtree(_d, ignore_errors=True)
+
+# ...but one we DID record as ours is removed, not restored.
+_d = Path(tempfile.mkdtemp(prefix="orphan2_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+_g = games.manual(_d)
+installer.install(_g, installer.Options(path=dlss.FEEDER), on_log=lambda t: None)
+installer.install(_g, installer.Options(path=dlss.BRIDGE, native_dlss=True),
+                  on_log=lambda t: None)
+check("switching routes leaves only the new route's add-on",
+      (_g.install_dir / installer.BRIDGE_ADDON).is_file()
+      and not (_g.install_dir / installer.FEEDER_ADDON64).is_file())
+installer.uninstall(_g, on_log=lambda t: None)
+_left = sorted(p.relative_to(_g.install_dir).as_posix()
+               for p in _g.install_dir.rglob("*") if p.is_file())
+check("and uninstall after a switch leaves nothing of ours",
+      _left == ["Game.exe", "sl.interposer.dll"], str(_left))
+shutil.rmtree(_d, ignore_errors=True)
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
