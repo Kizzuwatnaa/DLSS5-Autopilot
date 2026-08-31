@@ -198,6 +198,34 @@ Everything the tool writes is recorded in `dlss5-autopilot.json` in the game
 folder. **Uninstall** removes exactly those files, restores backups, and
 leaves your own shaders and settings untouched.
 
+### It worked, then stopped after I changed display mode
+
+On the **feeder** route the contract is built out of ReShade's depth buffer,
+and ReShade picks that buffer by matching it against the back buffer. Anything
+that makes the two disagree — borderless instead of fullscreen, Windows
+display scaling, or an in-game render scale below 100% — can leave it with
+nothing selected, and then everything sets up correctly and no frame is ever
+produced.
+
+Open the ReShade overlay, go to the **Add-ons** tab and find the depth buffer
+list. One entry has to be selected. If none is, turn **"Use aspect ratio
+heuristics"** off there. Trying the opposite display mode is the quick test:
+if fullscreen works and borderless does not, this is why.
+
+The **native**, **bridge** and **optiscaler** routes do not use ReShade's
+depth buffer at all, so they are unaffected — that is a reason to prefer them
+where your game supports them.
+
+### The tool does not list my game
+
+Not every launcher can be found from the registry, and an executable that is
+locked at the moment of the scan (antivirus, a running updater, OneDrive
+placeholders) cannot be read. Use **[choose folder]** and point at the folder
+the game's `.exe` is actually in.
+
+The log file — **[ open log file ]** in the left rail — records what each
+store returned and names every folder that was skipped and why.
+
 ---
 
 ## Network access

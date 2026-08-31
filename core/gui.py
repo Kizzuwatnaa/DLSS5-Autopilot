@@ -457,16 +457,32 @@ class App:
         self.tree.delete(*self.tree.get_children())
         a = self.arch.get()
         only = getattr(self, "only_installed", None)
+        # A game whose architecture could not be read (the executable was
+        # locked by antivirus or a running updater, or it is a cloud
+        # placeholder) used to vanish under a 32/64 filter with no explanation.
+        # Show it: hiding it is the one outcome the user cannot act on.
         self.shown = [g for g in self.all_games
-                      if g.exe and (a == "all" or str(g.bitness) == a)
+                      if g.exe and (a == "all" or g.bitness is None
+                                    or str(g.bitness) == a)
                       and (not (only and only.get()) or g.installed)]
         for i, g in enumerate(self.shown):
-            ok, _ = installer.check_supported(g)
-            sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
-            level, _ = installer.reliability(g, sup.recommended)
-            outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
-                       installer.EXPERIMENTAL: "often fails"}[level]
-            ac = anticheat.detect(g.install_dir, g.folder)
+            # Each of these reads the game folder, so any one of them can fail
+            # on a folder that has gone away or become unreadable. Letting
+            # that escape would abandon the whole list half-drawn.
+            try:
+                ok, _ = installer.check_supported(g)
+                sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+                level, _ = installer.reliability(g, sup.recommended)
+                outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
+                           installer.EXPERIMENTAL: "often fails"}[level]
+                ac = anticheat.detect(g.install_dir, g.folder)
+            except Exception as e:
+                log.exception(f"inspecting {g.name}", e)
+                self.tree.insert("", "end", iid=str(i), text="  " + g.name,
+                                 values=(g.source.lower(), g.bit_label, g.api,
+                                         "-", "-", "unreadable"),
+                                 tags=("unsupported",))
+                continue
             if not ok:
                 status, tag, outlook = "unsupported", "unsupported", "-"
             elif ac.present:
@@ -1203,7 +1219,22 @@ class App:
                     messagebox.showerror(APP, payload.strip().splitlines()[-1])
         except queue.Empty:
             pass
-        self.root.after(60, self._pump)
+        except Exception:
+            # Anything escaping here used to skip the reschedule below, which
+            # killed the pump for good: progress, results and errors all
+            # stopped arriving and the window looked frozen. Report it and
+            # keep running.
+            log.exception("handling a background result")
+            try:
+                self._idle()
+                self._log("!! internal error - see the log file "
+                          f"({log.path()})", "err")
+            except Exception:
+                pass
+        finally:
+            # Rescheduling is not optional: it is the only thing keeping the
+            # interface connected to its worker threads.
+            self.root.after(60, self._pump)
 
     def _finish_ok(self, rep: installer.Report) -> None:
         self._idle()

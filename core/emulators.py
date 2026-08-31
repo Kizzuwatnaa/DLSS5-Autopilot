@@ -90,18 +90,46 @@ def _search_roots() -> list[Path]:
         if d and Path(d).is_dir():
             roots.append(Path(d))
     home = Path.home()
-    roots += [home / "Desktop", home / "Downloads"]
+    roots += [home / "Desktop", home / "Downloads", home / "Documents"]
     # Common folders at drive roots
-    for drive in "CDEFG":
+    for drive in "CDEFGH":
         base = Path(f"{drive}:/")
         if not base.is_dir():
             continue
         for name in ("Emulators", "Emulator", "Games", "Emu", "RetroArch",
-                     "PS2", "PS1"):
+                     "PS2", "PS1", "Emulation", "Roms", "Apps", "Programs"):
             d = base / name
             if d.is_dir():
                 roots.append(d)
-    return [r for r in roots if r.is_dir()]
+        # People also unpack an emulator straight to D:\PCSX2. Searching the
+        # drive root itself catches that; the walk below is depth-limited, so
+        # this stays bounded rather than crawling the whole disk.
+        if drive != "C":
+            roots.append(base)
+
+    # Several emulators ship on Steam (RetroArch, DuckStation, Dolphin), and
+    # a Steam library is rarely in any of the folders above.
+    try:
+        from . import games as _games
+        steam = _games._steam_root()
+        if steam:
+            for lib in _games._steam_libraries(steam):
+                common = lib / "steamapps" / "common"
+                if common.is_dir():
+                    roots.append(common)
+    except Exception:
+        pass
+
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for r in roots:
+        try:
+            if r.is_dir() and r.resolve() not in seen:
+                seen.add(r.resolve())
+                out.append(r)
+        except OSError:
+            continue
+    return out
 
 
 def _registry_locations() -> list[Path]:

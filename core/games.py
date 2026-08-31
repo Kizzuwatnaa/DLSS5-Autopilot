@@ -368,8 +368,16 @@ def enrich(g: Game) -> Game:
                     g.name = f"{prof.name} ({prof.system})"
     except pe.PEError as e:
         g.error = str(e)
+        log.write(f"could not read {g.name}: {e}", "warn")
     except Exception as e:
         g.error = f"unreadable: {e}"
+        log.write(f"could not read {g.name} ({g.folder}): {e}", "warn")
+    if g.exe is None:
+        # Reported as "sometimes it does not see my games". A folder with no
+        # executable we recognise is dropped from the list entirely, and until
+        # now without saying which one, so it looked random.
+        log.write(f"no executable under {g.folder} - {g.name} will not be "
+                  f"listed", "warn")
     return g
 
 

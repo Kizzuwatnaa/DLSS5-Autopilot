@@ -62,6 +62,39 @@ recorded anywhere, so there was nothing to look at.
   Steam, Epic and GOG. On the development machine that took 55 games to 61.
 - An empty list says what to do instead of just "0 games".
 
+## Three reasons it "sometimes" broke
+
+All three were invisible, which is why they looked random.
+
+- **A game whose architecture could not be read vanished.** The 32/64 filter
+  compared against a value that is empty when the executable is locked at the
+  moment of the scan — antivirus, a running updater, a OneDrive placeholder.
+  The game silently disappeared from the list. Unknown architecture is now
+  shown under every filter, because hiding it is the one outcome you cannot
+  act on.
+- **One bad folder emptied the whole list.** Inspecting each game reads its
+  folder, and any single failure escaped and abandoned the list half-drawn.
+  Each game is now inspected on its own and a broken one is listed as
+  `unreadable`.
+- **The interface could stop talking to its worker threads permanently.** An
+  exception while handling a background result skipped the line that
+  reschedules the pump, so progress, results and errors all stopped arriving
+  and the window looked frozen. It now always reschedules, and says what went
+  wrong.
+
+Emulators were searched in too few places — an emulator unpacked straight to
+`D:\PCSX2` was missed. Drive roots, `Documents`, `Emulation`, `Roms` and both
+Steam library folders are searched now.
+
+## Borderless, and the depth buffer
+
+If the feeder route sets up correctly and then produces nothing, the usual
+cause is that ReShade has no depth buffer selected. ReShade matches the depth
+buffer against the back buffer, and borderless, Windows display scaling, or an
+in-game render scale below 100% can make the two disagree. Diagnosis now says
+so, and the README explains where to look and what to change. The native,
+bridge and optiscaler routes do not use ReShade's depth buffer at all.
+
 ## Check whether your components are still current
 
 A fresh install always fetches the newest of everything, but nothing told you

@@ -237,6 +237,20 @@ def analyse(install_dir: Path) -> Report:
     elif ready:
         rep.add(WARN, "The feature was created but no frames were delivered.",
                 "Neural rendering may still be switched off in the DLSS 5 panel.")
+        # The feeder builds its contract out of ReShade's depth buffer. If
+        # ReShade has not selected one, everything above this point still
+        # succeeds and no frame is ever produced - which is what a display
+        # mode change can cause: ReShade matches a depth buffer to the back
+        # buffer, and borderless, resolution scaling or a render scale below
+        # 100% make the two disagree.
+        rep.add(INFO, "If it is switched on and still does nothing, check the "
+                      "depth buffer.",
+                "In the ReShade overlay open the Add-ons tab and look at the "
+                "depth buffer list: one has to be selected. If none is, or it "
+                "switches when you change display mode, try 'Use aspect ratio "
+                "heuristics' set to off there. Borderless, display scaling "
+                "and an in-game render scale below 100% are the usual reason "
+                "the buffer stops matching.")
         rep.verdict = "Set up correctly, but not switched on yet."
     elif "failure: resource build" in joined:
         rep.add(BAD, "Building the feed resources failed.")

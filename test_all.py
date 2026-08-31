@@ -325,6 +325,46 @@ check("the manifest records the name it actually used",
       man["proxy"] == "winmm.dll", man["proxy"])
 installer.uninstall(g, on_log=lambda t: None)
 
+section("6c. the interface survives bad data")
+import tkinter as _tk  # noqa: E402
+from core import gui as _gui  # noqa: E402
+_r = _tk.Tk()
+_app = _gui.App(_r)
+_r.update()
+
+# a folder that has gone away must not abandon the whole list
+_ghost = games.Game(name="Ghost", folder=Path("Z:/gone"))
+_ghost.exe = Path("Z:/gone/x.exe")
+_app.all_games = [_ghost]
+_app._fill()
+check("one unreadable game does not empty the list",
+      len(_app.tree.get_children()) == 1)
+
+# an exception in a queue handler must not stop the pump for good
+_app.q.put(("scanned", None))          # payload that makes _fill raise
+_app._pump()
+_app.q.put(("scan", "alive"))
+_app._pump()
+check("the pump survives a handler that raises",
+      _app.scanlbl.cget("text") == "alive", _app.scanlbl.cget("text"))
+
+# a game whose architecture could not be read must stay visible
+_unk = games.Game(name="Unknown", folder=Path("Z:/g1"))
+_unk.exe, _unk.bitness = Path("Z:/g1/x.exe"), None
+_b64 = games.Game(name="Sixtyfour", folder=Path("Z:/g2"))
+_b64.exe, _b64.bitness = Path("Z:/g2/x.exe"), 64
+_app.all_games = [_unk, _b64]
+_seen = {}
+for _a in ("all", "64", "32"):
+    _app.arch.set(_a)
+    _app._fill()
+    _seen[_a] = [x.name for x in _app.shown]
+check("unknown architecture is never filtered away",
+      all("Unknown" in v for v in _seen.values()), str(_seen))
+check("a known architecture still filters",
+      "Sixtyfour" not in _seen["32"], str(_seen["32"]))
+_r.destroy()
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
