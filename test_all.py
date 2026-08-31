@@ -365,6 +365,31 @@ check("a known architecture still filters",
       "Sixtyfour" not in _seen["32"], str(_seen["32"]))
 _r.destroy()
 
+section("6d. a quarantined file is reported, not ignored")
+_d = Path(tempfile.mkdtemp(prefix="quar_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d)
+installer.install(_g, installer.Options(), on_log=lambda t: None)
+# antivirus takes the add-on away after the install wrote it
+_victim = _g.install_dir / installer.RENODX
+_victim.unlink()
+_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+check("an install that lost a file says nothing was wrong",
+      not [w for w in _rep.warnings if "no longer there" in w])
+# now simulate the file vanishing DURING the install
+_orig_manifest = installer._write_manifest
+def _steal(root, g, opt, rep, proxy, level, complete):
+    if complete:
+        pass
+    return _orig_manifest(root, g, opt, rep, proxy, level, complete)
+_rep2 = installer.Report()
+_rep2.written = [installer.RENODX, "definitely-not-here.dll"]
+_miss = [r for r in _rep2.written if not (_g.install_dir / r).exists()]
+check("a missing written file is detectable", _miss == ["definitely-not-here.dll"],
+      str(_miss))
+installer.uninstall(_g, on_log=lambda t: None)
+shutil.rmtree(_d, ignore_errors=True)
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))

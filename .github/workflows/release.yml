@@ -96,11 +96,14 @@ jobs:
           TAG="${{ github.ref_name }}"
           ZIP="DLSS5-Autopilot-v${VERSION}-win64.zip"
           NOTES="release-notes-${TAG}.md"
+          # Every release is named "DLSS 5 Autopilot vX.Y.Z" - a bare tag as
+          # the title looks like a mistake next to the earlier ones.
+          TITLE="DLSS 5 Autopilot ${TAG}"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             if [ -f "$NOTES" ]; then
-              gh release create "$TAG" --title "$TAG" --notes-file "$NOTES"
+              gh release create "$TAG" --title "$TITLE" --notes-file "$NOTES"
             else
-              gh release create "$TAG" --title "$TAG" --generate-notes
+              gh release create "$TAG" --title "$TITLE" --generate-notes
             fi
           fi
           gh release upload "$TAG" "$ZIP" "SHA256SUMS.txt" --clobber

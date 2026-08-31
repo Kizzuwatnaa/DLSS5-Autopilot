@@ -765,6 +765,35 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             f"written and have been recorded, so 'Uninstall' can remove them.")
         raise
 
+    # --- did everything survive? -------------------------------------------
+    # The DLSS 5 add-on and the neural-rendering runtime are unsigned, freshly
+    # built and rare, which is exactly what machine-learning antivirus
+    # heuristics flag - Defender has called renodx builds Trojan:Win32/
+    # Ulthar.A!ml and OptiScaler Trojan:Win32/Fonzi.A!ml. A quarantine removes
+    # the file after we wrote it, so the install reports success and the game
+    # then does nothing. Say so instead of leaving it a mystery.
+    missing = []
+    for rel in rep.written:
+        if rel.endswith(BACKUP_SUFFIX):
+            continue
+        if not (root / rel).exists():
+            missing.append(rel)
+    if missing:
+        names = ", ".join(missing[:4]) + ("..." if len(missing) > 4 else "")
+        rep.warnings.append(
+            f"{len(missing)} file(s) were written and are no longer there: "
+            f"{names}. Almost always this is antivirus quarantining them. "
+            f"These components are unsigned and uncommon, so heuristic "
+            f"scanners flag them; the detections are false positives on "
+            f"software this tool downloads from its publishers, not on the "
+            f"tool. Restore them from your antivirus quarantine and add this "
+            f"game folder to its exclusions, then install again.")
+        log("")
+        log(f"      !! {len(missing)} files vanished after being written "
+            f"- check your antivirus quarantine")
+        for m in missing[:8]:
+            log(f"         {m}")
+
     # --- record -----------------------------------------------------------
     _write_manifest(root, g, opt, rep, proxy, level, complete=True)
     prog(100, "Done")
