@@ -11,7 +11,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import games, installer, prefs, update  # noqa: E402
+from core import dlss, games, installer, prefs, update  # noqa: E402
 
 
 def _console() -> None:
@@ -40,10 +40,16 @@ def cli(target: Path, remove: bool, check: bool) -> int:
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
         return 1
-    level, why_rel = installer.reliability(g)
+    sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+    level, why_rel = installer.reliability(g, sup.recommended)
     print(f"game    : {g.name}")
     print(f"exe     : {g.exe}")
     print(f"arch    : {g.bit_label}   API: {g.api} ({g.api_why})")
+    print(f"route   : {sup.recommended} - {dlss.LABELS[sup.recommended]}")
+    if sup.native_dlss:
+        print(f"          this game ships its own DLSS "
+              f"({', '.join(sup.evidence[:3])})")
+    print(f"          {sup.reason}")
     print(f"outlook : {level} - {why_rel}")
 
     ok, why = installer.check_supported(g)
@@ -53,7 +59,9 @@ def cli(target: Path, remove: bool, check: bool) -> int:
         local, _ = prefs.find_renodx()
         print(f"renodx   : {local.name if local else 'will download from the mirror'}")
         if ok:
-            print(f"plan     : {' -> '.join(installer.plan(g, installer.Options()))}")
+            popt = installer.Options(path=sup.recommended,
+                                     native_dlss=sup.native_dlss)
+            print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
         return 0
     if not ok:
         print(f"error: {why}", file=sys.stderr)

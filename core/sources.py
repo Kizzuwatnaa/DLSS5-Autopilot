@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-UA = {"User-Agent": "dlss5-autopilot/1.2 (+local install helper)"}
+UA = {"User-Agent": "dlss5-autopilot/1.3 (+local install helper)"}
 
 RESHADE_HOME = "https://reshade.me"
 RESHADE_SETUP_RE = re.compile(r"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe")
@@ -28,6 +28,7 @@ RESHADE_HEADERS = ("ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh")
 FEEDER_API = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest"
 LUMENITE_ZIP = "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"
 RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
+BRIDGE_API = "https://api.github.com/repos/NIGos/dlss5-bridge/releases/latest"
 
 # None = take the newest build from the mirror. The DLSS5-Feeder README names
 # 4.55, but that build crashes in CreateFeature with recent nvngx_dlssnr
@@ -123,6 +124,15 @@ def resolve_feeder() -> tuple[str, dict[str, str]]:
     rel = _json(FEEDER_API)
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
     return rel.get("tag_name", "?"), assets
+
+
+def resolve_bridge() -> tuple[str, str]:
+    """Latest dlss5-bridge release: (tag, addon download url)."""
+    rel = _json(BRIDGE_API)
+    for a in rel.get("assets", []):
+        if a["name"].lower().endswith(".addon64"):
+            return rel.get("tag_name", "?"), a["browser_download_url"]
+    raise RuntimeError("The dlss5-bridge release has no .addon64 asset.")
 
 
 def _ver_key(tag: str, prefix: str) -> tuple:

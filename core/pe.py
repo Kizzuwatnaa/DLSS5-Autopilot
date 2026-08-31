@@ -140,6 +140,7 @@ def pe_imports(path: Path) -> list[str]:
 
 # API label -> the proxy DLL name ReShade is installed as
 API_PROXY = {
+    "DX10": "dxgi.dll",
     "DX11": "dxgi.dll",
     "DX12": "dxgi.dll",
     "OpenGL": "opengl32.dll",
@@ -166,6 +167,11 @@ def detect_api(path: Path) -> tuple[str, str]:
         return "DX12", "imports d3d12.dll statically"
     if has("d3d11.dll"):
         return "DX11", "imports d3d11.dll statically"
+    if has("d3d10.dll") or has("d3d10_1.dll") or has("d3d10core.dll"):
+        # DX10 is DXGI-based, so ReShade still installs as dxgi.dll. Neither
+        # the add-on nor the bridge hooks D3D10 itself, so only the feeder's
+        # synthetic contract can reach these - and they are rare.
+        return "DX10", "imports d3d10.dll statically"
     # DXGI without d3d11/d3d12: API chosen at runtime, proxy is dxgi.dll anyway
     if has("dxgi.dll"):
         return "DX12", "imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way)"

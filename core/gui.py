@@ -19,8 +19,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (diagnose, feedcfg, games, gpu, installer, prefs, reshade_ini,
-               selfupdate, sources, update)
+from . import (diagnose, dlss, feedcfg, games, gpu, installer, prefs,
+               reshade_ini, selfupdate, sources, update)
 
 APP = "dlss5 autopilot"
 
@@ -66,6 +66,7 @@ class App:
         self.catalog: dict[str, list[dict]] = {}
         self.renodx_local: Path | None = None
         self.update_url: str | None = None
+        self.support: dlss.Support | None = None
 
         self.provider = tk.IntVar(value=3)
         self.keep_dlss = tk.BooleanVar(value=True)
@@ -371,13 +372,13 @@ class App:
 
         wrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
         wrap.pack(fill="both", expand=True)
-        cols = ("source", "arch", "api", "outlook", "status")
+        cols = ("source", "arch", "api", "route", "outlook", "status")
         self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings", height=13)
         self.tree.heading("#0", text="  game")
-        self.tree.column("#0", width=290, anchor="w")
-        for c, t, w in (("source", "source", 82), ("arch", "arch", 68),
-                        ("api", "api", 88), ("outlook", "outlook", 104),
-                        ("status", "status", 104)):
+        self.tree.column("#0", width=250, anchor="w")
+        for c, t, w in (("source", "source", 76), ("arch", "arch", 62),
+                        ("api", "api", 80), ("route", "route", 74),
+                        ("outlook", "outlook", 96), ("status", "status", 92)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="w")
         sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
@@ -437,7 +438,8 @@ class App:
                       if g.exe and (a == "all" or str(g.bitness) == a)]
         for i, g in enumerate(self.shown):
             ok, _ = installer.check_supported(g)
-            level, _ = installer.reliability(g)
+            sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+            level, _ = installer.reliability(g, sup.recommended)
             outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
                        installer.EXPERIMENTAL: "often fails"}[level]
             if not ok:
@@ -449,7 +451,7 @@ class App:
                 tag = "shaky" if level == installer.EXPERIMENTAL else ""
             self.tree.insert("", "end", iid=str(i), text="  " + g.name,
                              values=(g.source.lower(), g.bit_label, g.api,
-                                     outlook, status),
+                                     sup.recommended, outlook, status),
                              tags=(tag,) if tag else ())
         hidden = len([g for g in self.all_games if not g.exe])
         msg = f"{len(self.shown)} games"
@@ -469,10 +471,12 @@ class App:
         g = self.shown[int(sel[0])]
         self.game = g
         ok, why = installer.check_supported(g)
-        level, why_rel = installer.reliability(g)
+        sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+        level, why_rel = installer.reliability(g, sup.recommended)
         proxy = installer._proxy_name(g.api)
         lines = [f"exe    {g.exe}",
-                 f"arch   {g.bit_label}  api {g.api}  ({g.api_why})"]
+                 f"arch   {g.bit_label}  api {g.api}  ({g.api_why})",
+                 f"route  {dlss.LABELS[sup.recommended]}  [{level}]"]
         if ok:
             lines.append(f"path   reshade as {proxy}"
                          + ("  +  host64/ helper" if g.bitness == 32 else "")
@@ -511,39 +515,48 @@ class App:
         self.cb_exe = ttk.Combobox(inner, state="readonly", values=[])
         self.cb_exe.bind("<<ComboboxSelected>>", self._on_exe)
 
-        row(1, "motion vectors")
+        row(1, "route")
+        self.cb_route = ttk.Combobox(inner, state="readonly", values=[])
+        self.cb_route.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
+        self.cb_route.bind("<<ComboboxSelected>>", self._on_route)
+
+        self.routelbl = tk.Label(inner, bg=PANEL, fg=DIM, font=font(8),
+                                 justify="left", anchor="w", wraplength=680)
+        self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+
+        row(3, "motion vectors")
         self.cb_prov = ttk.Combobox(inner, state="readonly",
                                     values=[v[0] for v in reshade_ini.PROVIDERS.values()])
         self.cb_prov.current(0)
-        self.cb_prov.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
+        self.cb_prov.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
         self.cb_prov.bind("<<ComboboxSelected>>", self._on_prov)
 
-        row(2, "dlss5 add-on")
+        row(4, "dlss5 add-on")
         self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["loading..."])
-        self.cb_renodx.grid(row=2, column=1, sticky="ew", pady=5)
+        self.cb_renodx.grid(row=4, column=1, sticky="ew", pady=5)
         ttk.Button(inner, text="use my file", command=self._pick_renodx)\
-            .grid(row=2, column=2, sticky="w", padx=(10, 0), pady=5)
+            .grid(row=4, column=2, sticky="w", padx=(10, 0), pady=5)
 
-        row(3, "nvngx_dlssnr")
+        row(5, "nvngx_dlssnr")
         self.cb_dlssnr = ttk.Combobox(inner, state="readonly",
                                       values=["auto - match my gpu"])
         self.cb_dlssnr.current(0)
-        self.cb_dlssnr.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+        self.cb_dlssnr.grid(row=5, column=1, columnspan=2, sticky="ew", pady=5)
 
-        row(4, "nvngx_dlss")
+        row(6, "nvngx_dlss")
         self.cb_dlss = ttk.Combobox(inner, state="readonly", values=["loading..."])
-        self.cb_dlss.grid(row=4, column=1, sticky="ew", pady=5)
+        self.cb_dlss.grid(row=6, column=1, sticky="ew", pady=5)
         tk.Checkbutton(inner, text="keep the game's own", variable=self.keep_dlss,
                        bg=PANEL, fg=BODY, selectcolor=FIELD, activebackground=PANEL,
                        activeforeground=TXT, font=font(9), borderwidth=0)\
-            .grid(row=4, column=2, sticky="w", padx=(10, 0))
+            .grid(row=6, column=2, sticky="w", padx=(10, 0))
 
-        tk.Frame(inner, bg=LINE, height=1).grid(row=5, column=0, columnspan=3,
+        tk.Frame(inner, bg=LINE, height=1).grid(row=7, column=0, columnspan=3,
                                                 sticky="ew", pady=(12, 9))
 
-        row(6, "work area")
+        row(8, "work area")
         wrap = tk.Frame(inner, bg=PANEL)
-        wrap.grid(row=6, column=1, columnspan=2, sticky="ew", pady=3)
+        wrap.grid(row=8, column=1, columnspan=2, sticky="ew", pady=3)
         self.sc_work = tk.Scale(wrap, from_=50, to=100, resolution=5,
                                 orient="horizontal", variable=self.workres,
                                 bg=PANEL, fg=BODY, troughcolor=FIELD,
@@ -556,19 +569,19 @@ class App:
                                  justify="left", wraplength=340)
         self.workhint.pack(side="left", padx=(14, 0))
 
-        row(7, "dlss preset")
+        row(9, "dlss preset")
         self.cb_preset = ttk.Combobox(inner, state="readonly",
                                       values=list(feedcfg.PRESETS.values()))
         self.cb_preset.current(0)
-        self.cb_preset.grid(row=7, column=1, columnspan=2, sticky="ew", pady=5)
+        self.cb_preset.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
 
-        row(8, "hdr")
+        row(10, "hdr")
         self.cb_hdr = ttk.Combobox(inner, state="readonly", width=18,
                                    values=list(feedcfg.HDR.values()))
         self.cb_hdr.current(0)
-        self.cb_hdr.grid(row=8, column=1, sticky="w", pady=5)
-        tk.Label(inner, text="the feeder path is always dlaa", bg=PANEL, fg=FAINT,
-                 font=font(8)).grid(row=8, column=2, sticky="w", padx=(10, 0))
+        self.cb_hdr.grid(row=10, column=1, sticky="w", pady=5)
+        self.dlaalbl = tk.Label(inner, text="", bg=PANEL, fg=FAINT, font=font(8))
+        self.dlaalbl.grid(row=10, column=2, sticky="w", padx=(10, 0))
 
         self.reswarn = tk.Label(
             inner, bg=PANEL, fg=RUST, font=font(8), justify="left", anchor="w",
@@ -577,7 +590,7 @@ class App:
                  "on. the feature is created for one backbuffer size; changing "
                  "resolution or display mode while it runs forces a rebuild that "
                  "can freeze or crash the game.")
-        self.reswarn.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        self.reswarn.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         inner.bind("<Configure>",
                    lambda e: self.reswarn.configure(wraplength=max(360, e.width - 8)))
 
@@ -644,6 +657,8 @@ class App:
         slider is disabled rather than lying about what it does.
         """
         g = self.game
+        if getattr(self, "route", dlss.FEEDER) != dlss.FEEDER:
+            return False          # only the feeder has a work area at all
         return bool(g and g.bitness == 64 and g.api == "DX11")
 
     def _on_workres(self, _v=None) -> None:
@@ -664,10 +679,15 @@ class App:
         else:
             self.workres.set(100)
             self.sc_work.configure(state="disabled", fg=FAINT, troughcolor=FIELD)
-            api = self.game.api if self.game else "this api"
-            self.workhint.config(
-                text=f"n/a on {api} - the add-on applies the work area on the "
-                     f"64-bit d3d11 path only", fg=FAINT)
+            if getattr(self, "route", dlss.FEEDER) != dlss.FEEDER:
+                self.workhint.config(
+                    text="n/a on this route - the work area is a feeder setting",
+                    fg=FAINT)
+            else:
+                api = self.game.api if self.game else "this api"
+                self.workhint.config(
+                    text=f"n/a on {api} - the add-on applies the work area on "
+                         f"the 64-bit d3d11 path only", fg=FAINT)
 
     def _on_exe(self, _e=None) -> None:
         g = self.game
@@ -687,6 +707,35 @@ class App:
         if not ok:
             self._log(f"  not supported: {why}", "err")
         self.btn_next.config(state="normal" if ok else "disabled")
+
+    def _on_route(self, _e=None) -> None:
+        """The user picked a different route; re-tune what is shown."""
+        if not self.support:
+            return
+        i = self.cb_route.current()
+        if 0 <= i < len(self.support.options):
+            self._apply_route(self.support.options[i])
+
+    def _apply_route(self, path: str) -> None:
+        """Show only the settings this route actually uses."""
+        self.route = path
+        self.routelbl.config(text=dlss.BLURB[path], fg=DIM)
+        feeder = path == dlss.FEEDER
+        # Motion vectors, work area and DLSS preset belong to the feeder's
+        # synthetic contract; the other routes hook the game's real DLSS calls
+        # and ignore all three.
+        self.cb_prov.configure(state="readonly" if feeder else "disabled")
+        self.cb_preset.configure(state="readonly" if feeder else "disabled")
+        self.dlaalbl.config(
+            text="the feeder path is always dlaa" if feeder
+            else "the game's own dlss quality mode applies")
+        self.reswarn.grid() if feeder else self.reswarn.grid_remove()
+        self._sync_workres()
+        if self.game:
+            level, why = installer.reliability(self.game, path)
+            self._log(f"> route: {dlss.LABELS[path]}  [{level}]", "head")
+            self._log(f"  {why}")
+            self._log(f"  plan: {' -> '.join(installer.plan(self.game, self._opts()))}")
 
     def _on_prov(self, _e=None) -> None:
         self.provider.set(list(reshade_ini.PROVIDERS.keys())[self.cb_prov.current()])
@@ -743,9 +792,15 @@ class App:
 
         self.btn_remove.config(state="normal" if g.installed else "disabled")
 
-        level, why_rel = installer.reliability(g)
-        if level != installer.STABLE:
-            self._log(f"!! {level}: {why_rel}", "warn")
+        # Work out which routes exist for this game and preselect the best.
+        self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+        self.cb_route["values"] = [dlss.LABELS[o] for o in self.support.options]
+        self.cb_route.current(self.support.options.index(self.support.recommended))
+        if self.support.native_dlss:
+            self._log(f"> this game ships its own dlss "
+                      f"({', '.join(self.support.evidence[:3])})", "ok")
+        self._log(f"> {self.support.reason}")
+        self._apply_route(self.support.recommended)
         if len(cands) > 1:
             self._log(f"!! this folder has {len(cands)} executables; selected "
                       f"{g.exe.name}", "warn")
@@ -758,7 +813,6 @@ class App:
         else:
             self._log("!! no nvidia card detected - dlss5 will not run", "warn")
 
-        self._log(f"> plan: {' -> '.join(installer.plan(g, self._opts()))}", "head")
         self._find_local_renodx()
         if not self.catalog:
             self._load_catalog()
@@ -827,6 +881,8 @@ class App:
             dlss=clean(self.cb_dlss.get()),
             keep_game_dlss=self.keep_dlss.get(),
             feed=feed,
+            path=getattr(self, 'route', dlss.FEEDER),
+            native_dlss=bool(self.support and self.support.native_dlss),
         )
 
     # ---------------------------------------------------------------- actions

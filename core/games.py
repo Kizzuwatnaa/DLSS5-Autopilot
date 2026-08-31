@@ -14,7 +14,12 @@ from pathlib import Path
 from . import emulators, pe
 
 # If a game folder contains one of these, we have already installed there.
-MARKER_FILES = ("dlss5-feed.addon64", "dlss5-feed.addon32")
+# Any of these next to the executable means we (or an older release of this
+# tool) have installed here. The bridge and native routes leave no feeder
+# add-on, so the manifest name is part of the check.
+MARKER_FILES = ("dlss5-feed.addon64", "dlss5-feed.addon32",
+                "dlss5-bridge.addon64", "dlss5-autopilot.json",
+                "dlss5kur-kurulum.json", "dlss5-installer.json")
 
 
 @dataclass

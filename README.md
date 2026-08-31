@@ -15,22 +15,40 @@ component, and writes the ReShade configuration in the right order.
 
 ## What it supports
 
-| Path | Support | How |
+There are three routes into a game, and the tool picks the right one for you.
+
+| Route | What it does | When it is used |
 |---|---|---|
-| **64-bit DX11 / DX12** | reliable | ReShade installs as `dxgi.dll` |
-| 64-bit OpenGL | often fails | ReShade installs as `opengl32.dll` |
-| 32-bit DX11 / DX12 | often fails | plus a `host64\` helper process |
-| DirectX 9 | often fails | dgVoodoo2 translates to D3D11 first |
-| Emulators | reliable* | DuckStation, PCSX2, Dolphin, PPSSPP, Xenia |
-| Vulkan | not supported | needs a system-wide ReShade layer registration |
+| **native** | The DLSS 5 add-on hooks the game's own NGX D3D12 calls | Game ships DLSS and renders with D3D12 |
+| **bridge** | `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session | D3D11 or Vulkan games, and games with no DLSS at all |
+| **feeder** | DLSS5-Feeder builds a synthetic DLAA contract from ReShade's depth and shader motion vectors | Everything else |
 
-\* provided the emulator's render backend is set to Direct3D 11 or 12.
+On the **native** route your in-game DLSS quality setting (Quality / Balanced /
+Performance) still applies — it is the game's own DLSS being upgraded, not a
+synthetic one. The feeder route is always DLAA.
 
-**Be realistic about this:** DLSS 5 feeding was built around DirectX 10/11/12.
-Everything else goes through extra translation or a cross-process helper, and
-the DLSS feature frequently fails to create on those paths. The tool offers
-them and labels each game's outlook honestly in the list, but 32-bit, DX9 and
-OpenGL are hit and miss.
+| API | Support |
+|---|---|
+| **64-bit DX12** | reliable — native when the game has DLSS, else feeder |
+| **64-bit DX11** | reliable — bridge when the game has DLSS, else feeder |
+| **Vulkan** | beta — bridge only; ReShade is registered as a Vulkan layer |
+| DirectX 9 | long shot — dgVoodoo2 translates to D3D11, then bridge or feeder |
+| DirectX 10 | long shot — feeder only, nothing hooks D3D10 |
+| 64-bit OpenGL | long shot — feeder only |
+| 32-bit anything | long shot — feeder only, via the `host64\` helper |
+| Emulators | DuckStation, PCSX2, Dolphin, PPSSPP, Xenia — set them to a D3D11/12 backend |
+
+**Vulkan is a global change.** ReShade reaches Vulkan as an *implicit layer*: a
+registry value the Vulkan loader reads at start-up. Once registered it loads
+into every Vulkan application on your account, not just the game. The tool
+registers it under `HKEY_CURRENT_USER` (no administrator rights), says so
+before doing it, reuses an existing ReShade registration rather than
+duplicating it, and removes its own on uninstall.
+
+**Be realistic:** DX11/DX12 is where this works. DirectX 9, DirectX 10, OpenGL
+and 32-bit games go through extra translation or a helper process and often
+fail at `CreateFeature`. The tool labels every game's outlook rather than
+pretending.
 
 Steam, Epic and GOG libraries are scanned automatically. Anything else can be
 added with **Choose folder…**.
@@ -202,6 +220,7 @@ licence:
 
 | Component | Project | Licence |
 |---|---|---|
+| dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
 | ReShade | [crosire/reshade](https://github.com/crosire/reshade) | BSD-3-Clause |
 | Shader headers | [crosire/reshade-shaders](https://github.com/crosire/reshade-shaders) | per-file |
 | DLSS5-Feeder | [jlrouzies-fr/DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder) | see repository |
@@ -260,6 +279,8 @@ core/prefs.py         persistent settings, local renodx discovery
 core/reshade_ini.py   ReShade.ini / preset writing and technique ordering
 core/feedcfg.py       dlss5-feed.cfg
 core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
+core/dlss.py          native-DLSS detection and route selection
+core/vulkan.py        registering ReShade as an implicit Vulkan layer
 core/installer.py     install engine and reliability assessment
 core/update.py        update check
 core/selfupdate.py    download and swap in a new build
