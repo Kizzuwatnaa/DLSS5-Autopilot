@@ -1,7 +1,7 @@
-"""Kurulu oyunlari bulur: Steam, Epic, GOG + elle secilen klasorler.
+r"""Finding installed games: Steam, Epic, GOG, emulators, manual folders.
 
-Hicbir sey calistirilmaz; sadece kutuphane dosyalari okunur ve exe basliklarina
-bakilir. Tarama tamamen yereldir, internete cikilmaz.
+Nothing is executed; library files are read and executable headers inspected.
+Scanning is entirely local - no network access.
 """
 from __future__ import annotations
 
@@ -13,30 +13,30 @@ from pathlib import Path
 
 from . import emulators, pe
 
-# Bir oyun klasorunde bunlar varsa kurulum zaten yapilmis demektir.
+# If a game folder contains one of these, we have already installed there.
 MARKER_FILES = ("dlss5-feed.addon64", "dlss5-feed.addon32")
 
 
 @dataclass
 class Game:
     name: str
-    folder: Path                 # oyunun kok klasoru
-    exe: Path | None = None      # secilen calistirilabilir
+    folder: Path                 # the game's root folder
+    exe: Path | None = None      # chosen executable
     bitness: int | None = None   # 32 / 64
     api: str = "?"
     api_why: str = ""
-    source: str = "Elle"         # Steam / Epic / GOG / Elle
+    source: str = "Manual"       # Steam / Epic / GOG / Emulator / Manual
     candidates: list[Path] = field(default_factory=list)
     error: str = ""
-    emu: object | None = None      # emulators.Profile (varsa)
+    emu: object | None = None    # emulators.Profile, when applicable
 
     @property
     def install_dir(self) -> Path:
-        """Dosyalarin gidecegi yer: exenin yani.
+        r"""Where files go: next to the executable.
 
-        Cok sayida oyunda exe kok klasorde degildir (ornek: Kingdom Come 2 ->
-        Bin\\Win64MasterMasterSteamPGO\\KingdomCome.exe). ReShade proxy'si
-        exenin yaninda olmak zorunda, yoksa hic yuklenmez.
+        In many games the exe is not in the root (e.g. Kingdom Come 2 ->
+        Bin\Win64MasterMasterSteamPGO\KingdomCome.exe). The ReShade proxy must
+        sit beside the executable or it is never loaded.
         """
         return self.exe.parent if self.exe else self.folder
 
@@ -82,7 +82,6 @@ def _steam_libraries(root: Path) -> list[Path]:
         text = vdf.read_text(encoding="utf8", errors="replace")
     except OSError:
         return libs
-    # "path"    "D:\\SteamLibrary"
     for m in re.finditer(r'"path"\s*"([^"]+)"', text):
         p = Path(m.group(1).replace("\\\\", "\\"))
         if p.is_dir() and p not in libs:
@@ -101,7 +100,7 @@ def scan_steam() -> list[Game]:
         common = apps / "common"
         if not common.is_dir():
             continue
-        # appmanifest dosyalari gercek oyun adini verir
+        # appmanifest files carry the real display name
         names: dict[str, str] = {}
         try:
             for acf in apps.glob("appmanifest_*.acf"):
@@ -183,27 +182,27 @@ def scan_gog() -> list[Game]:
     return out
 
 
-# ---------------------------------------------------------------- emulatorler
+# ---------------------------------------------------------------- emulators
 
 def scan_emulators(progress=None) -> list[Game]:
     out: list[Game] = []
     for prof, exe in emulators.scan(progress):
         g = Game(name=f"{prof.name} ({prof.system})", folder=exe.parent,
-                 exe=exe, source="Emülatör")
+                 exe=exe, source="Emulator")
         g.emu = prof
         out.append(g)
     return out
 
 
-# ---------------------------------------------------------------- ortak
+# ---------------------------------------------------------------- shared
 
 def enrich(g: Game) -> Game:
-    """Oyunun exesini sec ve mimarisini/API'sini tespit et."""
+    """Pick the executable and detect its architecture / graphics API."""
     try:
         if g.exe is None or not g.exe.is_file():
             cands = pe.find_game_exes(g.folder)
             if not cands:
-                g.error = "exe bulunamadi"
+                g.error = "no executable found"
                 return g
             g.candidates = cands
             g.exe = cands[0]
@@ -215,28 +214,28 @@ def enrich(g: Game) -> Game:
             prof = emulators.profile_for(g.exe)
             if prof:
                 g.emu = prof
-                if g.source == "Elle":
+                if g.source == "Manual":
                     g.name = f"{prof.name} ({prof.system})"
     except pe.PEError as e:
         g.error = str(e)
     except Exception as e:
-        g.error = f"okunamadi: {e}"
+        g.error = f"unreadable: {e}"
     return g
 
 
 def scan_all(progress=None) -> list[Game]:
-    """Tum kaynaklari tara, exeleri coz, ada gore sirala."""
+    """Scan every source, resolve executables, sort by name."""
     games: list[Game] = []
     for label, fn in (("Steam", scan_steam), ("Epic", scan_epic),
-                      ("GOG", scan_gog), ("Emülatör", scan_emulators)):
+                      ("GOG", scan_gog), ("Emulator", scan_emulators)):
         if progress:
-            progress(f"{label} taranıyor...")
+            progress(f"Scanning {label}...")
         try:
-            games += fn(progress) if label == "Emülatör" else fn()
+            games += fn(progress) if label == "Emulator" else fn()
         except Exception:
-            pass          # bir magaza okunamazsa digerleri devam etsin
+            pass          # one store failing must not stop the others
 
-    # Ayni klasoru iki magaza da bildirmis olabilir
+    # The same folder may be reported by two stores
     uniq: dict[Path, Game] = {}
     for g in games:
         try:
@@ -248,17 +247,17 @@ def scan_all(progress=None) -> list[Game]:
     total = len(games)
     for i, g in enumerate(games, 1):
         if progress and (i % 5 == 0 or i == total):
-            progress(f"Oyunlar inceleniyor... {i}/{total}")
+            progress(f"Inspecting games... {i}/{total}")
         enrich(g)
     games.sort(key=lambda g: g.name.lower())
     return games
 
 
 def manual(path: Path) -> Game:
-    """Kullanicinin elle sectigi klasor/exe icin Game olustur."""
+    """Build a Game from a user-selected folder or executable."""
     path = Path(path)
     if path.is_file():
-        g = Game(name=path.parent.name, folder=path.parent, exe=path, source="Elle")
+        g = Game(name=path.parent.name, folder=path.parent, exe=path, source="Manual")
     else:
-        g = Game(name=path.name, folder=path, source="Elle")
+        g = Game(name=path.name, folder=path, source="Manual")
     return enrich(g)

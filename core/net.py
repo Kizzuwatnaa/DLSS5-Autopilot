@@ -1,12 +1,13 @@
-r"""Indirme + onbellek + zip cikarma.
+r"""Downloading, caching and zip extraction.
 
-nvngx_dlssnr.dll tek basina 165 MB. Onbellek olmadan her oyunda ~150 MB
-yeniden inerdi; bu yuzden indirilenler %LOCALAPPDATA%\dlss5kur\cache altinda
-saklanir ve sonraki kurulumlar aninda tamamlanir.
+nvngx_dlssnr.dll alone is 165 MB. Without a cache every game would pull
+~150 MB again, so downloads are kept under %LOCALAPPDATA%\dlss5-autopilot\cache
+and later installs finish instantly.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import urllib.request
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from . import sources
 
-CACHE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "dlss5kur" / "cache"
+CACHE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "dlss5-autopilot" / "cache"
 
 
 def cache_dir() -> Path:
@@ -35,7 +36,7 @@ def clear_cache() -> None:
 
 
 def download(url: str, name: str, progress=None, force: bool = False) -> Path:
-    """URL'yi onbellege indirir ve yolunu dondurur. progress(indirilen, toplam)."""
+    """Download to the cache and return the path. progress(done, total)."""
     dest = cache_dir() / name
     if dest.is_file() and dest.stat().st_size > 0 and not force:
         if progress:
@@ -56,10 +57,10 @@ def download(url: str, name: str, progress=None, force: bool = False) -> Path:
                 done += len(chunk)
                 if progress:
                     progress(done, total)
-    # Sunucu boyut bildirdiyse eksik indirmeyi burada yakala.
+    # If the server declared a size, catch truncated downloads here.
     if total and tmp.stat().st_size != total:
         tmp.unlink(missing_ok=True)
-        raise RuntimeError(f"{name}: indirme eksik ({tmp.stat().st_size}/{total} bayt).")
+        raise RuntimeError(f"{name}: incomplete download ({tmp.stat().st_size}/{total} bytes).")
     tmp.replace(dest)
     return dest
 
@@ -78,12 +79,12 @@ def zip_members(zpath: Path) -> list[str]:
 
 
 def extract_one(zpath: Path, member_suffix: str, dest: Path) -> None:
-    """Adi member_suffix ile biten ilk uyeyi dest dosyasina cikarir."""
+    """Extract the first member whose name ends with member_suffix."""
     with zipfile.ZipFile(zpath) as z:
         hit = next((n for n in z.namelist()
                     if not n.endswith("/") and n.lower().endswith(member_suffix.lower())), None)
         if hit is None:
-            raise RuntimeError(f"{zpath.name} icinde {member_suffix} yok.")
+            raise RuntimeError(f"{zpath.name} does not contain {member_suffix}.")
         dest.parent.mkdir(parents=True, exist_ok=True)
         with z.open(hit) as src, open(dest, "wb") as out:
             shutil.copyfileobj(src, out, 1 << 20)
@@ -91,7 +92,7 @@ def extract_one(zpath: Path, member_suffix: str, dest: Path) -> None:
 
 def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
                  only_ext: tuple[str, ...] | None = None) -> list[Path]:
-    """inner_dir altindaki dosyalari out_root/dest_dir icine duz olarak cikarir."""
+    """Flatten files under inner_dir into out_root/dest_dir."""
     written: list[Path] = []
     key = inner_dir.strip("/").lower()
     with zipfile.ZipFile(zpath) as z:
@@ -99,13 +100,13 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
             if n.endswith("/"):
                 continue
             parts = n.split("/")
-            # 'LumeniteFX-mainline/Shaders/x.fx' -> kok klasoru atla
+            # 'LumeniteFX-mainline/Shaders/x.fx' -> drop the archive root
             rel = "/".join(parts[1:]) if len(parts) > 1 else n
             rl = rel.lower()
             if not rl.startswith(key + "/"):
                 continue
             tail = rel[len(key) + 1:]
-            if "/" in tail:            # sadece bu seviyedeki dosyalar
+            if "/" in tail:            # only files at this level
                 continue
             if only_ext and not tail.lower().endswith(only_ext):
                 continue
@@ -117,16 +118,15 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
     return written
 
 
-def json_get(url: str):
-    """URL'den JSON oku."""
-    import json
-    return json.loads(fetch_text(url).decode("utf8"))
-
-
 def fetch_text(url: str) -> bytes:
     req = urllib.request.Request(url, headers=sources.UA)
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.read()
+
+
+def json_get(url: str):
+    """Read JSON from a URL."""
+    return json.loads(fetch_text(url).decode("utf8"))
 
 
 def human(n: float) -> str:

@@ -1,9 +1,9 @@
-"""Bilesenlerin nereden indirildigi - hepsi tek yerde, denetlenebilsin diye.
+"""Where every component is downloaded from - all in one place, auditable.
 
-Bu araç HICBIR ozel sunucuya baglanmaz. Asagidaki alan adlari disina cikmaz:
+This tool never contacts a private server. It stays within these hosts:
     reshade.me
     raw.githubusercontent.com   (crosire/reshade-shaders)
-    api.github.com / github.com (DLSS5-Feeder, rhi-repo)
+    api.github.com / github.com (DLSS5-Feeder, rhi-repo, dgVoodoo2)
     codeload.github.com         (LumeniteFX)
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import json
 import re
 import urllib.request
 
-UA = {"User-Agent": "dlss5kur/1.0 (+local install helper)"}
+UA = {"User-Agent": "dlss5-autopilot/1.1 (+local install helper)"}
 
 RESHADE_HOME = "https://reshade.me"
 RESHADE_SETUP_RE = re.compile(r"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe")
@@ -24,9 +24,9 @@ FEEDER_API = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/la
 LUMENITE_ZIP = "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"
 RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
 
-# DLSS5-Feeder README'si renodx-dlss5 icin acikca v4.55 diyor; varsayilan bu.
-# Aynadan indirilecekse en guncel yapiyi al. (README 4.55 diyor ama o yapi
-# yeni nvngx_dlssnr surumleriyle CreateFeature sirasinda cokuyor.)
+# None = take the newest build from the mirror. The DLSS5-Feeder README names
+# 4.55, but that build crashes in CreateFeature with recent nvngx_dlssnr
+# releases, so newest-wins is the better default.
 RENODX_DEFAULT = None
 
 
@@ -41,30 +41,30 @@ def _json(url: str):
 
 
 def resolve_reshade() -> tuple[str, str]:
-    """reshade.me ana sayfasindan en guncel Addon kurulumunun (surum, url) bilgisi."""
+    """(version, url) of the latest ReShade add-on installer, from reshade.me."""
     html = _get(RESHADE_HOME).decode("utf8", "replace")
     m = RESHADE_SETUP_RE.search(html)
     if not m:
-        raise RuntimeError("reshade.me uzerinde Addon kurulum baglantisi bulunamadi.")
+        raise RuntimeError("Could not find the ReShade add-on installer link on reshade.me.")
     return m.group(1), RESHADE_HOME + m.group(0)
 
 
 def resolve_feeder() -> tuple[str, dict[str, str]]:
-    """DLSS5-Feeder son surumu: (etiket, {dosya_adi: indirme_url})."""
+    """Latest DLSS5-Feeder release: (tag, {filename: download_url})."""
     rel = _json(FEEDER_API)
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
     return rel.get("tag_name", "?"), assets
 
 
 def _ver_key(tag: str, prefix: str) -> tuple:
-    """'dlss-310.8.0' -> (310,8,0) seklinde siralanabilir anahtar."""
+    """'dlss-310.8.0' -> (310, 8, 0), a sortable key."""
     raw = tag[len(prefix):].lstrip("-")
     nums = re.findall(r"\d+", raw)
     return tuple(int(n) for n in nums) if nums else (0,)
 
 
 def rhi_catalog() -> dict[str, list[dict]]:
-    """rhi-repo surumlerini bilesen ailesine gore gruplar (yeni -> eski)."""
+    """Group rhi-repo releases by component family (newest first)."""
     rels = _json(RHI_API)
     fams: dict[str, list[dict]] = {}
     for r in rels:
@@ -91,7 +91,7 @@ def rhi_catalog() -> dict[str, list[dict]]:
 
 
 def pick(entries: list[dict], want: str | None) -> dict:
-    """Etiketi/etiket parcasi 'want' olan girdiyi sec; yoksa en guncelini dondur."""
+    """Pick the entry whose label/tag matches `want`, else the newest."""
     if want:
         for e in entries:
             if e["label"] == want or e["tag"] == want:

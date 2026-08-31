@@ -1,19 +1,21 @@
-"""Kurulum motoru: 64-bit ve 32-bit yollari.
+r"""Install engine: 64-bit, 32-bit and DX9 paths.
 
-64-bit yol (oyunun yaninda):
-    <proxy>.dll                 ReShade64.dll  (dxgi.dll ya da opengl32.dll)
+64-bit layout (next to the game executable):
+    <proxy>.dll                 ReShade64.dll  (dxgi.dll or opengl32.dll)
     dlss5-feed.addon64
     renodx-dlss5.addon64
     nvngx_dlssnr.dll
     nvngx_dlss.dll
-    ReShade.ini / ReShadePreset.ini
-    reshade-shaders/Shaders/{basliklar, DLSS5_Feed.fx, lumenite_*.fx}
+    ReShade.ini / ReShadePreset.ini / dlss5-feed.cfg
+    reshade-shaders/Shaders/{headers, DLSS5_Feed.fx, lumenite_*.fx}
     reshade-shaders/Shaders/include/lumenite_*.fxh
     reshade-shaders/Textures/lumenite_bluenoise256.png
 
-32-bit yol: 32-bit surec 64-bit NGX'i yukleyemez, bu yuzden yardimci bir
-64-bit surec gerekir. Oyunun yaninda 32-bit ReShade + addon32; host64/
-klasorunde ise kendi 64-bit ReShade'i ve tum DLSS parcalari bulunur.
+32-bit: a 32-bit process cannot load 64-bit NGX, so a helper process is
+needed. The game gets 32-bit ReShade + addon32; host64/ holds its own 64-bit
+ReShade and all the DLSS parts.
+
+DX9: dgVoodoo2 translates to D3D11 first, then the 32-bit path applies.
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ from pathlib import Path
 
 from . import dgvoodoo, feedcfg, games, gpu, net, pe, prefs, reshade_ini, sources
 
-MANIFEST = "dlss5kur-kurulum.json"
+MANIFEST = "dlss5-autopilot.json"
 
 FEEDER_ADDON64 = "dlss5-feed.addon64"
 FEEDER_ADDON32 = "dlss5-feed.addon32"
@@ -39,6 +41,8 @@ SHADERS = Path("reshade-shaders") / "Shaders"
 INCLUDE = SHADERS / "include"
 TEXTURES = Path("reshade-shaders") / "Textures"
 
+BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+
 
 class InstallError(Exception):
     pass
@@ -47,13 +51,13 @@ class InstallError(Exception):
 @dataclass
 class Options:
     provider: int = 3                       # DLSS5_MV_PROVIDER
-    renodx: str | None = sources.RENODX_DEFAULT   # surum etiketi
-    renodx_local: Path | None = None        # kullanicinin kendi dosyasi (Discord'dan)
-    dlssnr: str | None = None               # None = en guncel
-    dlss: str | None = None                 # None = en guncel
-    keep_game_dlss: bool = True             # oyunun kendi nvngx_dlss.dll'i varsa dokunma
-    feed: dict = field(default_factory=dict)   # dlss5-feed.cfg ayarlari
-    ignore_gpu_mismatch: bool = False       # uyumsuz dlssnr'a ragmen devam et
+    renodx: str | None = sources.RENODX_DEFAULT
+    renodx_local: Path | None = None        # user's own build
+    dlssnr: str | None = None               # None = auto-pick for this GPU
+    dlss: str | None = None                 # None = newest
+    keep_game_dlss: bool = True             # leave the game's own nvngx_dlss.dll alone
+    feed: dict = field(default_factory=dict)   # dlss5-feed.cfg settings
+    ignore_gpu_mismatch: bool = False
 
 
 @dataclass
@@ -64,10 +68,39 @@ class Report:
     warnings: list[str] = field(default_factory=list)
 
 
-# ----------------------------------------------------------------- yardimcilar
+# ---------------------------------------------------------------- reliability
+
+# Measured on real games, not guessed. DLSS 5 feeding was designed around
+# DXGI; everything else is a bolt-on and fails far more often.
+STABLE, BETA, EXPERIMENTAL = "stable", "beta", "experimental"
+
+def reliability(g: games.Game) -> tuple[str, str]:
+    """(level, explanation) - how likely this path is to actually work."""
+    if g.api == "DX9":
+        return EXPERIMENTAL, (
+            "DirectX 9 is the least reliable path. The game runs through "
+            "dgVoodoo2 translation and then the 32-bit helper process; the "
+            "DLSS feature frequently fails to create on top of that. Expect "
+            "it not to work.")
+    if g.bitness == 32:
+        return EXPERIMENTAL, (
+            "32-bit games go through a cross-process helper (host64). "
+            "Upstream marks this beta and it often fails to start the DLSS "
+            "feature.")
+    if g.api == "OpenGL":
+        return EXPERIMENTAL, (
+            "OpenGL needs interop extensions the driver may not expose to "
+            "this game, and the GPU must be forced to NVIDIA. Frequently "
+            "does not work.")
+    if g.api in ("DX11", "DX12", "Unknown"):
+        return STABLE, "DirectX 10/11/12 is the path DLSS 5 feeding is built around."
+    return BETA, "Untested path."
+
+
+# ---------------------------------------------------------------- helpers
 
 def _is_reshade(path: Path) -> bool:
-    """ReShade proxy DLL'i literal 'ReShade' stringi tasir ve 1 MB'tan buyuktur."""
+    """A ReShade proxy DLL carries the literal string "ReShade" and is >1 MB."""
     try:
         if not path.is_file() or path.stat().st_size < (1 << 20):
             return False
@@ -81,20 +114,39 @@ def _proxy_name(api: str) -> str:
 
 
 def check_supported(g: games.Game) -> tuple[bool, str]:
-    """Bu oyun otomatik kurulabilir mi?"""
+    """Can this game be set up automatically?"""
     if not g.exe:
-        return False, "Oyunun çalıştırılabilir dosyası bulunamadı."
+        return False, "No game executable found."
     if g.bitness not in (32, 64):
-        return False, "Mimari okunamadı."
+        return False, "Could not read the architecture."
     if g.api == "Vulkan":
-        return False, ("Vulkan oyunları otomatik kurulmuyor: ReShade'in Vulkan katmanını "
-                       "sistem genelinde kaydetmesi gerekir. ReShade kurulumunu elle "
-                       "çalıştırıp Vulkan'ı seç, sonra bu aracı tekrar aç.")
+        return False, ("Vulkan games are not set up automatically: ReShade's Vulkan "
+                       "layer has to be registered system-wide. Run the ReShade "
+                       "installer manually, choose Vulkan, then come back.")
     if g.api == "DX9":
         if g.bitness != 32:
-            return False, "64-bit DirectX 9 oyunu desteklenmiyor (çok nadir)."
-        return True, ""       # dgVoodoo2 otomatik kurulur, sonrası 32-bit yol
+            return False, "64-bit DirectX 9 games are not supported (very rare)."
+        return True, ""
     return True, ""
+
+
+def _backup(dst: Path, rep: Report, root: Path) -> None:
+    """Preserve the game's own file before overwriting it.
+
+    If the game ships its own nvngx_dlss.dll and we replace it, uninstalling
+    must be able to put it back - otherwise the game loses its DLSS for good.
+    """
+    if not dst.is_file():
+        return
+    bak = dst.with_name(dst.name + BACKUP_SUFFIX)
+    if bak.exists():
+        return                      # already backed up on an earlier install
+    try:
+        shutil.copy2(dst, bak)
+        rep.written.append(str(bak.relative_to(root)))
+        rep.notes.append(f"backed up the game's own {dst.name}")
+    except OSError:
+        pass
 
 
 def _copy(src: Path, dst: Path, rep: Report, root: Path) -> None:
@@ -106,23 +158,23 @@ def _copy(src: Path, dst: Path, rep: Report, root: Path) -> None:
         rep.written.append(str(dst))
 
 
-# ----------------------------------------------------------------- plan
+# ---------------------------------------------------------------- plan
 
 def plan(g: games.Game, opt: Options) -> list[str]:
     steps: list[str] = []
     if g.api == "DX9":
         steps.append("dgVoodoo2 (DX9 -> D3D11)")
-    steps += ["ReShade", "ReShade shader başlıkları", "DLSS5-Feeder"]
+    steps += ["ReShade", "ReShade shader headers", "DLSS5-Feeder"]
     if opt.provider in (3, 4):
-        steps.append("LumeniteFX (hareket vektörleri)")
-    steps += ["DLSS 5 eklentisi (renodx)", "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
+        steps.append("LumeniteFX (motion vectors)")
+    steps += ["DLSS 5 add-on (renodx)", "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
     if g.bitness == 32:
-        steps.append("host64 yardımcı süreç")
-    steps += ["ReShade ayarları", "dlss5-feed.cfg"]
+        steps.append("host64 helper process")
+    steps += ["ReShade configuration", "dlss5-feed.cfg"]
     return steps
 
 
-# ----------------------------------------------------------------- kurulum
+# ---------------------------------------------------------------- install
 
 def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None) -> Report:
     ok, why = check_supported(g)
@@ -139,12 +191,16 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     proxy = _proxy_name(g.api)
     host = root / HOST_DIR
 
-    # Baska bir enjektor var mi?
+    level, why_rel = reliability(g)
+    if level != STABLE:
+        rep.warnings.append(f"{level}: {why_rel}")
+
+    # Is another injector already in place?
     existing = root / proxy
     if existing.is_file() and not _is_reshade(existing):
         raise InstallError(
-            f"{proxy} zaten var ama ReShade değil (DXVK, Special K veya başka bir "
-            f"enjektör olabilir). Önce onu kaldır, sonra tekrar dene.")
+            f"{proxy} already exists but is not ReShade (DXVK, Special K or "
+            f"another injector?). Remove it first, then try again.")
 
     steps = plan(g, opt)
     n = len(steps)
@@ -163,32 +219,31 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                       + (f" / {net.human(total)}" if total else ""))
         return net.download(url, fname, progress=p)
 
-    # --- 0) DX9 ise once dgVoodoo2 ---------------------------------------
-    # Oyun D3D9.dll'i dgVoodoo2'den alacak, o da D3D11'e cevirecek; ReShade
-    # bu yuzden d3d9.dll degil dxgi.dll olarak kurulur.
+    # --- 0) DX9 needs dgVoodoo2 first -------------------------------------
     if g.api == "DX9":
         begin("dgVoodoo2 (DX9 -> D3D11)")
         for f in dgvoodoo.install(root, log):
             rep.written.append(f)
-        rep.notes.append("dgVoodoo2 kuruldu (DX9 -> D3D11). Oyun açılmazsa "
-                         "dgVoodooCpl.exe ile VRAM'i artır.")
+        rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
+                         "not start, raise VRAM with dgVoodooCpl.exe.")
 
     # --- 1) ReShade -------------------------------------------------------
     begin("ReShade")
     ver, url = sources.resolve_reshade()
     setup = dl(url, f"ReShade_Setup_{ver}_Addon.exe")
     log(f"      ReShade {ver}")
-    # Kurulum exesinin sonuna eklenmis zip: ReShade32.dll ve ReShade64.dll birlikte gelir.
+    # The installer exe has a zip appended: both ReShade32.dll and ReShade64.dll.
+    _backup(root / proxy, rep, root)
     net.extract_one(setup, "ReShade64.dll" if x64 else "ReShade32.dll", root / proxy)
     rep.written.append(proxy)
     log(f"      {proxy} <- ReShade{'64' if x64 else '32'}.dll")
     if not x64:
         net.extract_one(setup, "ReShade64.dll", host / "dxgi.dll")
         rep.written.append(f"{HOST_DIR}/dxgi.dll")
-        log(f"      {HOST_DIR}/dxgi.dll <- ReShade64.dll (yardımcı süreç için)")
+        log(f"      {HOST_DIR}/dxgi.dll <- ReShade64.dll (for the helper process)")
 
-    # --- 2) Shader basliklari --------------------------------------------
-    begin("ReShade shader başlıkları")
+    # --- 2) shader headers ------------------------------------------------
+    begin("ReShade shader headers")
     for h in sources.RESHADE_HEADERS:
         dest = root / SHADERS / h
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -203,7 +258,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
     for name in (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ()):
         if name not in assets:
-            raise InstallError(f"DLSS5-Feeder sürümünde {name} yok.")
+            raise InstallError(f"The DLSS5-Feeder release has no {name}.")
         f = dl(assets[name], f"{tag}-{name}")
         dest = (root / SHADERS / name) if name.endswith(".fx") else \
                (host / name if name == FEEDER_HOST else root / name)
@@ -212,109 +267,134 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
     # --- 4) LumeniteFX ----------------------------------------------------
     if opt.provider in (3, 4):
-        begin("LumeniteFX (hareket vektörleri)")
+        begin("LumeniteFX (motion vectors)")
         z = dl(sources.LUMENITE_ZIP, "LumeniteFX-mainline.zip")
         w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",))
         w += net.extract_tree(z, "Shaders/include", str(INCLUDE), root, only_ext=(".fxh",))
         w += net.extract_tree(z, "Textures", str(TEXTURES), root, only_ext=(".png",))
         for p_ in w:
             rep.written.append(str(p_.relative_to(root)))
-        log(f"      {len(w)} dosya (shader + include + doku)")
+        log(f"      {len(w)} files (shaders + includes + texture)")
 
-    # --- 5/6/7) DLSS parcalari -------------------------------------------
-    # 32-bit yolda bunlar host64/ icine, 64-bit yolda oyunun yanina gider.
+    # --- 5/6/7) DLSS parts ------------------------------------------------
+    # On the 32-bit path these live in host64/, otherwise next to the game.
     dlss_dir = root if x64 else host
     catalog = sources.rhi_catalog()
 
-    begin("DLSS 5 eklentisi (renodx)")
-    # Kullanici acikca bir dosya vermediyse bile yerelde bir renodx varsa onu
-    # kullan: Discord'dan gelen surumler aynada bulunmuyor ve genelde daha yeni.
+    begin("DLSS 5 add-on (renodx)")
+    # Even without an explicit choice, prefer a local build if one exists:
+    # Discord releases are not on the mirror.
     if not opt.renodx_local and not opt.renodx:
         found, _ = prefs.find_renodx()
         if found:
             opt.renodx_local = found
-            log(f"      yerel renodx bulundu: {found.name}")
+            log(f"      found a local renodx build: {found.name}")
     if opt.renodx_local:
         src = Path(opt.renodx_local)
         if not src.is_file():
-            raise InstallError(f"Seçilen renodx dosyası bulunamadı: {src}")
+            raise InstallError(f"Selected renodx file not found: {src}")
         try:
             if pe.exe_bitness(src) != 64:
-                raise InstallError("Seçilen renodx dosyası 64-bit değil.")
+                raise InstallError("The selected renodx file is not 64-bit.")
         except pe.PEError as e:
-            raise InstallError(f"Seçilen renodx dosyası geçerli değil: {e}") from e
+            raise InstallError(f"The selected renodx file is not valid: {e}") from e
         _copy(src, dlss_dir / RENODX, rep, root)
-        log(f"      {src.name} (yerel dosyan) -> {RENODX}")
-        rep.notes.append(f"renodx: yerel dosya kullanıldı ({src.name})")
+        log(f"      {src.name} (your local file) -> {RENODX}")
+        rep.notes.append(f"renodx: local file used ({src.name})")
     else:
         e = sources.pick(catalog["renodx"], opt.renodx)
         f = dl(e["url"], f"renodx-{e['label']}.zip")
         net.extract_one(f, ".addon64", dlss_dir / RENODX)
         rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
         log(f"      renodx-dlss5 {e['label']}")
-        rep.notes.append(f"renodx sürümü: {e['label']}")
+        rep.notes.append(f"renodx version: {e['label']}")
 
     begin("nvngx_dlssnr.dll")
-    e = sources.pick(catalog["dlssnr"], opt.dlssnr)
-    f = dl(e["url"], f"dlssnr-{e['label']}.zip")
-    net.extract_one(f, DLSSNR, dlss_dir / DLSSNR)
+    card, sm = gpu.detect()
+    if card:
+        log(f"      graphics card: {card} ({gpu.label(sm)})")
+    else:
+        log("      no NVIDIA card detected")
+
+    # Some builds of the leaked library are compiled for one architecture only
+    # (310.8.0 is RTX 50 only, for instance). When the user has not pinned a
+    # version we find the newest build that actually supports this card:
+    # download, inspect, and move down the list if it does not match.
+    tried: list[str] = []
+    chosen = None
+    candidates = ([sources.pick(catalog["dlssnr"], opt.dlssnr)] if opt.dlssnr
+                  else catalog["dlssnr"])
+    for e in candidates:
+        f = dl(e["url"], f"dlssnr-{e['label']}.zip")
+        net.extract_one(f, DLSSNR, dlss_dir / DLSSNR)
+        compat, why_gpu = gpu.check(dlss_dir / DLSSNR, sm)
+        if compat is False and not opt.ignore_gpu_mismatch:
+            if opt.dlssnr:
+                raise InstallError(
+                    f"Build {e['label']} will not run on {card or 'your card'}.\n\n"
+                    f"{why_gpu}\n\nLeave the version on Auto and the tool picks "
+                    f"the newest build that supports your card.")
+            tried.append(e["label"])
+            log(f"      skipped {e['label']} - {why_gpu}")
+            continue
+        chosen = (e, compat, why_gpu)
+        break
+
+    if chosen is None:
+        raise InstallError(
+            f"No suitable nvngx_dlssnr build found for {card or 'your card'}.\n\n"
+            f"Tried: {', '.join(tried)}\n\n"
+            f"DLSS 5 currently runs on NVIDIA RTX 20 series and newer.")
+
+    e, compat, why_gpu = chosen
     rep.written.append(str((dlss_dir / DLSSNR).relative_to(root)))
     log(f"      nvngx_dlssnr {e['label']}")
-    rep.notes.append(f"dlssnr sürümü: {e['label']}")
-
-    # Bu dosyanin icinde kartimiz icin GERCEKTEN kod var mi? Sizdirilan
-    # kutuphane surumlerinin bir kismi yalnizca RTX 50 icin derlenmis.
-    card, sm = gpu.detect()
-    compat, why = gpu.check(dlss_dir / DLSSNR, sm)
+    rep.notes.append(f"dlssnr version: {e['label']}")
+    if tried:
+        rep.notes.append(f"skipped as incompatible: {', '.join(tried)}")
     if compat is True:
-        log(f"      GPU denetimi: {card} -> {why}")
+        log(f"      GPU check: {why_gpu}")
     elif compat is False:
-        log(f"      GPU denetimi: {why}", )
-        if not opt.ignore_gpu_mismatch:
-            raise InstallError(
-                f"{e['label']} sürümü {card} ile çalışmaz.\n\n{why}\n\n"
-                f"Sürüm listesinden kartını destekleyen bir yapı seç "
-                f"(RTX 40 için '310.8.0-RTX40' ya da 'SF' yapıları).")
-        rep.warnings.append(f"dlssnr {e['label']} kartınla uyumsuz - yine de kuruldu")
+        log(f"      GPU check: {why_gpu}")
+        rep.warnings.append(f"dlssnr {e['label']} does not match your card - installed anyway")
     else:
-        rep.warnings.append(f"dlssnr GPU uyumluluğu doğrulanamadı ({why})")
+        rep.warnings.append(f"could not verify GPU compatibility ({why_gpu})")
 
     begin("nvngx_dlss.dll")
     game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
     if x64 and game_has and opt.keep_game_dlss:
-        log("      oyunun kendi nvngx_dlss.dll'i var, dokunulmadı")
+        log("      the game ships its own nvngx_dlss.dll, left untouched")
         rep.skipped.append(DLSS)
     else:
         e = sources.pick(catalog["dlss"], opt.dlss)
         f = dl(e["url"], f"dlss-{e['label']}.zip")
+        _backup(dlss_dir / DLSS, rep, root)
         net.extract_one(f, DLSS, dlss_dir / DLSS)
         rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
         log(f"      nvngx_dlss {e['label']}")
-        rep.notes.append(f"dlss sürümü: {e['label']}")
+        rep.notes.append(f"dlss version: {e['label']}")
 
-    # --- 8) host64 ayarlari ----------------------------------------------
+    # --- 8) host64 --------------------------------------------------------
     if not x64:
-        begin("host64 yardımcı süreç")
+        begin("host64 helper process")
         reshade_ini.write_addon_only_ini(host)
         rep.written.append(f"{HOST_DIR}/ReShade.ini")
-        log(f"      {HOST_DIR}/ hazır (ReShade + DLSS parçaları içinde)")
+        log(f"      {HOST_DIR}/ ready (ReShade + DLSS parts inside)")
 
-    # --- 9) ReShade ayarlari ---------------------------------------------
-    begin("ReShade ayarları")
+    # --- 9) ReShade configuration ----------------------------------------
+    begin("ReShade configuration")
     reshade_ini.write_reshade_ini(root, opt.provider)
     reshade_ini.write_preset(root, opt.provider)
     rep.written += ["ReShade.ini", "ReShadePreset.ini"]
     label, tech, _ = reshade_ini.PROVIDERS[opt.provider]
     log(f"      DLSS5_MV_PROVIDER={opt.provider} ({label})")
     if tech:
-        log(f"      teknik sırası: {tech} -> {reshade_ini.FEED_TECHNIQUE}")
+        log(f"      technique order: {tech} -> {reshade_ini.FEED_TECHNIQUE}")
     else:
-        rep.notes.append("Seçtiğin sağlayıcının shader'ını kendin kurmalısın; "
-                         "tekniğini ReShade'de DLSS 5 Feed'in ÜSTÜNE al.")
+        rep.notes.append("You must install your chosen provider's shader yourself, "
+                         "and place its technique ABOVE DLSS 5 Feed in ReShade.")
 
     # --- 10) dlss5-feed.cfg ----------------------------------------------
-    # Eklenti bu dosyayi kendi de olusturur; onceden yazarsak ilk acilista
-    # dogru ayarlarla baslar. 32-bit yolda cfg eklentinin yaninda durur.
     begin("dlss5-feed.cfg")
     feedcfg.write(root, opt.feed, host_window=None if x64 else True)
     rep.written.append(feedcfg.NAME)
@@ -324,31 +404,32 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             log(f"      {s}")
         rep.notes += summary
     else:
-        log("      varsayılan ayarlar (work_resolution=100, preset=0)")
+        log("      defaults (work_resolution=100, preset=0)")
 
-    # --- kayit ------------------------------------------------------------
+    # --- record -----------------------------------------------------------
     (root / MANIFEST).write_text(json.dumps({
-        "surum": 1,
+        "version": 1,
         "exe": g.exe.name,
-        "mimari": g.bitness,
+        "bitness": g.bitness,
         "api": g.api,
         "proxy": proxy,
-        "saglayici": opt.provider,
-        "dosyalar": rep.written,
-        "atlananlar": rep.skipped,
-        "notlar": rep.notes,
-        "uyarilar": rep.warnings,
+        "provider": opt.provider,
+        "reliability": level,
+        "files": rep.written,
+        "skipped": rep.skipped,
+        "notes": rep.notes,
+        "warnings": rep.warnings,
         "feed_cfg": opt.feed,
     }, ensure_ascii=False, indent=2), encoding="utf8")
 
-    prog(100, "Bitti")
+    prog(100, "Done")
     return rep
 
 
-# ----------------------------------------------------------------- kaldirma
+# ---------------------------------------------------------------- uninstall
 
 def uninstall(g: games.Game, on_log=None) -> list[str]:
-    """Sadece bu aracin yazdigi dosyalari siler; oyunun kendi dosyalarina dokunmaz."""
+    """Remove only what this tool wrote; never touch the game's own files."""
     log = on_log or (lambda *_: None)
     root = g.install_dir
     man = root / MANIFEST
@@ -357,37 +438,50 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     if man.is_file():
         try:
             data = json.loads(man.read_text(encoding="utf8"))
-            files = data.get("dosyalar", [])
+            files = data.get("files", [])
         except (OSError, json.JSONDecodeError):
             files = []
     else:
-        # Kayit yoksa bilinen adlarla temizle
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, DLSSNR, feedcfg.NAME,
-                 "dxgi.dll", "opengl32.dll",
-                 str(SHADERS / FEEDER_FX)]
-        log("Kurulum kaydı yok; bilinen dosya adlarıyla temizleniyor.")
+                 "dxgi.dll", "opengl32.dll", str(SHADERS / FEEDER_FX)]
+        log("No install record found; cleaning up by known filenames.")
 
+    # Restore backups first, then delete the rest
+    for rel in list(files):
+        if not rel.endswith(BACKUP_SUFFIX):
+            continue
+        bak = root / rel
+        orig = bak.with_name(bak.name[:-len(BACKUP_SUFFIX)])
+        try:
+            if bak.is_file():
+                shutil.copy2(bak, orig)
+                bak.unlink()
+                removed.append(rel)
+                log(f"restored: {orig.name} (the game's own file)")
+        except OSError as e:
+            log(f"could not restore: {orig.name} ({e})")
+
+    restored = {rel[:-len(BACKUP_SUFFIX)] for rel in files if rel.endswith(BACKUP_SUFFIX)}
     for rel in files:
+        if rel.endswith(BACKUP_SUFFIX) or rel in restored:
+            continue
         p = root / rel
         try:
             if p.is_file():
                 p.unlink()
                 removed.append(rel)
-                log(f"silindi: {rel}")
+                log(f"removed: {rel}")
         except OSError as e:
-            log(f"silinemedi: {rel} ({e})")
+            log(f"could not remove: {rel} ({e})")
 
-    # host64 klasoru tamamen bizim
     hostdir = root / HOST_DIR
     if hostdir.is_dir():
         shutil.rmtree(hostdir, ignore_errors=True)
         removed.append(HOST_DIR + "/")
-        log(f"silindi: {HOST_DIR}/")
+        log(f"removed: {HOST_DIR}/")
 
-    # Preset'ten tekniklerimizi cikar, kullanicininkileri birak
     reshade_ini.remove_our_techniques(root)
 
-    # Bos kalan shader klasorlerini topla
     for d in (root / INCLUDE, root / SHADERS, root / TEXTURES,
               root / "reshade-shaders"):
         try:
@@ -397,5 +491,5 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             pass
 
     man.unlink(missing_ok=True)
-    log(f"Toplam {len(removed)} öğe kaldırıldı.")
+    log(f"Removed {len(removed)} items.")
     return removed

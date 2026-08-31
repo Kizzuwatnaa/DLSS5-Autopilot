@@ -1,8 +1,8 @@
-"""tkinter arayuzu - 3 adimli sihirbaz.
+"""tkinter interface - a three step wizard.
 
-Adim 1: mimari (64-bit / 32-bit / hepsi)
-Adim 2: taranan oyunlardan secim
-Adim 3: ayarlar + kurulum
+Step 1: architecture filter (64-bit / 32-bit / all)
+Step 2: pick a game from the scan
+Step 3: settings + install
 """
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import feedcfg, games, gpu, installer, net, pe, prefs, reshade_ini, sources
+from . import (feedcfg, games, gpu, installer, prefs, reshade_ini, sources,
+               update)
 
-APP = "DLSS 5 Kurulum Aracı"
+APP = "DLSS 5 Autopilot"
 
 BG      = "#14161a"
 PANEL   = "#1c1f26"
@@ -37,7 +38,7 @@ class App:
         self.q: queue.Queue = queue.Queue()
         self.busy = False
 
-        self.arch = tk.StringVar(value="hepsi")
+        self.arch = tk.StringVar(value="all")
         self.all_games: list[games.Game] = []
         self.shown: list[games.Game] = []
         self.game: games.Game | None = None
@@ -45,21 +46,20 @@ class App:
         self.renodx_local: Path | None = None
 
         self.provider = tk.IntVar(value=3)
-        self.renodx_v = tk.StringVar()
-        self.dlssnr_v = tk.StringVar()
-        self.dlss_v = tk.StringVar()
         self.keep_dlss = tk.BooleanVar(value=True)
+        self.workres = tk.IntVar(value=100)
 
         self._build()
         self._show(1)
         self.root.after(60, self._pump)
+        self._check_update()
 
-    # ------------------------------------------------------------- iskelet
+    # ------------------------------------------------------------- chrome
     def _build(self) -> None:
         r = self.root
         r.title(APP)
-        r.geometry("960x780")
-        r.minsize(880, 660)
+        r.geometry("980x800")
+        r.minsize(900, 680)
         r.configure(bg=BG)
 
         st = ttk.Style()
@@ -70,13 +70,11 @@ class App:
         st.configure(".", background=BG, foreground=TXT, fieldbackground=PANEL2,
                      bordercolor=LINE, lightcolor=PANEL, darkcolor=PANEL)
         st.configure("TFrame", background=BG)
-        st.configure("Panel.TFrame", background=PANEL)
         st.configure("TLabel", background=BG, foreground=TXT, font=("Segoe UI", 10))
-        st.configure("Panel.TLabel", background=PANEL, foreground=TXT)
         st.configure("H1.TLabel", font=("Segoe UI Semibold", 17), foreground=TXT)
-        st.configure("H2.TLabel", font=("Segoe UI Semibold", 12), foreground=TXT)
         st.configure("Muted.TLabel", foreground=MUTED, font=("Segoe UI", 9))
-        st.configure("MutedP.TLabel", background=PANEL, foreground=MUTED, font=("Segoe UI", 9))
+        st.configure("MutedP.TLabel", background=PANEL, foreground=MUTED,
+                     font=("Segoe UI", 9))
         st.configure("TButton", background=PANEL2, foreground=TXT, borderwidth=0,
                      focuscolor=PANEL2, padding=(14, 8), font=("Segoe UI", 10))
         st.map("TButton", background=[("active", LINE), ("disabled", PANEL)],
@@ -85,12 +83,11 @@ class App:
                      font=("Segoe UI Semibold", 10), padding=(18, 9))
         st.map("Accent.TButton", background=[("active", "#6cb6ff"), ("disabled", LINE)],
                foreground=[("disabled", MUTED)])
-        st.configure("TRadiobutton", background=PANEL, foreground=TXT, font=("Segoe UI", 10))
+        st.configure("TRadiobutton", background=PANEL, foreground=TXT,
+                     font=("Segoe UI", 10))
         st.map("TRadiobutton", background=[("active", PANEL)])
-        st.configure("TCheckbutton", background=BG, foreground=TXT, font=("Segoe UI", 10))
-        st.map("TCheckbutton", background=[("active", BG)])
-        st.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TXT,
-                     rowheight=27, borderwidth=0, font=("Segoe UI", 10))
+        st.configure("Treeview", background=PANEL, fieldbackground=PANEL,
+                     foreground=TXT, rowheight=27, borderwidth=0, font=("Segoe UI", 10))
         st.configure("Treeview.Heading", background=PANEL2, foreground=MUTED,
                      borderwidth=0, font=("Segoe UI Semibold", 9))
         st.map("Treeview", background=[("selected", ACCENT)],
@@ -98,7 +95,6 @@ class App:
         st.map("Treeview.Heading", background=[("active", LINE)])
         st.configure("TCombobox", fieldbackground=PANEL2, background=PANEL2,
                      foreground=TXT, arrowcolor=TXT, padding=6)
-        # readonly durumunda ttk metni soluklastiriyor; okunur hale getir
         st.map("TCombobox",
                fieldbackground=[("readonly", PANEL2), ("disabled", PANEL)],
                background=[("readonly", PANEL2)],
@@ -113,20 +109,37 @@ class App:
         st.configure("TProgressbar", background=ACCENT, troughcolor=PANEL2,
                      borderwidth=0, thickness=8)
 
-        # baslik
         head = tk.Frame(r, bg=BG)
         head.pack(fill="x", padx=22, pady=(18, 6))
-        tk.Label(head, text="DLSS 5", bg=BG, fg=ACCENT,
-                 font=("Segoe UI Black", 20)).pack(side="left")
-        tk.Label(head, text="  Kurulum Aracı", bg=BG, fg=TXT,
-                 font=("Segoe UI Light", 20)).pack(side="left")
+        logo = tk.Label(head, text="DLSS 5", bg=BG, fg=ACCENT,
+                        font=("Segoe UI Black", 20), cursor="hand2")
+        logo.pack(side="left")
+        name = tk.Label(head, text="  Autopilot", bg=BG, fg=TXT,
+                        font=("Segoe UI Light", 20), cursor="hand2")
+        name.pack(side="left")
+        for w in (logo, name):                      # clicking the logo goes home
+            w.bind("<Button-1>", lambda e: self._home())
         self.steplbl = tk.Label(head, text="", bg=BG, fg=MUTED, font=("Segoe UI", 10))
         self.steplbl.pack(side="right")
 
+        # Update banner, hidden until a newer release is found
+        self.banner = tk.Frame(r, bg="#1e3a5f")
+        self.bannerlbl = tk.Label(self.banner, text="", bg="#1e3a5f", fg=TXT,
+                                  font=("Segoe UI", 9), anchor="w")
+        self.bannerlbl.pack(side="left", padx=14, pady=7)
+        close = tk.Label(self.banner, text="X", bg="#1e3a5f", fg=MUTED,
+                         cursor="hand2", font=("Segoe UI", 9))
+        close.pack(side="right", padx=(0, 12))
+        close.bind("<Button-1>", lambda e: self.banner.pack_forget())
+        self.bannerbtn = tk.Label(self.banner, text="Open download page >",
+                                  bg="#1e3a5f", fg=ACCENT, cursor="hand2",
+                                  font=("Segoe UI Semibold", 9))
+        self.bannerbtn.pack(side="right", padx=14)
+
         tk.Frame(r, bg=LINE, height=1).pack(fill="x", padx=22, pady=(4, 0))
 
-        # Alt cubuk govdeden ONCE ve alta sabitlenir: govde buyuse de
-        # KUR dugmesi asla kirpilmaz.
+        # The footer is packed BEFORE the body and pinned to the bottom, so a
+        # growing body can never clip the action button.
         foot = tk.Frame(r, bg=BG)
         foot.pack(side="bottom", fill="x", padx=22, pady=12)
         tk.Frame(r, bg=LINE, height=1).pack(side="bottom", fill="x", padx=22)
@@ -137,87 +150,130 @@ class App:
         self.p1 = self._page_arch()
         self.p2 = self._page_games()
         self.p3 = self._page_install()
-        self.status = tk.Label(foot, text="Hazır", bg=BG, fg=MUTED,
+
+        self.status = tk.Label(foot, text="Ready", bg=BG, fg=MUTED,
                                font=("Segoe UI", 9), anchor="w")
         self.status.pack(side="left", fill="x", expand=True)
-        self.btn_back = ttk.Button(foot, text="< Geri", command=self._back)
+        self.btn_home = ttk.Button(foot, text="Start over", command=self._home)
+        self.btn_home.pack(side="left", padx=(0, 8))
+        self.btn_back = ttk.Button(foot, text="< Back", command=self._back)
         self.btn_back.pack(side="left", padx=(0, 8))
-        self.btn_next = ttk.Button(foot, text="Devam >", style="Accent.TButton",
+        self.btn_next = ttk.Button(foot, text="Continue >", style="Accent.TButton",
                                    command=self._next)
         self.btn_next.pack(side="right")
+
+        r.bind("<Escape>", lambda e: self._home())
+        r.bind("<Control-h>", lambda e: self._home())
+
+    def _home(self) -> None:
+        """Return to step 1 from anywhere: logo, button, Esc or Ctrl+H."""
+        if self.busy:
+            return
+        self._show(1)
 
     def _show(self, step: int) -> None:
         self.step = step
         for p in (self.p1, self.p2, self.p3):
             p.pack_forget()
         [self.p1, self.p2, self.p3][step - 1].pack(fill="both", expand=True)
-        self.steplbl.config(text=f"Adım {step} / 3")
+        self.steplbl.config(text=f"Step {step} of 3   ·   Esc = start over")
         self.btn_back.config(state="normal" if step > 1 else "disabled")
+        self.btn_home.config(state="normal" if step > 1 else "disabled")
         if step == 1:
-            self.btn_next.config(text="Oyunları tara >", state="normal")
+            self.btn_next.config(text="Scan games >", state="normal")
         elif step == 2:
-            self.btn_next.config(text="Devam >",
+            self.btn_next.config(text="Continue >",
                                  state="normal" if self.game else "disabled")
         else:
-            self.btn_next.config(text="KUR", state="normal")
+            self.btn_next.config(text="INSTALL", state="normal")
 
-    # ------------------------------------------------------------- adim 1
+    # ------------------------------------------------------------- updates
+    def _check_update(self) -> None:
+        def work() -> None:
+            newer, latest, url = update.check()
+            if newer:
+                self.q.put(("update", (latest, url)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_banner(self, latest: str, url: str) -> None:
+        self.bannerlbl.config(
+            text=f"Version {latest} is available - you are running {update.VERSION}.")
+        self.bannerbtn.bind("<Button-1>", lambda e: webbrowser.open(url))
+        self.banner.pack(fill="x", padx=22, pady=(2, 0), before=self.body)
+
+    # ------------------------------------------------------------- step 1
     def _page_arch(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
-        ttk.Label(f, text="Hangi mimari için kuracaksın?", style="H1.TLabel")\
-            .pack(anchor="w", pady=(10, 4))
-        ttk.Label(f, text="Oyunun 32-bit mi 64-bit mi olduğunu bilmiyorsan "
-                          "'Hepsini göster'i seç — araç her oyunun mimarisini "
-                          "kendisi okuyup yazacak.", style="Muted.TLabel")\
-            .pack(anchor="w", pady=(0, 18))
+        ttk.Label(f, text="Which architecture are you installing for?",
+                  style="H1.TLabel").pack(anchor="w", pady=(10, 4))
+        ttk.Label(f, text="If you do not know whether the game is 32-bit or 64-bit, "
+                          "choose \"Show everything\" - the tool reads each game's "
+                          "architecture itself.", style="Muted.TLabel")\
+            .pack(anchor="w", pady=(0, 16))
 
         opts = [
-            ("hepsi", "Hepsini göster",
-             "Bütün oyunları listele, mimarisini yanlarında göster. Önerilen."),
-            ("64", "Sadece 64-bit oyunlar",
-             "Standart yol. ReShade + DLSS 5 eklentisi doğrudan oyunun yanına kurulur."),
-            ("32", "Sadece 32-bit oyunlar",
-             "32-bit süreç 64-bit NGX yükleyemez; ayrıca bir host64 yardımcı "
-             "süreci kurulur. DLSS5-Feeder bu yolu BETA olarak işaretliyor."),
+            ("all", "Show everything",
+             "List every game with its architecture beside it. Recommended."),
+            ("64", "64-bit games only",
+             "The standard path. ReShade and the DLSS 5 add-on go straight next "
+             "to the game."),
+            ("32", "32-bit games only",
+             "A 32-bit process cannot load 64-bit NGX, so a host64 helper process "
+             "is installed too. Experimental - it often fails to start."),
         ]
         for val, title, desc in opts:
             card = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
             card.pack(fill="x", pady=5)
-            rb = ttk.Radiobutton(card, text=title, value=val, variable=self.arch)
-            rb.pack(anchor="w", padx=16, pady=(12, 2))
-            ttk.Label(card, text=desc, style="MutedP.TLabel", wraplength=800,
+            ttk.Radiobutton(card, text=title, value=val, variable=self.arch)\
+                .pack(anchor="w", padx=16, pady=(12, 2))
+            ttk.Label(card, text=desc, style="MutedP.TLabel", wraplength=820,
                       justify="left").pack(anchor="w", padx=38, pady=(0, 12))
+
+        note = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
+        note.pack(fill="x", pady=(14, 0))
+        tk.Label(note, text="Reality check", bg=PANEL, fg=WARN,
+                 font=("Segoe UI Semibold", 10)).pack(anchor="w", padx=16, pady=(12, 2))
+        tk.Label(note, bg=PANEL, fg=MUTED, font=("Segoe UI", 9), justify="left",
+                 wraplength=870,
+                 text="DLSS 5 feeding works reliably on DirectX 10/11/12 only. "
+                      "DirectX 9, OpenGL and every 32-bit game go through extra "
+                      "translation or a helper process, and the DLSS feature often "
+                      "fails to create on those paths. They are offered here, but "
+                      "expect them to be hit and miss.")\
+            .pack(anchor="w", padx=16, pady=(0, 12))
         return f
 
-    # ------------------------------------------------------------- adim 2
+    # ------------------------------------------------------------- step 2
     def _page_games(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
         top = tk.Frame(f, bg=BG)
         top.pack(fill="x")
-        ttk.Label(top, text="Oyunu seç", style="H1.TLabel").pack(side="left")
-        ttk.Button(top, text="Klasör seç...", command=self._pick_folder)\
+        ttk.Label(top, text="Pick a game", style="H1.TLabel").pack(side="left")
+        ttk.Button(top, text="Choose folder...", command=self._pick_folder)\
             .pack(side="right", padx=(8, 0))
-        ttk.Button(top, text="Yeniden tara", command=self._scan).pack(side="right")
+        ttk.Button(top, text="Rescan", command=self._scan).pack(side="right")
 
         self.scanlbl = ttk.Label(f, text="", style="Muted.TLabel")
         self.scanlbl.pack(anchor="w", pady=(4, 8))
 
         wrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
         wrap.pack(fill="both", expand=True)
-        cols = ("kaynak", "mimari", "api", "durum")
+        cols = ("source", "arch", "api", "outlook", "status")
         self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings", height=13)
-        self.tree.heading("#0", text="OYUN")
-        self.tree.column("#0", width=340, anchor="w")
-        for c, t, w in (("kaynak", "KAYNAK", 80), ("mimari", "MİMARİ", 80),
-                        ("api", "API", 110), ("durum", "DURUM", 190)):
+        self.tree.heading("#0", text="GAME")
+        self.tree.column("#0", width=290, anchor="w")
+        for c, t, w in (("source", "SOURCE", 80), ("arch", "ARCH", 70),
+                        ("api", "API", 90), ("outlook", "OUTLOOK", 110),
+                        ("status", "STATUS", 110)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="w")
         sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
-        self.tree.tag_configure("kurulu", foreground=OK)
-        self.tree.tag_configure("yok", foreground=WARN)
+        self.tree.tag_configure("installed", foreground=OK)
+        self.tree.tag_configure("unsupported", foreground=ERR)
+        self.tree.tag_configure("shaky", foreground=WARN)
         self.tree.bind("<<TreeviewSelect>>", self._on_pick)
         self.tree.bind("<Double-1>", lambda e: self._next())
 
@@ -227,12 +283,12 @@ class App:
         return f
 
     def _pick_folder(self) -> None:
-        d = filedialog.askdirectory(title="Oyun klasörünü seç")
+        d = filedialog.askdirectory(title="Select the game folder")
         if not d:
             return
         g = games.manual(Path(d))
         if not g.exe:
-            messagebox.showwarning(APP, f"Bu klasörde çalıştırılabilir bulunamadı:\n{d}")
+            messagebox.showwarning(APP, f"No executable found in:\n{d}")
             return
         self.all_games.insert(0, g)
         self._fill()
@@ -247,7 +303,7 @@ class App:
             return
         self.busy = True
         self.tree.delete(*self.tree.get_children())
-        self.scanlbl.config(text="Taranıyor...")
+        self.scanlbl.config(text="Scanning...")
         self.btn_next.config(state="disabled")
 
         def work() -> None:
@@ -262,24 +318,28 @@ class App:
         self.tree.delete(*self.tree.get_children())
         a = self.arch.get()
         self.shown = [g for g in self.all_games
-                      if g.exe and (a == "hepsi" or str(g.bitness) == a)]
+                      if g.exe and (a == "all" or str(g.bitness) == a)]
         for i, g in enumerate(self.shown):
-            ok, why = installer.check_supported(g)
-            if g.installed:
-                durum, tag = "Kurulu", "kurulu"
-            elif not ok:
-                durum, tag = "Desteklenmiyor", "yok"
+            ok, _ = installer.check_supported(g)
+            level, _ = installer.reliability(g)
+            outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
+                       installer.EXPERIMENTAL: "often fails"}[level]
+            if not ok:
+                status, tag, outlook = "Not supported", "unsupported", "-"
+            elif g.installed:
+                status, tag = "Installed", "installed"
             else:
-                durum, tag = "Kurulabilir", ""
+                status = "Ready"
+                tag = "shaky" if level == installer.EXPERIMENTAL else ""
             self.tree.insert("", "end", iid=str(i), text="  " + g.name,
-                             values=(g.source, g.bit_label, g.api, durum),
+                             values=(g.source, g.bit_label, g.api, outlook, status),
                              tags=(tag,) if tag else ())
         hidden = len([g for g in self.all_games if not g.exe])
-        msg = f"{len(self.shown)} oyun listeleniyor"
-        if a != "hepsi":
-            msg += f" ({a}-bit filtresi açık)"
+        msg = f"{len(self.shown)} games listed"
+        if a != "all":
+            msg += f" ({a}-bit filter on)"
         if hidden:
-            msg += f"  ·  {hidden} klasörde çalıştırılabilir bulunamadı (kurulu değil)"
+            msg += f"  -  {hidden} folders had no executable (not installed)"
         self.scanlbl.config(text=msg)
         self.game = None
         self.detail.config(text="")
@@ -292,21 +352,25 @@ class App:
         g = self.shown[int(sel[0])]
         self.game = g
         ok, why = installer.check_supported(g)
+        level, why_rel = installer.reliability(g)
         proxy = installer._proxy_name(g.api)
-        lines = [f"exe    : {g.exe}",
-                 f"mimari : {g.bit_label}   API: {g.api}  ({g.api_why})"]
+        lines = [f"exe   : {g.exe}",
+                 f"arch  : {g.bit_label}   API: {g.api}  ({g.api_why})"]
         if ok:
-            lines.append(f"yol    : ReShade '{proxy}' olarak kurulacak"
-                         + ("   +  host64/ yardımcı süreç" if g.bitness == 32 else "")
+            lines.append(f"path  : ReShade installs as '{proxy}'"
+                         + ("   +  host64/ helper" if g.bitness == 32 else "")
                          + ("   +  dgVoodoo2 (DX9->D3D11)" if g.api == "DX9" else ""))
-        if getattr(g, "emu", None):
-            lines.append(f"EMÜLATÖR: {g.emu.renderer_hint}")
+            if level != installer.STABLE:
+                lines.append(f"NOTE  : {why_rel}")
         else:
-            lines.append("UYARI  : " + why)
-        self.detail.config(text="\n".join(lines), fg=MUTED if ok else WARN)
+            lines.append("NOTE  : " + why)
+        if getattr(g, "emu", None):
+            lines.append(f"EMU   : {g.emu.renderer_hint}")
+        self.detail.config(text="\n".join(lines),
+                           fg=(MUTED if level == installer.STABLE else WARN) if ok else ERR)
         self.btn_next.config(state="normal" if ok else "disabled")
 
-    # ------------------------------------------------------------- adim 3
+    # ------------------------------------------------------------- step 3
     def _page_install(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
         self.gamelbl = ttk.Label(f, text="", style="H1.TLabel")
@@ -325,53 +389,57 @@ class App:
                      font=("Segoe UI", 9)).grid(row=r, column=0, sticky="w",
                                                 padx=(0, 14), pady=5)
 
-        row(0, "Hareket vektörü")
+        self.exerow = tk.Label(inner, text="Target exe", bg=PANEL, fg=MUTED,
+                               font=("Segoe UI", 9))
+        self.cb_exe = ttk.Combobox(inner, state="readonly", values=[])
+        self.cb_exe.bind("<<ComboboxSelected>>", self._on_exe)
+
+        row(1, "Motion vectors")
         self.cb_prov = ttk.Combobox(inner, state="readonly",
                                     values=[v[0] for v in reshade_ini.PROVIDERS.values()])
         self.cb_prov.current(0)
-        self.cb_prov.grid(row=0, column=1, columnspan=2, sticky="ew", pady=5)
+        self.cb_prov.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
         self.cb_prov.bind("<<ComboboxSelected>>", self._on_prov)
 
-        row(1, "DLSS 5 eklentisi")
-        self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["yukleniyor..."])
-        self.cb_renodx.grid(row=1, column=1, sticky="ew", pady=5)
-        ttk.Button(inner, text="Kendi dosyam...", command=self._pick_renodx)\
-            .grid(row=1, column=2, sticky="w", padx=(8, 0), pady=5)
+        row(2, "DLSS 5 add-on")
+        self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["loading..."])
+        self.cb_renodx.grid(row=2, column=1, sticky="ew", pady=5)
+        ttk.Button(inner, text="Use my file...", command=self._pick_renodx)\
+            .grid(row=2, column=2, sticky="w", padx=(8, 0), pady=5)
 
-        row(2, "nvngx_dlssnr")
-        self.cb_dlssnr = ttk.Combobox(inner, state="readonly", values=["yukleniyor..."])
-        self.cb_dlssnr.grid(row=2, column=1, columnspan=2, sticky="ew", pady=5)
+        row(3, "nvngx_dlssnr")
+        self.cb_dlssnr = ttk.Combobox(inner, state="readonly",
+                                      values=["Auto (match my GPU)"])
+        self.cb_dlssnr.current(0)
+        self.cb_dlssnr.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
 
-        row(3, "nvngx_dlss")
-        self.cb_dlss = ttk.Combobox(inner, state="readonly", values=["yukleniyor..."])
-        self.cb_dlss.grid(row=3, column=1, sticky="ew", pady=5)
-        tk.Checkbutton(inner, text="oyununkini koru", variable=self.keep_dlss,
+        row(4, "nvngx_dlss")
+        self.cb_dlss = ttk.Combobox(inner, state="readonly", values=["loading..."])
+        self.cb_dlss.grid(row=4, column=1, sticky="ew", pady=5)
+        tk.Checkbutton(inner, text="keep the game's own", variable=self.keep_dlss,
                        bg=PANEL, fg=TXT, selectcolor=PANEL2, activebackground=PANEL,
                        activeforeground=TXT, font=("Segoe UI", 9), borderwidth=0)\
-            .grid(row=3, column=2, sticky="w", padx=(8, 0))
+            .grid(row=4, column=2, sticky="w", padx=(8, 0))
 
-        # --- gelismis ayarlar (dlss5-feed.cfg) ---------------------------
-        row(4, "Kalite / hız")
+        row(5, "Quality / speed")
         adv = tk.Frame(inner, bg=PANEL)
-        adv.grid(row=4, column=1, columnspan=2, sticky="ew", pady=(10, 2))
-        adv.columnconfigure(1, weight=1)
-
-        tk.Label(adv, text="İşleme alanı", bg=PANEL, fg=MUTED,
+        adv.grid(row=5, column=1, columnspan=2, sticky="ew", pady=(10, 2))
+        tk.Label(adv, text="Work area", bg=PANEL, fg=MUTED,
                  font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w")
-        self.workres = tk.IntVar(value=100)
-        self.sc_work = tk.Scale(adv, from_=50, to=100, resolution=5, orient="horizontal",
-                                variable=self.workres, bg=PANEL, fg=TXT, troughcolor=PANEL2,
+        self.sc_work = tk.Scale(adv, from_=50, to=100, resolution=5,
+                                orient="horizontal", variable=self.workres,
+                                bg=PANEL, fg=TXT, troughcolor=PANEL2,
                                 highlightthickness=0, borderwidth=0, showvalue=True,
-                                font=("Segoe UI", 8), length=240, sliderrelief="flat",
+                                font=("Segoe UI", 8), length=230, sliderrelief="flat",
                                 activebackground=ACCENT, command=self._on_workres)
         self.sc_work.grid(row=0, column=1, sticky="w", padx=(10, 10))
-        self.workhint = tk.Label(adv, text="%100 — tam kalite", bg=PANEL, fg=MUTED,
+        self.workhint = tk.Label(adv, text="100% - full quality", bg=PANEL, fg=MUTED,
                                  font=("Segoe UI", 8))
         self.workhint.grid(row=0, column=2, sticky="w")
 
         tk.Label(adv, text="DLSS preset", bg=PANEL, fg=MUTED,
                  font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.cb_preset = ttk.Combobox(adv, state="readonly", width=46,
+        self.cb_preset = ttk.Combobox(adv, state="readonly", width=44,
                                       values=list(feedcfg.PRESETS.values()))
         self.cb_preset.current(0)
         self.cb_preset.grid(row=1, column=1, columnspan=2, sticky="w",
@@ -379,19 +447,19 @@ class App:
 
         tk.Label(adv, text="HDR", bg=PANEL, fg=MUTED,
                  font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w", pady=(8, 0))
-        self.cb_hdr = ttk.Combobox(adv, state="readonly", width=20,
+        self.cb_hdr = ttk.Combobox(adv, state="readonly", width=18,
                                    values=list(feedcfg.HDR.values()))
         self.cb_hdr.current(0)
         self.cb_hdr.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
-        tk.Label(adv, text="Feeder yolu her zaman DLAA'dır (aşağıya bak)",
-                 bg=PANEL, fg=MUTED, font=("Segoe UI", 8))\
-            .grid(row=2, column=2, sticky="w", pady=(8, 0))
+        tk.Label(adv, text="the feeder path is always DLAA", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI", 8)).grid(row=2, column=2, sticky="w", pady=(8, 0))
 
         bar = tk.Frame(f, bg=BG)
         bar.pack(fill="x", pady=(12, 4))
         self.pb = ttk.Progressbar(bar, mode="determinate", maximum=100)
         self.pb.pack(fill="x")
-        self.pblbl = tk.Label(f, text="", bg=BG, fg=MUTED, font=("Segoe UI", 9), anchor="w")
+        self.pblbl = tk.Label(f, text="", bg=BG, fg=MUTED, font=("Segoe UI", 9),
+                              anchor="w")
         self.pblbl.pack(fill="x")
 
         logwrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
@@ -410,111 +478,129 @@ class App:
 
         act = tk.Frame(f, bg=BG)
         act.pack(fill="x", pady=(8, 0))
-        self.btn_remove = ttk.Button(act, text="Kurulumu kaldır", command=self._uninstall)
+        self.btn_remove = ttk.Button(act, text="Uninstall", command=self._uninstall)
         self.btn_remove.pack(side="left")
-        ttk.Button(act, text="Oyun klasörünü aç",
+        ttk.Button(act, text="Open game folder",
                    command=lambda: self.game and webbrowser.open(str(self.game.install_dir)))\
             .pack(side="left", padx=8)
+        ttk.Button(act, text="Pick another game",
+                   command=lambda: self._show(2)).pack(side="left")
         return f
 
     def _on_workres(self, _v=None) -> None:
         v = self.workres.get()
         if v == 100:
-            self.workhint.config(text="%100 - tam kalite", fg=MUTED)
+            self.workhint.config(text="100% - full quality", fg=MUTED)
         elif v >= 80:
-            self.workhint.config(text=f"%{v} - biraz daha hizli", fg=MUTED)
+            self.workhint.config(text=f"{v}% - a little faster", fg=MUTED)
         else:
-            self.workhint.config(text=f"%{v} - belirgin hiz, detay kaybi", fg=WARN)
+            self.workhint.config(text=f"{v}% - noticeably faster, softer", fg=WARN)
 
-    def _feed_settings(self) -> dict:
-        """Gelismis ayarlardan dlss5-feed.cfg sozlugu uret."""
-        s: dict = {}
-        wr = self.workres.get()
-        if wr != 100:
-            s["work_resolution"] = wr
-        keys = list(feedcfg.PRESETS.keys())
-        pi = self.cb_preset.current()
-        if pi > 0:
-            s["preset"] = keys[pi]
-        hk = list(feedcfg.HDR.keys())
-        hi = self.cb_hdr.current()
-        if hi > 0:
-            s["hdr"] = hk[hi]
-        return s
+    def _on_exe(self, _e=None) -> None:
+        """A different executable was chosen: re-detect architecture and API."""
+        g = self.game
+        if not g or not g.candidates:
+            return
+        i = self.cb_exe.current()
+        if i < 0 or i >= len(g.candidates):
+            return
+        g.exe = g.candidates[i]
+        g.emu = None
+        games.enrich(g)
+        self._set_pathlbl(g)
+        self._log(f"target exe changed -> {g.exe.name}  ({g.bit_label} {g.api}); "
+                  f"installing into {g.install_dir}", "head")
+        ok, why = installer.check_supported(g)
+        if not ok:
+            self._log(f"  not supported: {why}", "err")
+        self.btn_next.config(state="normal" if ok else "disabled")
 
     def _on_prov(self, _e=None) -> None:
         self.provider.set(list(reshade_ini.PROVIDERS.keys())[self.cb_prov.current()])
 
-    def _find_local_renodx(self) -> None:
-        """Yerel renodx addon dosyasini bul ve varsayilan yap.
-
-        Discord'dan cekilen surumler aynada olmadigi icin, bir kez secilen
-        dosya butun oyunlarda varsayilan olarak kullanilir (prefs.py).
-        """
-        found, cands = prefs.find_renodx()
-        if not found:
-            return
-        self.renodx_local = found
-        tag = f"[yerel] {found.name}"
-        vals = [v for v in self.cb_renodx["values"] if not v.startswith(("yukleniyor", "[yerel]"))]
-        self.cb_renodx["values"] = [tag] + vals
-        self.cb_renodx.set(tag)
-        self._log(f"renodx: yerel dosya kullanılacak -> {found.name} "
-                  f"({found.stat().st_size/1048576:.1f} MB)", "ok")
-        self._log(f"   {found.parent}")
-        if len(cands) > 1:
-            self._log(f"   ({len(cands)-1} yerel dosya daha bulundu; "
-                      f"başkasını istersen 'Kendi dosyam...')")
-
     def _pick_renodx(self) -> None:
         p = filedialog.askopenfilename(
-            title="renodx addon dosyasını seç (Discord'dan indirdiğin)",
-            filetypes=[("ReShade eklentisi", "*.addon64 *.addon"), ("Tüm dosyalar", "*.*")])
+            title="Select the renodx add-on you downloaded",
+            filetypes=[("ReShade add-on", "*.addon64 *.addon"), ("All files", "*.*")])
         if not p:
             return
         self.renodx_local = Path(p)
         prefs.remember_renodx(self.renodx_local)
-        vals = list(self.cb_renodx["values"])
-        tagname = f"[yerel] {self.renodx_local.name}"
-        if tagname not in vals:
-            vals.insert(0, tagname)
-            self.cb_renodx["values"] = vals
-        self.cb_renodx.set(tagname)
+        tag = f"[local] {self.renodx_local.name}"
+        vals = [v for v in self.cb_renodx["values"]
+                if not v.startswith(("loading", "[local]"))]
+        self.cb_renodx["values"] = [tag] + vals
+        self.cb_renodx.set(tag)
+
+    def _set_pathlbl(self, g: games.Game) -> None:
+        extra = "   +  host64/ helper" if g.bitness == 32 else ""
+        if g.api == "DX9":
+            extra += "   +  dgVoodoo2"
+        self.pathlbl.config(
+            text=f"{g.exe}     |     {g.bit_label}  {g.api}  ->  "
+                 f"ReShade = {installer._proxy_name(g.api)}{extra}")
 
     def _enter_install(self) -> None:
         g = self.game
         self.gamelbl.config(text=g.name)
-        extra = "  +  host64/ yardimci surec" if g.bitness == 32 else ""
-        self.pathlbl.config(
-            text=f"{g.exe}     |     {g.bit_label}  {g.api}  ->  "
-                 f"ReShade = {installer._proxy_name(g.api)}{extra}")
+        self._set_pathlbl(g)
+
+        cands = g.candidates or ([g.exe] if g.exe else [])
+        if len(cands) > 1:
+            labels = []
+            for c in cands:
+                try:
+                    labels.append(str(c.relative_to(g.folder)))
+                except ValueError:
+                    labels.append(str(c))
+            self.cb_exe["values"] = labels
+            self.cb_exe.current(cands.index(g.exe) if g.exe in cands else 0)
+            self.exerow.grid(row=0, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_exe.grid(row=0, column=1, columnspan=2, sticky="ew", pady=5)
+        else:
+            self.exerow.grid_forget()
+            self.cb_exe.grid_forget()
+
         self.btn_remove.config(state="normal" if g.installed else "disabled")
+
+        level, why_rel = installer.reliability(g)
+        if level != installer.STABLE:
+            self._log(f"HEADS UP ({level}): {why_rel}", "warn")
+        if len(cands) > 1:
+            self._log(f"This folder has {len(cands)} executables. "
+                      f"Selected: {g.exe.name}", "warn")
+            self._log("  If the game launches a different one, change it above - "
+                      "otherwise the install does nothing.", "warn")
+
         card, sm = gpu.detect()
         if card:
-            self._log(f"Ekran kartı: {card}  ({gpu.label(sm)})", "head")
-            self._log("Seçtiğin nvngx_dlssnr sürümü indirildikten sonra bu kart için "
-                      "gerçekten kod içeriyor mu diye denetlenecek.")
+            self._log(f"Graphics card: {card}  ({gpu.label(sm)})", "head")
+            self._log("The nvngx_dlssnr build is verified against this card after "
+                      "download; incompatible builds are skipped automatically.")
         else:
-            self._log("NVIDIA ekran kartı tespit edilemedi - DLSS 5 çalışmayabilir.", "warn")
+            self._log("No NVIDIA card detected - DLSS 5 will not run.", "warn")
+
         self._log(f"Plan: {' -> '.join(installer.plan(g, self._opts()))}", "head")
-        if g.bitness == 32:
-            self._log("Not: 32-bit yol DLSS5-Feeder tarafından BETA olarak "
-                      "işaretlenmiş. Sorun çıkarsa dlss5-feed.log'a bak.", "warn")
-        if g.api == "DX9":
-            self._log("DX9 oyunu: önce dgVoodoo2 kurulacak (DX9 -> D3D11), "
-                      "sonrası 32-bit yolla aynı.", "head")
-        emu = getattr(g, "emu", None)
-        if emu:
-            self._log(f"{emu.name} ({emu.system}) tespit edildi.", "head")
-            self._log(f"  ÖNEMLİ: {emu.renderer_hint}", "warn")
-            self._log("  Vulkan/OpenGL seçiliyse ReShade hiç devreye girmez.", "warn")
-            if emu.note:
-                self._log(f"  {emu.note}")
-            self._log("  Emülatörlerde ReShade birden fazla derinlik tamponu görebilir; "
-                      "görüntü bozuksa ReShade'in DX11/DX12 sekmesinden doğru tamponu seç.")
         self._find_local_renodx()
         if not self.catalog:
             self._load_catalog()
+
+    def _find_local_renodx(self) -> None:
+        found, cands = prefs.find_renodx()
+        if not found:
+            return
+        self.renodx_local = found
+        tag = f"[local] {found.name}"
+        vals = [v for v in self.cb_renodx["values"]
+                if not v.startswith(("loading", "[local]"))]
+        self.cb_renodx["values"] = [tag] + vals
+        self.cb_renodx.set(tag)
+        self._log(f"renodx: using your local build -> {found.name} "
+                  f"({found.stat().st_size/1048576:.1f} MB)", "ok")
+        self._log(f"   {found.parent}")
+        if len(cands) > 1:
+            self._log(f"   ({len(cands)-1} more local builds found; "
+                      f"use 'Use my file...' to switch)")
 
     def _load_catalog(self) -> None:
         def work() -> None:
@@ -530,50 +616,58 @@ class App:
         nr = [e["label"] for e in cat.get("dlssnr", [])]
         ds = [e["label"] for e in cat.get("dlss", [])]
         keep = self.cb_renodx.get()
-        self.cb_renodx["values"] = ([keep] if keep.startswith("[yerel]") else []) + ren
-        if keep.startswith("[yerel]"):
+        self.cb_renodx["values"] = ([keep] if keep.startswith("[local]") else []) + ren
+        if keep.startswith("[local]"):
             self.cb_renodx.set(keep)
-        elif sources.RENODX_DEFAULT in ren:
-            self.cb_renodx.set(sources.RENODX_DEFAULT)
         elif ren:
             self.cb_renodx.current(0)
-        self.cb_dlssnr["values"] = nr
-        if nr:
-            self.cb_dlssnr.current(0)
+        self.cb_dlssnr["values"] = ["Auto (match my GPU)"] + nr
+        self.cb_dlssnr.current(0)
         self.cb_dlss["values"] = ds
         if ds:
             self.cb_dlss.current(0)
-        self._log(f"Sürüm listesi hazır  ·  renodx: {len(ren)}, "
-                  f"dlssnr: {len(nr)}, dlss: {len(ds)} sürüm", "")
-        self._log(f"Önerilen renodx sürümü {sources.RENODX_DEFAULT} "
-                  f"(DLSS5-Feeder belgeleri bunu söylüyor). "
-                  f"Discord'dan yeni bir sürüm indirdiysen 'Kendi dosyam' ile seç.", "")
+        self._log(f"Version list ready - renodx: {len(ren)}, dlssnr: {len(nr)}, "
+                  f"dlss: {len(ds)}")
 
     def _opts(self) -> installer.Options:
-        val = self.cb_renodx.get() if hasattr(self, "cb_renodx") else ""
-        local = self.renodx_local if val.startswith("[yerel]") else None
+        if not hasattr(self, "cb_renodx"):
+            return installer.Options()
+        val = self.cb_renodx.get()
+        local = self.renodx_local if val.startswith("[local]") else None
+        nr = self.cb_dlssnr.get()
+        feed: dict = {}
+        wr = self.workres.get()
+        if wr != 100:
+            feed["work_resolution"] = wr
+        pi = self.cb_preset.current()
+        if pi > 0:
+            feed["preset"] = list(feedcfg.PRESETS.keys())[pi]
+        hi = self.cb_hdr.current()
+        if hi > 0:
+            feed["hdr"] = list(feedcfg.HDR.keys())[hi]
         return installer.Options(
             provider=self.provider.get(),
-            renodx=None if local else (val or sources.RENODX_DEFAULT),
+            renodx=None if local else (val if val and not val.startswith("loading") else None),
             renodx_local=local,
-            dlssnr=self.cb_dlssnr.get() or None if hasattr(self, "cb_dlssnr") else None,
-            dlss=self.cb_dlss.get() or None if hasattr(self, "cb_dlss") else None,
+            dlssnr=None if (not nr or nr.startswith("Auto")) else nr,
+            dlss=self.cb_dlss.get() or None,
             keep_game_dlss=self.keep_dlss.get(),
-            feed=self._feed_settings(),
+            feed=feed,
         )
 
-    # ------------------------------------------------------------- eylemler
+    # ------------------------------------------------------------- actions
     def _install(self) -> None:
         if self.busy or not self.game:
             return
         self.busy = True
-        self.btn_next.config(state="disabled", text="Kuruluyor...")
+        self.btn_next.config(state="disabled", text="Installing...")
         self.btn_back.config(state="disabled")
+        self.btn_home.config(state="disabled")
         self.btn_remove.config(state="disabled")
         self.pb["value"] = 0
         g, opt = self.game, self._opts()
-        self._log("", "")
-        self._log(f"=== {g.name} — kurulum başlıyor ===", "head")
+        self._log("")
+        self._log(f"=== {g.name} - installing ===", "head")
 
         def work() -> None:
             try:
@@ -593,12 +687,12 @@ class App:
         if self.busy or not self.game:
             return
         if not messagebox.askyesno(
-                APP, f"{self.game.name}\n\nBu aracın kurduğu dosyalar silinecek. "
-                     f"Oyunun kendi dosyalarına dokunulmaz. Devam?"):
+                APP, f"{self.game.name}\n\nRemove the files this tool installed? "
+                     f"The game's own files are restored and left alone."):
             return
         self.busy = True
-        self._log("", "")
-        self._log("=== kaldırılıyor ===", "head")
+        self._log("")
+        self._log("=== uninstalling ===", "head")
         g = self.game
 
         def work() -> None:
@@ -631,7 +725,7 @@ class App:
         else:
             self._install()
 
-    # ------------------------------------------------------------- kuyruk
+    # ------------------------------------------------------------- queue
     def _log(self, text: str, tag: str = "") -> None:
         self.log.config(state="normal")
         self.log.insert("end", text + "\n", tag or ())
@@ -649,13 +743,13 @@ class App:
                     self.busy = False
                     self.all_games = payload
                     self._fill()
-                    self.status.config(text="Tarama bitti")
+                    self.status.config(text="Scan complete")
+                elif kind == "update":
+                    self._show_banner(*payload)
                 elif kind == "catalog":
                     self._fill_catalog(payload)
                 elif kind == "caterr":
-                    self._log(f"Sürüm listesi alınamadı: {payload}", "warn")
-                    self._log("İnternet bağlantını kontrol et; 'Kendi dosyam' ile "
-                              "elle de devam edebilirsin.", "warn")
+                    self._log(f"Could not fetch the version list: {payload}", "warn")
                 elif kind == "step":
                     i, n, name = payload
                     self.status.config(text=f"[{i + 1}/{n}] {name}")
@@ -670,18 +764,19 @@ class App:
                     self._finish_ok(payload)
                 elif kind == "removed":
                     self.busy = False
-                    self.game.__dict__.pop("_", None)
-                    self._log(f"Kaldırıldı ({len(payload)} öğe).", "ok")
+                    self._log(f"Uninstalled ({len(payload)} items).", "ok")
                     self.btn_remove.config(state="disabled")
-                    self.btn_next.config(state="normal", text="KUR")
+                    self.btn_next.config(state="normal", text="INSTALL")
                     self.btn_back.config(state="normal")
+                    self.btn_home.config(state="normal")
                 elif kind in ("fail", "error"):
                     self.busy = False
                     self._log(payload, "err")
                     self.pblbl.config(text="")
-                    self.btn_next.config(state="normal", text="KUR")
+                    self.btn_next.config(state="normal", text="INSTALL")
                     self.btn_back.config(state="normal")
-                    self.status.config(text="Hata")
+                    self.btn_home.config(state="normal")
+                    self.status.config(text="Failed")
                     messagebox.showerror(APP, payload.strip().splitlines()[-1])
         except queue.Empty:
             pass
@@ -690,33 +785,38 @@ class App:
     def _finish_ok(self, rep: installer.Report) -> None:
         self.pb["value"] = 100
         self.pblbl.config(text="")
-        self._log("", "")
-        self._log(f"BİTTİ — {len(rep.written)} dosya yazıldı.", "ok")
+        self._log("")
+        self._log(f"DONE - {len(rep.written)} files written.", "ok")
         for n in rep.notes:
-            self._log(f"  · {n}")
+            self._log(f"  - {n}")
+        for w in rep.warnings:
+            self._log(f"  ! {w}", "warn")
         if rep.skipped:
-            self._log(f"  · dokunulmayan: {', '.join(rep.skipped)}")
-        self._log("", "")
-        self._log("Şimdi oyunu aç ve:", "head")
-        self._log("  1. Home tuşuna bas (ReShade açılır)")
+            self._log(f"  - left untouched: {', '.join(rep.skipped)}")
+        self._log("")
+        self._log("Now launch the game and:", "head")
+        self._log("  1. Press Home to open ReShade")
         p = reshade_ini.PROVIDERS[self.provider.get()]
         if p[1]:
-            self._log(f"  2. '{p[0]}' tekniği ve 'DLSS 5 Feed' işaretli olmalı "
-                      f"(sağlayıcı ÜSTTE)")
+            self._log(f"  2. '{p[0]}' and 'DLSS 5 Feed' must both be ticked, "
+                      f"with the provider ABOVE the feed")
         else:
-            self._log("  2. Seçtiğin sağlayıcının tekniğini DLSS 5 Feed'in ÜSTÜNE al")
-        self._log("  3. 'DLSS 5 Neural Rendering' panelinden neural rendering'i aç")
-        self._log("  4. Oyunun kendi MSAA/SSAA ayarını KAPAT")
+            self._log("  2. Place your provider's technique ABOVE DLSS 5 Feed")
+        self._log("  3. Turn on neural rendering in the DLSS 5 Neural Rendering panel")
+        self._log("  4. Turn OFF the game's own MSAA/SSAA")
         self._log("")
-        self._log("Çalışmazsa oyun klasöründeki dlss5-feed.log dosyasına bak: "
-                  "'feature ready … DLAA' ve 'frame N delivered' satırlarını görmelisin.",
+        self._log("If it does not work, open dlss5-feed.log in the game folder. You "
+                  "want to see 'feature ready ... DLAA' and 'frame N delivered'. "
+                  "'CreateFeature raised exception' means the add-on and the "
+                  "nvngx_dlssnr build do not get along - try another combination.",
                   "warn")
-        self._log("Online oyunlarda kullanma — anti-cheat ReShade eklentilerine takılır.",
-                  "warn")
-        self.btn_next.config(state="normal", text="KUR")
+        self._log("Never use this in online games - anti-cheat will flag ReShade "
+                  "add-ons.", "warn")
+        self.btn_next.config(state="normal", text="INSTALL")
         self.btn_back.config(state="normal")
+        self.btn_home.config(state="normal")
         self.btn_remove.config(state="normal")
-        self.status.config(text="Kurulum tamamlandı")
+        self.status.config(text="Install complete")
 
 
 def run() -> int:

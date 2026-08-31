@@ -1,19 +1,20 @@
-"""Emulator destegi.
+"""Emulator support.
 
-Emulatorler Steam/Epic/GOG kutuphanelerinde gorunmez, o yuzden ayrica araniyor.
+Emulators do not appear in Steam/Epic/GOG libraries, so they are searched for
+separately.
 
-CALISMA MANTIGI
----------------
-Emulator de sonucta bir D3D11/D3D12 uygulamasi; ReShade dxgi.dll olarak
-yuklendiginde DLSS5-Feeder normal bir oyunda oldugu gibi calisir. Sart:
-emulatorun render arka ucu Direct3D 11 ya da 12 olmali. Vulkan/OpenGL
-secilirse dxgi.dll hic devreye girmez.
+HOW IT WORKS
+------------
+An emulator is just another D3D11/D3D12 application; once ReShade is loaded as
+dxgi.dll, DLSS5-Feeder behaves exactly as it does in a normal game. The
+condition is that the emulator's render backend must be Direct3D 11 or 12. If
+Vulkan or OpenGL is selected, dxgi.dll is never loaded at all.
 
-DERINLIK TAMPONU UYARISI
-------------------------
-Feeder'in derinlik tamponuna ihtiyaci var. Emulatorlerde ReShade cogu zaman
-birden fazla derinlik tamponu gorur ve yanlisini secebilir. Calismazsa
-ReShade panelindeki DX11/DX12 sekmesinden dogru tamponu elle secmek gerekir.
+DEPTH BUFFER CAVEAT
+-------------------
+The feeder needs a depth buffer. Emulators often expose several and ReShade
+may latch onto the wrong one. If the image looks broken, pick the correct
+buffer manually from ReShade's DX11/DX12 tab.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ class Profile:
     name: str
     system: str
     exes: tuple[str, ...]
-    # Bu emulator D3D11/D3D12 sunabiliyor mu?
+    # Can this emulator present through D3D11/D3D12?
     d3d: bool
     renderer_hint: str
     note: str = ""
@@ -38,41 +39,40 @@ PROFILES: tuple[Profile, ...] = (
     Profile("duckstation", "DuckStation", "PlayStation 1",
             ("duckstation-qt-x64.exe", "duckstation-nogui-x64.exe", "duckstation.exe"),
             True,
-            "Ayarlar -> Grafikler -> Renderer = Direct3D 11 (veya 12)",
-            "İç çözünürlüğü (resolution scale) 2x-4x yap ki DLAA'nın işleyecek "
-            "detayı olsun."),
+            "Settings -> Graphics -> Renderer = Direct3D 11 (or 12)",
+            "Raise the internal resolution scale to 2x-4x so DLAA has detail to work with."),
     Profile("pcsx2", "PCSX2", "PlayStation 2",
             ("pcsx2-qt.exe", "pcsx2x64.exe", "pcsx2x64-avx2.exe", "pcsx2.exe"),
             True,
-            "Settings -> Graphics -> Renderer = Direct3D 11 (veya 12)",
-            "Upscale multiplier 2x+ önerilir."),
+            "Settings -> Graphics -> Renderer = Direct3D 11 (or 12)",
+            "An upscale multiplier of 2x or more is recommended."),
     Profile("dolphin", "Dolphin", "GameCube / Wii",
             ("Dolphin.exe", "DolphinQt.exe"),
             True,
-            "Graphics -> Backend = Direct3D 11 (veya 12)"),
+            "Graphics -> Backend = Direct3D 11 (or 12)"),
     Profile("ppsspp", "PPSSPP", "PSP",
             ("PPSSPPWindows64.exe", "PPSSPPWindows.exe"),
             True,
-            "Ayarlar -> Grafikler -> Backend = Direct3D 11"),
+            "Settings -> Graphics -> Backend = Direct3D 11"),
     Profile("xenia", "Xenia", "Xbox 360",
             ("xenia.exe", "xenia_canary.exe"),
             True,
-            "D3D12 varsayılan arka uç"),
+            "D3D12 is the default backend"),
     Profile("cemu", "Cemu", "Wii U",
             ("Cemu.exe",),
             False,
-            "Cemu yalnızca Vulkan/OpenGL sunar",
-            "OpenGL seçilirse ReShade opengl32.dll olarak kurulur; "
-            "Vulkan'da otomatik kurulum yok."),
+            "Cemu only offers Vulkan/OpenGL",
+            "With OpenGL selected ReShade installs as opengl32.dll; "
+            "there is no automatic setup for Vulkan."),
     Profile("rpcs3", "RPCS3", "PlayStation 3",
             ("rpcs3.exe",),
             False,
-            "RPCS3 yalnızca Vulkan/OpenGL sunar",
-            "D3D arka ucu olmadığı için bu araçla otomatik kurulum yapılamıyor."),
+            "RPCS3 only offers Vulkan/OpenGL",
+            "No D3D backend, so this tool cannot set it up automatically."),
     Profile("ryujinx", "Ryujinx", "Switch",
             ("Ryujinx.exe", "Ryujinx.Ava.exe"),
             False,
-            "Yalnızca Vulkan/OpenGL"),
+            "Vulkan/OpenGL only"),
 )
 
 _BY_EXE = {e.lower(): p for p in PROFILES for e in p.exes}
@@ -90,15 +90,14 @@ def _search_roots() -> list[Path]:
         if d and Path(d).is_dir():
             roots.append(Path(d))
     home = Path.home()
-    roots += [home / "Desktop", home / "Downloads", home / "Masaüstü",
-              home / "İndirilenler"]
-    # Surucu koklerindeki yaygin klasorler
+    roots += [home / "Desktop", home / "Downloads"]
+    # Common folders at drive roots
     for drive in "CDEFG":
         base = Path(f"{drive}:/")
         if not base.is_dir():
             continue
-        for name in ("Emulators", "Emulator", "Emülatör", "Games", "Oyunlar",
-                     "Emu", "RetroArch", "PS2", "PS1"):
+        for name in ("Emulators", "Emulator", "Games", "Emu", "RetroArch",
+                     "PS2", "PS1"):
             d = base / name
             if d.is_dir():
                 roots.append(d)
@@ -106,7 +105,7 @@ def _search_roots() -> list[Path]:
 
 
 def _registry_locations() -> list[Path]:
-    """Kaldir/Degistir kayitlarindan emulator kurulum yollari."""
+    """Emulator install paths from the Add/Remove Programs entries."""
     out: list[Path] = []
     try:
         import winreg
@@ -141,9 +140,8 @@ def _registry_locations() -> list[Path]:
 
 
 def scan(progress=None) -> list[tuple[Profile, Path]]:
-    """(profil, exe) ciftleri. Bilinen emulator exelerini arar."""
+    """(profile, exe) pairs for known emulator executables."""
     found: dict[Path, tuple[Profile, Path]] = {}
-    wanted = set(_BY_EXE)
 
     def consider(f: Path) -> None:
         p = _BY_EXE.get(f.name.lower())
@@ -156,9 +154,9 @@ def scan(progress=None) -> list[tuple[Profile, Path]]:
     roots = _registry_locations() + _search_roots()
     for r in roots:
         if progress:
-            progress(f"Emülatör aranıyor: {r}")
+            progress(f"Looking for emulators: {r}")
         try:
-            # kokte ve iki alt seviyede ara (emulatorler genelde sig bir klasorde)
+            # Search the root and two levels below it
             for f in r.glob("*.exe"):
                 consider(f)
             for sub in r.iterdir():

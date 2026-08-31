@@ -1,9 +1,9 @@
-"""ARKADASININ BILGISAYARI TESTI.
+"""CLEAN-MACHINE TEST.
 
-Bos onbellek + yerel renodx dosyasi YOK. Her sey aynadan sifirdan iner.
-Amac: "eksik kurulum" ihtimalini varsaymak yerine olcmek.
+Empty cache and no local renodx file. Everything downloads from scratch.
+The point is to measure completeness rather than assume it.
 
-Kullanicinin gercek onbellegine dokunmaz; gecici bir onbellek kullanir.
+Does not touch the real cache; uses a temporary one.
 """
 import shutil
 import sys
@@ -18,12 +18,12 @@ except Exception:
 
 from core import games, installer, net, pe, prefs, reshade_ini, feedcfg, gpu
 
-# --- arkadasinin bilgisayarini taklit et --------------------------------
+# --- simulate a clean machine --------------------------------
 TMP_CACHE = Path(tempfile.mkdtemp(prefix="sifir_cache_"))
-net.CACHE = TMP_CACHE                       # bos onbellek
-prefs.find_renodx = lambda: (None, [])      # yerel renodx yok
-print(f"gecici onbellek : {TMP_CACHE}")
-print("yerel renodx    : YOK (arkadasinda olmayacak)")
+net.CACHE = TMP_CACHE                       # empty cache
+prefs.find_renodx = lambda: (None, [])      # no local renodx
+print(f"temp cache      : {TMP_CACHE}")
+print("local renodx    : none (a fresh machine will not have one)")
 print()
 
 DL = Path(r"C:\Users\Mustafa\Downloads")
@@ -38,7 +38,7 @@ def build(src: Path, name: str, nested: bool) -> Path:
 
 
 def check(label: str, cond: bool, detail: str = "") -> bool:
-    print(f"   {'OK  ' if cond else 'EKSIK'}  {label}" + (f"   {detail}" if detail else ""))
+    print(f"   {'OK  ' if cond else 'MISSING'}  {label}" + (f"   {detail}" if detail else ""))
     return cond
 
 
@@ -52,10 +52,10 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
 
     ok, why = installer.check_supported(g)
     if not ok:
-        print(f"  DESTEKLENMIYOR: {why}")
+        print(f"  NOT SUPPORTED: {why}")
         return False
 
-    # renodx surumunu acikca vererek aynayi zorla (yerel dosya yok zaten)
+    # renodx surumunu acikca vererek aynayi zorla (yerel dosya missing zaten)
     opt = installer.Options(renodx="4.60", keep_game_dlss=False)
     rep = installer.install(g, opt, on_log=lambda t: print("   ", t))
 
@@ -64,19 +64,19 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
     dl_dir = idir if x64 else idir / installer.HOST_DIR
     proxy = installer._proxy_name(g.api)
     print()
-    print("  --- eksiksizlik denetimi ---")
+    print("  --- completeness check ---")
     good = True
 
     # 1) ReShade
     good &= check("ReShade proxy", (idir / proxy).is_file() and
                   installer._is_reshade(idir / proxy), proxy)
-    good &= check("proxy mimarisi oyunla ayni",
+    good &= check("proxy bitness matches the game",
                   pe.exe_bitness(idir / proxy) == g.bitness)
 
     # 2) shader basliklari
     sh = idir / installer.SHADERS
     for h in ("ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh"):
-        good &= check(f"başlık {h}", (sh / h).is_file())
+        good &= check(f"header {h}", (sh / h).is_file())
 
     # 3) feeder
     addon = installer.FEEDER_ADDON64 if x64 else installer.FEEDER_ADDON32
@@ -86,7 +86,7 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
     # 4) LumeniteFX
     good &= check("lumenite_Kernel.fx", (sh / "lumenite_Kernel.fx").is_file())
     good &= check("lumenite include", (sh / "include" / "lumenite_Helpers.fxh").is_file())
-    good &= check("bluenoise dokusu",
+    good &= check("bluenoise texture",
                   (idir / installer.TEXTURES / "lumenite_bluenoise256.png").is_file())
 
     # 5) DLSS parcalari + GPU uyumu
@@ -98,7 +98,7 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
             good &= check(f"  {f} 64-bit", pe.exe_bitness(p) == 64)
     _, sm = gpu.detect()
     compat, why = gpu.check(dl_dir / installer.DLSSNR, sm)
-    good &= check("dlssnr bu kartla uyumlu", compat is not False, why[:60])
+    good &= check("dlssnr matches this GPU", compat is not False, why[:60])
 
     # 6) 32-bit / DX9 ek parcalari
     if not x64:
@@ -124,17 +124,17 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
     good &= check("ReShade.ini AddonPath",
                   ini.get("ADDON", "AddonPath") == chr(92).join([".", ""]))
     techs = reshade_ini.split_list(pre.get("", "Techniques") or "")
-    good &= check("teknik sırası (sağlayıcı ÜSTTE)",
+    good &= check("technique order (provider ON TOP)",
                   techs == ["Lumenite_Kernel@lumenite_Kernel.fx",
                             "DLSS5_Feed@DLSS5_Feed.fx"], str(techs))
     cfg = feedcfg.read(idir / feedcfg.NAME)
-    good &= check("dlss5-feed.cfg", bool(cfg), f"{len(cfg)} anahtar")
-    good &= check("  mode=2 (tam DLSS)", cfg.get("mode") == "2")
-    good &= check("kurulum kaydı", (idir / installer.MANIFEST).is_file())
-    good &= check("araç 'kurulu' olarak görüyor", g.installed)
+    good &= check("dlss5-feed.cfg", bool(cfg), f"{len(cfg)} keys")
+    good &= check("  mode=2 (full DLSS)", cfg.get("mode") == "2")
+    good &= check("install manifest", (idir / installer.MANIFEST).is_file())
+    good &= check("tool reports it as installed", g.installed)
 
     shutil.rmtree(root, ignore_errors=True)
-    print(f"\n  SONUC: {'EKSIKSIZ' if good else 'EKSIK VAR'}\n")
+    print(f"\n  RESULT: {'COMPLETE' if good else 'SOMETHING MISSING'}\n")
     return good
 
 
@@ -144,16 +144,16 @@ if __name__ == "__main__":
     dx9 = Path(r"D:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\GTAIV.exe")
 
     results = []
-    results.append(("64-bit DX11/DX12", run("64-bit oyun", x64, "Oyun64.exe", True)))
-    results.append(("32-bit", run("32-bit oyun", x86, "Oyun32.exe", False)))
+    results.append(("64-bit DX11/DX12", run("64-bit game", x64, "Oyun64.exe", True)))
+    results.append(("32-bit", run("32-bit game", x86, "Oyun32.exe", False)))
     if dx9.is_file():
-        results.append(("DX9 (dgVoodoo2)", run("DX9 oyunu", dx9, "OyunDX9.exe", False)))
+        results.append(("DX9 (dgVoodoo2)", run("DX9 game", dx9, "OyunDX9.exe", False)))
 
     print("=" * 76)
-    print(f"indirilen toplam: {net.cache_size()/1048576:.0f} MB  (bos onbellekten)")
+    print(f"total downloaded: {net.cache_size()/1048576:.0f} MB  (from an empty cache)")
     for name, ok in results:
-        print(f"   {'GECTI' if ok else 'KALDI'}  {name}")
+        print(f"   {'PASSED' if ok else 'FAILED'}  {name}")
     shutil.rmtree(TMP_CACHE, ignore_errors=True)
     print("=" * 76)
-    print("HEPSI EKSIKSIZ" if all(o for _, o in results) else "EKSIK VAR")
+    print("ALL COMPLETE" if all(o for _, o in results) else "SOMETHING MISSING")
     sys.exit(0 if all(o for _, o in results) else 1)

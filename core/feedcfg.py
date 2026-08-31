@@ -1,19 +1,19 @@
-"""dlss5-feed.cfg yazma.
+"""Writing dlss5-feed.cfg.
 
-Eklenti bu dosyayi kendisi olusturuyor ama biz onceden yazarsak ilk acilista
-dogru ayarlarla baslar. Anahtarlar dlss5-feed.addon64 ikilisinden ve
-DLSS5-Feeder belgelerinden dogrulandi.
+The add-on creates this file itself, but writing it up front means the first
+launch already uses the right settings. Keys were verified against the
+dlss5-feed.addon64 binary and the DLSS5-Feeder documentation.
 
-ONEMLI - "DLSS Performance modu" hakkinda:
-    Feeder yolu her zaman DLAA'dir ve baska turlu olamaz. Sebep mimari:
-    DLSS5-Feeder oyunun DUSUK cozunurluklu render'ini gormez, ReShade
-    zincirinin sonundaki BITMIS tam cozunurluklu kareyi gorur. Upscale
-    edilecek dusuk cozunurluklu bir kaynak yoktur, dolayisiyla Quality /
-    Balanced / Performance modlari bu yolda anlamsizdir; log da bu yuzden
-    hep "DLAA" yazar.
+ABOUT "DLSS Performance mode":
+    The feeder path is always DLAA and cannot be anything else. The reason is
+    architectural: DLSS5-Feeder never sees the game's low-resolution render,
+    it sees the FINISHED full-resolution frame at the end of the ReShade
+    chain. There is no low-resolution source to upscale from, so Quality /
+    Balanced / Performance are meaningless here - which is why the log always
+    says "DLAA".
 
-    Performans icin dogru dugme work_resolution'dir (asagida): neural
-    islemenin uygulandigi alani %50-100 arasinda kucultur.
+    The real performance knob is work_resolution (below): it shrinks the area
+    the neural pass runs over, between 50% and 100%.
 """
 from __future__ import annotations
 
@@ -21,19 +21,19 @@ from pathlib import Path
 
 NAME = "dlss5-feed.cfg"
 
-# DLSS preset ipucu. DLSS5-Feeder sorun giderme tablosu: alevlerin/saydam
-# nesnelerin etrafinda bozulma varsa 5 veya 6 (eski CNN) dene.
+# DLSS preset hint. Per the DLSS5-Feeder troubleshooting table: if you see
+# warping around flames or transparent objects, try 5 or 6 (the older CNN).
 PRESETS = {
-    0:  "Varsayilan (eklenti karar versin)",
-    5:  "Preset E - eski CNN (alev/saydam bozulmasina iyi gelir)",
-    6:  "Preset F - eski CNN",
+    0:  "Default (let the add-on decide)",
+    5:  "Preset E - legacy CNN (helps with flame/transparency warping)",
+    6:  "Preset F - legacy CNN",
     10: "Preset J - transformer",
-    11: "Preset K - transformer (en yeni)",
+    11: "Preset K - transformer (newest)",
 }
 
-HDR = {-1: "Otomatik", 0: "SDR (zorla)", 1: "HDR (zorla)"}
-DEPTH = {-1: "ReShade'i izle", 0: "Ters degil (zorla)", 1: "Ters (zorla)"}
-MODE = {2: "Tam DLSS (normal)", 1: "Sadece tasima testi", 0: "Kapali"}
+HDR = {-1: "Auto", 0: "Force SDR", 1: "Force HDR"}
+DEPTH = {-1: "Follow ReShade", 0: "Force non-inverted", 1: "Force inverted"}
+MODE = {2: "Full DLSS (normal)", 1: "Transport test only", 0: "Off"}
 
 
 def defaults() -> dict:
@@ -70,10 +70,10 @@ def read(path: Path) -> dict:
 
 
 def write(dir_: Path, settings: dict | None = None, host_window: bool | None = None) -> Path:
-    """dlss5-feed.cfg olustur/guncelle; dokunmadigimiz anahtarlari korur."""
+    """Create/update dlss5-feed.cfg, preserving keys we do not manage."""
     p = dir_ / NAME
     cur = defaults()
-    cur.update({k: v for k, v in read(p).items()})      # kullanicinin mevcut degerleri
+    cur.update({k: v for k, v in read(p).items()})      # the user's existing values
     if settings:
         cur.update(settings)
     if host_window is not None:
@@ -90,12 +90,12 @@ def write(dir_: Path, settings: dict | None = None, host_window: bool | None = N
 
 
 def describe(settings: dict) -> list[str]:
-    """Kullaniciya gosterilecek ozet satirlari."""
+    """Human-readable summary lines for the log."""
     out = []
     wr = int(settings.get("work_resolution", 100))
     if wr != 100:
-        out.append(f"work_resolution={wr}% (neural isleme alani kucultuldu - "
-                   f"daha yuksek fps, biraz daha az detay)")
+        out.append(f"work_resolution={wr}% (smaller neural work area - "
+                   f"higher fps, slightly less detail)")
     pr = int(settings.get("preset", 0))
     if pr:
         out.append(f"preset={pr} ({PRESETS.get(pr, '?')})")

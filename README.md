@@ -1,186 +1,241 @@
-# DLSS 5 Kurulum Aracı
+# DLSS 5 Autopilot
 
-DLSS5-Feeder kurulumunun bütün adımlarını tek tıkla halleden Windows aracı.
-Oyunlarını tarar, mimarisini kendi tespit eder, gereken her şeyi indirir ve
-ReShade ayarlarını doğru sırayla yazar.
+A Windows tool that automates the whole DLSS5-Feeder setup. It scans your
+games, detects each one's architecture and graphics API, fetches every
+component, and writes the ReShade configuration in the right order.
 
-**[→ Son sürümü indir](../../releases/latest)** — `dlss5kur.exe`, tek dosya, kurulum gerektirmez.
+**[→ Download the latest release](../../releases/latest)** — single file, no installation.
+
+> **This repository contains no game files, no NVIDIA binaries and no
+> third-party redistributables.** It is installer logic only. Everything it
+> needs is downloaded at run time from the original publishers. See
+> [Credits and licensing](#credits-and-licensing).
 
 ---
 
-## Ne destekliyor
+## What it supports
 
-| | Destek | Yol |
+| Path | Support | How |
 |---|---|---|
-| **64-bit DX11 / DX12** | ✅ | ReShade `dxgi.dll` olarak kurulur |
-| **64-bit OpenGL** | ✅ | ReShade `opengl32.dll` olarak kurulur |
-| **32-bit DX11 / DX12** | ✅ beta | + `host64\` yardımcı süreç |
-| **32-bit OpenGL** | ✅ beta | + `host64\` yardımcı süreç |
-| **DirectX 9** | ✅ beta | dgVoodoo2 ile DX9 → D3D11, sonrası 32-bit yol |
-| **Emülatörler** | ✅ | DuckStation, PCSX2, Dolphin, PPSSPP, Xenia |
-| **Vulkan** | ❌ | ReShade'in Vulkan katmanı sistem geneline kaydedilmeli, elle yapılmalı |
+| **64-bit DX11 / DX12** | reliable | ReShade installs as `dxgi.dll` |
+| 64-bit OpenGL | often fails | ReShade installs as `opengl32.dll` |
+| 32-bit DX11 / DX12 | often fails | plus a `host64\` helper process |
+| DirectX 9 | often fails | dgVoodoo2 translates to D3D11 first |
+| Emulators | reliable* | DuckStation, PCSX2, Dolphin, PPSSPP, Xenia |
+| Vulkan | not supported | needs a system-wide ReShade layer registration |
 
-Steam, Epic ve GOG kütüphaneleri otomatik taranır. Listede olmayan bir şey için
-"Klasör seç…" var.
+\* provided the emulator's render backend is set to Direct3D 11 or 12.
+
+**Be realistic about this:** DLSS 5 feeding was built around DirectX 10/11/12.
+Everything else goes through extra translation or a cross-process helper, and
+the DLSS feature frequently fails to create on those paths. The tool offers
+them and labels each game's outlook honestly in the list, but 32-bit, DX9 and
+OpenGL are hit and miss.
+
+Steam, Epic and GOG libraries are scanned automatically. Anything else can be
+added with **Choose folder…**.
 
 ---
 
-## Nasıl kullanılır
+## Using it
 
-1. `dlss5kur.exe`'yi çalıştır
-2. **Adım 1** — mimari seç (bilmiyorsan "Hepsini göster")
-3. **Adım 2** — oyununu listeden seç
-4. **Adım 3** — **KUR**
+1. Run the executable
+2. **Step 1** — pick an architecture filter (or "Show everything")
+3. **Step 2** — pick your game
+4. **Step 3** — press **INSTALL**
 
-Oyunda:
+Then in the game:
 
-- **Home** → ReShade paneli
-- `LUMENITE: Kernel 2.0` ve `DLSS 5 Feed` işaretli olmalı — **Kernel üstte**
-- `DLSS 5 Neural Rendering` panelinden neural rendering'i aç
-- Oyunun kendi **MSAA/SSAA** ayarını kapat
+- **Home** opens the ReShade overlay
+- `LUMENITE: Kernel 2.0` and `DLSS 5 Feed` must both be ticked, **Kernel above the feed**
+- Enable neural rendering in the `DLSS 5 Neural Rendering` panel
+- Turn the game's own **MSAA/SSAA** off
 
-### Komut satırı
+Press **Esc** (or click the logo) to jump back to the start at any time.
+
+### Command line
 
 ```
-dlss5kur.exe "D:\Oyunlar\Oyun"            kur
-dlss5kur.exe "D:\Oyunlar\Oyun" --kontrol  sadece tespit et, hiçbir şey yazma
-dlss5kur.exe "D:\Oyunlar\Oyun" --kaldir   kaldır
+dlss5-autopilot.exe "D:\Games\Game"            install
+dlss5-autopilot.exe "D:\Games\Game" --check    detect only, write nothing
+dlss5-autopilot.exe "D:\Games\Game" --remove   uninstall
 ```
 
 ---
 
-## Ne indiriyor
+## What makes it more than a copy script
 
-Kurulum sırasında her şey otomatik iner — elle dosya indirmene gerek yok.
+**GPU compatibility is verified, not assumed.** The CUDA code inside the DLSS
+neural-rendering runtime is compiled per architecture. The tool detects your
+card, then parses the fatbin records inside the downloaded file to confirm it
+actually contains code for that architecture. Measured results:
 
-| Bileşen | Kaynak |
-|---|---|
-| ReShade (Addon sürümü) | reshade.me |
-| Shader başlıkları | crosire/reshade-shaders |
-| DLSS5-Feeder | jlrouzies-fr/DLSS5-Feeder |
-| LumeniteFX (hareket vektörleri) | umar-afzaal/LumeniteFX |
-| renodx-dlss5, nvngx_dlssnr, nvngx_dlss | RankFTW/rhi-repo |
-| dgVoodoo2 (yalnızca DX9) | dege-diosg/dgVoodoo2 |
-
-İndirilenler `%LOCALAPPDATA%\dlss5kur\cache` altında saklanır — ilk kurulum
-~150 MB, sonraki oyunlar anında.
-
-Araç **yalnızca** şu alan adlarına bağlanır: `reshade.me`,
-`raw.githubusercontent.com`, `api.github.com`, `github.com`,
-`objects.githubusercontent.com`, `codeload.github.com`.
-
-### Kendi renodx dosyanı kullanmak
-
-Discord'dan daha yeni bir `renodx-*.addon64` indirdiysen:
-
-- exe'nin yanındaki `renodx\` klasörüne koy, **veya**
-- İndirilenler/Masaüstü'ne koy — araç kendisi bulur, **veya**
-- Adım 3'te "Kendi dosyam…" ile seç (seçim kalıcı olarak hatırlanır)
-
-Yerel dosya bulunursa aynadaki sürüme tercih edilir.
-
----
-
-## Ekran kartı uyumluluğu
-
-Sızdırılan `nvngx_dlssnr.dll`'in içindeki CUDA kodu belirli mimariler için
-derlenmiş. Araç kartını tespit edip **indirdiği dosyanın içinde senin kartın
-için gerçekten kod var mı** diye denetler; yoksa kurulumu durdurur.
-
-Ölçülen durum (fatbin kayıtları ayrıştırılarak):
-
-| Sürüm | RTX 20 | RTX 30 | RTX 40 | RTX 50 |
+| Build | RTX 20 | RTX 30 | RTX 40 | RTX 50 |
 |---|:---:|:---:|:---:|:---:|
 | `310.8.0` | – | – | – | ✓ |
 | `310.8.0-RTX40` | – | – | ✓ | ✓ |
 | `310.8.SF` | ✓ | ✓ | ✓ | ✓ |
 | `310.8.SF-v2` | ✓ | ✓ | ✓ | ✓ |
 
----
+Left on **Auto**, the tool walks the list newest-first and picks the first
+build that supports your card. The table is not hard-coded — it is read from
+the files, so new releases work too.
 
-## Ayarlar
+**Technique ordering is handled.** The motion-vector provider's technique must
+sit above `DLSS 5 Feed` or the feed never receives vectors. The tool writes
+this correctly and leaves your existing ReShade settings and other shaders
+alone.
 
-Adım 3'teki **Kalite / hız** bölümü `dlss5-feed.cfg`'yi yazar:
+**Your own files are backed up.** If a game ships its own `nvngx_dlss.dll` and
+it gets replaced, the original is saved alongside and restored on uninstall.
 
-- **İşleme alanı** (`work_resolution`, %50–100) — performans düğmesi.
-  4K'da fps düşerse %70–80 dene.
-- **DLSS preset** — alevlerin/saydam nesnelerin etrafında bozulma görürsen
-  Preset E veya F (eski CNN).
-- **HDR** — otomatik / SDR zorla / HDR zorla
-
-### "DLSS Performance modu" neden yok
-
-Feeder yolu **her zaman DLAA**'dır, mimari olarak başka türlü olamaz:
-DLSS5-Feeder oyunun düşük çözünürlüklü render'ını görmez, ReShade zincirinin
-sonundaki bitmiş tam çözünürlüklü kareyi görür. Upscale edilecek düşük
-çözünürlüklü bir kaynak yoktur. Performans için doğru düğme
-`work_resolution`'dır.
+**The right executable.** Files must sit next to the executable that actually
+runs — many games keep it in a subfolder (`Bin\Win64…\Game.exe`). When a
+folder has several candidates you can pick which one to target.
 
 ---
 
-## Dikkat
+## Settings
 
-- **Online oyunlarda kullanma.** Add-on'lu ReShade anti-cheat'e takılır.
-- **Exclusive fullscreen yerine borderless** kullan — alt-tab'da çökme olabiliyor.
-- **DLSS 5 add-on'unun kendisi sızdırılmış, kapalı kaynak NVIDIA yazılımıdır.**
-  Lisansı yoktur, bu depo onu barındırmaz; araç çalışma anında topluluk
-  aynasından indirir. Kendi riskinle kullan.
-- Emülatörlerde render arka ucu **Direct3D 11/12** olmalı; Vulkan/OpenGL
-  seçiliyse ReShade devreye girmez.
+The **Quality / speed** section writes `dlss5-feed.cfg`:
 
----
+- **Work area** (`work_resolution`, 50–100%) — the performance dial. If fps
+  drops at 4K, try 70–80%.
+- **DLSS preset** — if you see warping around flames or transparent objects,
+  try Preset E or F (the legacy CNN).
+- **HDR** — auto / force SDR / force HDR
 
-## Sorun giderme
+### Why there is no "DLSS Performance mode"
 
-Oyun klasöründeki `dlss5-feed.log`:
-
-- `feature ready … DLAA` → sözleşme kuruldu
-- `frame N delivered` → kareler işleniyor
-- `MV probe … %N non-zero` → hareket varken %0 olmamalı
-- `CreateFeature raised exception` → renodx ile nvngx_dlssnr sürümleri
-  uyuşmuyor; daha yeni bir renodx dene
-
-Kurulum bozulursa: araç yazdığı her dosyayı `dlss5kur-kurulum.json` içinde
-tutar. "Kurulumu kaldır" sadece o listedekileri siler, oyunun kendi
-dosyalarına dokunmaz.
+The feeder path is always DLAA and cannot be otherwise. DLSS5-Feeder never
+sees the game's low-resolution render; it sees the finished full-resolution
+frame at the end of the ReShade chain. There is no low-resolution source to
+upscale from, so Quality / Balanced / Performance have no meaning here. The
+performance dial is `work_resolution`.
 
 ---
 
-## Kaynaktan derleme
+## Requirements
+
+Windows, and an NVIDIA RTX 20 series card or newer. The first install
+downloads roughly 150 MB (`nvngx_dlssnr.dll` alone unpacks to 165 MB) into
+`%LOCALAPPDATA%\dlss5-autopilot\cache`; later games install instantly.
+
+---
+
+## Warnings
+
+- **Do not use this in online games.** ReShade with add-ons will be flagged by
+  anti-cheat.
+- Prefer **borderless** over exclusive fullscreen — swapchain recreation on
+  alt-tab can crash.
+- Neural rendering costs several milliseconds. With v-sync on at 60 Hz you can
+  drop to 30 fps; turn v-sync off or lower the work area.
+- Emulators must be set to a **Direct3D 11/12** backend, and ReShade may latch
+  onto the wrong depth buffer — pick the right one in its DX11/DX12 tab.
+
+---
+
+## Troubleshooting
+
+`dlss5-feed.log` in the game folder is the first place to look:
+
+| Line | Meaning |
+|---|---|
+| `feature ready … DLAA` | the contract was established |
+| `frame N delivered` | frames are being processed |
+| `MV probe … N% non-zero` | should not be 0% while moving |
+| `CreateFeature raised exception 0xC0000005` | the add-on and the `nvngx_dlssnr` build do not get along — try another combination |
+
+Everything the tool writes is recorded in `dlss5-autopilot.json` in the game
+folder. **Uninstall** removes exactly those files, restores backups, and
+leaves your own shaders and settings untouched.
+
+---
+
+## Network access
+
+The tool contacts these hosts and nothing else:
 
 ```
-derle.bat
+reshade.me
+raw.githubusercontent.com
+api.github.com  ·  github.com  ·  objects.githubusercontent.com
+codeload.github.com
 ```
 
-Python 3.10+ ve `pip install pyinstaller` yeterli.
+All download URLs live in a single file, [`core/sources.py`](core/sources.py),
+so they are easy to audit.
 
-### Testler
+---
+
+## Credits and licensing
+
+This tool is a downloader and configurator. It bundles nothing. Each component
+is fetched at run time from its own publisher and remains under its own
+licence:
+
+| Component | Project | Licence |
+|---|---|---|
+| ReShade | [crosire/reshade](https://github.com/crosire/reshade) | BSD-3-Clause |
+| Shader headers | [crosire/reshade-shaders](https://github.com/crosire/reshade-shaders) | per-file |
+| DLSS5-Feeder | [jlrouzies-fr/DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder) | see repository |
+| LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
+| dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
+| RenoDX DLSS 5 add-on, NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
+
+The DLSS 5 neural-rendering add-on and the NVIDIA NGX runtimes are
+closed-source software with no published licence. **They are not in this
+repository, not in the release archive, and not redistributed by this
+project.** The tool downloads them from a public community mirror, exactly as
+a person would by hand. If you are not comfortable with that, do not use this
+tool.
+
+Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX or any
+of the projects above. Use at your own risk.
+
+The installer's own source code is MIT licensed — see [LICENSE](LICENSE).
+
+If you are a rights holder and want something changed or removed, open an
+issue and it will be addressed.
+
+---
+
+## Building from source
 
 ```
-python _test_ini.py        ReShade ini/preset mantığı (teknik sırası dahil)
-python _test_kurulum.py    uçtan uca kurulum + kaldırma (geçici klasörlerde)
+build.bat
 ```
 
-### Dosyalar
+Needs Python 3.10+ and `pip install pyinstaller`. The script installs
+PyInstaller if it is missing and produces `dlss5-autopilot.exe`.
+
+### Tests
 
 ```
-dlss5kur.py           giriş noktası (GUI + komut satırı)
-core/pe.py            PE okuma: mimari, import tablosu, API tespiti, exe bulma
-core/games.py         Steam / Epic / GOG / emülatör taraması
-core/emulators.py     emülatör profilleri ve arama
-core/gpu.py           ekran kartı tespiti + CUDA mimari uyumluluk denetimi
-core/sources.py       bütün indirme adresleri — tek yerde
-core/net.py           indirme, önbellek, zip açma
-core/prefs.py         kalıcı tercihler, yerel renodx bulma
-core/reshade_ini.py   ReShade.ini / preset, teknik sıralaması
+python test_reshade_ini.py     ReShade ini/preset logic, including ordering
+python test_install.py         end-to-end install + uninstall in temp folders
+python test_clean_machine.py   empty cache, no local files: completeness check
+```
+
+`test_clean_machine.py` reproduces a fresh machine: it downloads everything
+from scratch and asserts that all three install paths end up complete.
+
+### Layout
+
+```
+dlss5_autopilot.py    entry point (GUI + CLI)
+core/pe.py            PE parsing: bitness, imports, API detection, exe ranking
+core/games.py         Steam / Epic / GOG / emulator scanning
+core/emulators.py     emulator profiles and discovery
+core/gpu.py           GPU detection + CUDA architecture compatibility check
+core/sources.py       every download URL, in one place
+core/net.py           downloading, caching, zip extraction
+core/prefs.py         persistent settings, local renodx discovery
+core/reshade_ini.py   ReShade.ini / preset writing and technique ordering
 core/feedcfg.py       dlss5-feed.cfg
-core/dgvoodoo.py      DX9 → D3D11 (dgVoodoo2)
-core/installer.py     kurulum motoru
-core/gui.py           arayüz
+core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
+core/installer.py     install engine and reliability assessment
+core/update.py        update check
+core/gui.py           interface
 ```
-
-## Lisans
-
-Aracın kendi kodu MIT. İndirdiği bileşenler kendi lisanslarına tabidir
-(ReShade BSD-3, LumeniteFX AGNYA, dgVoodoo2 kendi şartları, NVIDIA
-çalışma zamanları tescilli).

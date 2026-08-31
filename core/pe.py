@@ -1,7 +1,7 @@
-"""Windows PE (exe) incelemesi: bit genisligi, import tablosu, grafik API tespiti.
+"""Windows PE (executable) inspection: bitness, import table, graphics API.
 
-Hicbir harici bagimlilik yok - dosyayi elle parse ediyoruz ki ne okudugunu
-satir satir dogrulayabilesin.
+No third-party dependencies - the file is parsed by hand so you can audit
+exactly what is read.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 PE_X64 = 0x8664
 PE_X86 = 0x014C
 
-# Oyun exesi ararken atlanacak yardimci programlar.
+# Helper programs to skip when looking for the actual game executable.
 _SKIP_PARTS = (
     "unins", "setup", "vcredist", "dxsetup", "dotnet", "prereq", "redist",
     "crashhandler", "crashreport", "crashpad", "easyanticheat", "battleye",
@@ -26,144 +26,157 @@ class PEError(Exception):
     pass
 
 
-def _read(path: Path) -> bytes:
-    try:
-        return path.read_bytes()
-    except OSError as e:
-        raise PEError(f"{path.name} okunamadi: {e}") from e
-
-
-def _pe_offset(data: bytes) -> int:
-    if data[:2] != b"MZ":
-        raise PEError("Windows calistirilabilir dosyasi degil (MZ imzasi yok).")
-    (off,) = struct.unpack_from("<I", data, 0x3C)
-    if data[off:off + 4] != b"PE\0\0":
-        raise PEError("PE basligi bulunamadi.")
-    return off
-
-
 def exe_bitness(path: Path) -> int:
-    """PE COFF basligindaki Machine alanindan 32 veya 64 dondurur.
+    """Return 32 or 64, read from the PE COFF header's Machine field.
 
-    Sadece gereken birkac bayti okur - yuzlerce oyun taranirken tum exeyi
-    belege almak gereksiz yavaslik olurdu.
+    Reads only the few bytes it needs - pulling entire executables into
+    memory while scanning hundreds of games would be pointlessly slow.
     """
     try:
         with open(path, "rb") as f:
             head = f.read(0x40)
             if len(head) < 0x40 or head[:2] != b"MZ":
-                raise PEError("Windows calistirilabilir dosyasi degil (MZ imzasi yok).")
+                raise PEError("Not a Windows executable (no MZ signature).")
             (off,) = struct.unpack_from("<I", head, 0x3C)
             f.seek(off)
             sig = f.read(6)
             if len(sig) < 6 or sig[:4] != b"PE\0\0":
-                raise PEError("PE basligi bulunamadi.")
+                raise PEError("No PE header found.")
             (machine,) = struct.unpack_from("<H", sig, 4)
     except OSError as e:
-        raise PEError(f"{path.name} okunamadi: {e}") from e
+        raise PEError(f"Cannot read {path.name}: {e}") from e
     if machine == PE_X64:
         return 64
     if machine == PE_X86:
         return 32
-    raise PEError(f"Desteklenmeyen islemci tipi: 0x{machine:04x}")
+    raise PEError(f"Unsupported machine type: 0x{machine:04x}")
 
 
 def pe_imports(path: Path) -> list[str]:
-    """Exenin statik import tablosundaki DLL adlari (kucuk harf).
+    """Lower-cased DLL names from the executable's static import table.
 
-    Parse edilemezse bos liste doner - bu bir hata degil, sadece 'bilinmiyor'.
+    Returns an empty list if anything cannot be parsed - that is not an
+    error, just "unknown".
     """
     try:
-        data = _read(path)
-        off = _pe_offset(data)
-        n_sections = struct.unpack_from("<H", data, off + 6)[0]
-        opt_size = struct.unpack_from("<H", data, off + 20)[0]
-        opt = off + 24
-        magic = struct.unpack_from("<H", data, opt)[0]
-        if magic == 0x20B:      # PE32+
-            dd = 112
-        elif magic == 0x10B:    # PE32
-            dd = 96
-        else:
-            return []
-        import_rva = struct.unpack_from("<I", data, opt + dd + 8)[0]
-        if import_rva == 0:
-            return []
+        # Some game executables exceed 500 MB (e.g. Deathloop.exe at 486 MB)
+        # and the import table can sit near the END of the file. Instead of
+        # loading the file into memory we read only the few small regions we
+        # need: PE header, section table, import descriptors, name strings.
+        size = path.stat().st_size
+        with open(path, "rb") as f:
+            def at(offset: int, n: int) -> bytes:
+                if offset < 0 or offset >= size:
+                    return b""
+                f.seek(offset)
+                return f.read(n)
 
-        sec_off = opt + opt_size
-        sections = []
-        for i in range(n_sections):
-            s = sec_off + i * 40
-            vsize, vaddr, rawsize, rawptr = struct.unpack_from("<IIII", data, s + 8)
-            sections.append((vaddr, max(vsize, rawsize), rawptr))
+            head = at(0, 0x40)
+            if len(head) < 0x40 or head[:2] != b"MZ":
+                return []
+            (pe,) = struct.unpack_from("<I", head, 0x3C)
+            if at(pe, 4) != b"PE\0\0":
+                return []
 
-        def to_off(rva: int) -> int | None:
-            for vaddr, size, rawptr in sections:
-                if vaddr <= rva < vaddr + size:
-                    return rawptr + (rva - vaddr)
-            return None
+            coff = at(pe + 4, 20)
+            if len(coff) < 20:
+                return []
+            n_sections = struct.unpack_from("<H", coff, 2)[0]
+            opt_size = struct.unpack_from("<H", coff, 16)[0]
+            opt = pe + 24
 
-        desc = to_off(import_rva)
-        if desc is None:
-            return []
-        names: list[str] = []
-        for _ in range(1024):
-            if desc + 20 > len(data):
-                break
-            name_rva = struct.unpack_from("<I", data, desc + 12)[0]
-            first_thunk = struct.unpack_from("<I", data, desc + 16)[0]
-            if name_rva == 0 and first_thunk == 0:
-                break
-            n_off = to_off(name_rva)
-            if n_off is not None:
-                end = data.find(b"\0", n_off)
-                if end > n_off:
-                    names.append(data[n_off:end].decode("ascii", "ignore").lower())
-            desc += 20
-        return names
+            magic_b = at(opt, 2)
+            if len(magic_b) < 2:
+                return []
+            magic = struct.unpack_from("<H", magic_b, 0)[0]
+            if magic == 0x20B:      # PE32+
+                dd = 112
+            elif magic == 0x10B:    # PE32
+                dd = 96
+            else:
+                return []
+
+            imp = at(opt + dd + 8, 4)
+            if len(imp) < 4:
+                return []
+            import_rva = struct.unpack_from("<I", imp, 0)[0]
+            if import_rva == 0:
+                return []
+
+            sec_raw = at(opt + opt_size, n_sections * 40)
+            sections = []
+            for i in range(min(n_sections, len(sec_raw) // 40)):
+                vsize, vaddr, rawsize, rawptr = struct.unpack_from("<IIII", sec_raw, i * 40 + 8)
+                sections.append((vaddr, max(vsize, rawsize), rawptr))
+
+            def to_off(rva: int) -> int | None:
+                for vaddr, vlen, rawptr in sections:
+                    if vaddr <= rva < vaddr + vlen:
+                        return rawptr + (rva - vaddr)
+                return None
+
+            desc = to_off(import_rva)
+            if desc is None:
+                return []
+
+            # Import descriptors are 20-byte records; grab them in one read.
+            table = at(desc, 20 * 1024)
+            names: list[str] = []
+            for i in range(len(table) // 20):
+                name_rva, first_thunk = struct.unpack_from("<II", table, i * 20 + 12)
+                if name_rva == 0 and first_thunk == 0:
+                    break
+                n_off = to_off(name_rva)
+                if n_off is None:
+                    continue
+                blob = at(n_off, 256)          # a DLL name is a short string
+                end = blob.find(b"\0")
+                if end > 0:
+                    names.append(blob[:end].decode("ascii", "ignore").lower())
+            return names
     except Exception:
         return []
 
 
-# API etiketi -> ReShade'in kullanacagi proxy DLL adi
+# API label -> the proxy DLL name ReShade is installed as
 API_PROXY = {
     "DX11": "dxgi.dll",
     "DX12": "dxgi.dll",
     "OpenGL": "opengl32.dll",
-    "Vulkan": None,   # global layer kurulumu gerekir, otomatiklestirmiyoruz
-    "DX9": None,      # once dgVoodoo2 gerekir
+    "Vulkan": None,   # needs a system-wide layer registration
+    "DX9": None,      # needs dgVoodoo2 first
 }
 
 
 def detect_api(path: Path) -> tuple[str, str]:
-    """(api_etiketi, aciklama) dondurur.
+    """Return (api_label, reason).
 
-    Sira onemli. Bircok Unreal oyunu DX12 ile calistigi halde opengl32.dll'i
-    baska bir amacla statik baglar (ornek: Hell is Us, Fatekeeper - ikisi de
-    hem dxgi.dll hem opengl32.dll import eder). Onceligi OpenGL'e verirsek
-    yanlis proxy DLL secip oyunu bozardik; bu yuzden DXGI varligi belirleyici.
+    Order matters. Many Unreal games run on DX12 yet statically link
+    opengl32.dll for unrelated reasons (e.g. Hell is Us, Fatekeeper - both
+    import dxgi.dll AND opengl32.dll). Checking OpenGL first would pick the
+    wrong proxy DLL and break the game, so DXGI presence decides.
 
-    DX11 ile DX12'yi karistirmak zararsizdir: ikisinde de ReShade ayni
-    dxgi.dll proxy'si olarak kurulur.
+    Confusing DX11 with DX12 is harmless: ReShade installs as the same
+    dxgi.dll proxy either way.
     """
     imports = pe_imports(path)
     has = lambda d: any(d in i for i in imports)
 
     if has("d3d12.dll"):
-        return "DX12", "d3d12.dll statik olarak import ediliyor"
+        return "DX12", "imports d3d12.dll statically"
     if has("d3d11.dll"):
-        return "DX11", "d3d11.dll statik olarak import ediliyor"
-    # DXGI var ama d3d11/d3d12 yok: API calisma aninda seciliyor, proxy yine dxgi.dll
+        return "DX11", "imports d3d11.dll statically"
+    # DXGI without d3d11/d3d12: API chosen at runtime, proxy is dxgi.dll anyway
     if has("dxgi.dll"):
-        return "DX12", "dxgi.dll import ediliyor (DX11/DX12; proxy her iki durumda dxgi.dll)"
-    # Buradan sonrasi: DXGI yok, yani gercekten DXGI disi bir API
+        return "DX12", "imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way)"
+    # Below here: no DXGI, so genuinely a non-DXGI API
     if has("vulkan-1.dll"):
-        return "Vulkan", "vulkan-1.dll import ediliyor, DXGI yok"
+        return "Vulkan", "imports vulkan-1.dll, no DXGI"
     if has("opengl32.dll"):
-        return "OpenGL", "opengl32.dll import ediliyor, DXGI yok"
+        return "OpenGL", "imports opengl32.dll, no DXGI"
     if has("d3d9.dll"):
-        return "DX9", "d3d9.dll import ediliyor, DXGI yok"
-    return "Bilinmiyor", "grafik DLL'i calisma aninda yukleniyor; DX11/DX12 varsayilip dxgi.dll kullanilir"
+        return "DX9", "imports d3d9.dll, no DXGI"
+    return "Unknown", "graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll"
 
 
 def looks_like_game(exe: Path) -> bool:
@@ -171,7 +184,8 @@ def looks_like_game(exe: Path) -> bool:
     return not any(p in low for p in _SKIP_PARTS)
 
 
-# Icine hic girilmeyecek klasorler: dagitim paketleri, anti-cheat, motor araclari.
+# Directories never worth descending into: redistributables, anti-cheat,
+# engine tooling.
 _PRUNE_DIRS = {
     "_commonredist", "commonredist", "redist", "redistributable", "redistributables",
     "directx", "dotnet", "vcredist", "vc_redist", "easyanticheat", "easyanticheat_eos",
@@ -184,7 +198,7 @@ _MAX_DEPTH = 5
 
 
 def _walk_exes(folder: Path, max_depth: int = _MAX_DEPTH) -> list[Path]:
-    """Klasoru derinlik sinirli gezip .exe toplar; ise yaramaz dallara hic girmez."""
+    """Walk the folder to a bounded depth collecting .exe files."""
     found: list[Path] = []
     base_depth = len(folder.parts)
     for root, dirs, files in os.walk(folder, topdown=True):
@@ -198,54 +212,54 @@ def _walk_exes(folder: Path, max_depth: int = _MAX_DEPTH) -> list[Path]:
         for f in files:
             if f.lower().endswith(".exe"):
                 found.append(rp / f)
-        if len(found) > 400:      # patolojik klasorlerde takilma
+        if len(found) > 400:      # don't get stuck in pathological trees
             break
     return found
 
 
 def _score(exe: Path, folder: Path) -> float:
-    """Buyuk puan = asil oyun exesi olma ihtimali yuksek."""
+    """Higher score = more likely to be the real game executable."""
     rel = str(exe.relative_to(folder)).lower().replace("\\", "/")
     stem = exe.stem.lower()
     s = 0.0
 
-    # Unreal'in "-Shipping" eki en guclu isaret
+    # Unreal's "-Shipping" suffix is the strongest signal
     if stem.endswith("-shipping") or "shipping" in stem:
         s += 1000
-    # Bilinen ikili klasorleri
+    # Known binary directories
     if "/binaries/win64/" in rel or "/bin/win64/" in rel or rel.startswith("binaries/win64/"):
         s += 400
     elif "/binaries/win32/" in rel or "/bin/win32/" in rel:
         s += 300
     elif "/bin/" in rel or rel.startswith("bin/"):
         s += 200
-    # Motorun kendi araclari asil oyun degildir
+    # Engine tooling is never the game itself
     if "/engine/binaries/" in rel or rel.startswith("engine/binaries/"):
         s -= 900
-    # Exe adi klasor adina benziyorsa
+    # Executable name resembling the folder name
     fn = re.sub(r"[^a-z0-9]", "", folder.name.lower())
     sn = re.sub(r"[^a-z0-9]", "", stem)
     if fn and sn and (sn in fn or fn in sn):
         s += 350
-    # Kok dizindeki exe genelde iyi bir aday
+    # An executable in the root is usually a good candidate
     if exe.parent == folder:
         s += 120
-    # Yardimci program adlari
+    # Helper program names
     if not looks_like_game(exe):
         s -= 1500
-    # Boyut (log olcekli, birkac yuz puana kadar)
+    # Size (log-ish, capped at a few hundred points)
     try:
         mb = exe.stat().st_size / (1024 * 1024)
         s += min(mb, 300) * 1.2
     except OSError:
         pass
-    # Cok derin = muhtemelen yardimci
+    # Very deep = probably a helper
     s -= rel.count("/") * 15
     return s
 
 
 def find_game_exes(folder: Path) -> list[Path]:
-    """Klasordeki muhtemel oyun exelerini, en olasi olan basta olacak sekilde siralar."""
+    """Candidate game executables, most likely first."""
     folder = Path(folder)
     if not folder.is_dir():
         return []
@@ -253,20 +267,19 @@ def find_game_exes(folder: Path) -> list[Path]:
     if not cands:
         return []
     scored = sorted(cands, key=lambda p: _score(p, folder), reverse=True)
-    # Puani cok dusuk olanlari (kesin yardimci program) listeden dusur,
-    # ama hicbiri kalmazsa elimizdekini vermeye devam et.
+    # Drop obvious helpers, but never return nothing if that is all there is.
     good = [p for p in scored if _score(p, folder) > -500]
     return good or scored
 
 
 def resolve_target(target: Path) -> tuple[Path, list[Path]]:
-    """Kullanicinin verdigi yol bir exe ya da klasor olabilir. (secilen, tum adaylar)."""
+    """The user may pass an .exe or a folder. Returns (chosen, all candidates)."""
     target = Path(target)
     if target.is_file() and target.suffix.lower() == ".exe":
         return target, [target]
     if target.is_dir():
         cands = find_game_exes(target)
         if not cands:
-            raise PEError(f"{target} icinde .exe bulunamadi.")
+            raise PEError(f"No .exe found in {target}.")
         return cands[0], cands
-    raise PEError(f"{target} bulunamadi.")
+    raise PEError(f"{target} not found.")

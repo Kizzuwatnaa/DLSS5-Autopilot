@@ -1,34 +1,34 @@
-r"""ReShade .ini okuma/yazma.
+r"""Reading and writing ReShade .ini files.
 
-ReShade coklu degerleri virgulle ayirir ve gercek bir virgulu ",," olarak
-kacirir. Anahtar adlari crosire/reshade kaynagindaki runtime.cpp ile ayni:
+ReShade stores multi-values comma-separated and escapes a literal comma as
+",,". Key names match crosire/reshade's runtime.cpp:
   ReShade.ini [GENERAL] : EffectSearchPaths, TextureSearchPaths,
                           PreprocessorDefinitions, PresetPath
   ReShade.ini [ADDON]   : AddonPath
-  Preset koku (bolumsuz): Techniques, TechniqueSorting, PreprocessorDefinitions
-Teknik girdileri "TeknikAdi@Dosya.fx" bicimindedir.
+  preset root (no section): Techniques, TechniqueSorting, PreprocessorDefinitions
+Technique entries look like "TechniqueName@File.fx".
 
-ONEMLI: hareket vektoru saglayicisinin teknigi DLSS5_Feed'in USTUNDE olmak
-zorunda, yoksa besleme calismaz.
+IMPORTANT: the motion-vector provider's technique must sit ABOVE DLSS5_Feed in
+the technique list, otherwise the feed never receives vectors.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-# Saglayici numarasi -> (etiket, teknik girdisi ya da None, gereken shader dosyalari)
+# Provider number -> (label, technique entry or None, we install the shader)
 PROVIDERS = {
-    3: ("LumeniteFX Kernel 2.0 (önerilen)", "Lumenite_Kernel@lumenite_Kernel.fx", True),
+    3: ("LumeniteFX Kernel 2.0 (recommended)", "Lumenite_Kernel@lumenite_Kernel.fx", True),
     4: ("LumeniteFX QuantMotion", "Lumenite_QuantMotion@lumenite_QuantMotion.fx", True),
-    0: ("Genel texMotionVectors (qUINT vb. - kendin kurmalısın)", None, False),
-    1: ("iMMERSE Launchpad (kendin kurmalısın)", None, False),
-    2: ("VORT (kendin kurmalısın)", None, False),
+    0: ("Generic texMotionVectors (qUINT etc. - install it yourself)", None, False),
+    1: ("iMMERSE Launchpad (install it yourself)", None, False),
+    2: ("VORT (install it yourself)", None, False),
 }
 
 FEED_TECHNIQUE = "DLSS5_Feed@DLSS5_Feed.fx"
 
 
 class Ini:
-    """Sirali bolumler; ilki her zaman kok ("")."""
+    """Ordered sections; the first is always the root ("")."""
 
     def __init__(self) -> None:
         self.sections: list[tuple[str, list[list[str]]]] = [("", [])]
@@ -100,7 +100,7 @@ class Ini:
 
 
 def split_list(raw: str) -> list[str]:
-    """Tek virgulle bol; ",," kacirilmis virguldur."""
+    """Split on single commas; ",," is an escaped comma."""
     items, cur, i = [], "", 0
     while i < len(raw):
         if raw[i] == ",":
@@ -130,7 +130,7 @@ def _ensure_define(raw: str, define: str) -> str:
 
 
 def write_reshade_ini(game_dir: Path, provider: int = 3) -> None:
-    """ReShade.ini olustur/guncelle. Kullanicinin mevcut ayarlarina dokunmaz."""
+    """Create/update ReShade.ini without touching the user's own settings."""
     p = game_dir / "ReShade.ini"
     ini = Ini.load(p)
     ini.set_default("GENERAL", "EffectSearchPaths", r".\reshade-shaders\Shaders\**")
@@ -139,13 +139,13 @@ def write_reshade_ini(game_dir: Path, provider: int = 3) -> None:
     ini.set("GENERAL", "PreprocessorDefinitions",
             _ensure_define(ini.get("GENERAL", "PreprocessorDefinitions") or "",
                            f"DLSS5_MV_PROVIDER={provider}"))
-    # Eklentiler oyun exesinin yaninda; ReShade'e acikca soyluyoruz.
+    # Add-ons live next to the game executable; tell ReShade explicitly.
     ini.set_default("ADDON", "AddonPath", ".\\")
     ini.save(p)
 
 
 def write_addon_only_ini(dir_: Path) -> None:
-    r"""host64\ klasoru icin: sadece eklenti yukleme, shader yok."""
+    r"""For the host64\ folder: load add-ons only, no shaders."""
     p = dir_ / "ReShade.ini"
     ini = Ini.load(p)
     ini.set_default("ADDON", "AddonPath", ".\\")
@@ -153,7 +153,7 @@ def write_addon_only_ini(dir_: Path) -> None:
 
 
 def write_preset(game_dir: Path, provider: int = 3) -> None:
-    """Preset'te saglayici teknigini DLSS5_Feed'in USTUNE koyar."""
+    """Put the provider technique ABOVE DLSS5_Feed in the preset."""
     p = game_dir / "ReShadePreset.ini"
     ini = Ini.load(p)
     tech = PROVIDERS.get(provider, (None, None, False))[1]

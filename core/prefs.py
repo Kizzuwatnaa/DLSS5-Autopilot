@@ -1,13 +1,13 @@
-"""Kalici tercihler + yerel renodx dosyasi bulma.
+r"""Persistent preferences + locating a local renodx add-on.
 
-Discord'dan indirilen renodx surumleri aynada olmayabiliyor. Kullanicinin bir
-kez sectigi dosyayi hatirlayip BUTUN oyunlarda varsayilan yapiyoruz.
+renodx builds shared on Discord are not on the public mirror. Once the user
+points at a file, remember it and use it as the default for every game.
 
-Arama sirasi:
-    1. daha once secilmis/kaydedilmis dosya
-    2. uygulamanin yanindaki  renodx\\  klasoru      <- tasinabilir kurulum
-    3. Indirilenler / Masaustu (bir alt klasor derinligine kadar)
-    4. hicbiri yoksa -> rhi-repo aynasindan indir
+Search order:
+    1. previously chosen / remembered file
+    2. the  renodx\  folder next to the executable    <- portable install
+    3. Downloads / Desktop (up to one subfolder deep)
+    4. none found -> download from the rhi-repo mirror
 """
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ import os
 import sys
 from pathlib import Path
 
-FILE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "dlss5kur" / "ayarlar.json"
+FILE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "dlss5-autopilot" / "settings.json"
 
-# Uygulamanin yanindaki klasor (PyInstaller onefile'da exe'nin bulundugu yer)
+
 def app_dir() -> Path:
+    """Folder next to the executable (PyInstaller onefile aware)."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
@@ -51,10 +52,11 @@ def set_(key: str, value) -> None:
 
 
 def is_renodx(path: Path) -> bool:
-    """Dosya gercekten RenoDX DLSS 5 eklentisi mi?
+    """Is this actually the RenoDX DLSS 5 add-on?
 
-    DLSS5-Feeder'in kendi dlss5-feed.addon64'u de ayni uzantiyi tasidigi icin
-    ada guvenmiyoruz; ikilinin icindeki imza stringine bakiyoruz.
+    DLSS5-Feeder's own dlss5-feed.addon64 shares the extension, so we do not
+    trust the name - we look for the signature string inside the binary.
+    Installing the wrong file would break the install silently.
     """
     try:
         if not path.is_file() or path.stat().st_size < 200_000:
@@ -70,7 +72,7 @@ def is_renodx(path: Path) -> bool:
 def _candidates() -> list[Path]:
     hits: list[Path] = []
 
-    # 2) uygulamanin yanindaki renodx klasoru (ve exe'nin kendi klasoru)
+    # 2) the renodx folder next to the app (and the app folder itself)
     for d in (app_dir() / "renodx", app_dir()):
         if d.is_dir():
             try:
@@ -78,11 +80,10 @@ def _candidates() -> list[Path]:
             except OSError:
                 pass
 
-    # 3) Indirilenler / Masaustu - bir alt klasor derinligine kadar.
-    #    (Kullanicinin dosyasi cogu zaman "Masaustu\bir klasor\..." icinde olur.)
+    # 3) Downloads / Desktop, one subfolder deep - people usually leave the
+    #    file inside a folder rather than loose on the Desktop.
     home = Path.home()
     roots = [home / "Downloads", home / "Desktop",
-             home / "İndirilenler", home / "Masaüstü",
              Path(os.environ.get("USERPROFILE", home)) / "Downloads"]
     for d in roots:
         if not d.is_dir():
@@ -104,15 +105,13 @@ def _candidates() -> list[Path]:
             uniq.setdefault(f.resolve(), f)
         except OSError:
             continue
-    # Adi ne olursa olsun ICERIGI dogrula: DLSS5-Feeder'in kendi addon'u da
-    # .addon64 uzantili, onu renodx sanip kurarsak kurulum sessizce bozulur.
     good = [f for f in uniq.values() if is_renodx(f)]
     good.sort(key=lambda f: f.stat().st_mtime, reverse=True)
     return good
 
 
 def find_renodx() -> tuple[Path | None, list[Path]]:
-    """(secilecek_dosya, tum_adaylar). Kaydedilmis tercih varsa o one gecer."""
+    """(file_to_use, all_candidates). A remembered choice wins."""
     cands = _candidates()
     saved = get("renodx_local")
     if saved:
