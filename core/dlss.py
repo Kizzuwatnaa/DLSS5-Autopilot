@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-NATIVE, BRIDGE, FEEDER = "native", "bridge", "feeder"
+NATIVE, BRIDGE, FEEDER, OPTI = "native", "bridge", "feeder", "optiscaler"
 
 # Streamline is NVIDIA's own plugin layer; if a game ships it, it ships DLSS.
 # These are never files this tool installs, so they are unambiguous.
@@ -142,7 +142,9 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
                         "OpenGL and the add-on only hooks D3D11/D3D12/Vulkan. "
                         "Only the feeder path can reach it.")
         else:                              # DX12 or unknown -> assume DXGI/D3D12
-            s.options = [NATIVE, BRIDGE, FEEDER]
+            # OptiScaler needs exactly this case: D3D12 plus the game's own
+            # DLSS, whose depth and motion vectors it reads directly.
+            s.options = [NATIVE, OPTI, BRIDGE, FEEDER]
             s.recommended = NATIVE
             s.reason = ("This game ships its own DLSS and renders with D3D12, "
                         "so the add-on can hook it directly. No synthetic "
@@ -173,6 +175,7 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
 
 LABELS = {
     NATIVE: "native - hook the game's own DLSS",
+    OPTI: "optiscaler - replace the upscaler, no reshade",
     BRIDGE: "bridge - private D3D12 session",
     FEEDER: "feeder - synthetic DLAA contract",
 }
@@ -180,6 +183,11 @@ LABELS = {
 BLURB = {
     NATIVE: ("Simplest and best quality: no synthetic contract, no motion "
              "vector shaders, and the game's own DLSS quality mode applies."),
+    OPTI: ("No ReShade at all. OptiScaler takes over upscaling and reads the "
+           "game's own DLSS depth and motion vectors, so it is measurably "
+           "cheaper than the feeder - and it really upscales, so a lower "
+           "render resolution costs less to draw. Author states RTX 50 and a "
+           "D3D12 game with DLSS."),
     BRIDGE: ("Reproduces the DLSS contract on a private D3D12 session. The "
              "only route for Vulkan, and the right one for D3D11 games with "
              "DLSS."),

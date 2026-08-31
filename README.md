@@ -20,6 +20,7 @@ There are three routes into a game, and the tool picks the right one for you.
 | Route | What it does | When it is used |
 |---|---|---|
 | **native** | The DLSS 5 add-on hooks the game's own NGX D3D12 calls | Game ships DLSS and renders with D3D12 |
+| **optiscaler** | OptiScaler replaces the upscaler entirely — no ReShade — and reads the game's own DLSS depth and motion vectors | D3D12 game with DLSS, when you want the cheapest route and real upscaling |
 | **bridge** | `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session | D3D11 or Vulkan games, and games with no DLSS at all |
 | **feeder** | DLSS5-Feeder builds a synthetic DLAA contract from ReShade's depth and shader motion vectors | Everything else |
 
@@ -224,6 +225,7 @@ licence:
 | Component | Project | Licence |
 |---|---|---|
 | dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
+| OptiScaler (DLSS-NR fork) | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | ReShade | [crosire/reshade](https://github.com/crosire/reshade) | BSD-3-Clause |
 | Shader headers | [crosire/reshade-shaders](https://github.com/crosire/reshade-shaders) | per-file |
 | DLSS5-Feeder | [jlrouzies-fr/DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder) | see repository |
@@ -285,6 +287,7 @@ core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
 core/dlss.py          native-DLSS detection and route selection
 core/vulkan.py        registering ReShade as an implicit Vulkan layer
 core/anticheat.py     spotting anti-cheat before it wastes your time
+core/optiscaler.py    the OptiScaler DLSS-NR route
 core/installer.py     install engine and reliability assessment
 core/update.py        update check
 core/selfupdate.py    download and swap in a new build

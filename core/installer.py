@@ -24,12 +24,12 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import (anticheat, dgvoodoo, dlss, feedcfg, games, gpu, net, pe,
-               prefs, reshade_ini, sources, vulkan)
+from . import (anticheat, dgvoodoo, dlss, feedcfg, games, gpu, net,
+               optiscaler, pe, prefs, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
-from .dlss import BRIDGE, FEEDER, NATIVE
+from .dlss import BRIDGE, FEEDER, NATIVE, OPTI
 
 MANIFEST = "dlss5-autopilot.json"
 
@@ -220,6 +220,10 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     steps: list[str] = []
     if g.api == "DX9":
         steps.append("dgVoodoo2 (DX9 -> D3D11)")
+    if opt.path == OPTI:
+        # OptiScaler replaces ReShade entirely - it is the proxy DLL itself.
+        return ["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll",
+                "OptiScaler configuration"]
     steps.append("ReShade (Vulkan layer)" if g.api == "Vulkan" else "ReShade")
 
     if opt.path == FEEDER:
@@ -423,6 +427,38 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.written.append(f)
             rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
                              "not start, raise VRAM with dgVoodooCpl.exe.")
+
+        if opt.path == OPTI:
+            begin("OptiScaler (DLSS-NR build)")
+            for f in optiscaler.install(root, dl=dl, log=log):
+                rep.written.append(f)
+            _, sm_ = gpu.detect()
+            note = optiscaler.requirements_note(sm_)
+            if note:
+                rep.warnings.append(note)
+                log(f"      !! {note}")
+
+            begin("nvngx_dlssnr.dll")
+            catalog_ = sources.rhi_catalog()
+            e_ = sources.pick(catalog_["dlssnr"], opt.dlssnr)
+            f_ = dl(e_["url"], f"dlssnr-{e_['label']}.zip")
+            net.extract_one(f_, DLSSNR, root / DLSSNR)
+            rep.written.append(DLSSNR)
+            compat_, why_ = gpu.check(root / DLSSNR, sm_)
+            log(f"      nvngx_dlssnr {e_['label']}")
+            log(f"      GPU check: {why_}")
+            rep.notes.append(f"dlssnr version: {e_['label']}")
+            if compat_ is False and not opt.ignore_gpu_mismatch:
+                raise InstallError(
+                    f"Build {e_['label']} will not run on your card.\n\n{why_}")
+
+            begin("OptiScaler configuration")
+            optiscaler.enable_nr(root, log)
+            rep.notes.append("OptiScaler installed instead of ReShade - turn on "
+                             "Neural Rendering in its overlay (Insert by default)")
+            _write_manifest(root, g, opt, rep, proxy, level, complete=True)
+            prog(100, "Done")
+            return rep
 
         # --- 1) ReShade -------------------------------------------------------
         begin("ReShade")

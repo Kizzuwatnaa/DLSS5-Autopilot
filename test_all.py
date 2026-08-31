@@ -63,7 +63,8 @@ check("library scan returns games", len(playable) > 0, f"{len(playable)} playabl
 for g in playable:
     s = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
     ok = (s.recommended in s.options
-          and all(o in (dlss.NATIVE, dlss.BRIDGE, dlss.FEEDER) for o in s.options))
+          and all(o in (dlss.NATIVE, dlss.OPTI, dlss.BRIDGE, dlss.FEEDER)
+                  for o in s.options))
     if not ok:
         check(f"route sane for {g.name}", False, f"{s.recommended} / {s.options}")
 check("every game got a sane route", not any(f.startswith("route sane") for f in FAILS))
@@ -92,6 +93,11 @@ EXPECT = {
                    "dlss5-feed.cfg"],
                   ["dlss5-bridge.addon64"]),
 }
+EXPECT[dlss.OPTI] = (["dxgi.dll", "nvngx_dlssnr.dll", "nvngx.dll_dlssnr.dll",
+                      "OptiScaler.ini"],
+                     ["dlss5-feed.addon64", "dlss5-bridge.addon64",
+                      "ReShade.ini", "renodx-dlss5.addon64"])
+
 for route, (want, unwanted) in EXPECT.items():
     d = Path(tempfile.mkdtemp(prefix=f"all_{route}_"))
     shutil.copyfile(X64, d / "Game.exe")
