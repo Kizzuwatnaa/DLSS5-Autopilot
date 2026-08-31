@@ -85,14 +85,25 @@ jobs:
             dist/dlss5-autopilot.exe
             DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip
 
+      # Creates the release if the tag was pushed without one, so a plain
+      # `git push --tags` is enough to publish.
       - name: Upload to the release
         if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" `
-            "DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip" `
-            "SHA256SUMS.txt" --clobber
+          TAG="${{ github.ref_name }}"
+          ZIP="DLSS5-Autopilot-v${VERSION}-win64.zip"
+          NOTES="release-notes-${TAG}.md"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            if [ -f "$NOTES" ]; then
+              gh release create "$TAG" --title "$TAG" --notes-file "$NOTES"
+            else
+              gh release create "$TAG" --title "$TAG" --generate-notes
+            fi
+          fi
+          gh release upload "$TAG" "$ZIP" "SHA256SUMS.txt" --clobber
 
       - uses: actions/upload-artifact@v4
         with:
