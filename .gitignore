@@ -1,0 +1,17 @@
+# Derleme ciktilari
+dlss5kur.exe
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# DLSS 5 eklentisi (renodx) - sizdirilmis, lisanssiz NVIDIA yazilimi.
+# Depoya KONULMAZ; arac calisma aninda kendisi indirir.
+renodx/
+*.addon64
+*.addon32
+*.dll
+
+# Yerel ayarlar
+ayarlar.json
