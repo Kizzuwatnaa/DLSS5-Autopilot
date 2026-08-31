@@ -164,7 +164,10 @@ downloads roughly 150 MB (`nvngx_dlssnr.dll` alone unpacks to 165 MB) into
 ## Warnings
 
 - **Do not use this in online games.** ReShade with add-ons will be flagged by
-  anti-cheat.
+  anti-cheat. The tool detects BattlEye, Easy Anti-Cheat, Vanguard and others
+  in the game folder and marks those games `blocked` in the list — that is why
+  Arma 3 and Arma Reforger do nothing when set up. It is not a tool bug and
+  there is no way around it.
 - **Set your resolution before turning neural rendering on.** The DLSS
   feature is created for one specific backbuffer size. Changing resolution,
   display mode or DLSS settings while it is running forces a rebuild, which
@@ -281,6 +284,7 @@ core/feedcfg.py       dlss5-feed.cfg
 core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
 core/dlss.py          native-DLSS detection and route selection
 core/vulkan.py        registering ReShade as an implicit Vulkan layer
+core/anticheat.py     spotting anti-cheat before it wastes your time
 core/installer.py     install engine and reliability assessment
 core/update.py        update check
 core/selfupdate.py    download and swap in a new build

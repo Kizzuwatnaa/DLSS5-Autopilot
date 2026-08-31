@@ -24,8 +24,8 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import (dgvoodoo, dlss, feedcfg, games, gpu, net, pe, prefs,
-               reshade_ini, sources, vulkan)
+from . import (anticheat, dgvoodoo, dlss, feedcfg, games, gpu, net, pe,
+               prefs, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
@@ -376,6 +376,17 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     if level != STABLE:
         rep.warnings.append(f"{level}: {why_rel}")
 
+    ac = anticheat.detect(root, g.folder)
+    if ac.present:
+        # Not refused: single-player-only users sometimes want this anyway,
+        # and it is their machine. But it is stated plainly, kept in the
+        # manifest, and repeated in the finished-install notes.
+        rep.warnings.append(
+            f"{ac.summary} detected ({', '.join(ac.evidence)}). ReShade "
+            f"add-ons and anti-cheat do not coexist: expect the game not to "
+            f"start, or nothing to happen, or a ban. Do not use this online.")
+        log(f"      !! {ac.summary} detected - see the warning above")
+
     # Is another injector already in place?
     existing = root / proxy
     if existing.is_file() and not _is_reshade(existing):
@@ -424,6 +435,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             # A Vulkan game never loads dxgi.dll. ReShade reaches it as an
             # implicit Vulkan layer instead - a registry value the loader reads.
             manifest, fresh = vulkan.install_layer(setup, log)
+            prefs.add_vulkan_game(root)
             if fresh:
                 rep.notes.append("registered ReShade as a Vulkan layer for this "
                                  "user - it now loads into EVERY Vulkan "
@@ -614,23 +626,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 log("      defaults (work_resolution=100, preset=0)")
         elif opt.path == BRIDGE:
             begin("dlss5-bridge.cfg")
-            # The bridge writes its own defaults on first run; we only pre-set
-            # the synthetic contract when the game has no DLSS of its own,
-            # because it is off unless synth_after is set.
-            lines = ["vk_mirror=1"]
+            cfg = feedcfg.bridge_defaults(opt.native_dlss)
+            cfg.update(opt.feed)          # user overrides (ofa_grid, ofa_perf)
+            if (root / feedcfg.BRIDGE_NAME).is_file():
+                log("      merging into the existing dlss5-bridge.cfg")
+            feedcfg.write_bridge(root, cfg)
+            rep.written.append(feedcfg.BRIDGE_NAME)
+            for line in feedcfg.describe_bridge(cfg):
+                log(f"      {line}")
+                rep.notes.append(line)
             if not opt.native_dlss:
-                lines.append("synth_after=3")
-                log("      synth_after=3 (this game has no DLSS of its own, so "
-                    "the bridge builds a synthetic contract)")
-                rep.notes.append("bridge: synthetic contract armed after 3s")
-            else:
-                log("      mirroring the game's own DLSS contract")
-            cfgp = root / BRIDGE_CFG
-            if not cfgp.is_file():
-                cfgp.write_text("\n".join(lines) + "\n", encoding="utf8")
-                rep.written.append(BRIDGE_CFG)
-            else:
-                log("      existing dlss5-bridge.cfg left alone")
+                log("      the bridge will build a synthetic contract from the "
+                    "driver's optical flow engine")
 
     except PermissionError as e:
         _write_manifest(root, g, opt, rep, proxy, level, complete=False)
@@ -743,11 +750,20 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
 
     reshade_ini.remove_our_techniques(root)
 
-    # A Vulkan layer we registered is global, so take it back out.
+    # The Vulkan layer is registered once for the whole user, so it may only be
+    # removed when the LAST game that needs it goes. Removing it while another
+    # Vulkan install still relies on it would silently break that game.
     try:
-        if vulkan.unregister():
-            removed.append("Vulkan layer registration")
-            log("removed: our ReShade Vulkan layer registration")
+        was_vulkan = str(root) in prefs.vulkan_games()
+        if was_vulkan:
+            still = prefs.drop_vulkan_game(root)
+            if still:
+                log(f"kept the Vulkan layer: {len(still)} other Vulkan "
+                    f"install(s) still use it")
+            elif vulkan.unregister():
+                removed.append("Vulkan layer registration")
+                log("removed: our ReShade Vulkan layer registration "
+                    "(no Vulkan games left)")
     except Exception:
         pass
 

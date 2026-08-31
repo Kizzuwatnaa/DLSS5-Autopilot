@@ -124,3 +124,28 @@ def find_renodx() -> tuple[Path | None, list[Path]]:
 
 def remember_renodx(path: Path | None) -> None:
     set_("renodx_local", str(path) if path else None)
+
+
+# --- Vulkan installs ----------------------------------------------------
+# The Vulkan layer is registered once for the whole user, not per game, so it
+# must only be removed when the LAST Vulkan game that needs it is uninstalled.
+
+def vulkan_games() -> list[str]:
+    v = get("vulkan_games", [])
+    return v if isinstance(v, list) else []
+
+
+def add_vulkan_game(install_dir) -> None:
+    d = str(install_dir)
+    games_ = vulkan_games()
+    if d not in games_:
+        games_.append(d)
+        set_("vulkan_games", games_)
+
+
+def drop_vulkan_game(install_dir) -> list[str]:
+    """Forget this game and return the ones still registered."""
+    d = str(install_dir)
+    games_ = [g for g in vulkan_games() if g != d]
+    set_("vulkan_games", games_)
+    return games_

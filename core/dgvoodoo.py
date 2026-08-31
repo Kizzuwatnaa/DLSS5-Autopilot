@@ -54,6 +54,17 @@ def tune_conf(text: str, vram_mb: int = 1024) -> str:
         "VRAM": str(vram_mb),
         "VideoCard": "internal3D",
         "dgVoodooWatermark": "false",
+        # dgVoodoo confines the cursor to the game window by default. ReShade's
+        # overlay (Home) then cannot take mouse input and the game looks frozen
+        # - it is waiting for a click it can never receive. Measured on GTA IV:
+        # DLSS was delivering frames fine, but pressing Home appeared to hang
+        # the game until this was turned off.
+        "CaptureMouse": "false",
+        # NOT touching FullScreenMode. Forcing windowed output looked like a
+        # sensible companion to CaptureMouse, but GTA IV threw a DirectX fatal
+        # error with it - the game's own display settings and dgVoodoo's have
+        # to agree. Exclusive fullscreen is still worth avoiding; that belongs
+        # in the game's own options, not in a config we rewrite.
     }
     out = []
     for line in text.splitlines():
@@ -66,8 +77,15 @@ def tune_conf(text: str, vram_mb: int = 1024) -> str:
     return "\n".join(out) + "\n"
 
 
+BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+
+
 def install(exe_dir: Path, log=None) -> list[str]:
-    """Install dgVoodoo2 next to the game. Returns the files written."""
+    """Install dgVoodoo2 next to the game. Returns the files written.
+
+    A D3D9.dll already sitting there is somebody else's wrapper - DXVK is a
+    common choice for GTA IV - so it is preserved before being replaced.
+    """
     log = log or (lambda *_: None)
     ver, url = resolve()
     log(f"      dgVoodoo2 {ver}")
@@ -75,6 +93,16 @@ def install(exe_dir: Path, log=None) -> list[str]:
 
     written: list[str] = []
     # A 32-bit game needs the MS/x86 build
+    existing = exe_dir / D3D9
+    bak = existing.with_name(D3D9 + BACKUP_SUFFIX)
+    if existing.is_file() and not bak.exists():
+        try:
+            import shutil
+            shutil.copy2(existing, bak)
+            written.append(bak.name)
+            log(f"      kept your existing {D3D9} as {bak.name}")
+        except OSError:
+            log(f"      WARNING: could not back up the existing {D3D9}")
     net.extract_one(z, "MS/x86/D3D9.dll", exe_dir / D3D9)
     written.append(D3D9)
     log(f"      {D3D9} (MS/x86 build, for the 32-bit game)")

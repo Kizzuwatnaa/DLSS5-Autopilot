@@ -19,8 +19,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (diagnose, dlss, feedcfg, games, gpu, installer, prefs,
-               reshade_ini, selfupdate, sources, update)
+from . import (anticheat, diagnose, dlss, feedcfg, games, gpu, installer,
+               prefs, reshade_ini, selfupdate, sources, update)
 
 APP = "dlss5 autopilot"
 
@@ -366,6 +366,16 @@ class App:
         ttk.Button(top, text="choose folder", command=self._pick_folder)\
             .pack(side="right", padx=(8, 0))
         ttk.Button(top, text="rescan", command=self._scan).pack(side="right")
+        # Removing an install should not mean walking the whole wizard again.
+        self.btn_rm2 = ttk.Button(top, text="uninstall", state="disabled",
+                                  command=self._uninstall)
+        self.btn_rm2.pack(side="right", padx=(0, 8))
+        self.only_installed = tk.BooleanVar(value=False)
+        tk.Checkbutton(top, text="installed only", variable=self.only_installed,
+                       command=self._fill, bg=BG, fg=BODY, selectcolor=FIELD,
+                       activebackground=BG, activeforeground=TXT,
+                       font=font(9), borderwidth=0)\
+            .pack(side="right", padx=(0, 14))
 
         self.scanlbl = ttk.Label(f, text="", style="Dim.TLabel")
         self.scanlbl.pack(anchor="w", pady=(6, 10))
@@ -434,16 +444,21 @@ class App:
     def _fill(self) -> None:
         self.tree.delete(*self.tree.get_children())
         a = self.arch.get()
+        only = getattr(self, "only_installed", None)
         self.shown = [g for g in self.all_games
-                      if g.exe and (a == "all" or str(g.bitness) == a)]
+                      if g.exe and (a == "all" or str(g.bitness) == a)
+                      and (not (only and only.get()) or g.installed)]
         for i, g in enumerate(self.shown):
             ok, _ = installer.check_supported(g)
             sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
             level, _ = installer.reliability(g, sup.recommended)
             outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
                        installer.EXPERIMENTAL: "often fails"}[level]
+            ac = anticheat.detect(g.install_dir, g.folder)
             if not ok:
                 status, tag, outlook = "unsupported", "unsupported", "-"
+            elif ac.present:
+                status, tag, outlook = f"{ac.summary}!", "unsupported", "blocked"
             elif g.installed:
                 status, tag = "installed", "installed"
             else:
@@ -454,9 +469,12 @@ class App:
                                      sup.recommended, outlook, status),
                              tags=(tag,) if tag else ())
         hidden = len([g for g in self.all_games if not g.exe])
-        msg = f"{len(self.shown)} games"
+        n_inst = len([g for g in self.all_games if g.exe and g.installed])
+        msg = f"{len(self.shown)} games  ::  {n_inst} installed"
         if a != "all":
             msg += f"  ::  {a}-bit filter"
+        if only and only.get():
+            msg += "  ::  showing installed only"
         if hidden:
             msg += f"  ::  {hidden} folders had no executable"
         self.scanlbl.config(text=msg)
@@ -485,12 +503,18 @@ class App:
                 lines.append(f"note   {why_rel}")
         else:
             lines.append(f"note   {why}")
+        ac = anticheat.detect(g.install_dir, g.folder)
+        if ac.present:
+            lines.append(f"BLOCK  {ac.summary} is installed here - ReShade "
+                         f"add-ons will be blocked or get you banned")
         if getattr(g, "emu", None):
             lines.append(f"emu    {g.emu.renderer_hint}")
         self.detail.config(text="\n".join(lines),
                            fg=(DIM if level == installer.STABLE else RUST)
                            if ok else RED)
         self.btn_next.config(state="normal" if ok else "disabled")
+        if hasattr(self, "btn_rm2"):
+            self.btn_rm2.config(state="normal" if g.installed else "disabled")
 
     # ---------------------------------------------------------------- step 3
     def _page_install(self) -> tk.Frame:
@@ -963,8 +987,11 @@ class App:
 
     def _idle(self) -> None:
         self.busy = False
-        self.btn_next.config(state="normal", text="INSTALL")
-        self.btn_back.config(state="normal")
+        self.btn_next.config(
+            state="normal",
+            text="INSTALL" if self.step == 3
+            else ("continue" if self.step == 2 else "scan games"))
+        self.btn_back.config(state="normal" if self.step > 1 else "disabled")
 
     def _pump(self) -> None:
         try:
@@ -1008,6 +1035,10 @@ class App:
                     self._idle()
                     self._log(f"> uninstalled ({len(payload)} items)", "ok")
                     self.btn_remove.config(state="disabled")
+                    if hasattr(self, "btn_rm2"):
+                        self.btn_rm2.config(state="disabled")
+                    if self.step == 2:
+                        self._fill()
                 elif kind in ("fail", "error"):
                     self._idle()
                     self._log(payload, "err")

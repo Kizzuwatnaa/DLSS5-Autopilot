@@ -110,3 +110,58 @@ def describe(settings: dict) -> list[str]:
         if abs(v - 1.0) > 1e-6:
             out.append(f"mv_scale_{ax}={v:.3f}")
     return out
+
+
+# --------------------------------------------------------------- bridge cfg
+
+BRIDGE_NAME = "dlss5-bridge.cfg"
+
+# The bridge's own cost knobs. Its synthetic contract runs the NVIDIA driver's
+# hardware optical flow engine instead of a ReShade shader, so it is already
+# cheaper than the feeder - but the grid size and performance level move it
+# further either way.
+OFA_GRID = {
+    2: "2 - default, balanced",
+    4: "4 - coarser grid, cheapest",
+    1: "1 - finest grid, most expensive",
+    0: "0 - optical flow off (no motion vectors)",
+}
+OFA_PERF = {
+    20: "fast - default",
+    10: "medium",
+    5:  "slow - best quality, most expensive",
+}
+
+
+def bridge_defaults(native_dlss: bool) -> dict:
+    """Sensible starting point. synth_after only matters without native DLSS."""
+    d = {"vk_mirror": 1}
+    if not native_dlss:
+        d["synth_after"] = 3
+    return d
+
+
+def write_bridge(dir_: Path, settings: dict | None = None) -> Path:
+    """Create dlss5-bridge.cfg, preserving anything already in it."""
+    p = dir_ / BRIDGE_NAME
+    cur: dict = {}
+    cur.update(read(p))
+    if settings:
+        cur.update(settings)
+    p.write_text("\n".join(f"{k}={v}" for k, v in cur.items()) + "\n",
+                 encoding="utf8")
+    return p
+
+
+def describe_bridge(settings: dict) -> list[str]:
+    out = []
+    if int(settings.get("synth_after", 0)):
+        out.append(f"synth_after={settings['synth_after']} (synthetic contract "
+                   f"armed - the game has no DLSS of its own)")
+    g = settings.get("ofa_grid")
+    if g is not None and int(g) != 2:
+        out.append(f"ofa_grid={g} ({OFA_GRID.get(int(g), '?')})")
+    pf = settings.get("ofa_perf")
+    if pf is not None and int(pf) != 20:
+        out.append(f"ofa_perf={pf} ({OFA_PERF.get(int(pf), '?')})")
+    return out
