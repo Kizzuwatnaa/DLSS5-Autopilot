@@ -51,8 +51,31 @@ and 32-bit games go through extra translation or a helper process and often
 fail at `CreateFeature`. The tool labels every game's outlook rather than
 pretending.
 
-Steam, Epic and GOG libraries are scanned automatically. Anything else can be
-added with **Choose folder…**.
+**Steam, Epic, GOG, EA, Ubisoft, Battle.net and Xbox / Game Pass** libraries
+are scanned automatically, along with the usual emulator locations. Anything
+else is added with **[choose folder]** — point it at the folder the game's
+`.exe` is actually in.
+
+### The OptiScaler route loads under a name you choose
+
+OptiScaler works by wearing the name of a DLL the game already loads. The tool
+offers every name OptiScaler supports and says when to reach for each:
+
+| Name | When |
+|---|---|
+| `dxgi.dll` | the default — works for most D3D12 and D3D11 games |
+| `winmm.dll` | when the game ships its own `dxgi.dll`, or `dxgi` does nothing |
+| `version.dll` | another loader hook; try after `winmm` |
+| `dbghelp.dll` | loads very early — some Unreal Engine titles need this |
+| `d3d12.dll` | D3D12 only, and only if `dxgi` is already taken |
+| `wininet.dll` / `winhttp.dll` | last resort for games that load none of the above |
+
+On **Auto** it picks a name that is not already taken, so a game shipping its
+own `dxgi.dll` — an ENB, a DXVK build — keeps it. It also finds an OptiScaler
+already installed under a *different* name (by reading the DLL's version
+resource, which still says `OptiScaler.dll` whatever the file is called) and
+moves it aside, because two copies loading at once fight each other. It is put
+back on uninstall.
 
 ---
 
@@ -73,9 +96,39 @@ Then in the game:
 Press **Esc** to jump back to the start at any time; the step rail on the left
 is clickable too.
 
+On the **optiscaler** route there is no ReShade overlay: press **Insert** for
+OptiScaler's own overlay and turn on *DLSS Neural Rendering* there.
+
+### After it is installed
+
+Step 3 keeps four buttons for a game that is already set up:
+
+- **diagnose** — reads whichever logs apply to the route you actually used and
+  says what happened, in words rather than log lines
+- **check versions** — compares what this game has installed against what the
+  sources offer now. A different build family (`-RTX40` against an `SF` build)
+  is reported as *different*, not out of date, because that is a choice
+- **uninstall** — removes exactly what was written, restores every backup
+- **open folder**
+
+### Updating
+
 When a newer release exists, a bar appears at the top. **Update now**
-downloads it, swaps the executable and restarts — the previous build is kept
-next to it as `.old.exe` in case you want to go back.
+downloads it, checks it really is a 64-bit Windows executable of a sane size,
+swaps the executable and restarts — the previous build is kept next to it as
+`.old.exe` in case you want to go back. The check runs once every few hours,
+not on every launch, so it does not eat into GitHub's request allowance.
+
+### When something goes wrong
+
+The left rail has **[ open log file ]** and **[ report a bug ]**.
+
+The log lives at `%LOCALAPPDATA%\dlss5-autopilot\autopilot.log` and records the
+run, what each store returned, every folder that was skipped and why, and any
+exception — including ones on background threads, which a windowed program
+otherwise loses completely. **[ report a bug ]** opens an issue with the
+version, your card, the game and the route already filled in; attach the log
+and there is something to work from.
 
 ### Command line
 
