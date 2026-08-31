@@ -229,7 +229,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     begin("DLSS 5 eklentisi (renodx)")
     # Kullanici acikca bir dosya vermediyse bile yerelde bir renodx varsa onu
     # kullan: Discord'dan gelen surumler aynada bulunmuyor ve genelde daha yeni.
-    if not opt.renodx_local:
+    if not opt.renodx_local and not opt.renodx:
         found, _ = prefs.find_renodx()
         if found:
             opt.renodx_local = found
