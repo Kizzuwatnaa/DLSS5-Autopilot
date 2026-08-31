@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import emulators, pe
+from . import emulators, log, pe
 
 # If a game folder contains one of these, we have already installed there.
 # Any of these next to the executable means we (or an older release of this
@@ -187,6 +187,151 @@ def scan_gog() -> list[Game]:
     return out
 
 
+# ------------------------------------------------- EA / Ubisoft / Battle.net
+
+def _reg_walk(hive, key: str, value: str, name_value: str = "") -> list[Game]:
+    """Every subkey of `key` that names an install folder in `value`."""
+    out: list[Game] = []
+    try:
+        import winreg
+    except ImportError:
+        return out
+    try:
+        with winreg.OpenKey(hive, key) as root:
+            i = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(root, i)
+                except OSError:
+                    break
+                i += 1
+                try:
+                    with winreg.OpenKey(root, sub) as k:
+                        p = Path(winreg.QueryValueEx(k, value)[0])
+                        if not p.is_dir():
+                            continue
+                        name = p.name
+                        if name_value:
+                            try:
+                                name = winreg.QueryValueEx(k, name_value)[0] or name
+                            except OSError:
+                                pass
+                        out.append(Game(name=name, folder=p))
+                except (OSError, ValueError):
+                    continue
+    except OSError:
+        pass
+    return out
+
+
+def scan_ea() -> list[Game]:
+    """EA app / Origin. Battlefield and Dead Space live here, not on Steam."""
+    out: list[Game] = []
+    import sys as _sys
+    hives = ()
+    try:
+        import winreg
+        hives = ((winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Electronic Arts"),
+                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Electronic Arts"))
+    except ImportError:
+        return out
+    for hive, key in hives:
+        for g in _reg_walk(hive, key, "Install Dir"):
+            g.source = "EA"
+            out.append(g)
+    # The EA app also keeps a plain games folder.
+    for guess in (r"C:\Program Files\EA Games", r"C:\Program Files (x86)\EA Games"):
+        root = Path(guess)
+        if not root.is_dir():
+            continue
+        try:
+            for f in root.iterdir():
+                if f.is_dir():
+                    out.append(Game(name=f.name, folder=f, source="EA"))
+        except OSError:
+            pass
+    del _sys
+    return out
+
+
+def scan_ubisoft() -> list[Game]:
+    """Ubisoft Connect. Far Cry, Assassin's Creed, Avatar."""
+    out: list[Game] = []
+    try:
+        import winreg
+    except ImportError:
+        return out
+    for g in _reg_walk(winreg.HKEY_LOCAL_MACHINE,
+                       r"SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs",
+                       "InstallDir"):
+        g.source = "Ubisoft"
+        out.append(g)
+    return out
+
+
+def scan_battlenet() -> list[Game]:
+    """Battle.net titles, from their uninstall entries."""
+    out: list[Game] = []
+    try:
+        import winreg
+    except ImportError:
+        return out
+    key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(hive, key) as root:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(root, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if "battle.net" not in sub.lower():
+                        continue
+                    try:
+                        with winreg.OpenKey(root, sub) as k:
+                            loc = Path(winreg.QueryValueEx(k, "InstallLocation")[0])
+                            nm = winreg.QueryValueEx(k, "DisplayName")[0]
+                            if loc.is_dir():
+                                out.append(Game(name=nm, folder=loc,
+                                                source="Battle.net"))
+                    except (OSError, ValueError):
+                        continue
+        except OSError:
+            continue
+    return out
+
+
+def scan_xbox() -> list[Game]:
+    r"""Xbox / Game Pass.
+
+    Only ModifiableWindowsApps is readable and writable; the protected
+    WindowsApps copy cannot be modified at all, so listing it would offer
+    installs that can never work.
+    """
+    out: list[Game] = []
+    roots = []
+    for drive in "CDEFGH":
+        roots.append(Path(f"{drive}:/Program Files/ModifiableWindowsApps"))
+        roots.append(Path(f"{drive}:/XboxGames"))
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            for f in root.iterdir():
+                if not f.is_dir():
+                    continue
+                # XboxGames puts the real files one level down, in Content.
+                inner = f / "Content"
+                out.append(Game(name=f.name,
+                                folder=inner if inner.is_dir() else f,
+                                source="Xbox"))
+        except OSError:
+            continue
+    return out
+
+
 # ---------------------------------------------------------------- emulators
 
 def scan_emulators(progress=None) -> list[Game]:
@@ -232,13 +377,22 @@ def scan_all(progress=None) -> list[Game]:
     """Scan every source, resolve executables, sort by name."""
     games: list[Game] = []
     for label, fn in (("Steam", scan_steam), ("Epic", scan_epic),
-                      ("GOG", scan_gog), ("Emulator", scan_emulators)):
+                      ("GOG", scan_gog), ("EA", scan_ea),
+                      ("Ubisoft", scan_ubisoft), ("Battle.net", scan_battlenet),
+                      ("Xbox", scan_xbox), ("Emulator", scan_emulators)):
         if progress:
             progress(f"Scanning {label}...")
         try:
-            games += fn(progress) if label == "Emulator" else fn()
-        except Exception:
-            pass          # one store failing must not stop the others
+            got = fn(progress) if label == "Emulator" else fn()
+            games += got
+            log.write(f"scan {label}: {len(got)} found")
+        except Exception as e:
+            # One store failing must not stop the others - but it must not be
+            # silent either. "It finds no games" was impossible to act on
+            # while every failure here was swallowed.
+            log.exception(f"scanning {label} failed", e)
+            if progress:
+                progress(f"{label} could not be read: {type(e).__name__}")
 
     # The same folder may be reported by two stores
     uniq: dict[Path, Game] = {}

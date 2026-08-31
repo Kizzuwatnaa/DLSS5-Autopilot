@@ -73,6 +73,7 @@ class Options:
     feed: dict = field(default_factory=dict)   # dlss5-feed.cfg settings
     ignore_gpu_mismatch: bool = False
     path: str = FEEDER                      # native / bridge / feeder
+    opti_proxy: str = ""                    # "" = pick a free name for this game
     native_dlss: bool = False               # game ships its own DLSS
 
 
@@ -82,6 +83,9 @@ class Report:
     skipped: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # component name -> version installed, recorded in the manifest so a
+    # game set up weeks ago can be told what has moved on since.
+    components: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- reliability
@@ -335,6 +339,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "notes": rep.notes,
             "warnings": rep.warnings,
             "feed_cfg": opt.feed,
+            "components": rep.components,
         }, ensure_ascii=False, indent=2), encoding="utf8")
     except OSError:
         pass
@@ -467,8 +472,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
         if opt.path == OPTI:
             begin("OptiScaler (DLSS-NR build)")
-            _backup(root / optiscaler.DEFAULT_PROXY, rep, root)
-            for f in optiscaler.install(root, dl=dl, log=log):
+            # A game that ships its own dxgi.dll (an ENB, DXVK, its own
+            # wrapper) gets a different proxy name rather than having that
+            # file replaced, unless the user picked one explicitly.
+            oproxy = opt.opti_proxy or optiscaler.suggest_proxy(root)
+            if oproxy != optiscaler.DEFAULT_PROXY and not opt.opti_proxy:
+                log(f"      {optiscaler.DEFAULT_PROXY} is already taken here, "
+                    f"installing as {oproxy} instead")
+            orel = optiscaler.resolve()
+            rep.components["optiscaler"] = orel[0]
+            for f in optiscaler.install(root, proxy=oproxy, dl=dl, log=log,
+                                        backup=lambda p: _backup(p, rep, root),
+                                        release=orel):
                 rep.written.append(f)
             _, sm_ = gpu.detect()
             note = optiscaler.requirements_note(sm_)
@@ -486,6 +501,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             log(f"      nvngx_dlssnr {e_['label']}")
             log(f"      GPU check: {why_}")
             rep.notes.append(f"dlssnr version: {e_['label']}")
+            rep.components["dlssnr"] = e_["label"]
             if compat_ is False and not opt.ignore_gpu_mismatch:
                 raise InstallError(
                     f"Build {e_['label']} will not run on your card.\n\n{why_}")
@@ -497,7 +513,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 f"{optiscaler.OVERLAY_KEY} in game to open its overlay, then "
                 f"turn on Neural Rendering - it is off by default. If it "
                 f"refuses, the overlay says why under the checkbox.")
-            _write_manifest(root, g, opt, rep, proxy, level, complete=True)
+            rep.notes.append(f"OptiScaler proxy: {oproxy}")
+            # Record the name OptiScaler actually went in under, not the
+            # ReShade proxy this route never installs.
+            _write_manifest(root, g, opt, rep, oproxy, level, complete=True)
             prog(100, "Done")
             return rep
 
@@ -507,6 +526,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
         setup = dl(url, f"ReShade_Setup_{ver}_Addon.exe")
         log(f"      ReShade {ver}")
+        rep.components["reshade"] = ver
         # The installer exe has a zip appended: both ReShade32.dll and ReShade64.dll.
         if g.api == "Vulkan":
             # A Vulkan game never loads dxgi.dll. ReShade reaches it as an
@@ -541,6 +561,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             _copy(bf, root / BRIDGE_ADDON, rep, root)
             log(f"      dlss5-bridge {btag}")
             rep.notes.append(f"bridge version: {btag}")
+            rep.components["bridge"] = btag
             # An older 1.0.x build under its previous name would be loaded too
             # and fight with this one; ReShade loads every add-on it finds.
             legacy = root / "dlss5-dx11-bridge.addon64"
@@ -594,6 +615,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
             log(f"      renodx-dlss5 {e['label']}")
             rep.notes.append(f"renodx version: {e['label']}")
+            rep.components["renodx"] = e["label"]
 
         begin("nvngx_dlssnr.dll")
         card, sm = gpu.detect()
@@ -636,6 +658,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         rep.written.append(str((dlss_dir / DLSSNR).relative_to(root)))
         log(f"      nvngx_dlssnr {e['label']}")
         rep.notes.append(f"dlssnr version: {e['label']}")
+        rep.components["dlssnr"] = e["label"]
         if tried:
             rep.notes.append(f"skipped as incompatible: {', '.join(tried)}")
         if compat is True:
@@ -659,6 +682,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
             log(f"      nvngx_dlss {e['label']}")
             rep.notes.append(f"dlss version: {e['label']}")
+            rep.components["dlss"] = e["label"]
 
         # --- 8) host64 --------------------------------------------------------
         if not x64 and opt.path == FEEDER:

@@ -3,6 +3,7 @@ uninstalls cleanly, and the guard rails actually fire.
 
 Run this before cutting a release.
 """
+import json
 import shutil
 import subprocess
 import sys
@@ -41,6 +42,7 @@ with warnings.catch_warnings():
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
             "reshade_ini", "feedcfg", "dgvoodoo", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
+            "log", "components",
             "installer", "gui")
     for m in mods:
         try:
@@ -49,8 +51,8 @@ with warnings.catch_warnings():
         except Exception as e:
             check(f"core.{m}", False, f"{type(e).__name__}: {e}")
 
-from core import (diagnose, dlss, games, gpu, installer, net, pe, prefs,  # noqa: E402
-                  reshade_ini, sources, update, vulkan)
+from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noqa: E402
+                  pe, prefs, reshade_ini, sources, update, vulkan)
 
 check("no Turkish characters in any source", not any(
     any(ch in p.read_text(encoding="utf8") for ch in "şğıöçüŞĞİÖÇÜ")
@@ -247,12 +249,124 @@ check("our layer dir is not the existing one",
       before is None or not vulkan.is_ours(before))
 
 # ---------------------------------------------------------------- 7. misc
+section("6b. optiscaler proxy names")
+
+
+def _fake_game(prefix: str = "opti_"):
+    """A throwaway game folder that looks like it ships DLSS."""
+    d = Path(tempfile.mkdtemp(prefix=prefix))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+    return games.manual(d)
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except Exception:
+        return True
+    return False
+
+
+# OptiScaler identifies itself through the PE version resource, which keeps
+# saying "OptiScaler.dll" whatever the file on disk is called.
+d = Path(tempfile.mkdtemp(prefix="dlss5-proxy-"))
+(d / "winmm.dll").write_bytes(
+    b"MZ" + b"\0" * (1 << 20) + "OptiScaler.dll".encode("utf-16-le"))
+(d / "dxgi.dll").write_bytes(b"MZ" + b"\0" * (1 << 21))     # someone else's
+check("optiscaler is recognised under another name",
+      optiscaler.is_optiscaler(d / "winmm.dll"))
+check("an unrelated dll is not mistaken for optiscaler",
+      not optiscaler.is_optiscaler(d / "dxgi.dll"))
+check("a missing file is not optiscaler",
+      not optiscaler.is_optiscaler(d / "version.dll"))
+check("a taken proxy name is stepped over",
+      optiscaler.suggest_proxy(d) == "winmm.dll", optiscaler.suggest_proxy(d))
+check("an empty folder gets the default",
+      optiscaler.suggest_proxy(Path(tempfile.mkdtemp())) == optiscaler.DEFAULT_PROXY)
+check("every proxy name is explained",
+      set(optiscaler.PROXY_HELP) == set(optiscaler.PROXY_NAMES))
+check("an unsupported proxy name is refused",
+      _raises(lambda: optiscaler.install(d, proxy="nonsense.dll")))
+
+# A real install under a chosen name, with a conflicting copy already there.
+g = _fake_game()
+rival = g.install_dir / "version.dll"
+rival.write_bytes(b"MZ" + b"\0" * (1 << 20) + "OptiScaler.dll".encode("utf-16-le"))
+own = g.install_dir / "dxgi.dll"
+own.write_bytes(b"THE GAME'S OWN DXGI")
+installer.install(g, installer.Options(path=dlss.OPTI, native_dlss=True,
+                                       opti_proxy="winmm.dll"),
+                  on_log=lambda t: None)
+check("the chosen proxy name is what gets written",
+      (g.install_dir / "winmm.dll").is_file()
+      and optiscaler.is_optiscaler(g.install_dir / "winmm.dll"))
+check("the game's own dxgi.dll is left alone",
+      own.read_bytes() == b"THE GAME'S OWN DXGI")
+check("a rival optiscaler is moved out of the way",
+      not rival.exists()
+      and rival.with_name("version.dll" + installer.BACKUP_SUFFIX).is_file())
+installer.uninstall(g, on_log=lambda t: None)
+check("the rival is put back on uninstall",
+      rival.is_file() and optiscaler.is_optiscaler(rival))
+check("uninstall removes the proxy it installed",
+      not (g.install_dir / "winmm.dll").exists())
+
+# With no choice made, a game that ships its own dxgi.dll gets another name.
+g = _fake_game()
+(g.install_dir / "dxgi.dll").write_bytes(b"THE GAME'S OWN DXGI")
+installer.install(g, installer.Options(path=dlss.OPTI, native_dlss=True),
+                  on_log=lambda t: None)
+check("auto avoids replacing the game's own dxgi.dll",
+      (g.install_dir / "dxgi.dll").read_bytes() == b"THE GAME'S OWN DXGI"
+      and optiscaler.is_optiscaler(g.install_dir / "winmm.dll"))
+man = json.loads((g.install_dir / installer.MANIFEST).read_text(encoding="utf8"))
+check("the manifest records the name it actually used",
+      man["proxy"] == "winmm.dll", man["proxy"])
+installer.uninstall(g, on_log=lambda t: None)
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
 check("version is 1.3.0", update.VERSION == "1.3.0", update.VERSION)
+
+from core import log as _log  # noqa: E402
+_log.write("test run")
+check("the log file is written", _log.path().is_file(), str(_log.path()))
+_before = _log.path().stat().st_size
+try:
+    raise ValueError("deliberate")
+except ValueError as e:
+    _log.exception("test", e)
+check("a traceback reaches the log",
+      _log.path().stat().st_size > _before
+      and "deliberate" in _log.path().read_text(encoding="utf8", errors="replace"))
+from core import components as _comp  # noqa: E402
+_d = Path(tempfile.mkdtemp(prefix="comp_"))
+(_d / installer.MANIFEST).write_text(json.dumps(
+    {"components": {"renodx": "4.60"}}), encoding="utf8")
+_items = _comp.check(_d)
+check("component versions are read from the manifest",
+      len(_items) == 1 and _items[0].installed == "4.60",
+      str([(i.name, i.installed, i.latest) for i in _items]))
+# pre-1.3 installs kept their versions in the notes only
+(_d / installer.MANIFEST).write_text(json.dumps(
+    {"notes": ["renodx version: 4.55", "backed up the game's own x.dll"]}),
+    encoding="utf8")
+_old = _comp.check(_d)
+check("versions recorded by an older release are still read",
+      len(_old) == 1 and _old[0].installed == "4.55"
+      and _old[0].outdated, str([(i.installed, i.latest, i.outdated) for i in _old]))
+check("a different build family is not called outdated",
+      not _comp.Item("x", "310.8.SF-v2", "310.8.0-RTX40",
+                     _comp._key("310.8.0-RTX40") > _comp._key("310.8.SF-v2")).outdated)
+check("nothing recorded gives nothing to report", _comp.check(Path(tempfile.mkdtemp())) == [])
+
+check("every store is scanned",
+      all(hasattr(games, f"scan_{s}") for s in
+          ("steam", "epic", "gog", "ea", "ubisoft", "battlenet", "xbox")))
 r = diagnose.analyse(Path(r"C:\Program Files (x86)\Steam\steamapps\common\DEATHLOOP"))
 check("diagnosis reads a real log", bool(r.verdict), r.verdict[:52])
 

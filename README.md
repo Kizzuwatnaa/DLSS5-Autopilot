@@ -216,6 +216,63 @@ so they are easy to audit.
 
 ---
 
+## Is it safe? How to check for yourself
+
+Fair question to ask about any .exe from a Discord link. Do not take anyone's
+word for it — here is what you can verify.
+
+**The executable is built by GitHub, not on anyone's PC.** Every release is
+compiled by the [`release` workflow](.github/workflows/release.yml) on GitHub's
+own runners, from the source in this repository. The build log is public: open
+the Actions tab and read exactly what was run. Nobody gets to slip anything in
+between the code you can read and the file you download.
+
+**Check the file is the one that build produced.** Every release ships a
+`SHA256SUMS.txt`. Compare it against your download:
+
+```powershell
+Get-FileHash .\dlss5-autopilot.exe -Algorithm SHA256
+```
+
+If it does not match, do not run it — it did not come from here.
+
+**Check the signed provenance**, which ties the binary to the exact commit and
+build run that produced it:
+
+```
+gh attestation verify dlss5-autopilot.exe --repo Kizzuwatnaa/DLSS5-Autopilot
+```
+
+**About antivirus warnings.** The build is packed with PyInstaller, which
+bundles a Python interpreter into a single self-extracting .exe. That is the
+same shape a lot of real malware uses, so heuristic scanners flag it — a
+handful of the ~70 engines on VirusTotal will usually say something like
+`Trojan.Generic` or `Wacatac` on *any* PyInstaller build, including a script
+that does nothing at all. It is a false positive, and it is the price of
+shipping a single .exe with no installer.
+
+Windows Defender, which is what almost everyone actually runs, reports no
+threat. If you would rather not take the .exe at all, **run it from source** —
+it is plain Python with no third-party packages:
+
+```
+git clone https://github.com/Kizzuwatnaa/DLSS5-Autopilot
+cd DLSS5-Autopilot
+python dlss5_autopilot.py
+```
+
+**What it actually does to your machine**, all of which you can read:
+
+- writes only into the game folder you pick, and backs up anything it replaces
+- keeps its settings and log in `%LOCALAPPDATA%\dlss5-autopilot`
+- adds one registry key under `HKEY_CURRENT_USER` — and only for the Vulkan
+  route, which needs it, removed again on uninstall
+- never needs administrator rights, and never asks for them
+- downloads only from the hosts listed above
+- sends nothing anywhere: no telemetry, no analytics, no account
+
+---
+
 ## Credits and licensing
 
 This tool is a downloader and configurator. It bundles nothing. Each component

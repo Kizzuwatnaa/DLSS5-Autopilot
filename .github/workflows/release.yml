@@ -1,0 +1,102 @@
+# Builds the released executable on GitHub's own runners, from the source in
+# this repository, and publishes it with a signed provenance attestation.
+#
+# The point is that nobody has to take anyone's word for what is in the .exe.
+# The build happens in public, the log is public, and the attestation ties the
+# published binary to this exact commit. If the file someone downloads does
+# not match the hash in the release notes, it did not come from here.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:          # lets a build be run by hand, without a tag
+
+permissions:
+  contents: write             # create the release and upload to it
+  id-token: write             # sign the provenance attestation
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      # The tool has no third-party dependencies - standard library and
+      # tkinter only - so there is nothing else to install, and nothing from
+      # PyPI ends up inside the executable.
+      - name: Check there are no third-party imports
+        shell: bash
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "requirements.txt exists - review it before trusting this build"
+            cat requirements.txt
+          else
+            echo "no requirements.txt: standard library only"
+          fi
+
+      - name: Build
+        run: |
+          python -m PyInstaller --onefile --windowed `
+            --name dlss5-autopilot `
+            --distpath dist `
+            --noconfirm `
+            dlss5_autopilot.py
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ -z "$VERSION" ] && VERSION="dev"
+          mkdir -p out
+          cp dist/dlss5-autopilot.exe out/
+          cp README.md LICENSE out/
+          cd out
+          7z a "../DLSS5-Autopilot-v${VERSION}-win64.zip" ./*
+          cd ..
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Hashes
+        shell: bash
+        run: |
+          {
+            echo '### SHA-256'
+            echo '```'
+            sha256sum dist/dlss5-autopilot.exe "DLSS5-Autopilot-v${VERSION}-win64.zip"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sha256sum dist/dlss5-autopilot.exe \
+                    "DLSS5-Autopilot-v${VERSION}-win64.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # Ties the binary to this commit and this workflow run, verifiable with
+      #     gh attestation verify dlss5-autopilot.exe --repo <owner>/<repo>
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            dist/dlss5-autopilot.exe
+            DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip
+
+      - name: Upload to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" `
+            "DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip" `
+            "SHA256SUMS.txt" --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dlss5-autopilot-${{ env.VERSION }}
+          path: |
+            DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip
+            SHA256SUMS.txt

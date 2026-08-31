@@ -19,8 +19,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (anticheat, diagnose, dlss, feedcfg, games, gpu, installer,
-               prefs, reshade_ini, selfupdate, sources, update)
+from . import (anticheat, components, diagnose, dlss, feedcfg, games, gpu,
+               installer, log, optiscaler, prefs, reshade_ini, selfupdate,
+               sources, update)
 
 APP = "dlss5 autopilot"
 
@@ -175,7 +176,17 @@ class App:
         self.gpulbl.pack(fill="x", padx=20, pady=(0, 6))
         self.verlbl = tk.Label(rail, text=f"v{update.VERSION}", bg=RAIL, fg=FAINT,
                                anchor="w", font=font(8))
-        self.verlbl.pack(fill="x", padx=20, pady=(0, 18))
+        self.verlbl.pack(fill="x", padx=20, pady=(0, 4))
+        # A bug report needs something to attach. This opens the log file so
+        # it can be pasted somewhere useful.
+        self.loglink = tk.Label(rail, text="[ open log file ]", bg=RAIL, fg=FAINT,
+                                anchor="w", cursor="hand2", font=font(8))
+        self.loglink.pack(fill="x", padx=20, pady=(0, 2))
+        self.loglink.bind("<Button-1>", lambda e: self._open_log())
+        self.buglink = tk.Label(rail, text="[ report a bug ]", bg=RAIL, fg=FAINT,
+                                anchor="w", cursor="hand2", font=font(8))
+        self.buglink.pack(fill="x", padx=20, pady=(0, 18))
+        self.buglink.bind("<Button-1>", lambda e: self._report_bug())
 
         right = tk.Frame(r, bg=BG)
         right.pack(side="left", fill="both", expand=True)
@@ -438,6 +449,7 @@ class App:
                 gs = games.scan_all(progress=lambda m: self.q.put(("scan", m)))
                 self.q.put(("scanned", gs))
             except Exception:
+                log.exception("scanning the library")
                 self.q.put(("error", traceback.format_exc()))
         threading.Thread(target=work, daemon=True).start()
 
@@ -477,6 +489,16 @@ class App:
             msg += "  ::  showing installed only"
         if hidden:
             msg += f"  ::  {hidden} folders had no executable"
+        # An empty list used to say "0 games" and leave you stuck. Say what to
+        # do instead: not every launcher can be discovered from the registry.
+        if not self.shown:
+            if self.all_games:
+                msg = ("no games match this filter  ::  set architecture to "
+                       "'all', or use [choose folder]")
+            else:
+                msg = ("no games found  ::  use [choose folder] and point at "
+                       "the game's own folder - see the log for what each "
+                       "store returned")
         self.scanlbl.config(text=msg)
         self.game = None
         self.detail.config(text="select a game for details", fg=FAINT)
@@ -529,10 +551,10 @@ class App:
         inner = card.inner
         inner.columnconfigure(1, weight=1)
 
-        def row(r: int, label: str, colour: str = DIM) -> None:
-            tk.Label(inner, text=label, bg=PANEL, fg=colour,
-                     font=font(9)).grid(row=r, column=0, sticky="w",
-                                        padx=(0, 14), pady=5)
+        def row(r: int, label: str, colour: str = DIM) -> tk.Label:
+            lbl = tk.Label(inner, text=label, bg=PANEL, fg=colour, font=font(9))
+            lbl.grid(row=r, column=0, sticky="w", padx=(0, 14), pady=5)
+            return lbl
 
         self.exerow = tk.Label(inner, text="target exe", bg=PANEL, fg=AMBER,
                                font=font(9))
@@ -548,12 +570,24 @@ class App:
                                  justify="left", anchor="w", wraplength=680)
         self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 8))
 
-        row(3, "motion vectors")
+        self.lbl_mv = row(3, "motion vectors")
         self.cb_prov = ttk.Combobox(inner, state="readonly",
                                     values=[v[0] for v in reshade_ini.PROVIDERS.values()])
         self.cb_prov.current(0)
         self.cb_prov.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
         self.cb_prov.bind("<<ComboboxSelected>>", self._on_prov)
+
+        # Shares row 3 with motion vectors: the feeder needs one, OptiScaler
+        # needs the other, and no route needs both.
+        self.lbl_proxy = tk.Label(inner, text="loads as", bg=PANEL, fg=DIM,
+                                  font=font(9))
+        self.cb_proxy = ttk.Combobox(
+            inner, state="readonly",
+            values=["auto - pick a free name"] +
+                   [f"{n}  -  {optiscaler.PROXY_HELP[n]}"
+                    for n in optiscaler.PROXY_NAMES])
+        self.cb_proxy.current(0)
+        self.cb_proxy.bind("<<ComboboxSelected>>", self._on_proxy)
 
         row(4, "dlss5 add-on")
         self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["loading..."])
@@ -633,6 +667,8 @@ class App:
         self.btn_diag.pack(side="left")
         self.btn_remove = ttk.Button(act, text="uninstall", command=self._uninstall)
         self.btn_remove.pack(side="left", padx=10)
+        ttk.Button(act, text="check versions", command=self._check_components)\
+            .pack(side="left", padx=(0, 10))
         ttk.Button(act, text="open folder",
                    command=lambda: self.game and webbrowser.open(str(self.game.install_dir)))\
             .pack(side="left")
@@ -651,6 +687,50 @@ class App:
         self.log.tag_configure("warn", foreground=RUST)
         self.log.tag_configure("head", foreground=AMBER)
         return f
+
+    # --------------------------------------------------------- components
+    def _check_components(self) -> None:
+        """Compare what is installed here against what the sources offer now."""
+        if self.busy or not self.game:
+            return
+        g = self.game
+        if not g.installed:
+            self._log("> nothing is installed in this folder yet", "warn")
+            return
+        self.busy = True
+        self._log("")
+        self._log("=== component versions ===", "head")
+        self._log("  asking each source for its current version...")
+
+        def work():
+            try:
+                self.q.put(("components", components.check(g.install_dir)))
+            except Exception:
+                log.exception("checking component versions")
+                self.q.put(("components", []))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_components(self, items) -> None:
+        self.busy = False
+        if not items:
+            self._log("  could not read any recorded versions - reinstall to "
+                      "record them", "warn")
+            return
+        for it in items:
+            if it.outdated:
+                self._log(f"[!!]   {it.name}: {it.installed} -> {it.latest}", "warn")
+            elif it.installed != it.latest:
+                self._log(f"[--]   {it.name}: {it.installed} "
+                          f"(current is {it.latest}, a different build)")
+            else:
+                self._log(f"[ok]   {it.name}: {it.installed}", "ok")
+        stale = [i for i in items if i.outdated]
+        self._log("")
+        self._log(f"> {components.summary(items)}",
+                  "warn" if stale else "ok")
+        if stale:
+            self._log("  press install again to update - your settings and "
+                      "backups are kept")
 
     # ------------------------------------------------------------ diagnose
     def _diagnose(self) -> None:
@@ -745,6 +825,19 @@ class App:
         self.route = path
         self.routelbl.config(text=dlss.BLURB[path], fg=DIM)
         feeder = path == dlss.FEEDER
+        opti = path == dlss.OPTI
+        # OptiScaler is loaded by the game under one of several names; the
+        # feeder's motion-vector provider sits in the same place on screen.
+        if opti:
+            self.lbl_mv.grid_remove()
+            self.cb_prov.grid_remove()
+            self.lbl_proxy.grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_proxy.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+        else:
+            self.lbl_proxy.grid_remove()
+            self.cb_proxy.grid_remove()
+            self.lbl_mv.grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_prov.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
         # Motion vectors, work area and DLSS preset belong to the feeder's
         # synthetic contract; the other routes hook the game's real DLSS calls
         # and ignore all three.
@@ -760,6 +853,63 @@ class App:
             self._log(f"> route: {dlss.LABELS[path]}  [{level}]", "head")
             self._log(f"  {why}")
             self._log(f"  plan: {' -> '.join(installer.plan(self.game, self._opts()))}")
+
+    def _open_log(self) -> None:
+        """Show the log file in Explorer, creating it if this run was clean."""
+        p = log.path()
+        try:
+            if not p.is_file():
+                log.write("log opened from the interface")
+            import subprocess
+            subprocess.Popen(["explorer", "/select,", str(p)])
+        except Exception:
+            messagebox.showinfo(APP, f"The log file is at:\n\n{p}")
+
+    def _report_bug(self) -> None:
+        """Open a pre-filled issue with the machine details already in it.
+
+        "It crashes a lot" is unactionable. Filling in the version, the card
+        and the route means a report arrives with the parts that matter,
+        without asking anyone to hunt for them.
+        """
+        try:
+            name, sm = gpu.detect()
+        except Exception:
+            name, sm = "unknown", None
+        g = self.game
+        body = (
+            "**What happened**\n\n\n"
+            "**What I expected**\n\n\n"
+            "---\n"
+            f"- version: {update.VERSION}\n"
+            f"- gpu: {name} (sm_{sm})\n"
+            f"- game: {g.name if g else '-'}\n"
+            f"- exe: {g.exe.name if g and g.exe else '-'}\n"
+            f"- arch/api: {g.bit_label if g else '-'} / {g.api if g else '-'}\n"
+            f"- route: {getattr(self, 'route', '-')}\n"
+            f"\nLog file (please attach or paste): `{log.path()}`\n")
+        try:
+            from urllib.parse import quote
+            webbrowser.open(
+                f"https://github.com/{update.REPO}/issues/new"
+                f"?title={quote('bug: ')}&body={quote(body)}")
+        except Exception:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(body)
+            messagebox.showinfo(APP, "Details copied to the clipboard - paste "
+                                     "them into a new issue on GitHub.")
+
+    def _on_proxy(self, _e=None) -> None:
+        """Warn when the chosen name is already something else's file."""
+        i = self.cb_proxy.current()
+        if i <= 0 or not self.game:
+            return
+        name = optiscaler.PROXY_NAMES[i - 1]
+        p = self.game.install_dir / name
+        if p.is_file() and not optiscaler.is_optiscaler(p):
+            self._log(f"  note: this game already has its own {name}. It will "
+                      f"be backed up and restored on uninstall, but another "
+                      f"name is safer.")
 
     def _on_prov(self, _e=None) -> None:
         self.provider.set(list(reshade_ini.PROVIDERS.keys())[self.cb_prov.current()])
@@ -907,6 +1057,8 @@ class App:
             feed=feed,
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
+            opti_proxy=("" if self.cb_proxy.current() <= 0
+                        else optiscaler.PROXY_NAMES[self.cb_proxy.current() - 1]),
         )
 
     # ---------------------------------------------------------------- actions
@@ -933,6 +1085,7 @@ class App:
             except installer.InstallError as e:
                 self.q.put(("fail", str(e)))
             except Exception:
+                log.exception("installing")
                 self.q.put(("fail", traceback.format_exc()))
         threading.Thread(target=work, daemon=True).start()
 
@@ -953,6 +1106,7 @@ class App:
                 rm = installer.uninstall(g, on_log=lambda t: self.q.put(("log", t)))
                 self.q.put(("removed", rm))
             except Exception:
+                log.exception("uninstalling")
                 self.q.put(("fail", traceback.format_exc()))
         threading.Thread(target=work, daemon=True).start()
 
@@ -1029,6 +1183,8 @@ class App:
                     self.pblbl.config(text=m)
                 elif kind == "log":
                     self._log(payload)
+                elif kind == "components":
+                    self._show_components(payload)
                 elif kind == "done":
                     self._finish_ok(payload)
                 elif kind == "removed":
@@ -1085,7 +1241,16 @@ class App:
 
 
 def run() -> int:
+    log.start(update.VERSION)
     root = tk.Tk()
-    App(root)
+    # Installed before the window is built: a failure while building it is
+    # exactly the kind that used to disappear without trace.
+    log.install_handlers(root)
+    try:
+        App(root)
+    except Exception as e:
+        log.exception("building the main window", e)
+        raise
     root.mainloop()
+    log.write("closed normally")
     return 0
