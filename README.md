@@ -51,7 +51,12 @@ Then in the game:
 - Enable neural rendering in the `DLSS 5 Neural Rendering` panel
 - Turn the game's own **MSAA/SSAA** off
 
-Press **Esc** (or click the logo) to jump back to the start at any time.
+Press **Esc** to jump back to the start at any time; the step rail on the left
+is clickable too.
+
+When a newer release exists, a bar appears at the top. **Update now**
+downloads it, swaps the executable and restarts — the previous build is kept
+next to it as `.old.exe` in case you want to go back.
 
 ### Command line
 
@@ -93,14 +98,29 @@ it gets replaced, the original is saved alongside and restored on uninstall.
 runs — many games keep it in a subfolder (`Bin\Win64…\Game.exe`). When a
 folder has several candidates you can pick which one to target.
 
+**"Did it work?"** After you have played, press it. The tool reads
+`dlss5-feed.log` and `ReShade.log` back and tells you in plain words what
+happened — whether the shader loaded, whether motion vectors are alive,
+whether the DLSS feature was created, and whether frames are actually being
+delivered. This matters because the usual failure is silent: the game simply
+looks unchanged.
+
+**It keeps working when GitHub rate-limits you.** GitHub allows 60 anonymous
+API calls an hour per address, which is easy to hit behind a VPN, a
+university network or CGNAT. Every API answer is cached on disk and reused
+when a live call fails, so an install still completes — with a note saying
+the version list is stale.
+
 ---
 
 ## Settings
 
 The **Quality / speed** section writes `dlss5-feed.cfg`:
 
-- **Work area** (`work_resolution`, 50–100%) — the performance dial. If fps
-  drops at 4K, try 70–80%.
+- **Work area** (`work_resolution`, 50–100%) — the performance dial. Only the
+  64-bit **D3D11** path honours it; the add-on's own log line is
+  `settled D3D11 work resolution=…%`. On DX12, OpenGL and the 32-bit helper
+  the value is ignored, so the slider is disabled there rather than pretending.
 - **DLSS preset** — if you see warping around flames or transparent objects,
   try Preset E or F (the legacy CNN).
 - **HDR** — auto / force SDR / force HDR
@@ -127,6 +147,11 @@ downloads roughly 150 MB (`nvngx_dlssnr.dll` alone unpacks to 165 MB) into
 
 - **Do not use this in online games.** ReShade with add-ons will be flagged by
   anti-cheat.
+- **Set your resolution before turning neural rendering on.** The DLSS
+  feature is created for one specific backbuffer size. Changing resolution,
+  display mode or DLSS settings while it is running forces a rebuild, which
+  can black-screen, freeze or crash the game. Turn neural rendering off, change
+  the resolution, then turn it back on.
 - Prefer **borderless** over exclusive fullscreen — swapchain recreation on
   alt-tab can crash.
 - Neural rendering costs several milliseconds. With v-sync on at 60 Hz you can
@@ -237,5 +262,7 @@ core/feedcfg.py       dlss5-feed.cfg
 core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
 core/installer.py     install engine and reliability assessment
 core/update.py        update check
+core/selfupdate.py    download and swap in a new build
+core/diagnose.py      reading dlss5-feed.log back into an answer
 core/gui.py           interface
 ```

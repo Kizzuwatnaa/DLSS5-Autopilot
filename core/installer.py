@@ -139,11 +139,22 @@ def _backup(dst: Path, rep: Report, root: Path) -> None:
     if not dst.is_file():
         return
     bak = dst.with_name(dst.name + BACKUP_SUFFIX)
+    try:
+        rel = str(bak.relative_to(root))
+    except ValueError:
+        rel = str(bak)
     if bak.exists():
-        return                      # already backed up on an earlier install
+        # Already backed up by an earlier install. Do NOT copy again - that
+        # would overwrite the game's original with our own file. But the entry
+        # must still go into this manifest, otherwise a later uninstall reads
+        # a manifest with no backup listed and never restores it.
+        if rel not in rep.written:
+            rep.written.append(rel)
+            rep.notes.append(f"existing backup of {dst.name} kept")
+        return
     try:
         shutil.copy2(dst, bak)
-        rep.written.append(str(bak.relative_to(root)))
+        rep.written.append(rel)
         rep.notes.append(f"backed up the game's own {dst.name}")
     except OSError:
         pass
@@ -176,6 +187,33 @@ def plan(g: games.Game, opt: Options) -> list[str]:
 
 # ---------------------------------------------------------------- install
 
+def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
+                    proxy: str, level: str, complete: bool) -> None:
+    """Record what was written.
+
+    Also written when an install FAILS part way: without it the orphaned files
+    could not be cleaned up afterwards.
+    """
+    try:
+        (root / MANIFEST).write_text(json.dumps({
+            "version": 1,
+            "complete": complete,
+            "exe": g.exe.name if g.exe else None,
+            "bitness": g.bitness,
+            "api": g.api,
+            "proxy": proxy,
+            "provider": opt.provider,
+            "reliability": level,
+            "files": rep.written,
+            "skipped": rep.skipped,
+            "notes": rep.notes,
+            "warnings": rep.warnings,
+            "feed_cfg": opt.feed,
+        }, ensure_ascii=False, indent=2), encoding="utf8")
+    except OSError:
+        pass
+
+
 def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None) -> Report:
     ok, why = check_supported(g)
     if not ok:
@@ -205,6 +243,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     steps = plan(g, opt)
     n = len(steps)
     i = 0
+    done = False
 
     def begin(name: str) -> None:
         nonlocal i
@@ -219,209 +258,216 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                       + (f" / {net.human(total)}" if total else ""))
         return net.download(url, fname, progress=p)
 
-    # --- 0) DX9 needs dgVoodoo2 first -------------------------------------
-    if g.api == "DX9":
-        begin("dgVoodoo2 (DX9 -> D3D11)")
-        for f in dgvoodoo.install(root, log):
-            rep.written.append(f)
-        rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
-                         "not start, raise VRAM with dgVoodooCpl.exe.")
+    # Every step below can fail (network, rate limit, permissions). If it
+    # does, we still record the files already written - otherwise they would
+    # be orphaned in the game folder with no way to clean them up.
+    try:
+        # --- 0) DX9 needs dgVoodoo2 first -------------------------------------
+        if g.api == "DX9":
+            begin("dgVoodoo2 (DX9 -> D3D11)")
+            for f in dgvoodoo.install(root, log):
+                rep.written.append(f)
+            rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
+                             "not start, raise VRAM with dgVoodooCpl.exe.")
 
-    # --- 1) ReShade -------------------------------------------------------
-    begin("ReShade")
-    ver, url = sources.resolve_reshade()
-    setup = dl(url, f"ReShade_Setup_{ver}_Addon.exe")
-    log(f"      ReShade {ver}")
-    # The installer exe has a zip appended: both ReShade32.dll and ReShade64.dll.
-    _backup(root / proxy, rep, root)
-    net.extract_one(setup, "ReShade64.dll" if x64 else "ReShade32.dll", root / proxy)
-    rep.written.append(proxy)
-    log(f"      {proxy} <- ReShade{'64' if x64 else '32'}.dll")
-    if not x64:
-        net.extract_one(setup, "ReShade64.dll", host / "dxgi.dll")
-        rep.written.append(f"{HOST_DIR}/dxgi.dll")
-        log(f"      {HOST_DIR}/dxgi.dll <- ReShade64.dll (for the helper process)")
+        # --- 1) ReShade -------------------------------------------------------
+        begin("ReShade")
+        ver, url = sources.resolve_reshade()
 
-    # --- 2) shader headers ------------------------------------------------
-    begin("ReShade shader headers")
-    for h in sources.RESHADE_HEADERS:
-        dest = root / SHADERS / h
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(net.fetch_text(sources.RESHADE_HEADERS_BASE + h))
-        rep.written.append(str(Path(SHADERS) / h))
-    log(f"      {', '.join(sources.RESHADE_HEADERS)}")
+        setup = dl(url, f"ReShade_Setup_{ver}_Addon.exe")
+        log(f"      ReShade {ver}")
+        # The installer exe has a zip appended: both ReShade32.dll and ReShade64.dll.
+        _backup(root / proxy, rep, root)
+        net.extract_one(setup, "ReShade64.dll" if x64 else "ReShade32.dll", root / proxy)
+        rep.written.append(proxy)
+        log(f"      {proxy} <- ReShade{'64' if x64 else '32'}.dll")
+        if not x64:
+            net.extract_one(setup, "ReShade64.dll", host / "dxgi.dll")
+            rep.written.append(f"{HOST_DIR}/dxgi.dll")
+            log(f"      {HOST_DIR}/dxgi.dll <- ReShade64.dll (for the helper process)")
 
-    # --- 3) DLSS5-Feeder --------------------------------------------------
-    begin("DLSS5-Feeder")
-    tag, assets = sources.resolve_feeder()
-    log(f"      DLSS5-Feeder {tag}")
-    addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
-    for name in (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ()):
-        if name not in assets:
-            raise InstallError(f"The DLSS5-Feeder release has no {name}.")
-        f = dl(assets[name], f"{tag}-{name}")
-        dest = (root / SHADERS / name) if name.endswith(".fx") else \
-               (host / name if name == FEEDER_HOST else root / name)
-        _copy(f, dest, rep, root)
-        log(f"      {dest.relative_to(root)}")
+        # --- 2) shader headers ------------------------------------------------
+        begin("ReShade shader headers")
+        for h in sources.RESHADE_HEADERS:
+            dest = root / SHADERS / h
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(net.fetch_text(sources.RESHADE_HEADERS_BASE + h))
+            rep.written.append(str(Path(SHADERS) / h))
+        log(f"      {', '.join(sources.RESHADE_HEADERS)}")
 
-    # --- 4) LumeniteFX ----------------------------------------------------
-    if opt.provider in (3, 4):
-        begin("LumeniteFX (motion vectors)")
-        z = dl(sources.LUMENITE_ZIP, "LumeniteFX-mainline.zip")
-        w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",))
-        w += net.extract_tree(z, "Shaders/include", str(INCLUDE), root, only_ext=(".fxh",))
-        w += net.extract_tree(z, "Textures", str(TEXTURES), root, only_ext=(".png",))
-        for p_ in w:
-            rep.written.append(str(p_.relative_to(root)))
-        log(f"      {len(w)} files (shaders + includes + texture)")
+        # --- 3) DLSS5-Feeder --------------------------------------------------
+        begin("DLSS5-Feeder")
+        tag, assets = sources.resolve_feeder()
+        log(f"      DLSS5-Feeder {tag}")
+        addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
+        for name in (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ()):
+            if name not in assets:
+                raise InstallError(f"The DLSS5-Feeder release has no {name}.")
+            f = dl(assets[name], f"{tag}-{name}")
+            dest = (root / SHADERS / name) if name.endswith(".fx") else \
+                   (host / name if name == FEEDER_HOST else root / name)
+            _copy(f, dest, rep, root)
+            log(f"      {dest.relative_to(root)}")
 
-    # --- 5/6/7) DLSS parts ------------------------------------------------
-    # On the 32-bit path these live in host64/, otherwise next to the game.
-    dlss_dir = root if x64 else host
-    catalog = sources.rhi_catalog()
+        # --- 4) LumeniteFX ----------------------------------------------------
+        if opt.provider in (3, 4):
+            begin("LumeniteFX (motion vectors)")
+            z = dl(sources.LUMENITE_ZIP, "LumeniteFX-mainline.zip")
+            w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",))
+            w += net.extract_tree(z, "Shaders/include", str(INCLUDE), root, only_ext=(".fxh",))
+            w += net.extract_tree(z, "Textures", str(TEXTURES), root, only_ext=(".png",))
+            for p_ in w:
+                rep.written.append(str(p_.relative_to(root)))
+            log(f"      {len(w)} files (shaders + includes + texture)")
 
-    begin("DLSS 5 add-on (renodx)")
-    # Even without an explicit choice, prefer a local build if one exists:
-    # Discord releases are not on the mirror.
-    if not opt.renodx_local and not opt.renodx:
-        found, _ = prefs.find_renodx()
-        if found:
-            opt.renodx_local = found
-            log(f"      found a local renodx build: {found.name}")
-    if opt.renodx_local:
-        src = Path(opt.renodx_local)
-        if not src.is_file():
-            raise InstallError(f"Selected renodx file not found: {src}")
-        try:
-            if pe.exe_bitness(src) != 64:
-                raise InstallError("The selected renodx file is not 64-bit.")
-        except pe.PEError as e:
-            raise InstallError(f"The selected renodx file is not valid: {e}") from e
-        _copy(src, dlss_dir / RENODX, rep, root)
-        log(f"      {src.name} (your local file) -> {RENODX}")
-        rep.notes.append(f"renodx: local file used ({src.name})")
-    else:
-        e = sources.pick(catalog["renodx"], opt.renodx)
-        f = dl(e["url"], f"renodx-{e['label']}.zip")
-        net.extract_one(f, ".addon64", dlss_dir / RENODX)
-        rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
-        log(f"      renodx-dlss5 {e['label']}")
-        rep.notes.append(f"renodx version: {e['label']}")
+        # --- 5/6/7) DLSS parts ------------------------------------------------
+        # On the 32-bit path these live in host64/, otherwise next to the game.
+        dlss_dir = root if x64 else host
+        catalog = sources.rhi_catalog()
+        if sources.last_fallback:
+            log(f"      {sources.last_fallback}")
+            if sources.last_fallback not in rep.warnings:
+                rep.warnings.append(sources.last_fallback)
 
-    begin("nvngx_dlssnr.dll")
-    card, sm = gpu.detect()
-    if card:
-        log(f"      graphics card: {card} ({gpu.label(sm)})")
-    else:
-        log("      no NVIDIA card detected")
+        begin("DLSS 5 add-on (renodx)")
+        # Even without an explicit choice, prefer a local build if one exists:
+        # Discord releases are not on the mirror.
+        if not opt.renodx_local and not opt.renodx:
+            found, _ = prefs.find_renodx()
+            if found:
+                opt.renodx_local = found
+                log(f"      found a local renodx build: {found.name}")
+        if opt.renodx_local:
+            src = Path(opt.renodx_local)
+            if not src.is_file():
+                raise InstallError(f"Selected renodx file not found: {src}")
+            try:
+                if pe.exe_bitness(src) != 64:
+                    raise InstallError("The selected renodx file is not 64-bit.")
+            except pe.PEError as e:
+                raise InstallError(f"The selected renodx file is not valid: {e}") from e
+            _copy(src, dlss_dir / RENODX, rep, root)
+            log(f"      {src.name} (your local file) -> {RENODX}")
+            rep.notes.append(f"renodx: local file used ({src.name})")
+        else:
+            e = sources.pick(catalog["renodx"], opt.renodx)
+            f = dl(e["url"], f"renodx-{e['label']}.zip")
+            net.extract_one(f, ".addon64", dlss_dir / RENODX)
+            rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
+            log(f"      renodx-dlss5 {e['label']}")
+            rep.notes.append(f"renodx version: {e['label']}")
 
-    # Some builds of the leaked library are compiled for one architecture only
-    # (310.8.0 is RTX 50 only, for instance). When the user has not pinned a
-    # version we find the newest build that actually supports this card:
-    # download, inspect, and move down the list if it does not match.
-    tried: list[str] = []
-    chosen = None
-    candidates = ([sources.pick(catalog["dlssnr"], opt.dlssnr)] if opt.dlssnr
-                  else catalog["dlssnr"])
-    for e in candidates:
-        f = dl(e["url"], f"dlssnr-{e['label']}.zip")
-        net.extract_one(f, DLSSNR, dlss_dir / DLSSNR)
-        compat, why_gpu = gpu.check(dlss_dir / DLSSNR, sm)
-        if compat is False and not opt.ignore_gpu_mismatch:
-            if opt.dlssnr:
-                raise InstallError(
-                    f"Build {e['label']} will not run on {card or 'your card'}.\n\n"
-                    f"{why_gpu}\n\nLeave the version on Auto and the tool picks "
-                    f"the newest build that supports your card.")
-            tried.append(e["label"])
-            log(f"      skipped {e['label']} - {why_gpu}")
-            continue
-        chosen = (e, compat, why_gpu)
-        break
+        begin("nvngx_dlssnr.dll")
+        card, sm = gpu.detect()
+        if card:
+            log(f"      graphics card: {card} ({gpu.label(sm)})")
+        else:
+            log("      no NVIDIA card detected")
 
-    if chosen is None:
-        raise InstallError(
-            f"No suitable nvngx_dlssnr build found for {card or 'your card'}.\n\n"
-            f"Tried: {', '.join(tried)}\n\n"
-            f"DLSS 5 currently runs on NVIDIA RTX 20 series and newer.")
+        # Some builds of the leaked library are compiled for one architecture only
+        # (310.8.0 is RTX 50 only, for instance). When the user has not pinned a
+        # version we find the newest build that actually supports this card:
+        # download, inspect, and move down the list if it does not match.
+        tried: list[str] = []
+        chosen = None
+        candidates = ([sources.pick(catalog["dlssnr"], opt.dlssnr)] if opt.dlssnr
+                      else catalog["dlssnr"])
+        for e in candidates:
+            f = dl(e["url"], f"dlssnr-{e['label']}.zip")
+            net.extract_one(f, DLSSNR, dlss_dir / DLSSNR)
+            compat, why_gpu = gpu.check(dlss_dir / DLSSNR, sm)
+            if compat is False and not opt.ignore_gpu_mismatch:
+                if opt.dlssnr:
+                    raise InstallError(
+                        f"Build {e['label']} will not run on {card or 'your card'}.\n\n"
+                        f"{why_gpu}\n\nLeave the version on Auto and the tool picks "
+                        f"the newest build that supports your card.")
+                tried.append(e["label"])
+                log(f"      skipped {e['label']} - {why_gpu}")
+                continue
+            chosen = (e, compat, why_gpu)
+            break
 
-    e, compat, why_gpu = chosen
-    rep.written.append(str((dlss_dir / DLSSNR).relative_to(root)))
-    log(f"      nvngx_dlssnr {e['label']}")
-    rep.notes.append(f"dlssnr version: {e['label']}")
-    if tried:
-        rep.notes.append(f"skipped as incompatible: {', '.join(tried)}")
-    if compat is True:
-        log(f"      GPU check: {why_gpu}")
-    elif compat is False:
-        log(f"      GPU check: {why_gpu}")
-        rep.warnings.append(f"dlssnr {e['label']} does not match your card - installed anyway")
-    else:
-        rep.warnings.append(f"could not verify GPU compatibility ({why_gpu})")
+        if chosen is None:
+            raise InstallError(
+                f"No suitable nvngx_dlssnr build found for {card or 'your card'}.\n\n"
+                f"Tried: {', '.join(tried)}\n\n"
+                f"DLSS 5 currently runs on NVIDIA RTX 20 series and newer.")
 
-    begin("nvngx_dlss.dll")
-    game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
-    if x64 and game_has and opt.keep_game_dlss:
-        log("      the game ships its own nvngx_dlss.dll, left untouched")
-        rep.skipped.append(DLSS)
-    else:
-        e = sources.pick(catalog["dlss"], opt.dlss)
-        f = dl(e["url"], f"dlss-{e['label']}.zip")
-        _backup(dlss_dir / DLSS, rep, root)
-        net.extract_one(f, DLSS, dlss_dir / DLSS)
-        rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
-        log(f"      nvngx_dlss {e['label']}")
-        rep.notes.append(f"dlss version: {e['label']}")
+        e, compat, why_gpu = chosen
+        rep.written.append(str((dlss_dir / DLSSNR).relative_to(root)))
+        log(f"      nvngx_dlssnr {e['label']}")
+        rep.notes.append(f"dlssnr version: {e['label']}")
+        if tried:
+            rep.notes.append(f"skipped as incompatible: {', '.join(tried)}")
+        if compat is True:
+            log(f"      GPU check: {why_gpu}")
+        elif compat is False:
+            log(f"      GPU check: {why_gpu}")
+            rep.warnings.append(f"dlssnr {e['label']} does not match your card - installed anyway")
+        else:
+            rep.warnings.append(f"could not verify GPU compatibility ({why_gpu})")
 
-    # --- 8) host64 --------------------------------------------------------
-    if not x64:
-        begin("host64 helper process")
-        reshade_ini.write_addon_only_ini(host)
-        rep.written.append(f"{HOST_DIR}/ReShade.ini")
-        log(f"      {HOST_DIR}/ ready (ReShade + DLSS parts inside)")
+        begin("nvngx_dlss.dll")
+        game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
+        if x64 and game_has and opt.keep_game_dlss:
+            log("      the game ships its own nvngx_dlss.dll, left untouched")
+            rep.skipped.append(DLSS)
+        else:
+            e = sources.pick(catalog["dlss"], opt.dlss)
+            f = dl(e["url"], f"dlss-{e['label']}.zip")
+            _backup(dlss_dir / DLSS, rep, root)
+            net.extract_one(f, DLSS, dlss_dir / DLSS)
+            rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
+            log(f"      nvngx_dlss {e['label']}")
+            rep.notes.append(f"dlss version: {e['label']}")
 
-    # --- 9) ReShade configuration ----------------------------------------
-    begin("ReShade configuration")
-    reshade_ini.write_reshade_ini(root, opt.provider)
-    reshade_ini.write_preset(root, opt.provider)
-    rep.written += ["ReShade.ini", "ReShadePreset.ini"]
-    label, tech, _ = reshade_ini.PROVIDERS[opt.provider]
-    log(f"      DLSS5_MV_PROVIDER={opt.provider} ({label})")
-    if tech:
-        log(f"      technique order: {tech} -> {reshade_ini.FEED_TECHNIQUE}")
-    else:
-        rep.notes.append("You must install your chosen provider's shader yourself, "
-                         "and place its technique ABOVE DLSS 5 Feed in ReShade.")
+        # --- 8) host64 --------------------------------------------------------
+        if not x64:
+            begin("host64 helper process")
+            reshade_ini.write_addon_only_ini(host)
+            rep.written.append(f"{HOST_DIR}/ReShade.ini")
+            log(f"      {HOST_DIR}/ ready (ReShade + DLSS parts inside)")
 
-    # --- 10) dlss5-feed.cfg ----------------------------------------------
-    begin("dlss5-feed.cfg")
-    feedcfg.write(root, opt.feed, host_window=None if x64 else True)
-    rep.written.append(feedcfg.NAME)
-    summary = feedcfg.describe(opt.feed) if opt.feed else []
-    if summary:
-        for s in summary:
-            log(f"      {s}")
-        rep.notes += summary
-    else:
-        log("      defaults (work_resolution=100, preset=0)")
+        # --- 9) ReShade configuration ----------------------------------------
+        begin("ReShade configuration")
+        reshade_ini.write_reshade_ini(root, opt.provider)
+        reshade_ini.write_preset(root, opt.provider)
+        rep.written += ["ReShade.ini", "ReShadePreset.ini"]
+        label, tech, _ = reshade_ini.PROVIDERS[opt.provider]
+        log(f"      DLSS5_MV_PROVIDER={opt.provider} ({label})")
+        if tech:
+            log(f"      technique order: {tech} -> {reshade_ini.FEED_TECHNIQUE}")
+        else:
+            rep.notes.append("You must install your chosen provider's shader yourself, "
+                             "and place its technique ABOVE DLSS 5 Feed in ReShade.")
+
+        # --- 10) dlss5-feed.cfg ----------------------------------------------
+        begin("dlss5-feed.cfg")
+        feedcfg.write(root, opt.feed, host_window=None if x64 else True)
+        rep.written.append(feedcfg.NAME)
+        summary = feedcfg.describe(opt.feed) if opt.feed else []
+        if summary:
+            for s in summary:
+                log(f"      {s}")
+            rep.notes += summary
+        else:
+            log("      defaults (work_resolution=100, preset=0)")
+
+    except sources.RateLimited as e:
+        _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+        log("")
+        log(str(e))
+        raise InstallError(str(e)) from e
+    except Exception:
+        _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+        log("")
+        log(f"Install did not finish. {len(rep.written)} files were already "
+            f"written and have been recorded, so 'Uninstall' can remove them.")
+        raise
 
     # --- record -----------------------------------------------------------
-    (root / MANIFEST).write_text(json.dumps({
-        "version": 1,
-        "exe": g.exe.name,
-        "bitness": g.bitness,
-        "api": g.api,
-        "proxy": proxy,
-        "provider": opt.provider,
-        "reliability": level,
-        "files": rep.written,
-        "skipped": rep.skipped,
-        "notes": rep.notes,
-        "warnings": rep.warnings,
-        "feed_cfg": opt.feed,
-    }, ensure_ascii=False, indent=2), encoding="utf8")
-
+    _write_manifest(root, g, opt, rep, proxy, level, complete=True)
     prog(100, "Done")
     return rep
 
@@ -442,8 +488,24 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         except (OSError, json.JSONDecodeError):
             files = []
     else:
-        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, DLSSNR, feedcfg.NAME,
-                 "dxgi.dll", "opengl32.dll", str(SHADERS / FEEDER_FX)]
+        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, DLSSNR, DLSS,
+                 feedcfg.NAME, "dxgi.dll", "opengl32.dll",
+                 "D3D9.dll", "dgVoodoo.conf", "dgVoodooCpl.exe",
+                 "ReShade.ini", "ReShadePreset.ini",
+                 str(SHADERS / FEEDER_FX)]
+        files += [str(SHADERS / h) for h in sources.RESHADE_HEADERS]
+        # LumeniteFX shaders/includes/texture we may have dropped in
+        for d_ in (SHADERS, INCLUDE):
+            try:
+                files += [str(Path(d_) / f.name)
+                          for f in (root / d_).glob("lumenite_*")]
+            except OSError:
+                pass
+        try:
+            files += [str(Path(TEXTURES) / f.name)
+                      for f in (root / TEXTURES).glob("lumenite_*")]
+        except OSError:
+            pass
         log("No install record found; cleaning up by known filenames.")
 
     # Restore backups first, then delete the rest

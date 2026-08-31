@@ -8,11 +8,16 @@ This tool never contacts a private server. It stays within these hosts:
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import time
+import urllib.error
 import urllib.request
+from pathlib import Path
 
-UA = {"User-Agent": "dlss5-autopilot/1.1 (+local install helper)"}
+UA = {"User-Agent": "dlss5-autopilot/1.2 (+local install helper)"}
 
 RESHADE_HOME = "https://reshade.me"
 RESHADE_SETUP_RE = re.compile(r"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe")
@@ -30,14 +35,78 @@ RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
 RENODX_DEFAULT = None
 
 
+class RateLimited(RuntimeError):
+    """GitHub's anonymous API allows 60 requests an hour per IP."""
+
+
 def _get(url: str, timeout: int = 60) -> bytes:
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 429) and "api.github.com" in url:
+            raise RateLimited(
+                "GitHub is rate limiting this connection (60 anonymous API "
+                "requests per hour). Wait an hour and try again, or use a VPN / "
+                "different network. Downloads already in the cache still work."
+            ) from e
+        raise
+
+
+# GitHub allows 60 anonymous API calls an hour per address. That is easy to
+# exhaust, and being unable to install anything because of it is unacceptable -
+# so every API answer is kept on disk and reused when the live call fails.
+_API_CACHE = Path(os.environ.get("LOCALAPPDATA", Path.home())) \
+    / "dlss5-autopilot" / "api-cache"
+_API_FRESH_SECONDS = 6 * 3600
+
+# Set by _json when it had to fall back to a stale copy, so the installer can
+# tell the user why the version list might be out of date.
+last_fallback: str | None = None
+
+
+def _cache_path(url: str) -> Path:
+    return _API_CACHE / (hashlib.sha256(url.encode("utf8")).hexdigest()[:32] + ".json")
 
 
 def _json(url: str):
-    return json.loads(_get(url).decode("utf8"))
+    """Fetch JSON, backed by an on-disk cache.
+
+    Fresh cache is used without a request at all. If the request fails - rate
+    limit, no connection - a stale cache of any age is used rather than
+    failing the install outright.
+    """
+    global last_fallback
+    p = _cache_path(url)
+    try:
+        age = time.time() - p.stat().st_mtime
+        if age < _API_FRESH_SECONDS:
+            return json.loads(p.read_text(encoding="utf8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    try:
+        raw = _get(url).decode("utf8")
+        data = json.loads(raw)
+        try:
+            _API_CACHE.mkdir(parents=True, exist_ok=True)
+            p.write_text(raw, encoding="utf8")
+        except OSError:
+            pass
+        return data
+    except Exception as original:
+        try:
+            data = json.loads(p.read_text(encoding="utf8"))
+            age_h = int((time.time() - p.stat().st_mtime) / 3600)
+        except (OSError, json.JSONDecodeError):
+            # Nothing cached to fall back to: report why the LIVE call failed,
+            # not the missing cache file - that would be a misleading error.
+            raise original from None
+        last_fallback = (f"GitHub could not be reached (rate limit or no "
+                         f"connection); using the version list cached "
+                         f"{age_h}h ago.")
+        return data
 
 
 def resolve_reshade() -> tuple[str, str]:
@@ -63,8 +132,18 @@ def _ver_key(tag: str, prefix: str) -> tuple:
     return tuple(int(n) for n in nums) if nums else (0,)
 
 
-def rhi_catalog() -> dict[str, list[dict]]:
-    """Group rhi-repo releases by component family (newest first)."""
+_CATALOG_CACHE: dict[str, list[dict]] | None = None
+
+
+def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
+    """Group rhi-repo releases by component family (newest first).
+
+    Cached for the lifetime of the process: installing several games in one
+    session should not burn through GitHub's anonymous API allowance.
+    """
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is not None and not force:
+        return _CATALOG_CACHE
     rels = _json(RHI_API)
     fams: dict[str, list[dict]] = {}
     for r in rels:
@@ -87,6 +166,7 @@ def rhi_catalog() -> dict[str, list[dict]]:
             break
     for fam in fams.values():
         fam.sort(key=lambda d: d["key"], reverse=True)
+    _CATALOG_CACHE = fams
     return fams
 
 

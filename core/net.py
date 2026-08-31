@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import shutil
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -35,8 +36,14 @@ def clear_cache() -> None:
         shutil.rmtree(CACHE, ignore_errors=True)
 
 
-def download(url: str, name: str, progress=None, force: bool = False) -> Path:
-    """Download to the cache and return the path. progress(done, total)."""
+def download(url: str, name: str, progress=None, force: bool = False,
+             attempts: int = 3) -> Path:
+    """Download to the cache and return the path. progress(done, total).
+
+    Retries on failure and resumes from a partial file with an HTTP Range
+    request - dropping 150 MB and starting over because a connection blipped
+    is miserable on a slow line.
+    """
     dest = cache_dir() / name
     if dest.is_file() and dest.stat().st_size > 0 and not force:
         if progress:
@@ -44,25 +51,46 @@ def download(url: str, name: str, progress=None, force: bool = False) -> Path:
         return dest
 
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers=sources.UA)
-    with urllib.request.urlopen(req, timeout=120) as r:
-        total = int(r.headers.get("Content-Length") or 0)
-        done = 0
-        with open(tmp, "wb") as f:
-            while True:
-                chunk = r.read(256 * 1024)
-                if not chunk:
-                    break
-                f.write(chunk)
-                done += len(chunk)
-                if progress:
-                    progress(done, total)
-    # If the server declared a size, catch truncated downloads here.
-    if total and tmp.stat().st_size != total:
-        tmp.unlink(missing_ok=True)
-        raise RuntimeError(f"{name}: incomplete download ({tmp.stat().st_size}/{total} bytes).")
-    tmp.replace(dest)
-    return dest
+    last: Exception | None = None
+
+    for attempt in range(attempts):
+        have = tmp.stat().st_size if tmp.is_file() else 0
+        headers = dict(sources.UA)
+        if have and attempt:                     # only resume on a retry
+            headers["Range"] = f"bytes={have}-"
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                resuming = r.status == 206
+                if not resuming:
+                    have = 0
+                total = int(r.headers.get("Content-Length") or 0) + have
+                done = have
+                with open(tmp, "ab" if resuming else "wb") as f:
+                    while True:
+                        chunk = r.read(256 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        done += len(chunk)
+                        if progress:
+                            progress(done, total)
+            # If the server declared a size, catch truncated downloads here.
+            if total and tmp.stat().st_size != total:
+                raise RuntimeError(
+                    f"{name}: incomplete download "
+                    f"({tmp.stat().st_size}/{total} bytes).")
+            tmp.replace(dest)
+            return dest
+        except urllib.error.HTTPError:
+            tmp.unlink(missing_ok=True)          # 4xx/5xx: resuming won't help
+            raise
+        except Exception as e:                   # network hiccup - retry
+            last = e
+            if attempt == attempts - 1:
+                tmp.unlink(missing_ok=True)
+                raise
+    raise last if last else RuntimeError(f"{name}: download failed")
 
 
 def sha256(path: Path) -> str:
@@ -120,8 +148,19 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
 
 def fetch_text(url: str) -> bytes:
     req = urllib.request.Request(url, headers=sources.UA)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        # Same anonymous API allowance as sources._get; keep the message
+        # identical so the user sees one clear explanation either way.
+        if e.code in (403, 429) and "api.github.com" in url:
+            raise sources.RateLimited(
+                "GitHub is rate limiting this connection (60 anonymous API "
+                "requests per hour). Wait an hour and try again, or use a VPN / "
+                "different network. Downloads already in the cache still work."
+            ) from e
+        raise
 
 
 def json_get(url: str):
