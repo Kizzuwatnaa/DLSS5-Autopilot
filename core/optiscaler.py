@@ -23,8 +23,17 @@ REQUIREMENTS the author states:
     builds compiled for older cards exist but have not tested them; the
     SF/RTX40 nvngx_dlssnr builds this tool already picks do carry sm_89)
   - a driver shipping nvngx_dlssnr.dll (>= 616.56)
-  - a DirectX 12 game that ALREADY uses DLSS - it reads that game's own DLSS
-    inputs, so a game without DLSS gives it nothing to read
+  - a DirectX 12 or DirectX 11 game that ALREADY uses DLSS - it reads that
+    game's own DLSS inputs, so a game without DLSS gives it nothing to read.
+    (D3D11 rides the D3D11-on-D3D12 bridge that already carries its upscaler.
+    Vulkan is not wired up yet.)
+
+Two things it does better than the feeder, beyond speed:
+  - the pass runs immediately after the upscaler and BEFORE the interface is
+    drawn, so the model never sees the HUD. The feeder processes the HUD with
+    the scene, which is a known limitation upstream.
+  - with frame generation it runs once per RENDERED frame; generated frames
+    inherit the result.
 
 Licensing: OptiScaler is GPL-3.0. It is downloaded at run time from its own
 release page and never bundled here, exactly like every other component.
@@ -37,6 +46,9 @@ from pathlib import Path
 from . import net
 
 API = "https://api.github.com/repos/Dagherbou/OptiScaler_DLSSNR/releases/latest"
+
+# Insert opens its overlay by default (0x2D / VK_INSERT).
+OVERLAY_KEY = "Insert"
 
 MAIN_DLL = "OptiScaler.dll"
 FORWARDER = "nvngx.dll_dlssnr.dll"

@@ -120,12 +120,16 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
 
     if s.native_dlss:
         if api in ("DX11",):
-            s.options = [BRIDGE, FEEDER]
+            # OptiScaler handles D3D11 too: its author states the pass rides
+            # the D3D11-on-D3D12 bridge that already carries the upscaler.
+            s.options = [BRIDGE, OPTI, FEEDER]
             s.recommended = BRIDGE
             s.reason = ("This game has its own DLSS but renders with D3D11, "
                         "which the add-on cannot hook directly. The bridge "
                         "reproduces the contract on a private D3D12 session, "
-                        "and the game's own DLSS quality mode still applies.")
+                        "and the game's own DLSS quality mode still applies. "
+                        "OptiScaler also works here and is cheaper, but "
+                        "replaces the upscaler rather than sitting beside it.")
         elif api == "Vulkan":
             s.options = [BRIDGE]
             s.recommended = BRIDGE

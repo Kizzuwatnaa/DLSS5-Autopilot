@@ -288,6 +288,21 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
 
 # ---------------------------------------------------------------- install
 
+def _previous_route(root: Path) -> str | None:
+    """Which route is recorded as installed here, if any."""
+    for name in (MANIFEST,) + LEGACY_MANIFESTS:
+        p = root / name
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        # v1.0-v1.2 wrote no route at all; everything then was the feeder.
+        return data.get("path") or FEEDER
+    return None
+
+
 def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
                     proxy: str, level: str, complete: bool) -> None:
     """Record what was written.
@@ -393,10 +408,23 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
     # Is another injector already in place?
     existing = root / proxy
-    if existing.is_file() and not _is_reshade(existing):
+    if opt.path != OPTI and existing.is_file() and not _is_reshade(existing):
         raise InstallError(
             f"{proxy} already exists but is not ReShade (DXVK, Special K or "
             f"another injector?). Remove it first, then try again.")
+
+    # Switching routes must not leave the previous one behind. The routes put
+    # very different things in the folder - the feeder alone drops 28 files,
+    # including a ReShade.ini that would sit next to OptiScaler and confuse
+    # everything - and the new manifest would not list them, so a later
+    # uninstall could never clean them up either.
+    previous = _previous_route(root)
+    if previous and previous != opt.path:
+        log(f"[0] removing the previous {previous} install first")
+        for line in uninstall(g, on_log=lambda s: None):
+            pass
+        log(f"    the {previous} route was removed; installing {opt.path}")
+        rep.notes.append(f"replaced a previous {previous} install")
 
     steps = plan(g, opt)
     n = len(steps)
@@ -430,6 +458,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
         if opt.path == OPTI:
             begin("OptiScaler (DLSS-NR build)")
+            _backup(root / optiscaler.DEFAULT_PROXY, rep, root)
             for f in optiscaler.install(root, dl=dl, log=log):
                 rep.written.append(f)
             _, sm_ = gpu.detect()
@@ -454,8 +483,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
             begin("OptiScaler configuration")
             optiscaler.enable_nr(root, log)
-            rep.notes.append("OptiScaler installed instead of ReShade - turn on "
-                             "Neural Rendering in its overlay (Insert by default)")
+            rep.notes.append(
+                f"OptiScaler is installed INSTEAD of ReShade. Press "
+                f"{optiscaler.OVERLAY_KEY} in game to open its overlay, then "
+                f"turn on Neural Rendering - it is off by default. If it "
+                f"refuses, the overlay says why under the checkbox.")
             _write_manifest(root, g, opt, rep, proxy, level, complete=True)
             prog(100, "Done")
             return rep

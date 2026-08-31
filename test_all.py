@@ -40,7 +40,8 @@ with warnings.catch_warnings():
     warnings.simplefilter("error")
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
             "reshade_ini", "feedcfg", "dgvoodoo", "dlss", "vulkan",
-            "diagnose", "selfupdate", "update", "installer", "gui")
+            "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
+            "installer", "gui")
     for m in mods:
         try:
             __import__(f"core.{m}")
@@ -119,6 +120,36 @@ for route, (want, unwanted) in EXPECT.items():
     except Exception as e:
         check(f"{route}: installs", False, f"{type(e).__name__}: {e}")
     shutil.rmtree(d, ignore_errors=True)
+
+# --------------------------------------------------- 3b. switching routes
+section("3b. switching routes does not leave the old one behind")
+for a, b in ((dlss.FEEDER, dlss.OPTI), (dlss.OPTI, dlss.FEEDER),
+             (dlss.NATIVE, dlss.BRIDGE), (dlss.BRIDGE, dlss.NATIVE)):
+    d = Path(tempfile.mkdtemp(prefix="switch_"))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+    g = games.manual(d)
+    try:
+        installer.install(g, installer.Options(path=a, native_dlss=True),
+                          on_log=lambda t: None)
+        installer.install(g, installer.Options(path=b, native_dlss=True),
+                          on_log=lambda t: None)
+        files = {p.relative_to(g.install_dir).as_posix()
+                 for p in g.install_dir.rglob("*") if p.is_file()}
+        if b == dlss.FEEDER:
+            stale = [f for f in files if "OptiScaler" in f or "nvngx.dll_dlssnr" in f]
+        else:
+            stale = [f for f in files
+                     if "dlss5-feed" in f or "reshade-shaders" in f]
+        check(f"{a} -> {b}: no leftovers", not stale, str(stale[:3]))
+        installer.uninstall(g, on_log=lambda t: None)
+        left = sorted(p.name for p in g.install_dir.rglob("*") if p.is_file())
+        check(f"{a} -> {b}: uninstall is clean",
+              left == ["Game.exe", "sl.interposer.dll"], str(left))
+    except Exception as e:
+        check(f"{a} -> {b}: switches", False, f"{type(e).__name__}: {e}")
+    shutil.rmtree(d, ignore_errors=True)
+
 
 # ---------------------------------------------------------------- 4. guards
 section("4. guard rails fire")
