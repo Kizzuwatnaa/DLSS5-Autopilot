@@ -205,6 +205,40 @@ check("original restored after a REinstall",
       and (g.install_dir / "nvngx_dlss.dll").read_bytes() == orig)
 shutil.rmtree(d, ignore_errors=True)
 
+# ------------------------------------------------- 5b. nothing is destroyed
+section("5b. pre-existing files survive every route, byte for byte")
+PRE = {
+    "nvngx_dlssnr.dll":     b"USER OWN DLSSNR",
+    "renodx-dlss5.addon64": b"USER OWN RENODX",
+    "ReShade.ini":          b"[GENERAL]\nMyCustomSetting=42\n",
+    "ReShadePreset.ini":    b"Techniques=MyFavourite@Cool.fx\n",
+    "OptiScaler.ini":       b"[Upscalers]\nDx12Upscaler=fsr31\n",
+    "dlss5-bridge.cfg":     b"ofa_perf=5\n",
+    "nvngx_dlss.dll":       b"USER OWN DLSS",
+    "d3d9.dll":             b"USER OWN DXVK",
+}
+for route in (dlss.FEEDER, dlss.OPTI, dlss.BRIDGE, dlss.NATIVE):
+    d = Path(tempfile.mkdtemp(prefix=f"pre_{route}_"))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+    for n, c in PRE.items():
+        (d / n).write_bytes(c + bytes(300))
+    g = games.manual(d)
+    try:
+        installer.install(g, installer.Options(path=route, native_dlss=True,
+                                               keep_game_dlss=False),
+                          on_log=lambda t: None)
+        installer.uninstall(g, on_log=lambda t: None)
+        idir = g.install_dir
+        lost = [n for n, c in PRE.items()
+                if not (idir / n).is_file()
+                or not (idir / n).read_bytes().startswith(c)]
+        check(f"{route}: every pre-existing file restored", not lost, str(lost))
+    except Exception as e:
+        check(f"{route}: survives pre-existing files", False,
+              f"{type(e).__name__}: {e}")
+    shutil.rmtree(d, ignore_errors=True)
+
 # ---------------------------------------------------------------- 6. vulkan
 section("6. vulkan layer handling")
 before = vulkan.existing_registration()

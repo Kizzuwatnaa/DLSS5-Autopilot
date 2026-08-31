@@ -170,13 +170,26 @@ def write_preset(game_dir: Path, provider: int = 3) -> None:
 
 
 def remove_our_techniques(game_dir: Path) -> None:
+    """Take our techniques out of the preset, leaving the user's alone.
+
+    Only rewrites the file when one of ours is actually in it. Parsing and
+    re-dumping an untouched preset would reformat somebody's own file for no
+    reason - and on the native, bridge and OptiScaler routes we never put
+    anything in it to begin with.
+    """
     p = game_dir / "ReShadePreset.ini"
     if not p.is_file():
         return
     ours = {FEED_TECHNIQUE} | {v[1] for v in PROVIDERS.values() if v[1]}
     ini = Ini.load(p)
+    changed = False
     for key in ("Techniques", "TechniqueSorting"):
         raw = ini.get("", key)
-        if raw is not None:
-            ini.set("", key, join_list([t for t in split_list(raw) if t not in ours]))
-    ini.save(p)
+        if raw is None:
+            continue
+        kept = [t for t in split_list(raw) if t not in ours]
+        if len(kept) != len(split_list(raw)):
+            ini.set("", key, join_list(kept))
+            changed = True
+    if changed:
+        ini.save(p)

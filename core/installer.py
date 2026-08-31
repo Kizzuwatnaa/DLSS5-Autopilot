@@ -199,8 +199,16 @@ def _backup(dst: Path, rep: Report, root: Path) -> None:
         pass
 
 
+def _extract(zpath: Path, member: str, dst: Path, rep: Report, root: Path) -> None:
+    """Extract one member, preserving anything already at the destination."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _backup(dst, rep, root)
+    net.extract_one(zpath, member, dst)
+
+
 def _copy(src: Path, dst: Path, rep: Report, root: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
+    _backup(dst, rep, root)          # never overwrite anything unrecoverably
     shutil.copyfile(src, dst)
     try:
         rep.written.append(str(dst.relative_to(root)))
@@ -257,6 +265,7 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
     for h in sources.RESHADE_HEADERS:
         dest = root / SHADERS / h
         dest.parent.mkdir(parents=True, exist_ok=True)
+        _backup(dest, rep, root)
         dest.write_bytes(net.fetch_text(sources.RESHADE_HEADERS_BASE + h))
         rep.written.append(str(Path(SHADERS) / h))
     log(f"      {', '.join(sources.RESHADE_HEADERS)}")
@@ -471,7 +480,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             catalog_ = sources.rhi_catalog()
             e_ = sources.pick(catalog_["dlssnr"], opt.dlssnr)
             f_ = dl(e_["url"], f"dlssnr-{e_['label']}.zip")
-            net.extract_one(f_, DLSSNR, root / DLSSNR)
+            _extract(f_, DLSSNR, root / DLSSNR, rep, root)
             rep.written.append(DLSSNR)
             compat_, why_ = gpu.check(root / DLSSNR, sm_)
             log(f"      nvngx_dlssnr {e_['label']}")
@@ -581,7 +590,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         else:
             e = sources.pick(catalog["renodx"], opt.renodx)
             f = dl(e["url"], f"renodx-{e['label']}.zip")
-            net.extract_one(f, ".addon64", dlss_dir / RENODX)
+            _extract(f, ".addon64", dlss_dir / RENODX, rep, root)
             rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
             log(f"      renodx-dlss5 {e['label']}")
             rep.notes.append(f"renodx version: {e['label']}")
@@ -603,7 +612,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                       else catalog["dlssnr"])
         for e in candidates:
             f = dl(e["url"], f"dlssnr-{e['label']}.zip")
-            net.extract_one(f, DLSSNR, dlss_dir / DLSSNR)
+            _extract(f, DLSSNR, dlss_dir / DLSSNR, rep, root)
             compat, why_gpu = gpu.check(dlss_dir / DLSSNR, sm)
             if compat is False and not opt.ignore_gpu_mismatch:
                 if opt.dlssnr:
@@ -646,7 +655,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             e = sources.pick(catalog["dlss"], opt.dlss)
             f = dl(e["url"], f"dlss-{e['label']}.zip")
             _backup(dlss_dir / DLSS, rep, root)
-            net.extract_one(f, DLSS, dlss_dir / DLSS)
+            _extract(f, DLSS, dlss_dir / DLSS, rep, root)
             rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
             log(f"      nvngx_dlss {e['label']}")
             rep.notes.append(f"dlss version: {e['label']}")
@@ -661,6 +670,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         # --- 9) ReShade configuration ----------------------------------------
         begin("ReShade configuration")
         if opt.path == FEEDER:
+            _backup(root / "ReShade.ini", rep, root)
+            _backup(root / "ReShadePreset.ini", rep, root)
             reshade_ini.write_reshade_ini(root, opt.provider)
             reshade_ini.write_preset(root, opt.provider)
             rep.written += ["ReShade.ini", "ReShadePreset.ini"]
@@ -676,6 +687,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             # Native and bridge hook the game's real NGX calls, so there is no
             # effect to compile and no technique order to get right. ReShade
             # only has to load the add-ons sitting next to the executable.
+            _backup(root / "ReShade.ini", rep, root)
             reshade_ini.write_addon_only_ini(root)
             rep.written.append("ReShade.ini")
             log("      add-on loading enabled (no shaders needed on this path)")
@@ -683,6 +695,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         # --- 10) dlss5-feed.cfg ----------------------------------------------
         if opt.path == FEEDER:
             begin("dlss5-feed.cfg")
+            _backup(root / feedcfg.NAME, rep, root)
             feedcfg.write(root, opt.feed, host_window=None if x64 else True)
             rep.written.append(feedcfg.NAME)
             summary = feedcfg.describe(opt.feed) if opt.feed else []
@@ -698,6 +711,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             cfg.update(opt.feed)          # user overrides (ofa_grid, ofa_perf)
             if (root / feedcfg.BRIDGE_NAME).is_file():
                 log("      merging into the existing dlss5-bridge.cfg")
+            _backup(root / feedcfg.BRIDGE_NAME, rep, root)
             feedcfg.write_bridge(root, cfg)
             rep.written.append(feedcfg.BRIDGE_NAME)
             for line in feedcfg.describe_bridge(cfg):
@@ -777,6 +791,16 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         log("No install record found; cleaning up by known filenames.")
 
     # Restore backups first, then delete the rest
+    # A safety net beyond the manifest: restore every backup sitting in the
+    # folder, even one an interrupted install left unrecorded.
+    try:
+        for bak in list(root.rglob("*" + BACKUP_SUFFIX)):
+            rel = str(bak.relative_to(root))
+            if rel not in files:
+                files.append(rel)
+    except OSError:
+        pass
+
     all_suffixes = (BACKUP_SUFFIX,) + LEGACY_BACKUP_SUFFIXES
     for rel in list(files):
         suffix = next((s for s in all_suffixes if rel.endswith(s)), None)

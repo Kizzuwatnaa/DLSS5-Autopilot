@@ -72,6 +72,9 @@ def resolve() -> tuple[str, str]:
     raise RuntimeError("The OptiScaler DLSS-NR release has no .zip asset.")
 
 
+BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+
+
 def install(exe_dir: Path, proxy: str = DEFAULT_PROXY, dl=None,
             log=None) -> list[str]:
     """Extract OptiScaler into the game folder under the chosen proxy name.
@@ -97,6 +100,15 @@ def install(exe_dir: Path, proxy: str = DEFAULT_PROXY, dl=None,
             rel = proxy if member == MAIN_DLL else member
             target = exe_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
+            # Someone may already run OptiScaler here with a tuned .ini.
+            bak = target.with_name(target.name + BACKUP_SUFFIX)
+            if target.is_file() and not bak.exists():
+                try:
+                    import shutil as _sh
+                    _sh.copy2(target, bak)
+                    written.append(str(bak.relative_to(exe_dir)).replace("\\", "/"))
+                except OSError:
+                    pass
             with arc.open(member) as src, open(target, "wb") as out:
                 import shutil
                 shutil.copyfileobj(src, out, 1 << 20)
