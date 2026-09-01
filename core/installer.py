@@ -1274,10 +1274,21 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     except Exception:
         pass
 
-    for d in (root / INCLUDE, root / SHADERS, root / TEXTURES,
-              root / "reshade-shaders"):
+    # Every folder a removed file lived in, deepest first, if it is empty now.
+    # OptiScaler's zip alone brings D3D12_Optiscaler, DlssOverrides and
+    # Licenses; deleting the files and leaving the folders looked like an
+    # uninstall that "does not remove everything".
+    dirs: set[Path] = {root / INCLUDE, root / SHADERS, root / TEXTURES,
+                       root / "reshade-shaders"}
+    for rel in files + removed:
+        p = root / rel
+        for parent in p.parents:
+            if parent == root or root not in parent.parents:
+                break
+            dirs.add(parent)
+    for d in sorted(dirs, key=lambda x: len(x.parts), reverse=True):
         try:
-            if d.is_dir() and not any(d.iterdir()):
+            if d != root and d.is_dir() and not any(d.iterdir()):
                 d.rmdir()
         except OSError:
             pass

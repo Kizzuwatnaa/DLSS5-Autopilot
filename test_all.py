@@ -122,6 +122,8 @@ for route, (want, unwanted) in EXPECT.items():
         installer.uninstall(g, on_log=lambda t: None)
         left = [p.name for p in idir.rglob("*") if p.is_file()]
         check(f"{route}: uninstall is clean", left == ["Game.exe"], str(left))
+        dirs_left = [p.name for p in idir.iterdir() if p.is_dir()]
+        check(f"{route}: no empty folders left behind", not dirs_left, str(dirs_left))
     except Exception as e:
         check(f"{route}: installs", False, f"{type(e).__name__}: {e}")
     shutil.rmtree(d, ignore_errors=True)
