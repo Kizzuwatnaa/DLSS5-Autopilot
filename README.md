@@ -14,7 +14,7 @@ publisher, and writes the configuration. One executable, no installation.
 
 ---
 
-## What is DLSS 5, in one paragraph
+## What is DLSS 5
 
 DLSS 5 "neural rendering" is a model that runs over a finished frame and
 re-lights it - materials, skin, tone. NVIDIA launches it on **3 September 2026
