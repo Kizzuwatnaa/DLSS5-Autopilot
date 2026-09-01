@@ -1410,6 +1410,11 @@ class App:
         if self.support.native_dlss:
             self._log(f"> this game ships its own dlss "
                       f"({', '.join(self.support.evidence[:3])})", "ok")
+        elif g.api in ("DX11", "DX12", "Unknown") and g.bitness == 64:
+            self._log(f"> no dlss files found under {g.folder} - the native and "
+                      f"optiscaler routes need the game's own dlss. if this game "
+                      f"does have dlss, press [ report a bug ] and say where the "
+                      f"nvngx_dlss.dll is; the log tail goes with it.", "warn")
         self._log(f"> {self.support.reason}")
         tier = gpu.tier_note(sm)
         if tier:
