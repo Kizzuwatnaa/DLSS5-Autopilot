@@ -52,8 +52,8 @@ game has to ask for neural rendering, and outside NBA 2K27 none do.
   restarts into it. Small fixes reach everyone this way.
 - **Bug reports that carry the facts**: *report a bug* opens a GitHub issue
   with version, card, driver, game, route, the last diagnosis, the last
-  error and the log tail already filled in. An internal error offers the
-  same from the top bar. Nothing is sent by itself.
+  error and the log tail already filled in; *suggest a feature* does the
+  same for ideas. Nothing is sent by itself.
 - **Component updates**: after every scan, games set up earlier are checked
   against their publishers; the list shows **update (N newer)**. Press
   install again.
@@ -66,12 +66,10 @@ game has to ask for neural rendering, and outside NBA 2K27 none do.
 
 ### Trust
 
-Every release is built by GitHub Actions from the tagged commit, with
-`SHA256SUMS.txt` and a signed provenance attestation - the hashes are at the
-top of this page. The workflow now compiles a **fresh PyInstaller
-bootloader** on the runner, which removes most antivirus false positives.
-SmartScreen's first-run prompt remains (no code-signing certificate):
-**More info → Run anyway**.
+Built by GitHub Actions from the tagged commit; `SHA256SUMS.txt` and a signed
+provenance attestation sit beside the download. The workflow compiles a fresh
+PyInstaller bootloader, which removes most antivirus false positives.
+SmartScreen's first-run prompt remains (no code-signing certificate).
 
 Built on the work of **jlrouzies-fr** (DLSS5-Feeder), **NIGos**
 (dlss5-bridge), **Dagherbou** (OptiScaler DLSS-NR), **ShortFuse** and
