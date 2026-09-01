@@ -647,9 +647,28 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # Is another injector already in place?
     existing = root / proxy
     if opt.path != OPTI and existing.is_file() and not _is_reshade(existing):
-        raise InstallError(
-            f"{proxy} already exists but is not ReShade (DXVK, Special K or "
-            f"another injector?). Remove it first, then try again.")
+        if optiscaler.is_optiscaler(existing):
+            # A hand-installed OptiScaler (no record of ours) under the name
+            # ReShade needs. Two injectors under one name cannot coexist, and
+            # refusing sends people to delete files by hand - so it is backed
+            # up (uninstall puts it back) and moved out of the way, with the
+            # other OptiScaler files it came with.
+            _backup(existing, rep, root)
+            existing.unlink()
+            for extra in (optiscaler.FORWARDER, optiscaler.INI):
+                p_ = root / extra
+                if p_.is_file():
+                    _backup(p_, rep, root)
+                    p_.unlink()
+            rep.notes.append(f"an OptiScaler installed by hand as {proxy} was "
+                             f"backed up and moved aside - two injectors "
+                             f"cannot share the name")
+            log(f"      {proxy} was OptiScaler (not installed by this tool) - "
+                f"backed up and moved aside")
+        else:
+            raise InstallError(
+                f"{proxy} already exists but is not ReShade (DXVK, Special K or "
+                f"another injector?). Remove it first, then try again.")
 
     # Switching routes must not leave the previous one behind. The routes put
     # very different things in the folder - the feeder alone drops 28 files,
