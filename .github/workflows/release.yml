@@ -129,26 +129,19 @@ jobs:
           NOTES="release-notes-${TAG}.md"
           TITLE="DLSS 5 Autopilot ${TAG}"
           {
-            echo "## Is this file the one GitHub built?"
-            echo
-            echo "This release was built by GitHub Actions from commit \`${GITHUB_SHA}\` - [build log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Nobody uploaded an .exe by hand."
-            echo
             echo '```'
             cat SHA256SUMS.txt
             echo '```'
+            echo "Built by GitHub Actions from \`${GITHUB_SHA:0:7}\` ([log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})). Verify: \`certutil -hashfile dlss5-autopilot.exe SHA256\` or \`gh attestation verify dlss5-autopilot.exe --repo ${GITHUB_REPOSITORY}\`."
             echo
-            echo "Check it: \`certutil -hashfile dlss5-autopilot.exe SHA256\` on Windows, or \`gh attestation verify dlss5-autopilot.exe --repo ${GITHUB_REPOSITORY}\` for the signed provenance. If the hash differs, the file did not come from here."
-            echo
-            echo "PyInstaller bootloader: ${BOOTLOADER}. Antivirus notes are in the README under *Is it safe?*"
-            echo
-            echo "---"
-            echo
-            if [ -f "$NOTES" ]; then cat "$NOTES"; else echo "See the commit history for what changed."; fi
+            if [ -f "$NOTES" ]; then cat "$NOTES"; fi
           } > FULL-NOTES.md
+          # A release whose tag was re-pushed comes back as a DRAFT and is
+          # invisible to everyone; publish it explicitly and mark it latest.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md
+            gh release edit "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md --draft=false --latest
           else
-            gh release create "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md
+            gh release create "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md --latest
           fi
           gh release upload "$TAG" "$ZIP" "SHA256SUMS.txt" --clobber
 
