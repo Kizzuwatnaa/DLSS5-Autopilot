@@ -73,13 +73,6 @@ bootloader** on the runner, which removes most antivirus false positives.
 SmartScreen's first-run prompt remains (no code-signing certificate):
 **More info → Run anyway**.
 
-### Known
-
-- renodx-dlss (SF) is days old; expect its author to move fast.
-- Vulkan, OpenGL, 32-bit and DX9 remain beta-to-experimental upstream, and
-  the tool labels them so.
-- Do not use any of this online.
-
 Built on the work of **jlrouzies-fr** (DLSS5-Feeder), **NIGos**
 (dlss5-bridge), **Dagherbou** (OptiScaler DLSS-NR), **ShortFuse** and
 **Krish** (RenoDX DLSS 5 add-ons), **umar-afzaal** (LumeniteFX),
