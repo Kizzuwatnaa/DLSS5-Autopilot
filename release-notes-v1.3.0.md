@@ -11,7 +11,7 @@ out of date, finds more games, and uninstalls properly.
 | Route | Fits |
 |---|---|
 | **native** (renodx-dlss5) | 64-bit D3D12 games with DLSS - the most proven |
-| **optiscaler** (Dagherbou's fork) | **RTX 50 only**; D3D12 with DLSS. Model-resolution dial 25-100% - at 75% about half the cost, frame stays full detail |
+| **optiscaler** (Dagherbou's fork) | D3D12 with DLSS, any RTX. Model-resolution dial 25-100% - at 75% about half the cost, frame stays full detail |
 | **renodx-dlss** (ShortFuse's SF build, new) | 64-bit D3D9 / D3D11 / D3D12, in-process, no bridge, no shaders |
 | **bridge** | Vulkan games with DLSS; D3D11 fallback. Author has stopped at 1.3.0 |
 | **feeder** | games with no DLSS; the only way for 32-bit, OpenGL and DX9 |

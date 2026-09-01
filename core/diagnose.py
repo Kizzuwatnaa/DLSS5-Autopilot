@@ -135,9 +135,10 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float) -> "Repo
     elif failed:
         rep.add(BAD, "Neural rendering did not start.", failed[-1].strip()[-220:])
         if "refuse" in failed[-1] or "unavailable" in failed[-1]:
-            rep.add(INFO, "This model runs on RTX 50 only, and needs driver "
-                          "616.56 or newer. On an older card use the native "
-                          "or renodx-dlss route instead.")
+            rep.add(INFO, "OptiScaler needs driver 616.56 or newer, and a "
+                          "nvngx_dlssnr build for your card (the tool picks "
+                          "one). If it keeps refusing, the native or "
+                          "renodx-dlss route is one click away.")
         rep.verdict = "OptiScaler loaded, but the model refused or failed."
     elif nr:
         rep.add(WARN, "OptiScaler mentions neural rendering but never reports "

@@ -605,17 +605,22 @@ for api in ("DX9", "DX11", "DX12", "Vulkan", "OpenGL"):
     s32 = dlss.detect(Path(tempfile.gettempdir()), Path(tempfile.gettempdir()), api, 32)
     check(f"32-bit {api} is feeder-only", s32.options == [dlss.FEEDER], str(s32.options))
 
-# The card changes one recommendation: RTX 50 + D3D12 + DLSS -> OptiScaler.
-g50 = _fake_game("rtx50_")
-sup50 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=120)
-sup40 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=89)
-check("rtx 50 with a dlss d3d12 game is steered to optiscaler",
-      sup50.recommended == dlss.OPTI, sup50.recommended)
-check("rtx 40 keeps the native route", sup40.recommended == dlss.NATIVE, sup40.recommended)
-check("optiscaler is marked unusable on an rtx 40",
-      dlss.fit(dlss.OPTI, "DX12", True, 89)[0] is False)
-check("optiscaler is marked usable on an rtx 50",
-      dlss.fit(dlss.OPTI, "DX12", True, 120)[0] is True)
+# D3D12 + DLSS -> OptiScaler on any RTX card; the note says what the author tested.
+g50 = _fake_game("rtx50_")
+sup50 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=120)
+sup40 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=89)
+sup10 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=61)
+check("rtx 50 with a dlss d3d12 game is steered to optiscaler",
+      sup50.recommended == dlss.OPTI, sup50.recommended)
+check("rtx 40 is steered to optiscaler too", sup40.recommended == dlss.OPTI, sup40.recommended)
+check("a pascal card is not steered anywhere new", sup10.recommended == dlss.NATIVE)
+fit40 = dlss.fit(dlss.OPTI, "DX12", True, 89)
+check("optiscaler is usable on an rtx 40, with the author's caveat",
+      fit40[0] is True and "author tested RTX 50" in fit40[1], str(fit40))
+check("optiscaler is marked usable on an rtx 50",
+      dlss.fit(dlss.OPTI, "DX12", True, 120)[0] is True)
+check("optiscaler without dlss in the game is refused",
+      dlss.fit(dlss.OPTI, "DX12", False, 120)[0] is False)
 shutil.rmtree(g50.folder, ignore_errors=True)
 
 # The feeder's stable release only accepts renodx-dlss5 4.55.

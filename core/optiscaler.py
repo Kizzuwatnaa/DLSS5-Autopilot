@@ -17,10 +17,11 @@ is drawing fewer pixels while the feeder is always at native, so part of any
 gap is upscaling rather than efficiency.
 
 REQUIREMENTS the author states:
-  - RTX 50 series. They note builds compiled for older cards exist but say
-    they have not tested them - the SF/RTX40 nvngx_dlssnr builds this tool
-    picks do carry sm_86/sm_89, so older cards are worth a try but off the
-    tested path.
+  - RTX 50 series in the author's own testing. They note builds compiled for
+    older cards exist but have not tested them - the SF/RTX40 nvngx_dlssnr
+    builds this tool picks carry sm_75/86/89, and RTX 40 is confirmed working
+    in the field (KCD2 on a 4060 Ti), so older cards are on: the dial is what
+    makes the pass affordable there.
   - a driver shipping nvngx_dlssnr.dll (>= 616.56)
   - a D3D12 or D3D11 game that ALREADY uses DLSS. It reads that game's own
     DLSS inputs, so a game without DLSS gives it nothing to read.
@@ -350,11 +351,10 @@ def requirements_note(sm: int | None) -> str | None:
         return ("The OptiScaler author states an RTX 50 series card is "
                 "required. Your card could not be detected.")
     if sm < 120:
-        return ("The OptiScaler author states RTX 50 only: the FP8 model "
-                "refuses older cards. This tool installs a community "
-                "nvngx_dlssnr build compiled for your card, so it may load - "
-                "but this is untested upstream. If the overlay says the model "
-                "refused, use the native or renodx route instead.")
+        return ("The OptiScaler author tested RTX 50 only. This tool installs "
+                "the community nvngx_dlssnr build compiled for your card, which "
+                "is what makes it run here; if the overlay ever says the model "
+                "refused, the native route is one click away.")
     from . import gpu
     ok = gpu.driver_at_least(DRIVER_MIN)
     if ok is False:

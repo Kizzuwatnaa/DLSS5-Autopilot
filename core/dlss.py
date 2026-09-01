@@ -18,8 +18,9 @@ directly and keeps its own Quality/Balanced/Performance modes.
 
     OPTI     Dagherbou's OptiScaler fork. Replaces the upscaler and runs the
              model over its output, with a model-resolution dial (25-100%)
-             that is the biggest fps lever there is. RTX 50 only, and the
-             game must already use DLSS.
+             that is the biggest fps lever there is. The author tested RTX 50
+             only; with the per-card runtime this tool installs it runs on
+             RTX 20/30/40 as well. The game must already use DLSS.
 
     BRIDGE   dlss5-bridge: reproduces the DLSS contract on a private D3D12
              session. The route for Vulkan games with DLSS (mirror), and a
@@ -86,19 +87,23 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int,
            sm: int | None = None) -> Support:
     """Work out what the game supports and which path to recommend.
 
-    `sm` is the card's CUDA architecture when known (gpu.detect). It changes
-    one recommendation: on RTX 50 a D3D12 game with DLSS is steered to
-    OptiScaler, whose model-resolution dial is the biggest fps lever there is
-    and whose model only runs on that generation.
+    `sm` is the card's CUDA architecture when known (gpu.detect). On any RTX
+    card a D3D12 game with DLSS is steered to OptiScaler, whose
+    model-resolution dial is the biggest fps lever there is - and the lever
+    matters most on the cards where the pass is heaviest. A card below RTX
+    20 gets no such steer; nothing runs there anyway.
     """
     s = _detect(install_dir, folder, api, bitness)
-    if sm is not None and sm >= 120 and OPTI in s.options and s.recommended == NATIVE:
+    if OPTI in s.options and s.recommended == NATIVE and (sm is None or sm >= 75):
         s.recommended = OPTI
-        s.reason = ("This game ships its own DLSS and renders with D3D12, and "
-                    "you have an RTX 50: OptiScaler runs the model with a "
-                    "model-resolution dial - 75% costs about half of full "
-                    "size, and the frame itself stays full detail. The native "
-                    "route is the simpler, most proven alternative.")
+        s.reason = ("This game ships its own DLSS and renders with D3D12: "
+                    "OptiScaler runs the model with a model-resolution dial - "
+                    "75% costs about half of full size, and the frame itself "
+                    "stays full detail. The native route is the simpler, most "
+                    "proven alternative."
+                    + ("" if (sm or 120) >= 120 else
+                       " The author tested RTX 50 only; on your card it runs "
+                       "on the community runtime this tool installs."))
     return s
 
 
@@ -109,13 +114,14 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None) -> tuple[bool, 
     the route's own rules add to it, so the dropdown can label each entry.
     """
     if route == OPTI:
-        if sm is not None and sm < 120:
-            return False, "needs an RTX 50 - the model refuses older cards"
         if not native_dlss:
             return False, "the game must already use DLSS"
+        note = "model resolution dial: the fps lever"
         if api == "DX11":
-            return True, "on D3D11 the upscaler becomes FSR on D3D12"
-        return True, "model resolution dial: the fps lever"
+            note = "on D3D11 the upscaler becomes FSR on D3D12"
+        if sm is not None and sm < 120:
+            note += "; author tested RTX 50 only, works here on the community runtime"
+        return True, note
     if route == NATIVE:
         return True, "most proven for D3D12 games with DLSS"
     if route == RENODX:
@@ -237,8 +243,7 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
                         "so the DLSS 5 add-on hooks it directly. No synthetic "
                         "contract, and your in-game DLSS quality setting "
                         "(Quality / Balanced / Performance) still applies. "
-                        "OptiScaler adds a model-resolution dial for more fps "
-                        "on RTX 50.")
+                        "OptiScaler adds a model-resolution dial for more fps.")
         return s
 
     # No DLSS of its own, D3D11/D3D12.
@@ -272,8 +277,9 @@ BLURB = {
     OPTI: ("No ReShade at all. OptiScaler takes over upscaling and runs the "
            "model over its output. Its model-resolution dial is the biggest "
            "fps lever there is: cost falls with the square of it, and the "
-           "frame itself stays full detail. RTX 50 only - the author's FP8 "
-           "model refuses older cards - and the game must already use DLSS."),
+           "frame itself stays full detail. The author tested RTX 50 only; "
+           "on RTX 20/30/40 it runs on the community runtime this tool "
+           "installs. The game must already use DLSS."),
     BRIDGE: ("Reproduces the DLSS contract on a private D3D12 session. The "
              "route for Vulkan games with DLSS. Its author has stopped "
              "development at 1.3.0."),

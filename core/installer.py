@@ -150,7 +150,8 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
                       "only days old (September 2026).")
     if path == OPTI:
         return BETA, ("OptiScaler replaces the upscaler and runs the model over "
-                      "its output. RTX 50 only; the game must already use DLSS."
+                      "its output. The game must already use DLSS; the author "
+                      "tested RTX 50 only, older cards run the community runtime."
                       + (" On D3D11 it needs a bridged upscaler (FSR on D3D12) "
                          "in place of DLSS." if g.api == "DX11" else ""))
     if path == BRIDGE:
