@@ -53,7 +53,23 @@ class Game:
 
     @property
     def installed(self) -> bool:
-        return any((self.install_dir / m).is_file() for m in MARKER_FILES)
+        """Has this tool (or an older release of it) set this folder up?
+
+        The install record is the real answer. An add-on file alone is not:
+        a Downloads folder full of components someone fetched by hand used
+        to show as "installed" - so a loose add-on only counts when a loader
+        (ReShade's proxy, a Vulkan layer install, or OptiScaler) sits beside
+        it.
+        """
+        d = self.install_dir
+        if any((d / m).is_file() for m in MARKER_FILES if m.endswith(".json")):
+            return True
+        if not any((d / m).is_file() for m in MARKER_FILES):
+            return False
+        loaders = ("dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d9.dll", "d3d10.dll",
+                   "opengl32.dll", "winmm.dll", "version.dll", "dbghelp.dll",
+                   "ReShade.ini", "OptiScaler.ini")
+        return any((d / n).is_file() for n in loaders)
 
     @property
     def bit_label(self) -> str:
@@ -340,6 +356,123 @@ def scan_xbox() -> list[Game]:
 
 # ---------------------------------------------------------------- emulators
 
+# ---------------------------------------------- Rockstar / Amazon / itch / Heroic
+
+def scan_rockstar() -> list[Game]:
+    """Rockstar Games Launcher: GTA V, Red Dead Redemption 2 bought there."""
+    out: list[Game] = []
+    try:
+        import winreg
+    except ImportError:
+        return out
+    for key in (r"SOFTWARE\WOW6432Node\Rockstar Games", r"SOFTWARE\Rockstar Games"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as root:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(root, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if sub.lower() in ("launcher", "rockstar games launcher"):
+                        continue
+                    try:
+                        with winreg.OpenKey(root, sub) as k:
+                            p = Path(winreg.QueryValueEx(k, "InstallFolder")[0])
+                            if p.is_dir():
+                                out.append(Game(name=sub, folder=p, source="Rockstar"))
+                    except (OSError, ValueError):
+                        continue
+        except OSError:
+            continue
+    return out
+
+
+def scan_amazon() -> list[Game]:
+    """Amazon Games keeps every title under one library folder."""
+    out: list[Game] = []
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "Amazon Games" / "Library"
+    # The launcher's SQLite db would be nicer, but the folder is enough and
+    # needs no parser: each game is a folder with its exe inside.
+    roots = [base]
+    for drive in "CDEFGH":
+        roots.append(Path(f"{drive}:/Amazon Games/Library"))
+    for r in roots:
+        try:
+            if r.is_dir():
+                out += [Game(name=f.name, folder=f, source="Amazon")
+                        for f in r.iterdir() if f.is_dir()]
+        except OSError:
+            continue
+    return out
+
+
+def scan_itch() -> list[Game]:
+    r"""itch.io app: %APPDATA%\itch\apps\<game>."""
+    out: list[Game] = []
+    base = Path(os.environ.get("APPDATA", "")) / "itch" / "apps"
+    try:
+        if base.is_dir():
+            out += [Game(name=f.name, folder=f, source="itch")
+                    for f in base.iterdir() if f.is_dir()]
+    except OSError:
+        pass
+    return out
+
+
+def scan_heroic() -> list[Game]:
+    """Heroic (Epic/GOG/Amazon through one launcher): reads its own records."""
+    out: list[Game] = []
+    cfg = Path(os.environ.get("APPDATA", "")) / "heroic"
+    for rel in ("legendaryConfig/legendary/installed.json",
+                "gog_store/installed.json", "nile_config/nile/installed.json"):
+        p = cfg / rel
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        items = data.values() if isinstance(data, dict) else data
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            loc = it.get("install_path") or it.get("path")
+            name = it.get("title") or it.get("app_name") or ""
+            if loc and Path(loc).is_dir():
+                out.append(Game(name=name or Path(loc).name, folder=Path(loc),
+                                source="Heroic"))
+    return out
+
+
+def scan_folders() -> list[Game]:
+    r"""Plain game folders people keep outside any launcher: D:\Games\X.
+
+    "It does not list my game" was almost always one of these. Only folders
+    with a game-looking name are scanned, one level deep, and only when a
+    drive actually has such a folder - so this stays cheap.
+    """
+    out: list[Game] = []
+    names = ("Games", "Game", "Oyunlar", "Juegos", "Spiele", "Jeux", "Giochi",
+             "My Games", "PC Games", "Installed Games")
+    for drive in "CDEFGHIJ":
+        base = Path(f"{drive}:/")
+        if not base.is_dir():
+            continue
+        for n in names:
+            d = base / n
+            try:
+                if not d.is_dir():
+                    continue
+                for f in d.iterdir():
+                    if f.is_dir() and not f.name.startswith(("." , "$")):
+                        out.append(Game(name=f.name, folder=f, source="Folder"))
+            except OSError:
+                continue
+    return out
+
+
 def scan_emulators(progress=None) -> list[Game]:
     out: list[Game] = []
     for prof, exe in emulators.scan(progress):
@@ -458,7 +591,10 @@ def scan_all(progress=None) -> list[Game]:
     for label, fn in (("Steam", scan_steam), ("Epic", scan_epic),
                       ("GOG", scan_gog), ("EA", scan_ea),
                       ("Ubisoft", scan_ubisoft), ("Battle.net", scan_battlenet),
-                      ("Xbox", scan_xbox), ("Emulator", scan_emulators)):
+                      ("Rockstar", scan_rockstar), ("Amazon", scan_amazon),
+                      ("itch", scan_itch), ("Heroic", scan_heroic),
+                      ("Xbox", scan_xbox), ("Folders", scan_folders),
+                      ("Emulator", scan_emulators)):
         if progress:
             progress(f"Scanning {label}...")
         try:
@@ -473,7 +609,8 @@ def scan_all(progress=None) -> list[Game]:
             if progress:
                 progress(f"{label} could not be read: {type(e).__name__}")
 
-    # The same folder may be reported by two stores
+    # The same folder may be reported by two stores; the store wins over a
+    # plain folder scan, which is why Folders comes after them.
     uniq: dict[Path, Game] = {}
     for g in games:
         try:
@@ -481,6 +618,13 @@ def scan_all(progress=None) -> list[Game]:
         except OSError:
             continue
     games = list(uniq.values())
+    # A Games folder often holds the launcher libraries themselves
+    # (D:\Games\SteamLibrary), which are not games.
+    junk = ("steamlibrary", "steamapps", "epic games", "gog galaxy", "ea games",
+            "ubisoft", "xboxgames", "amazon games", "battle.net", "common",
+            "riot games", "rockstar games")
+    games = [g for g in games
+             if not (g.source == "Folder" and g.folder.name.lower() in junk)]
 
     total = len(games)
     for i, g in enumerate(games, 1):

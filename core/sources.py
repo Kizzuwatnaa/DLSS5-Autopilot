@@ -26,14 +26,22 @@ RESHADE_HEADERS_BASE = "https://raw.githubusercontent.com/crosire/reshade-shader
 RESHADE_HEADERS = ("ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh")
 
 FEEDER_API = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest"
+# The feeder's author ships test builds as pre-releases; /latest never lists
+# them. Newer add-on builds (renodx-dlss5 4.6+) are only supported by those.
+FEEDER_LIST_API = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=15"
 LUMENITE_ZIP = "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"
 RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
 BRIDGE_API = "https://api.github.com/repos/NIGos/dlss5-bridge/releases/latest"
 
-# None = take the newest build from the mirror. The DLSS5-Feeder README names
-# 4.55, but that build crashes in CreateFeature with recent nvngx_dlssnr
-# releases, so newest-wins is the better default.
+# None = take the newest build from the mirror. On the feeder route the pick
+# is narrowed by renodx_for_feeder(): the feeder's stable release only works
+# with 4.55, its pre-releases with 4.6/4.7.
 RENODX_DEFAULT = None
+
+# The last renodx-dlss5 build the feeder's STABLE release (0.7.0) accepts.
+# Its README pins it: "newer builds now overlap this project and conflict".
+# Support for 4.6 arrived in 0.8.0-beta.3 and for 4.7 in 0.9.0-beta.1.
+FEEDER_RENODX_PIN = "4.55"
 
 
 class RateLimited(RuntimeError):
@@ -119,11 +127,46 @@ def resolve_reshade() -> tuple[str, str]:
     return m.group(1), RESHADE_HOME + m.group(0)
 
 
-def resolve_feeder() -> tuple[str, dict[str, str]]:
-    """Latest DLSS5-Feeder release: (tag, {filename: download_url})."""
-    rel = _json(FEEDER_API)
+def resolve_feeder(prerelease: bool = False) -> tuple[str, dict[str, str]]:
+    """DLSS5-Feeder release: (tag, {filename: download_url}).
+
+    `prerelease=True` takes the newest build of any kind, which is where the
+    feeder's support for the newer DLSS 5 add-on generations lives. Otherwise
+    the newest stable release, exactly as GitHub's /latest reports it.
+    """
+    if prerelease:
+        rels = _json(FEEDER_LIST_API)
+        rels = [r for r in rels if not r.get("draft")] if isinstance(rels, list) else []
+        rel = rels[0] if rels else _json(FEEDER_API)
+    else:
+        rel = _json(FEEDER_API)
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
     return rel.get("tag_name", "?"), assets
+
+
+def feeder_key(tag: str) -> tuple:
+    """'v0.9.0-beta.1' -> (0, 9, 0, 1, 1): sortable, betas below the release.
+
+    A plain release of the same number sorts above any of its betas, which is
+    how the project numbers them.
+    """
+    nums = [int(n) for n in re.findall(r"\d+", tag or "")]
+    base = tuple(nums[:3]) + (0,) * (3 - len(nums[:3]))
+    if "beta" in (tag or "").lower():
+        return base + (0, nums[3] if len(nums) > 3 else 0)
+    return base + (1, 0)
+
+
+def renodx_for_feeder(feeder_tag: str) -> str | None:
+    """Which renodx-dlss5 build a given feeder release accepts.
+
+    None means "the newest is fine". Anything below 0.8.0-beta.3 is pinned to
+    4.55 - that is the mismatch behind CreateFeature 0xC0000005 crashes on
+    otherwise correct feeder installs.
+    """
+    if feeder_key(feeder_tag) < feeder_key("v0.8.0-beta.3"):
+        return FEEDER_RENODX_PIN
+    return None
 
 
 def resolve_bridge() -> tuple[str, str]:
@@ -159,6 +202,7 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
     for r in rels:
         tag = r.get("tag_name", "")
         for prefix, fam in (("renodx-dlss5", "renodx"),
+                            ("renodx-dlss-SF", "renodx_sf"),
                             ("dlssnr", "dlssnr"),
                             ("dlss-", "dlss")):
             if not tag.startswith(prefix):

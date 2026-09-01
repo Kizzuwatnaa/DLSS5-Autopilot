@@ -66,8 +66,7 @@ check("library scan returns games", len(playable) > 0, f"{len(playable)} playabl
 for g in playable:
     s = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
     ok = (s.recommended in s.options
-          and all(o in (dlss.NATIVE, dlss.OPTI, dlss.BRIDGE, dlss.FEEDER)
-                  for o in s.options))
+          and all(o in dlss.ALL_ROUTES for o in s.options))
     if not ok:
         check(f"route sane for {g.name}", False, f"{s.recommended} / {s.options}")
 check("every game got a sane route", not any(f.startswith("route sane") for f in FAILS))
@@ -100,6 +99,10 @@ EXPECT[dlss.OPTI] = (["dxgi.dll", "nvngx_dlssnr.dll", "nvngx.dll_dlssnr.dll",
                       "OptiScaler.ini"],
                      ["dlss5-feed.addon64", "dlss5-bridge.addon64",
                       "ReShade.ini", "renodx-dlss5.addon64"])
+EXPECT[dlss.RENODX] = (["dxgi.dll", "renodx-dlss.addon64", "nvngx_dlssnr.dll",
+                        "ReShade.ini"],
+                       ["renodx-dlss5.addon64", "dlss5-feed.addon64",
+                        "dlss5-bridge.addon64", "OptiScaler.ini"])
 
 for route, (want, unwanted) in EXPECT.items():
     d = Path(tempfile.mkdtemp(prefix=f"all_{route}_"))
@@ -126,7 +129,8 @@ for route, (want, unwanted) in EXPECT.items():
 # --------------------------------------------------- 3b. switching routes
 section("3b. switching routes does not leave the old one behind")
 for a, b in ((dlss.FEEDER, dlss.OPTI), (dlss.OPTI, dlss.FEEDER),
-             (dlss.NATIVE, dlss.BRIDGE), (dlss.BRIDGE, dlss.NATIVE)):
+             (dlss.NATIVE, dlss.BRIDGE), (dlss.BRIDGE, dlss.NATIVE),
+             (dlss.NATIVE, dlss.RENODX), (dlss.RENODX, dlss.FEEDER)):
     d = Path(tempfile.mkdtemp(prefix="switch_"))
     shutil.copyfile(X64, d / "Game.exe")
     (d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
@@ -139,7 +143,10 @@ for a, b in ((dlss.FEEDER, dlss.OPTI), (dlss.OPTI, dlss.FEEDER),
         files = {p.relative_to(g.install_dir).as_posix()
                  for p in g.install_dir.rglob("*") if p.is_file()}
         if b == dlss.FEEDER:
-            stale = [f for f in files if "OptiScaler" in f or "nvngx.dll_dlssnr" in f]
+            stale = [f for f in files if "OptiScaler" in f or "nvngx.dll_dlssnr" in f
+                     or "renodx-dlss.addon64" in f]
+        elif b == dlss.RENODX:
+            stale = [f for f in files if "renodx-dlss5" in f or "dlss5-feed" in f]
         else:
             stale = [f for f in files
                      if "dlss5-feed" in f or "reshade-shaders" in f]
@@ -575,6 +582,107 @@ check("every store is scanned",
           ("steam", "epic", "gog", "ea", "ubisoft", "battlenet", "xbox")))
 r = diagnose.analyse(Path(r"C:\Program Files (x86)\Steam\steamapps\common\DEATHLOOP"))
 check("diagnosis reads a real log", bool(r.verdict), r.verdict[:52])
+
+# ---------------------------------------------------------- 8. v1.3.0 rules
+section("8. route rules, version pins and the OptiScaler dials")
+
+# DirectX 10: nothing reaches it, and the tool must say so rather than install.
+d = Path(tempfile.mkdtemp(prefix="dx10_"))
+shutil.copyfile(X64, d / "Game.exe")
+g = games.manual(d)
+g.api = "DX10"
+ok, why = installer.check_supported(g)
+check("dx10 is refused with a reason", not ok and "DirectX 10" in why, why)
+s10 = dlss.detect(d, d, "DX10", 64)
+check("dx10 route report says unsupported", not s10.supported)
+shutil.rmtree(d, ignore_errors=True)
+
+# 64-bit D3D9 is reachable now, through ShortFuse's add-on only.
+s9 = dlss.detect(Path(tempfile.gettempdir()), Path(tempfile.gettempdir()), "DX9", 64)
+check("64-bit dx9 goes to the renodx add-on only", s9.options == [dlss.RENODX], str(s9.options))
+# 32-bit stays feeder-only whatever the API.
+for api in ("DX9", "DX11", "DX12", "Vulkan", "OpenGL"):
+    s32 = dlss.detect(Path(tempfile.gettempdir()), Path(tempfile.gettempdir()), api, 32)
+    check(f"32-bit {api} is feeder-only", s32.options == [dlss.FEEDER], str(s32.options))
+
+# The card changes one recommendation: RTX 50 + D3D12 + DLSS -> OptiScaler.
+g50 = _fake_game("rtx50_")
+sup50 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=120)
+sup40 = dlss.detect(g50.install_dir, g50.folder, "DX12", 64, sm=89)
+check("rtx 50 with a dlss d3d12 game is steered to optiscaler",
+      sup50.recommended == dlss.OPTI, sup50.recommended)
+check("rtx 40 keeps the native route", sup40.recommended == dlss.NATIVE, sup40.recommended)
+check("optiscaler is marked unusable on an rtx 40",
+      dlss.fit(dlss.OPTI, "DX12", True, 89)[0] is False)
+check("optiscaler is marked usable on an rtx 50",
+      dlss.fit(dlss.OPTI, "DX12", True, 120)[0] is True)
+shutil.rmtree(g50.folder, ignore_errors=True)
+
+# The feeder's stable release only accepts renodx-dlss5 4.55.
+check("feeder 0.7.0 pins renodx to 4.55", sources.renodx_for_feeder("v0.7.0") == "4.55")
+check("feeder 0.8.0-beta.2 still pins", sources.renodx_for_feeder("v0.8.0-beta.2") == "4.55")
+check("feeder 0.8.0-beta.3 accepts newer", sources.renodx_for_feeder("v0.8.0-beta.3") is None)
+check("feeder 0.9.0-beta.1 accepts newer", sources.renodx_for_feeder("v0.9.0-beta.1") is None)
+check("a plain release sorts above its betas",
+      sources.feeder_key("v0.9.0") > sources.feeder_key("v0.9.0-beta.1"))
+
+# nvngx_dlssnr build order follows the card.
+fake_cat = [{"label": l} for l in ("310.8.SF-v2", "310.8.0-RTX40", "310.8.0", "310.8.SF")]
+check("rtx 50 gets nvidia's own build first",
+      gpu.order_dlssnr(fake_cat, 120)[0]["label"] == "310.8.0")
+check("rtx 40 gets the -RTX40 build first",
+      gpu.order_dlssnr(fake_cat, 89)[0]["label"] == "310.8.0-RTX40")
+check("rtx 30 gets an SF build first",
+      gpu.order_dlssnr(fake_cat, 86)[0]["label"].startswith("310.8.SF"))
+check("unknown card keeps the mirror's order",
+      [e["label"] for e in gpu.order_dlssnr(fake_cat, None)] == [e["label"] for e in fake_cat])
+check("every tier has a plain-words note",
+      all(gpu.tier_note(sm_) for sm_ in (75, 86, 89, 120)))
+
+# OptiScaler.ini: dials land in [DlssNr], the rest of the file is untouched.
+d = Path(tempfile.mkdtemp(prefix="nr_"))
+(d / "OptiScaler.ini").write_text("; tuned by hand\n[Upscalers]\nDx12Upscaler=dlss\n\n"
+                                   "[DLSSNR]\nEnabled=false\nIntensity=1.3\n",
+                                   encoding="utf8")
+optiscaler.enable_nr(d, settings={"WorkingScale": 0.75, "Preset": 2})
+txt = (d / "OptiScaler.ini").read_text(encoding="utf8")
+check("nr enabled in place", "Enabled=true" in txt and "Enabled=false" not in txt)
+check("working scale written", "WorkingScale=0.75" in txt, txt)
+check("hand-tuned keys survive", "Intensity=1.3" in txt and "; tuned by hand" in txt)
+check("section spelling normalised", "[DlssNr]" in txt and "[DLSSNR]" not in txt)
+check("other sections untouched", "Dx12Upscaler=dlss" in txt)
+optiscaler.set_dx11_bridged_upscaler(d)
+txt = (d / "OptiScaler.ini").read_text(encoding="utf8")
+check("dx11 gets a bridged upscaler", "Dx11Upscaler=fsr22_12" in txt)
+check("still exactly one DlssNr section", txt.count("[DlssNr]") == 1)
+shutil.rmtree(d, ignore_errors=True)
+
+# Uninstall with a locked file: nothing is lost, the record stays, second run cleans.
+g = _fake_game("locked_")
+installer.install(g, installer.Options(path=dlss.NATIVE, native_dlss=True),
+                  on_log=lambda t: None)
+held = open(g.install_dir / "dxgi.dll", "rb")
+lines = []
+installer.uninstall(g, on_log=lines.append)
+check("locked file is reported, not silently skipped",
+      any("could not remove" in l for l in lines))
+check("record kept for the locked file", (g.install_dir / installer.MANIFEST).is_file())
+held.close()
+installer.uninstall(g, on_log=lambda t: None)
+left = sorted(p.name for p in g.install_dir.rglob("*") if p.is_file())
+check("second uninstall finishes the job", left == ["Game.exe", "sl.interposer.dll"], str(left))
+shutil.rmtree(g.folder, ignore_errors=True)
+
+# The SF add-on is told apart from renodx-dlss5 by content, not by name.
+d = Path(tempfile.mkdtemp(prefix="sf_"))
+(d / "a.addon64").write_bytes(b"MZ" + bytes(300_000) + b"RenoDX DLSS renodx-dlss.addon64")
+(d / "b.addon64").write_bytes(b"MZ" + bytes(300_000) + b"RenoDX DLSS renodx-dlss5.addon64")
+check("sf build recognised", prefs.is_renodx_sf(d / "a.addon64"))
+check("renodx-dlss5 is not mistaken for sf", not prefs.is_renodx_sf(d / "b.addon64"))
+shutil.rmtree(d, ignore_errors=True)
+
+
+
 
 section("RESULT")
 if FAILS:

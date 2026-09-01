@@ -5,6 +5,14 @@
 # The build happens in public, the log is public, and the attestation ties the
 # published binary to this exact commit. If the file someone downloads does
 # not match the hash in the release notes, it did not come from here.
+#
+# About antivirus: PyInstaller's stock bootloader is the part heuristic
+# scanners have learned to distrust, because plenty of real malware ships in
+# the same wrapper. Building PyInstaller from source compiles a fresh
+# bootloader on this runner - byte-for-byte different from the one every
+# scanner has a signature for - which removes most of the false positives.
+# It cannot remove SmartScreen's "unknown publisher" prompt: that needs a
+# code-signing certificate, which costs money the project does not have.
 name: release
 
 on:
@@ -27,8 +35,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
+      # From source, so the bootloader is compiled here rather than taken
+      # from the wheel every scanner has seen. Falls back to the wheel if the
+      # runner cannot compile it - the build must not fail over this.
+      - name: Install PyInstaller (fresh bootloader)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          if python -m pip install --no-binary pyinstaller --no-cache-dir pyinstaller; then
+            echo "BOOTLOADER=compiled on this runner" >> "$GITHUB_ENV"
+          else
+            echo "::warning::could not build PyInstaller from source; using the wheel"
+            python -m pip install pyinstaller
+            echo "BOOTLOADER=stock wheel" >> "$GITHUB_ENV"
+          fi
+          python -m PyInstaller --version
 
       # The tool has no third-party dependencies - standard library and
       # tkinter only - so there is nothing else to install, and nothing from
@@ -42,10 +63,17 @@ jobs:
           else
             echo "no requirements.txt: standard library only"
           fi
+          if grep -rEn "^(import|from) (requests|numpy|PIL|psutil|pefile)\b" core dlss5_autopilot.py; then
+            echo "third-party import found"; exit 1
+          fi
+
+      - name: Tests that need no network
+        shell: bash
+        run: python test_reshade_ini.py
 
       - name: Build
         run: |
-          python -m PyInstaller --onefile --windowed `
+          python -m PyInstaller --onefile --windowed --noupx `
             --name dlss5-autopilot `
             --version-file version_info.txt `
             --distpath dist `
@@ -68,15 +96,16 @@ jobs:
       - name: Hashes
         shell: bash
         run: |
-          {
-            echo '### SHA-256'
-            echo '```'
-            sha256sum dist/dlss5-autopilot.exe "DLSS5-Autopilot-v${VERSION}-win64.zip"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
           sha256sum dist/dlss5-autopilot.exe \
                     "DLSS5-Autopilot-v${VERSION}-win64.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
+          {
+            echo '### SHA-256'
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+            echo "bootloader: $BOOTLOADER"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Ties the binary to this commit and this workflow run, verifiable with
       #     gh attestation verify dlss5-autopilot.exe --repo <owner>/<repo>
@@ -87,7 +116,8 @@ jobs:
             DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip
 
       # Creates the release if the tag was pushed without one, so a plain
-      # `git push --tags` is enough to publish.
+      # `git push --tags` is enough to publish. The hashes go at the TOP of
+      # the notes, where people actually look, followed by the notes file.
       - name: Upload to the release
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -97,15 +127,28 @@ jobs:
           TAG="${{ github.ref_name }}"
           ZIP="DLSS5-Autopilot-v${VERSION}-win64.zip"
           NOTES="release-notes-${TAG}.md"
-          # Every release is named "DLSS 5 Autopilot vX.Y.Z" - a bare tag as
-          # the title looks like a mistake next to the earlier ones.
           TITLE="DLSS 5 Autopilot ${TAG}"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            if [ -f "$NOTES" ]; then
-              gh release create "$TAG" --title "$TITLE" --notes-file "$NOTES"
-            else
-              gh release create "$TAG" --title "$TITLE" --generate-notes
-            fi
+          {
+            echo "## Is this file the one GitHub built?"
+            echo
+            echo "This release was built by GitHub Actions from commit \`${GITHUB_SHA}\` - [build log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Nobody uploaded an .exe by hand."
+            echo
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "Check it: \`certutil -hashfile dlss5-autopilot.exe SHA256\` on Windows, or \`gh attestation verify dlss5-autopilot.exe --repo ${GITHUB_REPOSITORY}\` for the signed provenance. If the hash differs, the file did not come from here."
+            echo
+            echo "PyInstaller bootloader: ${BOOTLOADER}. Antivirus notes are in the README under *Is it safe?*"
+            echo
+            echo "---"
+            echo
+            if [ -f "$NOTES" ]; then cat "$NOTES"; else echo "See the commit history for what changed."; fi
+          } > FULL-NOTES.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md
+          else
+            gh release create "$TAG" --title "$TITLE" --notes-file FULL-NOTES.md
           fi
           gh release upload "$TAG" "$ZIP" "SHA256SUMS.txt" --clobber
 

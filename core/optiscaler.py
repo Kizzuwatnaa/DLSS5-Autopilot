@@ -215,41 +215,150 @@ def install(exe_dir: Path, proxy: str = DEFAULT_PROXY, dl=None, log=None,
     return written
 
 
-def enable_nr(exe_dir: Path, log=None) -> None:
-    """Ask for neural rendering in OptiScaler.ini.
+# The fork's [DlssNr] section (Config.cpp reads it case-insensitively). Only
+# the handful worth a control are surfaced; the rest stay on the overlay.
+NR_SECTION = "DlssNr"
+NR_PRESETS = {0: "Default", 1: "Preset 1", 2: "Preset 2", 3: "Preset 3"}
+NR_STYLES = {0: "Standard", 1: "Natural", 2: "Cinematic"}
+NR_SCALE_MIN, NR_SCALE_MAX = 25, 100
+# Where the dial pays off. At 100% the pass costs about half your fps; the
+# author's note is that cost falls with the square, so 75% is roughly half
+# the cost and 50% a quarter, while the frame itself stays at full detail.
+NR_SCALE_DEFAULT = 75
 
-    The shipped ini has no [DLSSNR] section - OptiScaler writes its own keys on
-    first run - so the section is appended rather than the file rewritten. The
-    documented way to turn it on is the overlay; this only saves a step, and
-    the overlay stays the authority.
+
+def _ini_set(text: str, section: str, values: dict[str, str]) -> str:
+    """Set keys inside one ini section, creating the section if needed.
+
+    Lines outside the section are untouched, comments included, so a tuned
+    OptiScaler.ini keeps everything the user put in it.
+    """
+    lines = text.splitlines()
+    start = end = None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            if start is not None and end is None:
+                end = i
+            if s[1:-1].lower() == section.lower():
+                start = i
+    if start is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"[{section}]")
+        lines += [f"{k}={v}" for k, v in values.items()]
+        return "\n".join(lines) + "\n"
+    if end is None:
+        end = len(lines)
+    pending = dict(values)
+    for i in range(start + 1, end):
+        s = lines[i].strip()
+        if not s or s[0] in ";#" or "=" not in s:
+            continue
+        k = s.split("=", 1)[0].strip()
+        for want in list(pending):
+            if want.lower() == k.lower():
+                lines[i] = f"{want}={pending.pop(want)}"
+    insert_at = end
+    while insert_at > start + 1 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    for k, v in pending.items():
+        lines.insert(insert_at, f"{k}={v}")
+        insert_at += 1
+    return "\n".join(lines) + "\n"
+
+
+def _fmt(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        return f"{v:.2f}".rstrip("0").rstrip(".") if v != int(v) else f"{v:.1f}"
+    return str(v)
+
+
+def enable_nr(exe_dir: Path, log=None, settings: dict | None = None) -> None:
+    """Turn neural rendering on in OptiScaler.ini and apply the chosen dials.
+
+    Only the keys given are written; everything else in the file - including
+    keys the user tuned in the [DlssNr] section - is left exactly as it was.
+    The overlay stays the authority for the rest.
     """
     log = log or (lambda *_: None)
     p = exe_dir / INI
+    values = {"Enabled": "true"}
+    for k, v in (settings or {}).items():
+        values[k] = _fmt(v)
     try:
         text = p.read_text(encoding="utf8", errors="replace") if p.is_file() else ""
-        if "[DLSSNR]" in text:
-            log("      OptiScaler.ini already has a [DLSSNR] section, left alone")
-            return
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += "\n[DLSSNR]\nEnabled=true\n"
-        p.write_text(text, encoding="utf8")
-        log("      OptiScaler.ini: [DLSSNR] Enabled=true")
+        # An older release of this tool wrote the section in capitals. The
+        # reader does not mind, but two spellings in one file are confusing.
+        text = text.replace("[DLSSNR]", f"[{NR_SECTION}]")
+        p.write_text(_ini_set(text, NR_SECTION, values), encoding="utf8")
+        log(f"      OptiScaler.ini: [{NR_SECTION}] "
+            + ", ".join(f"{k}={v}" for k, v in values.items()))
         log(f"      if it does not come on, press {OVERLAY_KEY} in game and "
             f"tick it under DLSS Neural Rendering")
     except OSError:
         log("      could not write OptiScaler.ini")
 
 
+def set_dx11_bridged_upscaler(exe_dir: Path, log=None) -> None:
+    """On D3D11 the model only runs on OptiScaler's D3D12 bridge.
+
+    The author's words: the model flat out refuses to run on DX11, so a
+    bridged upscaler has to be selected - and DLSS cannot be that upscaler.
+    fsr22_12 is built into OptiScaler itself, so nothing extra is needed.
+    """
+    log = log or (lambda *_: None)
+    p = exe_dir / INI
+    try:
+        text = p.read_text(encoding="utf8", errors="replace") if p.is_file() else ""
+        p.write_text(_ini_set(text, "Upscalers", {"Dx11Upscaler": "fsr22_12"}),
+                     encoding="utf8")
+        log("      OptiScaler.ini: [Upscalers] Dx11Upscaler=fsr22_12 (the "
+            "model does not run on D3D11 itself; FSR 2.2 on D3D12 carries it)")
+    except OSError:
+        log("      could not write OptiScaler.ini")
+
+
+def describe_nr(settings: dict | None) -> list[str]:
+    """Human-readable summary of the dials chosen, for the notes."""
+    out = []
+    if not settings:
+        return out
+    ws = settings.get("WorkingScale")
+    if ws is not None:
+        pct = int(round(float(ws) * 100))
+        cost = int(round(100 * float(ws) ** 2))
+        out.append(f"model resolution {pct}% - about {cost}% of the full-size "
+                   f"cost; the frame itself stays full detail")
+    pr = settings.get("Preset")
+    if pr:
+        out.append(f"model preset: {NR_PRESETS.get(int(pr), pr)}")
+    st = settings.get("Style")
+    if st:
+        out.append(f"style: {NR_STYLES.get(int(st), st)}")
+    return out
+
+
+DRIVER_MIN = "616.56"
+
+
 def requirements_note(sm: int | None) -> str | None:
-    """A warning when this card is outside what the author has tested."""
+    """A warning when this card or driver is outside what the author supports."""
     if sm is None:
         return ("The OptiScaler author states an RTX 50 series card is "
                 "required. Your card could not be detected.")
     if sm < 120:
-        return ("The OptiScaler author states an RTX 50 series card is "
-                "required and has not tested older ones. Builds of "
-                "nvngx_dlssnr compiled for your architecture do exist - this "
-                "tool installs one - so it may work, but you are off the "
-                "tested path.")
+        return ("The OptiScaler author states RTX 50 only: the FP8 model "
+                "refuses older cards. This tool installs a community "
+                "nvngx_dlssnr build compiled for your card, so it may load - "
+                "but this is untested upstream. If the overlay says the model "
+                "refused, use the native or renodx route instead.")
+    from . import gpu
+    ok = gpu.driver_at_least(DRIVER_MIN)
+    if ok is False:
+        return (f"OptiScaler's DLSS-NR needs NVIDIA driver {DRIVER_MIN} or "
+                f"newer; you have {gpu.driver_version()}. Update the driver "
+                f"first (the 3 September Game Ready driver qualifies).")
     return None

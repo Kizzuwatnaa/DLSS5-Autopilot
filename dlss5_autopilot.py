@@ -2,6 +2,7 @@ r"""DLSS 5 Autopilot - entry point.
 
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
+                                                    [--route native|optiscaler|renodx|bridge|feeder]
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import dlss, games, installer, prefs, update  # noqa: E402
+from core import dlss, games, gpu, installer, prefs, update  # noqa: E402
 
 
 def _console() -> None:
@@ -35,17 +36,31 @@ def _console() -> None:
         pass
 
 
-def cli(target: Path, remove: bool, check: bool) -> int:
+def cli(target: Path, remove: bool, check: bool, route: str = "") -> int:
     g = games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
         return 1
-    sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+    card, sm = gpu.detect()
+    sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
     level, why_rel = installer.reliability(g, sup.recommended)
     print(f"game    : {g.name}")
+    if card:
+        drv = gpu.driver_version()
+        print(f"gpu     : {card} ({gpu.label(sm)})" + (f"  driver {drv}" if drv else ""))
     print(f"exe     : {g.exe}")
     print(f"arch    : {g.bit_label}   API: {g.api} ({g.api_why})")
-    print(f"route   : {sup.recommended} - {dlss.LABELS[sup.recommended]}")
+    if route:
+        if route not in sup.options:
+            print(f"error: route '{route}' is not available for this game "
+                  f"(options: {', '.join(sup.options)})", file=sys.stderr)
+            return 1
+        sup.recommended = route
+    print(f"route   : {dlss.LABELS[sup.recommended]}")
+    for o in sup.options:
+        usable, note = dlss.fit(o, g.api, sup.native_dlss, sm)
+        print(f"          {'*' if o == sup.recommended else ' '} {o:<11}"
+              f"{'' if usable else 'NOT FOR THIS PC - '}{note}")
     if sup.native_dlss:
         print(f"          this game ships its own DLSS "
               f"({', '.join(sup.evidence[:3])})")
@@ -73,7 +88,7 @@ def cli(target: Path, remove: bool, check: bool) -> int:
 
     try:
         rep = installer.install(
-            g, installer.Options(),
+            g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
@@ -89,12 +104,17 @@ def cli(target: Path, remove: bool, check: bool) -> int:
 
 def main() -> int:
     args = list(sys.argv[1:])
+    route = ""
+    if "--route" in args and args.index("--route") + 1 < len(args):
+        route = args[args.index("--route") + 1]
+        args.remove(route)
     positional = [a for a in args if not a.startswith("-")]
     if positional:
         _console()
         return cli(Path(positional[0]),
                    remove="--remove" in args,
-                   check="--check" in args)
+                   check="--check" in args,
+                   route=route)
     if "--help" in args or "-h" in args:
         _console()
         print(__doc__)

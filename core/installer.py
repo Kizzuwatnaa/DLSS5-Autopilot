@@ -2,8 +2,9 @@ r"""Install engine: 64-bit, 32-bit and DX9 paths.
 
 64-bit layout (next to the game executable):
     <proxy>.dll                 ReShade64.dll  (dxgi.dll or opengl32.dll)
-    dlss5-feed.addon64
-    renodx-dlss5.addon64
+    dlss5-feed.addon64          (feeder route)
+    renodx-dlss5.addon64        (feeder / native / bridge routes)
+    renodx-dlss.addon64         (renodx route - ShortFuse's SF build)
     nvngx_dlssnr.dll
     nvngx_dlss.dll
     ReShade.ini / ReShadePreset.ini / dlss5-feed.cfg
@@ -30,6 +31,7 @@ from . import (anticheat, dgvoodoo, dlss, feedcfg, games, gpu, net,
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
 from .dlss import BRIDGE, FEEDER, NATIVE, OPTI
+from .dlss import RENODX as ROUTE_RENODX   # the route; RENODX below is a file name
 
 MANIFEST = "dlss5-autopilot.json"
 
@@ -38,6 +40,8 @@ FEEDER_ADDON32 = "dlss5-feed.addon32"
 FEEDER_HOST = "dlss5-feed-host64.exe"
 FEEDER_FX = "DLSS5_Feed.fx"
 RENODX = "renodx-dlss5.addon64"
+# ShortFuse's add-on - the "SF" build - which hooks D3D9/D3D11/D3D12 itself.
+RENODX_SF = "renodx-dlss.addon64"
 DLSSNR = "nvngx_dlssnr.dll"
 DLSS = "nvngx_dlss.dll"
 HOST_DIR = "host64"
@@ -101,6 +105,10 @@ class Options:
     opti_proxy: str = ""                    # "" = pick a free name for this game
     reshade_proxy: str = ""                 # "" = choose from the API
     native_dlss: bool = False               # game ships its own DLSS
+    # The feeder's pre-releases are where support for the newer DLSS 5 add-on
+    # generations lives; the stable release only accepts renodx-dlss5 4.55.
+    feeder_prerelease: bool = False
+    nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
 
 
 @dataclass
@@ -125,10 +133,26 @@ STABLE, BETA, EXPERIMENTAL = "stable", "beta", "experimental"
 
 def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
     """(level, explanation) - how likely this route is to actually work."""
+    if g.api == "DX10":
+        return EXPERIMENTAL, ("DirectX 10 is not supported by any DLSS 5 "
+                              "component.")
     if path == NATIVE:
         return STABLE, ("The game's own DLSS is hooked directly - no synthetic "
                         "contract, no motion-vector shaders, and your in-game "
                         "DLSS quality setting still applies.")
+    if path == ROUTE_RENODX:
+        if g.api == "DX9":
+            return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
+                          "evaluates the presentation backbuffer with no "
+                          "motion vectors, so expect a softer result.")
+        return BETA, ("The renodx-dlss add-on hooks the game in-process. It is "
+                      "the build the other authors now point to, but it is "
+                      "only days old (September 2026).")
+    if path == OPTI:
+        return BETA, ("OptiScaler replaces the upscaler and runs the model over "
+                      "its output. RTX 50 only; the game must already use DLSS."
+                      + (" On D3D11 it needs a bridged upscaler (FSR on D3D12) "
+                         "in place of DLSS." if g.api == "DX11" else ""))
     if path == BRIDGE:
         if g.api == "Vulkan":
             return BETA, ("The bridge mirrors the game's DLSS contract onto a "
@@ -143,6 +167,10 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
             "dgVoodoo2 translation and then the 32-bit helper process; the "
             "DLSS feature frequently fails to create on top of that. Expect "
             "it not to work.")
+    if g.api == "Vulkan":
+        return BETA, ("Vulkan works through ReShade's layer registration and "
+                      "the component's own D3D12 interop. Newer than the "
+                      "DirectX paths, and it has met fewer real games.")
     if g.bitness == 32:
         return EXPERIMENTAL, (
             "32-bit games go through a cross-process helper (host64). "
@@ -151,10 +179,10 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
     if g.api == "OpenGL":
         return EXPERIMENTAL, (
             "OpenGL needs interop extensions the driver may not expose to "
-            "this game, and the GPU must be forced to NVIDIA. Frequently "
-            "does not work.")
+            "this game, and the game must render on the NVIDIA card. Upstream "
+            "has verified it on one 32-bit title; frequently does not work.")
     if g.api in ("DX11", "DX12", "Unknown"):
-        return STABLE, "DirectX 10/11/12 is the path DLSS 5 feeding is built around."
+        return STABLE, "DirectX 11/12 is the path DLSS 5 feeding is built around."
     return BETA, "Untested path."
 
 
@@ -210,10 +238,9 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
         # contract onto a private D3D12 session. ReShade still has to be
         # attached to the Vulkan runtime, which its own installer does.
         return True, ""
-    if g.api == "DX9":
-        if g.bitness != 32:
-            return False, "64-bit DirectX 9 games are not supported (very rare)."
-        return True, ""
+    if g.api == "DX10":
+        return False, ("DirectX 10 is not supported by any DLSS 5 component - "
+                       "the feeder dropped it and nothing else hooks D3D10.")
     return True, ""
 
 
@@ -311,7 +338,9 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     elif opt.path == BRIDGE:
         steps.append("dlss5-bridge")
 
-    steps += ["DLSS 5 add-on (renodx)", "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
+    steps += ["DLSS 5 add-on (renodx-dlss SF)" if opt.path == ROUTE_RENODX
+              else "DLSS 5 add-on (renodx)",
+              "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
     if opt.path == FEEDER and g.bitness == 32:
         steps.append("host64 helper process")
     steps.append("ReShade configuration")
@@ -340,8 +369,10 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
     log(f"      {', '.join(sources.RESHADE_HEADERS)}")
 
     begin("DLSS5-Feeder")
-    tag, assets = sources.resolve_feeder()
-    log(f"      DLSS5-Feeder {tag}")
+    tag, assets = sources.resolve_feeder(prerelease=opt.feeder_prerelease)
+    log(f"      DLSS5-Feeder {tag}"
+        + ("  (pre-release, as requested)" if opt.feeder_prerelease else ""))
+    rep.components["feeder"] = tag
     addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
     for name in (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ()):
         if name not in assets:
@@ -413,7 +444,19 @@ def _previously_ours(root: Path) -> set:
 ROUTE_ADDONS = {
     FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32),
     BRIDGE: (BRIDGE_ADDON,),
+    ROUTE_RENODX: (RENODX_SF,),
 }
+
+
+def _foreign_addons(keep: str) -> list[tuple[str, str]]:
+    """(route, filename) of every add-on that must not sit beside `keep`."""
+    out = [(r, n) for r, names in ROUTE_ADDONS.items() if r != keep for n in names]
+    # renodx-dlss5 is shared by the native, bridge and feeder routes, so it is
+    # not in the table - but it and ShortFuse's build both hook NGX, and the
+    # two loaded together fight over the same entry points.
+    if keep == ROUTE_RENODX:
+        out.append((NATIVE, RENODX))
+    return out
 
 
 def _purge_foreign_addons(root: Path, keep: str, rep: Report, log) -> None:
@@ -429,10 +472,8 @@ def _purge_foreign_addons(root: Path, keep: str, rep: Report, log) -> None:
     dlss5-feed.addon64 orphaned beside it. Both registered, both tried to
     build a contract, and the game exited before it ever created a swapchain.
     """
-    for route, names in ROUTE_ADDONS.items():
-        if route == keep:
-            continue
-        for name in names:
+    for route, name in _foreign_addons(keep):
+        if True:
             p = root / name
             if not p.is_file():
                 continue
@@ -494,10 +535,38 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "notes": rep.notes,
             "warnings": rep.warnings,
             "feed_cfg": opt.feed,
+            "nr": opt.nr,
+            "keep_game_dlss": opt.keep_game_dlss,
+            "feeder_prerelease": opt.feeder_prerelease,
             "components": rep.components,
         }, ensure_ascii=False, indent=2), encoding="utf8")
     except OSError:
         pass
+
+
+def options_from_manifest(root: Path) -> Options | None:
+    """Rebuild the choices an earlier install was made with.
+
+    This is what "update" means: the same route, provider, dials and
+    add-on family, with every component fetched fresh. Versions are NOT
+    pinned to what was installed - that is the point.
+    """
+    data = _previous_manifest(root)
+    if not data:
+        return None
+    path = data.get("path") or FEEDER
+    if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX):
+        return None
+    return Options(
+        provider=int(data.get("provider") or 3),
+        feed=dict(data.get("feed_cfg") or {}),
+        nr=dict(data.get("nr") or {}),
+        path=path,
+        keep_game_dlss=bool(data.get("keep_game_dlss", True)),
+        feeder_prerelease=bool(data.get("feeder_prerelease", False)),
+        native_dlss=path in (NATIVE, OPTI) or bool(data.get("native_dlss", False)),
+        opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
+    )
 
 
 def _running_processes() -> set[str]:
@@ -655,7 +724,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
             begin("nvngx_dlssnr.dll")
             catalog_ = sources.rhi_catalog()
-            e_ = sources.pick(catalog_["dlssnr"], opt.dlssnr)
+            e_ = sources.pick(gpu.order_dlssnr(catalog_["dlssnr"], sm_), opt.dlssnr)
             f_ = dl(e_["url"], f"dlssnr-{e_['label']}.zip")
             _extract(f_, DLSSNR, root / DLSSNR, rep, root)
             rep.written.append(DLSSNR)
@@ -664,12 +733,27 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             log(f"      GPU check: {why_}")
             rep.notes.append(f"dlssnr version: {e_['label']}")
             rep.components["dlssnr"] = e_["label"]
+            tier_ = gpu.tier_note(sm_, e_["label"])
+            if tier_:
+                log(f"      {tier_}")
+                rep.notes.append(tier_)
             if compat_ is False and not opt.ignore_gpu_mismatch:
                 raise InstallError(
                     f"Build {e_['label']} will not run on your card.\n\n{why_}")
 
             begin("OptiScaler configuration")
-            optiscaler.enable_nr(root, log)
+            optiscaler.enable_nr(root, log, settings=opt.nr)
+            for line in optiscaler.describe_nr(opt.nr):
+                rep.notes.append(line)
+            if g.api == "DX11":
+                # The model refuses to run on a D3D11 device. OptiScaler gets
+                # around it by running the upscaler on D3D12 underneath -
+                # which means DLSS cannot be the upscaler here, FSR is.
+                optiscaler.set_dx11_bridged_upscaler(root, log)
+                rep.notes.append("D3D11 game: OptiScaler's upscaler set to FSR "
+                                 "2.2 on D3D12 (the model does not run on "
+                                 "D3D11 directly; DLSS cannot be the upscaler "
+                                 "on this route)")
             rep.notes.append(
                 f"OptiScaler is installed INSTEAD of ReShade. Press "
                 f"{optiscaler.OVERLAY_KEY} in game to open its overlay, then "
@@ -750,11 +834,14 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             if sources.last_fallback not in rep.warnings:
                 rep.warnings.append(sources.last_fallback)
 
-        begin("DLSS 5 add-on (renodx)")
+        sf = opt.path == ROUTE_RENODX
+        addon_name = RENODX_SF if sf else RENODX
+        begin("DLSS 5 add-on (renodx-dlss SF)" if sf else "DLSS 5 add-on (renodx)")
         # Even without an explicit choice, prefer a local build if one exists:
-        # Discord releases are not on the mirror.
+        # Discord releases are not on the mirror. Only a build of the right
+        # family, though - the two add-ons are not interchangeable.
         if not opt.renodx_local and not opt.renodx:
-            found, _ = prefs.find_renodx()
+            found, _ = prefs.find_renodx(sf=sf)
             if found:
                 opt.renodx_local = found
                 log(f"      found a local renodx build: {found.name}")
@@ -767,11 +854,36 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                     raise InstallError("The selected renodx file is not 64-bit.")
             except pe.PEError as e:
                 raise InstallError(f"The selected renodx file is not valid: {e}") from e
-            _copy(src, dlss_dir / RENODX, rep, root)
-            log(f"      {src.name} (your local file) -> {RENODX}")
+            _copy(src, dlss_dir / addon_name, rep, root)
+            log(f"      {src.name} (your local file) -> {addon_name}")
             rep.notes.append(f"renodx: local file used ({src.name})")
+        elif sf:
+            fam = catalog.get("renodx_sf") or []
+            if not fam:
+                raise InstallError("The mirror lists no renodx-dlss (SF) build. "
+                                   "Pick 'use my file' with the add-on from the "
+                                   "RenoDX Discord, or choose another route.")
+            e = sources.pick(fam, opt.renodx)
+            f = dl(e["url"], f"renodx-sf-{e['label']}.zip")
+            _extract(f, ".addon64", dlss_dir / RENODX_SF, rep, root)
+            rep.written.append(str((dlss_dir / RENODX_SF).relative_to(root)))
+            log(f"      renodx-dlss SF {e['label']}")
+            rep.notes.append(f"renodx-dlss SF version: {e['label']}")
+            rep.components["renodx_sf"] = e["label"]
         else:
-            e = sources.pick(catalog["renodx"], opt.renodx)
+            want = opt.renodx
+            if not want and opt.path == FEEDER:
+                # The feeder's stable release only accepts 4.55; anything
+                # newer overlaps it and the DLSS feature dies in CreateFeature.
+                want = sources.renodx_for_feeder(rep.components.get("feeder", ""))
+                if want:
+                    log(f"      DLSS5-Feeder {rep.components.get('feeder')} accepts "
+                        f"renodx-dlss5 up to {want} - pinning to it (newer builds "
+                        f"conflict; tick 'feeder pre-release' to use them)")
+                    rep.notes.append(f"renodx-dlss5 pinned to {want} for this "
+                                     f"feeder release - newer builds conflict "
+                                     f"with it")
+            e = sources.pick(catalog["renodx"], want)
             f = dl(e["url"], f"renodx-{e['label']}.zip")
             _extract(f, ".addon64", dlss_dir / RENODX, rep, root)
             rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
@@ -793,7 +905,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         tried: list[str] = []
         chosen = None
         candidates = ([sources.pick(catalog["dlssnr"], opt.dlssnr)] if opt.dlssnr
-                      else catalog["dlssnr"])
+                      else gpu.order_dlssnr(catalog["dlssnr"], sm))
         for e in candidates:
             f = dl(e["url"], f"dlssnr-{e['label']}.zip")
             _extract(f, DLSSNR, dlss_dir / DLSSNR, rep, root)
@@ -823,6 +935,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         rep.components["dlssnr"] = e["label"]
         if tried:
             rep.notes.append(f"skipped as incompatible: {', '.join(tried)}")
+        tier = gpu.tier_note(sm, e["label"])
+        if tier:
+            log(f"      {tier}")
+            rep.notes.append(tier)
         if compat is True:
             log(f"      GPU check: {why_gpu}")
         elif compat is False:
@@ -875,6 +991,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             # only has to load the add-ons sitting next to the executable.
             _backup(root / "ReShade.ini", rep, root)
             reshade_ini.write_addon_only_ini(root)
+            if opt.path == ROUTE_RENODX:
+                reshade_ini.enable_renodx_dlss_nr(root)
+                log("      [RENODX-DLSS] NeuralRenderingEnabled=1")
             rep.written.append("ReShade.ini")
             log("      add-on loading enabled (no shaders needed on this path)")
 
@@ -985,7 +1104,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         except (OSError, json.JSONDecodeError):
             files = []
     else:
-        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, DLSSNR, DLSS,
+        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, DLSSNR, DLSS,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
                  "D3D9.dll", "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
@@ -1037,17 +1156,20 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         s = next((s for s in all_suffixes if rel.endswith(s)), None)
         if s:
             restored.add(rel[:-len(s)])
+    stuck: list[str] = []
     for rel in files:
         if any(rel.endswith(s) for s in all_suffixes) or rel in restored:
             continue
         p = root / rel
-        try:
-            if p.is_file():
-                p.unlink()
-                removed.append(rel)
-                log(f"removed: {rel}")
-        except OSError as e:
-            log(f"could not remove: {rel} ({e})")
+        if not p.is_file():
+            continue
+        if _delete(p):
+            removed.append(rel)
+            log(f"removed: {rel}")
+        else:
+            stuck.append(rel)
+            log(f"could not remove: {rel} (locked - is the game or its "
+                f"launcher still running?)")
 
     hostdir = root / HOST_DIR
     if hostdir.is_dir():
@@ -1111,8 +1233,57 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         except OSError:
             pass
 
+    if stuck:
+        # A locked proxy DLL is the usual case: the game or its launcher is
+        # still up. Keep the record so the next uninstall can finish the job,
+        # and say so plainly instead of reporting success.
+        try:
+            data = json.loads(man.read_text(encoding="utf8")) if man.is_file() else {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        data["files"] = stuck
+        data["complete"] = False
+        data["notes"] = [f"uninstall left {len(stuck)} locked file(s); run it "
+                         f"again with the game closed"]
+        try:
+            man.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                           encoding="utf8")
+        except OSError:
+            pass
+        log(f"Removed {len(removed)} items; {len(stuck)} could not be removed. "
+            f"Close the game and its launcher, then uninstall again.")
+        return removed
     man.unlink(missing_ok=True)
     for n in LEGACY_MANIFESTS:
         (root / n).unlink(missing_ok=True)
     log(f"Removed {len(removed)} items.")
     return removed
+
+
+def _delete(p: Path, attempts: int = 4) -> bool:
+    """Delete a file, retrying briefly when something still holds it.
+
+    Antivirus scanners and launchers hold files open for a moment after the
+    game exits; a single failed unlink used to count as "cannot delete".
+    """
+    import time
+    for i in range(attempts):
+        try:
+            p.unlink()
+            return True
+        except FileNotFoundError:
+            return True
+        except PermissionError:
+            if i == attempts - 1:
+                break
+            time.sleep(0.4 * (i + 1))
+        except OSError:
+            break
+    # Read-only attribute set by a game updater? Clear it and try once more.
+    try:
+        import stat
+        p.chmod(p.stat().st_mode | stat.S_IWRITE)
+        p.unlink()
+        return True
+    except OSError:
+        return False

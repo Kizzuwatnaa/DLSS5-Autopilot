@@ -77,6 +77,11 @@ class App:
         self.provider = tk.IntVar(value=3)
         self.keep_dlss = tk.BooleanVar(value=True)
         self.workres = tk.IntVar(value=100)
+        self.feeder_pre = tk.BooleanVar(value=False)
+        self.sm: int | None = None          # the card's architecture, once known
+        self.stale: dict[str, int] = {}     # install folder -> outdated parts
+        self.route_fit: dict[str, tuple[bool, str]] = {}
+        self.update_ready: Path | None = None
 
         self._build()
         self.search.trace_add("write", self._search_changed)
@@ -191,8 +196,13 @@ class App:
         self.loglink.bind("<Button-1>", lambda e: self._open_log())
         self.buglink = tk.Label(rail, text="[ report a bug ]", bg=RAIL, fg=FAINT,
                                 anchor="w", cursor="hand2", font=font(8))
-        self.buglink.pack(fill="x", padx=20, pady=(0, 18))
+        self.buglink.pack(fill="x", padx=20, pady=(0, 2))
         self.buglink.bind("<Button-1>", lambda e: self._report_bug())
+        self.howlink = tk.Label(rail, text="[ how it works ]", bg=RAIL, fg=FAINT,
+                                anchor="w", cursor="hand2", font=font(8))
+        self.howlink.pack(fill="x", padx=20, pady=(0, 18))
+        self.howlink.bind("<Button-1>", lambda e: webbrowser.open(
+            f"https://github.com/{update.REPO}#who-does-what-the-five-routes"))
 
         right = tk.Frame(r, bg=BG)
         right.pack(side="left", fill="both", expand=True)
@@ -282,20 +292,46 @@ class App:
 
     # ---------------------------------------------------------------- update
     def _check_update(self) -> None:
+        """Look for a newer build and, when running as an .exe, fetch it.
+
+        The download happens quietly in the background; nothing is replaced
+        until the person presses the button, because a running install must
+        never be interrupted by a restart.
+        """
         def work() -> None:
             newer, latest, url = update.check()
-            if newer:
-                self.q.put(("update", (latest, url)))
+            if not newer:
+                return
+            self.q.put(("update", (latest, url)))
+            if selfupdate.running_exe() is None or not prefs.get("auto_update", True):
+                return
+            try:
+                exe = selfupdate.fetch()
+                self.q.put(("update_ready", (latest, exe)))
+            except Exception as e:
+                log.write(f"auto-update download failed: {e}", "warn")
         threading.Thread(target=work, daemon=True).start()
 
     def _show_banner(self, latest: str, url: str) -> None:
         self.update_url = url
         self.bannerlbl.config(text=f"> version {latest} is out "
-                                   f"(you are on {update.VERSION})")
+                                   f"(you are on {update.VERSION})"
+                                   + (" - downloading..." if selfupdate.running_exe()
+                                      and prefs.get("auto_update", True) else ""))
         self.banner.pack(fill="x", before=self.body)
+
+    def _update_ready(self, latest: str, exe: Path) -> None:
+        self.update_ready = exe
+        self.bannerlbl.config(text=f"> version {latest} downloaded and verified")
+        self.updbtn.config(text="[ restart into it ]")
 
     def _do_update(self) -> None:
         if self.busy:
+            return
+        if self.update_ready is not None:
+            self.bannerlbl.config(text="> restarting into the new build...")
+            self.root.update()
+            selfupdate.apply_and_restart(self.update_ready)
             return
         if selfupdate.running_exe() is None:
             webbrowser.open(self.update_url or update.RELEASES_PAGE)
@@ -353,6 +389,12 @@ class App:
                      justify="left", wraplength=660, font=font(9))\
                 .pack(anchor="w", padx=22, pady=(2, 11))
 
+        # What the publishers ship right now - the tool always fetches these.
+        self.boardlbl = tk.Label(f, text="", bg=BG, fg=FAINT, font=font(8),
+                                 anchor="w", justify="left", wraplength=680)
+        self.boardlbl.pack(fill="x", pady=(10, 0))
+        self._load_board()
+
         warn = tk.Frame(f, bg=PANEL, highlightbackground=RUST, highlightthickness=1)
         warn.pack(fill="x", pady=(16, 0))
         wi = tk.Frame(warn, bg=PANEL)
@@ -362,13 +404,13 @@ class App:
         self.realitylbl = tk.Label(
             wi, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
             wraplength=680,
-            text="dlss5 feeding is built around directx 10/11/12 and works "
-                 "reliably there. directx 9, opengl and every 32-bit game go "
-                 "through extra translation or a helper process, and the dlss "
-                 "feature frequently fails to create on those paths. they are "
-                 "offered here and labelled honestly - do not expect them to "
-                 "work.\n\nnever use any of this online: anti-cheat flags "
-                 "reshade add-ons.")
+            text="dlss5 works reliably on 64-bit directx 11/12. directx 9, "
+                 "opengl, vulkan and every 32-bit game go through extra "
+                 "translation, a layer or a helper process, and the dlss "
+                 "feature fails to create there far more often. directx 10 is "
+                 "not supported by anything. each game is labelled honestly - "
+                 "do not expect the long shots to work.\n\nnever use any of "
+                 "this online: anti-cheat flags reshade add-ons.")
         self.realitylbl.pack(anchor="w", pady=(6, 0))
         wi.bind("<Configure>",
                 lambda e: self.realitylbl.configure(wraplength=max(380, e.width - 10)))
@@ -387,6 +429,8 @@ class App:
         self.btn_rm2 = ttk.Button(top, text="uninstall", state="disabled",
                                   command=self._uninstall)
         self.btn_rm2.pack(side="right", padx=(0, 8))
+        ttk.Button(top, text="update all", command=self._update_all)\
+            .pack(side="right", padx=(0, 8))
         self.only_installed = tk.BooleanVar(value=False)
         tk.Checkbutton(top, text="installed only", variable=self.only_installed,
                        command=self._fill, bg=BG, fg=BODY, selectcolor=FIELD,
@@ -430,6 +474,7 @@ class App:
         self.tree.tag_configure("installed", foreground=GREEN)
         self.tree.tag_configure("unsupported", foreground=RED)
         self.tree.tag_configure("shaky", foreground=RUST)
+        self.tree.tag_configure("stale", foreground=AMBER)
         self.tree.bind("<<TreeviewSelect>>", self._on_pick)
         self.tree.bind("<Double-1>", lambda e: self._next())
 
@@ -476,6 +521,76 @@ class App:
             except Exception:
                 log.exception("scanning the library")
                 self.q.put(("error", traceback.format_exc()))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _load_board(self) -> None:
+        """Current upstream versions, one line, from the cached API answers."""
+        def work() -> None:
+            parts = []
+            for key, label in (("feeder", "feeder"), ("bridge", "bridge"),
+                               ("optiscaler", "optiscaler"), ("renodx", "renodx-dlss5"),
+                               ("renodx_sf", "renodx-dlss SF"), ("dlssnr", "dlssnr"),
+                               ("reshade", "reshade")):
+                try:
+                    v = components._latest(key)
+                    if v:
+                        parts.append(f"{label} {v}")
+                except Exception:
+                    continue
+            if parts:
+                self.q.put(("board", "components today:  " + "  |  ".join(parts)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_all(self) -> None:
+        """Reinstall every game whose parts have moved on, same choices as before."""
+        if self.busy:
+            return
+        targets = [g for g in self.all_games
+                   if g.exe and g.installed and self.stale.get(str(g.install_dir))]
+        if not targets:
+            self.scanlbl.config(text="nothing to update - every installed game is current")
+            return
+        if not messagebox.askyesno(
+                APP, f"update {len(targets)} game(s)?\n\nEach is installed again "
+                     f"with the same route and settings, fetching the newest "
+                     f"components. Backups and your own files are kept."):
+            return
+        self.busy = True
+        self.btn_next.config(state="disabled")
+
+        def work() -> None:
+            done = 0
+            for g in targets:
+                opt = installer.options_from_manifest(g.install_dir)
+                if opt is None:
+                    continue
+                self.q.put(("scan", f"updating {g.name}..."))
+                try:
+                    installer.install(g, opt, on_log=lambda t: log.write(t))
+                    done += 1
+                except Exception as e:
+                    log.exception(f"updating {g.name}", e)
+                    self.q.put(("scan", f"{g.name}: {type(e).__name__}"))
+            self.stale = {}
+            self.q.put(("updated_all", done))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _check_stale(self) -> None:
+        """Which installed games have parts that moved on since?
+
+        Runs after every scan, in the background, one source lookup each.
+        The result is a word in the status column - the fix is just to press
+        install again on that game.
+        """
+        roots = [g.install_dir for g in self.all_games if g.exe and g.installed]
+        if not roots:
+            return
+
+        def work() -> None:
+            try:
+                self.q.put(("stale", components.stale_counts(roots)))
+            except Exception:
+                log.exception("checking installed games for updates")
         threading.Thread(target=work, daemon=True).start()
 
     def _cancel_fill(self) -> None:
@@ -535,7 +650,7 @@ class App:
                 try:
                     ok, _ = installer.check_supported(g)
                     sup = dlss.detect(g.install_dir, g.folder, g.api,
-                                      g.bitness or 0)
+                                      g.bitness or 0, self._sm())
                     level, _ = installer.reliability(g, sup.recommended)
                     outlook = {installer.STABLE: "reliable",
                                installer.BETA: "beta",
@@ -560,7 +675,11 @@ class App:
                 status, tag, outlook = f"{ac_summary}!", "unsupported", "blocked"
             elif g.installed:
                 # Read fresh every time: this changes on install and uninstall.
-                status, tag = "installed", "installed"
+                n_stale = self.stale.get(str(g.install_dir), 0)
+                if n_stale:
+                    status, tag = f"update ({n_stale} newer)", "stale"
+                else:
+                    status, tag = "installed", "installed"
             else:
                 status = "ready"
                 tag = "shaky" if level == installer.EXPERIMENTAL else ""
@@ -571,6 +690,8 @@ class App:
         hidden = len([g for g in self.all_games if not g.exe])
         n_inst = len([g for g in self.all_games if g.exe and g.installed])
         msg = f"{len(self.shown)} games  ::  {n_inst} installed"
+        if self.stale:
+            msg += f"  ::  {len(self.stale)} with newer parts - press install again"
         if a != "all":
             msg += f"  ::  {a}-bit filter"
         if q:
@@ -605,12 +726,17 @@ class App:
         g = self.shown[int(sel[0])]
         self.game = g
         ok, why = installer.check_supported(g)
-        sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
+        sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm())
         level, why_rel = installer.reliability(g, sup.recommended)
         proxy = installer._proxy_name(g.api, self._opts().reshade_proxy)
         lines = [f"exe    {g.exe}",
                  f"arch   {g.bit_label}  api {g.api}  ({g.api_why})",
-                 f"route  {dlss.LABELS[sup.recommended]}  [{level}]"]
+                 f"route  {dlss.LABELS[sup.recommended]}  [{level}]"
+                 + ("  -  ships its own dlss" if sup.native_dlss else "")]
+        n_stale = self.stale.get(str(g.install_dir), 0)
+        if n_stale:
+            lines.append(f"update {n_stale} installed part(s) have a newer version "
+                         f"- press install again to bring them up to date")
         if ok:
             lines.append(f"path   reshade as {proxy}"
                          + ("  +  host64/ helper" if g.bitness == 32 else "")
@@ -732,19 +858,45 @@ class App:
                                  justify="left", wraplength=340)
         self.workhint.pack(side="left", padx=(14, 0))
 
-        row(9, "dlss preset")
+        self.lbl_preset = row(9, "dlss preset")
         self.cb_preset = ttk.Combobox(inner, state="readonly",
                                       values=list(feedcfg.PRESETS.values()))
         self.cb_preset.current(0)
         self.cb_preset.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
 
-        row(10, "hdr")
+        self.lbl_hdr = row(10, "hdr")
         self.cb_hdr = ttk.Combobox(inner, state="readonly", width=18,
                                    values=list(feedcfg.HDR.values()))
         self.cb_hdr.current(0)
         self.cb_hdr.grid(row=10, column=1, sticky="w", pady=5)
         self.dlaalbl = tk.Label(inner, text="", bg=PANEL, fg=FAINT, font=font(8))
         self.dlaalbl.grid(row=10, column=2, sticky="w", padx=(10, 0))
+
+        # OptiScaler's own dials sit in the same two rows; only one route's
+        # controls are ever shown at a time.
+        self.lbl_nrpreset = tk.Label(inner, text="model preset", bg=PANEL, fg=DIM,
+                                     font=font(9))
+        self.cb_nrpreset = ttk.Combobox(
+            inner, state="readonly",
+            values=[f"{v}" + ("  -  the author's default" if k == 0 else "")
+                    for k, v in optiscaler.NR_PRESETS.items()])
+        self.cb_nrpreset.current(0)
+        self.lbl_nrstyle = tk.Label(inner, text="style", bg=PANEL, fg=DIM,
+                                    font=font(9))
+        self.cb_nrstyle = ttk.Combobox(
+            inner, state="readonly", width=18,
+            values=[f"{v}" for v in optiscaler.NR_STYLES.values()])
+        self.cb_nrstyle.current(0)
+        self.nrhint = tk.Label(inner, text="the rest is on the overlay (Insert)",
+                               bg=PANEL, fg=FAINT, font=font(8))
+
+        # The feeder's pre-releases carry support for the newer add-on builds.
+        self.ck_feederpre = tk.Checkbutton(
+            inner, text="use the feeder's pre-release build (supports the newer "
+                        "DLSS 5 add-on generations; less tested)",
+            variable=self.feeder_pre, bg=PANEL, fg=DIM, selectcolor=FIELD,
+            activebackground=PANEL, activeforeground=TXT, font=font(8),
+            borderwidth=0)
 
         self.reswarn = tk.Label(
             inner, bg=PANEL, fg=RUST, font=font(8), justify="left", anchor="w",
@@ -753,7 +905,7 @@ class App:
                  "on. the feature is created for one backbuffer size; changing "
                  "resolution or display mode while it runs forces a rebuild that "
                  "can freeze or crash the game.")
-        self.reswarn.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        self.reswarn.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         inner.bind("<Configure>",
                    lambda e: self.reswarn.configure(wraplength=max(360, e.width - 8)))
 
@@ -858,22 +1010,51 @@ class App:
                 self._log(f"        {f_.detail}")
 
     # ---------------------------------------------------------------- bits
-    def _work_applies(self) -> bool:
-        """work_resolution is honoured on the 64-bit D3D11 path only.
+    def _sm(self) -> int | None:
+        if self.sm is None:
+            try:
+                _, self.sm = gpu.detect()
+            except Exception:
+                self.sm = None
+        return self.sm
 
+    def _work_applies(self) -> bool:
+        """Is there a resolution dial on this route, for this game?
+
+        OptiScaler: always - its model resolution (25-100%) is the fps lever.
+        Feeder: work_resolution is honoured on the 64-bit D3D11 path only.
         The add-on's own log line is "settled D3D11 work resolution=..%"; on
         DX12, OpenGL and the 32-bit helper the value is simply ignored, so the
         slider is disabled rather than lying about what it does.
         """
         g = self.game
-        if getattr(self, "route", dlss.FEEDER) != dlss.FEEDER:
-            return False          # only the feeder has a work area at all
+        route = getattr(self, "route", dlss.FEEDER)
+        if route == dlss.OPTI:
+            return True
+        if route != dlss.FEEDER:
+            return False          # the other routes have no work area at all
         return bool(g and g.bitness == 64 and g.api == "DX11")
 
     def _on_workres(self, _v=None) -> None:
         if not self._work_applies():
             return
         v = self.workres.get()
+        if getattr(self, "route", None) == dlss.OPTI:
+            cost = int(round(v * v / 100))
+            if v == 100:
+                self.workhint.config(text="100% - full size; the pass costs about "
+                                          "half your fps", fg=RUST)
+            elif v >= 75:
+                self.workhint.config(text=f"{v}% - about {cost}% of the full-size "
+                                          f"cost, hard to tell apart", fg=DIM)
+            elif v >= 50:
+                self.workhint.config(text=f"{v}% - about {cost}% of the cost; "
+                                          f"fine detail softens a little", fg=DIM)
+            else:
+                self.workhint.config(text=f"{v}% - about {cost}% of the cost; "
+                                          f"broad shading survives, fine "
+                                          f"structure does not", fg=RUST)
+            return
         if v == 100:
             self.workhint.config(text="100% - full quality", fg=DIM)
         elif v >= 80:
@@ -882,15 +1063,26 @@ class App:
             self.workhint.config(text=f"{v}% - faster, softer", fg=RUST)
 
     def _sync_workres(self) -> None:
+        route = getattr(self, "route", dlss.FEEDER)
         if self._work_applies():
+            if route == dlss.OPTI:
+                self.sc_work.configure(from_=optiscaler.NR_SCALE_MIN,
+                                       to=optiscaler.NR_SCALE_MAX)
+                if self.workres.get() == 100 or self.workres.get() < 50:
+                    self.workres.set(optiscaler.NR_SCALE_DEFAULT)
+            else:
+                self.sc_work.configure(from_=50, to=100)
+                if self.workres.get() < 50:
+                    self.workres.set(100)
             self.sc_work.configure(state="normal", fg=BODY, troughcolor=FIELD)
             self._on_workres()
         else:
             self.workres.set(100)
             self.sc_work.configure(state="disabled", fg=FAINT, troughcolor=FIELD)
-            if getattr(self, "route", dlss.FEEDER) != dlss.FEEDER:
+            if route != dlss.FEEDER:
                 self.workhint.config(
-                    text="n/a on this route - the work area is a feeder setting",
+                    text="n/a on this route - the game's own dlss quality mode "
+                         "is the performance setting here",
                     fg=FAINT)
             else:
                 api = self.game.api if self.game else "this api"
@@ -928,9 +1120,38 @@ class App:
     def _apply_route(self, path: str) -> None:
         """Show only the settings this route actually uses."""
         self.route = path
-        self.routelbl.config(text=dlss.BLURB[path], fg=DIM)
+        usable, note = self.route_fit.get(path, (True, ""))
+        text = dlss.BLURB[path]
+        if not usable:
+            text = f"NOT FOR THIS PC - {note}.\n{text}"
+        elif note:
+            text = f"{text}\n({note})"
+        self.routelbl.config(text=text, fg=RUST if not usable else DIM)
         feeder = path == dlss.FEEDER
         opti = path == dlss.OPTI
+        # The add-on dropdown lists the family this route installs.
+        self._fill_addon_list(sf=path == dlss.RENODX)
+        # Rows 9/10: the feeder's preset + hdr, or OptiScaler's preset + style.
+        for w in (self.lbl_preset, self.cb_preset, self.lbl_hdr, self.cb_hdr,
+                  self.dlaalbl, self.lbl_nrpreset, self.cb_nrpreset,
+                  self.lbl_nrstyle, self.cb_nrstyle, self.nrhint,
+                  self.ck_feederpre):
+            w.grid_remove()
+        if opti:
+            self.lbl_nrpreset.grid(row=9, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_nrpreset.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
+            self.lbl_nrstyle.grid(row=10, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_nrstyle.grid(row=10, column=1, sticky="w", pady=5)
+            self.nrhint.grid(row=10, column=2, sticky="w", padx=(10, 0))
+        else:
+            self.lbl_preset.grid(row=9, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_preset.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
+            self.lbl_hdr.grid(row=10, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_hdr.grid(row=10, column=1, sticky="w", pady=5)
+            self.dlaalbl.grid(row=10, column=2, sticky="w", padx=(10, 0))
+        if feeder:
+            self.ck_feederpre.grid(row=11, column=0, columnspan=3, sticky="w",
+                                   pady=(4, 0))
         # OptiScaler is loaded by the game under one of several names; the
         # feeder's motion-vector provider sits in the same place on screen.
         # Row 3 carries whichever of the three this route actually needs:
@@ -962,7 +1183,35 @@ class App:
             level, why = installer.reliability(self.game, path)
             self._log(f"> route: {dlss.LABELS[path]}  [{level}]", "head")
             self._log(f"  {why}")
+            if not usable:
+                self._log(f"  !! not for this pc: {note}", "warn")
             self._log(f"  plan: {' -> '.join(installer.plan(self.game, self._opts()))}")
+
+    def _route_label(self, o: str) -> str:
+        """One dropdown line: what it is, whether it fits, if it is the pick."""
+        usable, note = self.route_fit.get(o, (True, ""))
+        rec = self.support and o == self.support.recommended
+        tail = "  <-  recommended for this game and card" if rec else ""
+        if not usable:
+            tail = f"  (not for this pc: {note})"
+        return dlss.LABELS[o] + tail
+
+    def _fill_addon_list(self, sf: bool) -> None:
+        """The DLSS 5 add-on dropdown for the route: SF or renodx-dlss5."""
+        fam = "renodx_sf" if sf else "renodx"
+        vals = [e["label"] for e in self.catalog.get(fam, [])]
+        found, _ = prefs.find_renodx(sf=sf)
+        self.renodx_local = found
+        if found:
+            tag = f"[local] {found.name}"
+            self.cb_renodx["values"] = [tag] + vals
+            self.cb_renodx.set(tag)
+        elif vals:
+            self.cb_renodx["values"] = vals
+            self.cb_renodx.current(0)
+        else:
+            self.cb_renodx["values"] = ["loading..."]
+            self.cb_renodx.set("loading...")
 
     def _open_log(self) -> None:
         """Show the log file in Explorer, creating it if this run was clean."""
@@ -1076,14 +1325,30 @@ class App:
 
         self.btn_remove.config(state="normal" if g.installed else "disabled")
 
-        # Work out which routes exist for this game and preselect the best.
-        self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
-        self.cb_route["values"] = [dlss.LABELS[o] for o in self.support.options]
+        card, sm = gpu.detect()
+        self.sm = sm
+        if card:
+            drv = gpu.driver_version()
+            self.gpulbl.config(text=f"{card}\n{gpu.label(sm)}"
+                                    + (f"\ndriver {drv}" if drv else ""))
+        else:
+            self._log("!! no nvidia card detected - dlss5 will not run", "warn")
+
+        # Work out which routes exist for this game, which of them fit this
+        # card, and preselect the best. The dropdown says so on every line,
+        # and the choice stays the user's.
+        self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
+        self.route_fit = {o: dlss.fit(o, g.api, self.support.native_dlss, sm)
+                          for o in self.support.options}
+        self.cb_route["values"] = [self._route_label(o) for o in self.support.options]
         self.cb_route.current(self.support.options.index(self.support.recommended))
         if self.support.native_dlss:
             self._log(f"> this game ships its own dlss "
                       f"({', '.join(self.support.evidence[:3])})", "ok")
         self._log(f"> {self.support.reason}")
+        tier = gpu.tier_note(sm)
+        if tier:
+            self._log(f"> {tier}")
         self._apply_route(self.support.recommended)
         if len(cands) > 1:
             self._log(f"!! this folder has {len(cands)} executables; selected "
@@ -1091,13 +1356,6 @@ class App:
             self._log("   if the game launches a different one, change it above "
                       "or the install does nothing", "warn")
 
-        card, sm = gpu.detect()
-        if card:
-            self.gpulbl.config(text=f"{card}\n{gpu.label(sm)}")
-        else:
-            self._log("!! no nvidia card detected - dlss5 will not run", "warn")
-
-        self._find_local_renodx()
         if not self.catalog:
             self._load_catalog()
 
@@ -1127,12 +1385,7 @@ class App:
         ren = [e["label"] for e in cat.get("renodx", [])]
         nr = [e["label"] for e in cat.get("dlssnr", [])]
         ds = [e["label"] for e in cat.get("dlss", [])]
-        keep = self.cb_renodx.get()
-        self.cb_renodx["values"] = ([keep] if keep.startswith("[local]") else []) + ren
-        if keep.startswith("[local]"):
-            self.cb_renodx.set(keep)
-        elif ren:
-            self.cb_renodx.current(0)
+        self._fill_addon_list(sf=getattr(self, "route", None) == dlss.RENODX)
         self.cb_dlssnr["values"] = ["auto - match my gpu"] + nr
         self.cb_dlssnr.current(0)
         self.cb_dlss["values"] = ds
@@ -1157,6 +1410,13 @@ class App:
         if hi > 0:
             feed["hdr"] = list(feedcfg.HDR.keys())[hi]
         clean = lambda v: None if (not v or v.startswith(("loading", "auto"))) else v
+        nr: dict = {}
+        if getattr(self, "route", None) == dlss.OPTI and hasattr(self, "cb_nrpreset"):
+            nr["WorkingScale"] = round(self.workres.get() / 100, 2)
+            if self.cb_nrpreset.current() > 0:
+                nr["Preset"] = list(optiscaler.NR_PRESETS.keys())[self.cb_nrpreset.current()]
+            if self.cb_nrstyle.current() > 0:
+                nr["Style"] = list(optiscaler.NR_STYLES.keys())[self.cb_nrstyle.current()]
         return installer.Options(
             provider=self.provider.get(),
             renodx=None if local else clean(val),
@@ -1165,6 +1425,8 @@ class App:
             dlss=clean(self.cb_dlss.get()),
             keep_game_dlss=self.keep_dlss.get(),
             feed=feed,
+            nr=nr,
+            feeder_prerelease=self.feeder_pre.get(),
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
             opti_proxy=("" if self.cb_proxy.current() <= 0
@@ -1272,8 +1534,24 @@ class App:
                     self._rows.clear()
                     self._fill()
                     self.status.config(text="scan complete")
+                    self._check_stale()
                 elif kind == "update":
                     self._show_banner(*payload)
+                elif kind == "update_ready":
+                    self._update_ready(*payload)
+                elif kind == "stale":
+                    self.stale = payload
+                    if self.step == 2 and self.all_games:
+                        self._fill()
+                elif kind == "board":
+                    self.boardlbl.config(text=payload)
+                elif kind == "updated_all":
+                    self.busy = False
+                    self._rows.clear()
+                    self._fill()
+                    self.btn_next.config(state="normal")
+                    self.scanlbl.config(text=f"updated {payload} game(s)")
+                    self._check_stale()
                 elif kind == "swap":
                     self.bannerlbl.config(text="> restarting into the new build...")
                     self.root.update()
@@ -1349,20 +1627,50 @@ class App:
             self._log(f"    left untouched: {', '.join(rep.skipped)}")
         self._log("")
         self._log("> now launch the game and:", "head")
-        self._log("   1. press Home to open reshade")
-        p = reshade_ini.PROVIDERS[self.provider.get()]
-        if p[1]:
-            self._log(f"   2. tick '{p[0]}' and 'DLSS 5 Feed', provider ABOVE "
-                      f"the feed")
+        route = getattr(self, "route", dlss.FEEDER)
+        if route == dlss.OPTI:
+            self._log("   1. press Insert to open the optiscaler overlay")
+            self._log("   2. neural rendering is switched on already; if the "
+                      "overlay says it refused, it tells you why right there")
+            self._log(f"   3. model resolution is set to {self.workres.get()}% - "
+                      f"the slider in the overlay changes it live")
+            if self.game and self.game.api == "DX11":
+                self._log("   4. on d3d11 the upscaler is FSR on D3D12 - leave it, "
+                          "dlss cannot be the upscaler on this route")
+            self._log("   !  set the game's dlss quality mode as you like - it "
+                      "still applies")
+        elif route == dlss.RENODX:
+            self._log("   1. press Home to open reshade, then the RenoDX DLSS tab")
+            self._log("   2. neural rendering is enabled; the tab shows its status "
+                      "and lets you tune intensity and style")
+            self._log("   3. turn OFF the game's own MSAA/SSAA")
+        elif route in (dlss.NATIVE, dlss.BRIDGE):
+            self._log("   1. press Home to open reshade, then the DLSS 5 tab")
+            self._log("   2. turn on neural rendering there (F5 toggles it in the "
+                      "4.6+ builds)")
+            self._log("   3. keep the game's dlss ON - the add-on hooks it")
+            self._log("   4. turn OFF the game's own MSAA/SSAA")
         else:
-            self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
-        self._log("   3. turn on neural rendering in the DLSS 5 panel")
-        self._log("   4. turn OFF the game's own MSAA/SSAA")
+            self._log("   1. press Home to open reshade")
+            p = reshade_ini.PROVIDERS[self.provider.get()]
+            if p[1]:
+                self._log(f"   2. tick '{p[0]}' and 'DLSS 5 Feed', provider ABOVE "
+                          f"the feed")
+            else:
+                self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
+            self._log("   3. turn on neural rendering in the DLSS 5 panel")
+            self._log("   4. turn OFF the game's own MSAA/SSAA")
+            self._log("   5. NVIDIA Smooth Motion and this feeder do not mix - "
+                      "turn it off for this game if the picture flickers")
         self._log("")
         self._log("!! set your resolution BEFORE enabling neural rendering - the "
                   "feature is built for one backbuffer size and rebuilding it "
                   "mid-session can crash the game. use borderless, not exclusive "
                   "fullscreen.", "warn")
+        if self.sm is not None and self.sm < 89:
+            self._log("!! rtx 20/30: the pass is heavy on your card. if the fps "
+                      "drop is too much, lower the work area / model resolution "
+                      "or turn v-sync off.", "warn")
         self._log("")
         self._log("> played it? come back and press 'did it work?' - it reads the "
                   "logs and tells you what happened.", "head")

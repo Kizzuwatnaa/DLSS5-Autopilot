@@ -23,12 +23,38 @@ MANIFEST = "dlss5-autopilot.json"
 
 LABELS = {
     "reshade":    "ReShade",
-    "renodx":     "DLSS 5 add-on (renodx)",
+    "renodx":     "DLSS 5 add-on (renodx-dlss5)",
+    "renodx_sf":  "DLSS 5 add-on (renodx-dlss SF)",
     "dlssnr":     "nvngx_dlssnr",
     "dlss":       "nvngx_dlss",
     "bridge":     "dlss5-bridge",
+    "feeder":     "DLSS5-Feeder",
     "optiscaler": "OptiScaler",
 }
+
+# Resolved once per process, not once per game: a library with thirty
+# installs must not spend thirty API requests on the same question.
+_LATEST: dict[str, str] = {}
+
+
+def _latest(name: str) -> str:
+    if name in _LATEST:
+        return _LATEST[name]
+    latest = ""
+    if name == "reshade":
+        latest = sources.resolve_reshade()[0]
+    elif name == "optiscaler":
+        latest = optiscaler.resolve()[0]
+    elif name == "bridge":
+        latest = sources.resolve_bridge()[0]
+    elif name == "feeder":
+        latest = sources.resolve_feeder()[0]
+    elif name in ("renodx", "renodx_sf", "dlssnr", "dlss"):
+        entries = sources.rhi_catalog().get(name) or []
+        if entries:
+            latest = entries[0]["label"]
+    _LATEST[name] = latest
+    return latest
 
 
 @dataclass
@@ -82,18 +108,8 @@ def check(root: Path) -> list[Item]:
 
     out: list[Item] = []
     for name, installed in have.items():
-        latest = ""
         try:
-            if name == "reshade":
-                latest = sources.resolve_reshade()[0]
-            elif name == "optiscaler":
-                latest = optiscaler.resolve()[0]
-            elif name == "bridge":
-                latest = sources.resolve_bridge()[0]
-            elif name in ("renodx", "dlssnr", "dlss"):
-                entries = sources.rhi_catalog().get(name) or []
-                if entries:
-                    latest = entries[0]["label"]
+            latest = _latest(name)
         except Exception as e:
             log.write(f"component check: could not resolve {name} ({e})", "warn")
             continue
@@ -101,9 +117,33 @@ def check(root: Path) -> list[Item]:
             continue
         # Only call it outdated when the numbers actually go up. A different
         # build family (an -RTX40 against an SF build, say) is a choice, not a
-        # version behind, and must not be nagged about.
-        outdated = (latest != installed and _key(latest) > _key(installed))
+        # version behind, and must not be nagged about. The neural-rendering
+        # runtime is picked per card, so a newer label there is not "behind"
+        # either.
+        if name == "dlssnr":
+            outdated = False
+        else:
+            outdated = (latest != installed and _key(latest) > _key(installed))
         out.append(Item(LABELS.get(name, name), installed, latest, outdated))
+    return out
+
+
+def stale_counts(roots: list[Path]) -> dict[str, int]:
+    """{install folder: number of outdated components} across a library.
+
+    Cheap after the first game: every source is resolved once and the rest is
+    reading manifests. Meant for the game list, so a person whose games were
+    set up a month ago sees "update" next to them without asking.
+    """
+    out: dict[str, int] = {}
+    for root in roots:
+        try:
+            items = check(root)
+        except Exception:
+            continue
+        n = len([i for i in items if i.outdated])
+        if n:
+            out[str(root)] = n
     return out
 
 

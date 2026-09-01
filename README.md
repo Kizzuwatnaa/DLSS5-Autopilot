@@ -1,10 +1,11 @@
 # DLSS 5 Autopilot
 
-A Windows tool that automates the whole DLSS5-Feeder setup. It scans your
-games, detects each one's architecture and graphics API, fetches every
-component, and writes the ReShade configuration in the right order.
+A Windows tool that puts DLSS 5 neural rendering into your games. It scans
+your library, works out each game's architecture and graphics API, picks the
+route that fits the game **and your card**, fetches every component from its
+publisher, and writes the configuration. One executable, no installation.
 
-**[→ Download the latest release](../../releases/latest)** — single file, no installation.
+**[→ Download the latest release](../../releases/latest)**
 
 > **This repository contains no game files, no NVIDIA binaries and no
 > third-party redistributables.** It is installer logic only. Everything it
@@ -13,131 +14,146 @@ component, and writes the ReShade configuration in the right order.
 
 ---
 
-## What it supports
+## What is DLSS 5, in one paragraph
 
-There are three routes into a game, and the tool picks the right one for you.
+DLSS 5 "neural rendering" is a model that runs over a finished frame and
+re-lights it - materials, skin, tone. NVIDIA launches it on **3 September 2026
+in NBA 2K27, for RTX 50 only.** The runtime leaked a week early from that
+game's build, and the modding community wired it into other games through
+ReShade add-ons and an OptiScaler fork, then patched builds of the runtime so
+RTX 40, 30 and 20 cards can run it too. This tool automates that whole setup.
+It is unofficial, it is early, and the components change daily.
 
-| Route | What it does | When it is used |
+---
+
+## Who does what: the five routes
+
+Every game gets one of these. The tool picks the best fit and says why; the
+dropdown shows every route the game allows, marks the recommended one, and
+marks the ones your card cannot use. You can always pick another.
+
+| Route | What it is | Where it fits | Performance dial |
+|---|---|---|---|
+| **native** | Krish's `renodx-dlss5` ReShade add-on hooks the game's own DLSS calls on D3D12. | 64-bit D3D12 games that ship DLSS. The most proven route. | The game's own DLSS quality mode |
+| **optiscaler** | Dagherbou's OptiScaler fork replaces the upscaler and runs the model over its output. No ReShade. | **RTX 50 only**, 64-bit D3D12 (D3D11 works with FSR underneath), game must already use DLSS. | **Model resolution 25-100%** - the biggest fps lever there is |
+| **renodx-dlss** | ShortFuse's `renodx-dlss` add-on (the "SF" build) hooks D3D9, D3D11 and D3D12 in-process. No bridge, no shaders. | 64-bit D3D9 / D3D11 / D3D12, with or without DLSS. Newest component (1 September). | The game's own DLSS mode where it has one |
+| **bridge** | NIGos' `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session. | Vulkan games with DLSS (mirror). D3D11 fallback. Author has stopped at 1.3.0. | The game's own DLSS mode |
+| **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract out of ReShade's depth buffer and shader motion vectors. | Games with **no** DLSS: D3D11, D3D12, Vulkan, OpenGL, and the only route for **32-bit** games (host64 helper) and DX9 (via dgVoodoo2). | `work_resolution` 50-100% (64-bit D3D11 only) |
+
+**How the recommendation is made:**
+
+- RTX 50 + D3D12 game with DLSS → **optiscaler** (the fps dial). Native is one click away.
+- Any other card + D3D12 game with DLSS → **native**.
+- D3D11 game with DLSS → **renodx-dlss**; bridge and optiscaler as alternatives.
+- No DLSS in the game (D3D11/12) → **feeder**; renodx-dlss (no shaders, no motion vectors) as the simpler alternative.
+- Vulkan with DLSS → **bridge**; Vulkan without → **feeder**.
+- OpenGL, 32-bit, DX9 (32-bit) → **feeder**.
+- 64-bit DX9 → **renodx-dlss** (nothing else reaches it).
+- **DirectX 10 is not supported by anything.** The tool says so instead of installing.
+
+### Support matrix
+
+| Path | Status | How |
 |---|---|---|
-| **native** | The DLSS 5 add-on hooks the game's own NGX D3D12 calls | Game ships DLSS and renders with D3D12 |
-| **optiscaler** | OptiScaler replaces the upscaler entirely — no ReShade — and reads the game's own DLSS depth and motion vectors | D3D12 game with DLSS, when you want the cheapest route and real upscaling |
-| **bridge** | `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session | D3D11 or Vulkan games, and games with no DLSS at all |
-| **feeder** | DLSS5-Feeder builds a synthetic DLAA contract from ReShade's depth and shader motion vectors | Everything else |
+| 64-bit D3D12 with DLSS | reliable | native / optiscaler / renodx-dlss |
+| 64-bit D3D11 with DLSS | beta | renodx-dlss / bridge |
+| 64-bit D3D11 / D3D12 without DLSS | reliable | feeder (ReShade + shaders) |
+| Vulkan (64-bit) | beta | ReShade as a Vulkan layer + bridge or feeder |
+| OpenGL | often fails | feeder, ReShade as `opengl32.dll` |
+| 32-bit D3D11 / D3D12 | often fails | feeder + `host64\` helper process |
+| DirectX 9 (32-bit) | often fails | dgVoodoo2 → D3D11 → feeder |
+| DirectX 9 (64-bit) | beta | renodx-dlss |
+| DirectX 10 | not supported | nothing hooks D3D10 |
+| Emulators | reliable* | D3D11/12 backend; Vulkan is the beta path |
 
-On the **native** route your in-game DLSS quality setting (Quality / Balanced /
-Performance) still applies — it is the game's own DLSS being upgraded, not a
-synthetic one. The feeder route is always DLAA.
+\* set the emulator's renderer to Direct3D 11/12. Vulkan works through the
+layer registration; OpenGL is the least reliable.
 
-| API | Support |
-|---|---|
-| **64-bit DX12** | reliable — native when the game has DLSS, else feeder |
-| **64-bit DX11** | reliable — bridge when the game has DLSS, else feeder |
-| **Vulkan** | beta — bridge only; ReShade is registered as a Vulkan layer |
-| DirectX 9 | long shot — dgVoodoo2 translates to D3D11, then bridge or feeder |
-| DirectX 10 | long shot — feeder only, nothing hooks D3D10 |
-| 64-bit OpenGL | long shot — feeder only |
-| 32-bit anything | long shot — feeder only, via the `host64\` helper |
-| Emulators | DuckStation, PCSX2, Dolphin, PPSSPP, Xenia — set them to a D3D11/12 backend |
+---
 
-**Vulkan is a global change.** ReShade reaches Vulkan as an *implicit layer*: a
-registry value the Vulkan loader reads at start-up. Once registered it loads
-into every Vulkan application on your account, not just the game. The tool
-registers it under `HKEY_CURRENT_USER` (no administrator rights), says so
-before doing it, reuses an existing ReShade registration rather than
-duplicating it, and removes its own on uninstall.
+## Your graphics card, honestly
 
-**Be realistic:** DX11/DX12 is where this works. DirectX 9, DirectX 10, OpenGL
-and 32-bit games go through extra translation or a helper process and often
-fail at `CreateFeature`. The tool labels every game's outlook rather than
-pretending.
+The neural-rendering runtime (`nvngx_dlssnr.dll`) is compiled per GPU
+architecture. NVIDIA's own build carries FP8 kernels for RTX 50 only; the
+community re-targeted it for older cards. The tool detects your card, picks
+the right build, then **opens the downloaded file and checks the CUDA fatbin
+records** to confirm it really contains code for your architecture.
 
-**Steam, Epic, GOG, EA, Ubisoft, Battle.net and Xbox / Game Pass** libraries
-are scanned automatically, along with the usual emulator locations. Anything
-else is added with **[choose folder]** — point it at the folder the game's
-`.exe` is actually in.
+| Card | Build the tool installs | What to expect |
+|---|---|---|
+| **RTX 50** | `310.8.0` - NVIDIA's original, FP8 | Full speed. The 3 September Game Ready driver ships this same runtime. |
+| **RTX 40** | `310.8.0-RTX40` - community, re-targeted to sm_89 | Works. Moderate frame-time cost. |
+| **RTX 20 / 30** | `310.8.SF` / `SF-v2` - community, FP16 path | Works. **Heavy**: roughly half your fps at full model resolution. Use the resolution dial. |
+| GTX / RTX below 20 | - | Does not run. |
 
-**Search the list** by typing in the box above it: the game's name, the folder
-it lives in, or the store it came from all match, and several words have to
-match together. Enter or the down arrow jumps to the first hit, Escape clears
-the box.
+**"I have an RTX 50, can I just swap the DLSS DLL?"** No. The driver brings
+the runtime, but a game has to *ask* for neural rendering, and outside NBA
+2K27 none do. That is what the add-on (native / renodx-dlss) or OptiScaler is
+for, on every card. What RTX 50 saves you is the patched runtime and the
+frame-time penalty.
 
-A game set up against an executable in a subfolder — `Bin\Win64\Game.exe` and
-the like — is recognised as installed again on the next scan, so **uninstall**
-stays available instead of greying out.
-
-### The OptiScaler route loads under a name you choose
-
-OptiScaler works by wearing the name of a DLL the game already loads. The tool
-offers every name OptiScaler supports and says when to reach for each:
-
-| Name | When |
-|---|---|
-| `dxgi.dll` | the default — works for most D3D12 and D3D11 games |
-| `winmm.dll` | when the game ships its own `dxgi.dll`, or `dxgi` does nothing |
-| `version.dll` | another loader hook; try after `winmm` |
-| `dbghelp.dll` | loads very early — some Unreal Engine titles need this |
-| `d3d12.dll` | D3D12 only, and only if `dxgi` is already taken |
-| `wininet.dll` / `winhttp.dll` | last resort for games that load none of the above |
-
-On **Auto** it picks a name that is not already taken, so a game shipping its
-own `dxgi.dll` — an ENB, a DXVK build — keeps it. It also finds an OptiScaler
-already installed under a *different* name (by reading the DLL's version
-resource, which still says `OptiScaler.dll` whatever the file is called) and
-moves it aside, because two copies loading at once fight each other. It is put
-back on uninstall.
+The table above is not hard-coded - it is read from the files - so new
+builds work too. The install log tells you which tier you are on.
 
 ---
 
 ## Using it
 
 1. Run the executable
-2. **Step 1** — pick an architecture filter (or "Show everything")
-3. **Step 2** — pick your game
-4. **Step 3** — press **INSTALL**
+2. **Step 1** - pick an architecture filter (or "Show everything")
+3. **Step 2** - pick your game (there is a search box)
+4. **Step 3** - check the route and the dials, press **INSTALL**
 
-Then in the game:
+The tool then tells you, per route, what to press in the game. In short:
 
-- **Home** opens the ReShade overlay
-- `LUMENITE: Kernel 2.0` and `DLSS 5 Feed` must both be ticked, **Kernel above the feed**
-- Enable neural rendering in the `DLSS 5 Neural Rendering` panel
-- Turn the game's own **MSAA/SSAA** off
+| Route | In game |
+|---|---|
+| optiscaler | **Insert** opens the overlay. Neural rendering is already on; the model-resolution slider is live. |
+| native / bridge | **Home** opens ReShade → DLSS 5 tab → turn neural rendering on (F5 in 4.6+ builds). Keep the game's DLSS on. |
+| renodx-dlss | **Home** → RenoDX DLSS tab. Neural rendering is already on. |
+| feeder | **Home** → tick `LUMENITE: Kernel 2.0` and `DLSS 5 Feed`, **Kernel above the feed** → DLSS 5 panel → neural rendering on. |
 
-Press **Esc** to jump back to the start at any time; the step rail on the left
-is clickable too.
+Everywhere: turn the game's own **MSAA/SSAA off**.
 
-On the **optiscaler** route there is no ReShade overlay: press **Insert** for
-OptiScaler's own overlay and turn on *DLSS Neural Rendering* there.
+Press **Esc** to jump back to the start at any time; the step rail on the
+left is clickable too.
 
-### After it is installed
+### Settings you should know about
 
-Step 3 keeps four buttons for a game that is already set up:
-
-- **diagnose** — reads whichever logs apply to the route you actually used and
-  says what happened, in words rather than log lines
-- **check versions** — compares what this game has installed against what the
-  sources offer now. A different build family (`-RTX40` against an `SF` build)
-  is reported as *different*, not out of date, because that is a choice
-- **uninstall** — removes exactly what was written, restores every backup
-- **open folder**
+- **Set your resolution before turning neural rendering on.** The feature is
+  created for one backbuffer size. Changing resolution, display mode or DLSS
+  settings while it runs forces a rebuild that can freeze or crash the game.
+- Prefer **borderless** over exclusive fullscreen - swapchain recreation on
+  alt-tab can crash.
+- **Model resolution (optiscaler)** - cost falls with the square: 75% is about
+  half the cost of 100%, 50% a quarter. The frame itself stays full detail;
+  only the model's contribution is computed small and enlarged. Default 75%.
+- **Work area (feeder)** - 50-100%, 64-bit D3D11 only. Ignored elsewhere, so
+  the slider is disabled there rather than pretending.
+- **NVIDIA Smooth Motion** and the feeder do not mix. Turn it off per game if
+  the picture flickers.
+- **V-sync at 60 Hz** can pin you to 30 fps once the pass costs a few
+  milliseconds. Turn v-sync off or lower the dial.
+- **Feeder pre-release** (checkbox) - the feeder's stable release only works
+  with DLSS 5 add-on 4.55, and the tool pins it there. Its pre-releases
+  support the newer 4.6/4.7 add-on builds; tick the box to use them.
+- **Do not use any of this in online games.** ReShade with add-ons and
+  anti-cheat do not coexist. The tool detects BattlEye, EAC and Vanguard and
+  marks those games blocked.
 
 ### Updating
 
-When a newer release exists, a bar appears at the top. **Update now**
-downloads it, checks it really is a 64-bit Windows executable of a sane size,
-swaps the executable and restarts — the previous build is kept next to it as
-`.old.exe` in case you want to go back. The check runs once every few hours,
-not on every launch, so it does not eat into GitHub's request allowance.
+**The tool updates itself.** When a newer release exists it downloads it in
+the background, verifies it is a 64-bit Windows executable of a sane size,
+and the top bar offers **restart into it** - one click. The previous build is
+kept next to it as `.old.exe`. Set `"auto_update": false` in
+`%LOCALAPPDATA%\dlss5-autopilot\settings.json` to keep the download manual.
 
-### When something goes wrong
-
-The left rail has **[ open log file ]** and **[ report a bug ]**.
-
-The log lives at `%LOCALAPPDATA%\dlss5-autopilot\autopilot.log` and records the
-run, what each store returned, every folder that was skipped and why, and any
-exception — including ones on background threads, which a windowed program
-otherwise loses completely. **[ report a bug ]** opens an issue with the
-version, your card, the game and the route already filled in; attach the log
-and there is something to work from.
+**The components update too.** After every scan, games you set up earlier
+are checked against what their publishers offer now; a game with newer parts
+shows **update (N newer)** in the list. Press install again on it - your
+settings and backups are kept. **check versions** on the install page shows
+the per-component detail.
 
 ### Command line
 
@@ -151,142 +167,94 @@ dlss5-autopilot.exe "D:\Games\Game" --remove   uninstall
 
 ## What makes it more than a copy script
 
-**GPU compatibility is verified, not assumed.** The CUDA code inside the DLSS
-neural-rendering runtime is compiled per architecture. The tool detects your
-card, then parses the fatbin records inside the downloaded file to confirm it
-actually contains code for that architecture. Measured results:
+**It finds your games.** Steam, Epic, GOG, EA app, Ubisoft Connect,
+Battle.net, Rockstar, Amazon Games, itch, Heroic, Xbox/Game Pass folders,
+plain `D:\Games\*` folders, and eighteen emulators (DuckStation, PCSX2,
+Dolphin, PPSSPP, Xenia, Cemu, RPCS3, Ryujinx, yuzu/suyu/Eden, shadPS4,
+Azahar/Citra, melonDS, Flycast, xemu, Vita3K, RetroArch, mGBA, Snes9x,
+Play!). Anything else: **Choose folder…** and point at the folder the `.exe`
+is actually in.
 
-| Build | RTX 20 | RTX 30 | RTX 40 | RTX 50 |
-|---|:---:|:---:|:---:|:---:|
-| `310.8.0` | – | – | – | ✓ |
-| `310.8.0-RTX40` | – | – | ✓ | ✓ |
-| `310.8.SF` | ✓ | ✓ | ✓ | ✓ |
-| `310.8.SF-v2` | ✓ | ✓ | ✓ | ✓ |
+**The right executable.** Files must sit next to the executable that
+actually runs - many games keep it in a subfolder (`Bin\Win64…\Game.exe`).
+When a folder has several candidates you can pick which one, and an install
+made earlier is found again even if the ranking changes.
 
-Left on **Auto**, the tool walks the list newest-first and picks the first
-build that supports your card. The table is not hard-coded — it is read from
-the files, so new releases work too.
+**Nothing is overwritten without a backup.** Every file the tool replaces -
+the game's own `nvngx_dlss.dll`, a tuned `OptiScaler.ini`, an existing
+`ReShade.ini` - is saved alongside and restored on uninstall.
 
-**Technique ordering is handled.** The motion-vector provider's technique must
-sit above `DLSS 5 Feed` or the feed never receives vectors. The tool writes
-this correctly and leaves your existing ReShade settings and other shaders
-alone.
+**Uninstall removes exactly what was installed.** Everything written is
+recorded in `dlss5-autopilot.json` in the game folder; the logs the
+components write later are known too. A file the game or its launcher is
+still holding is retried, reported by name, and kept in the record so the
+next uninstall finishes the job - it is never silently left behind.
 
-**Your own files are backed up.** If a game ships its own `nvngx_dlss.dll` and
-it gets replaced, the original is saved alongside and restored on uninstall.
+**Switching routes is clean.** Installing another route removes the previous
+one first, and no two routes' add-ons are ever left in one folder (ReShade
+loads every add-on it finds, and two of them fighting over NGX is the
+classic "game exits before the first frame").
 
-**The right executable.** Files must sit next to the executable that actually
-runs — many games keep it in a subfolder (`Bin\Win64…\Game.exe`). When a
-folder has several candidates you can pick which one to target.
+**Versions that go together.** The feeder's stable release conflicts with
+DLSS 5 add-on builds newer than 4.55 - the DLSS feature dies in
+`CreateFeature` - so the tool pins them together and says so in the log.
 
-**"Did it work?"** After you have played, press it. The tool reads
-`dlss5-feed.log` and `ReShade.log` back and tells you in plain words what
-happened — whether the shader loaded, whether motion vectors are alive,
-whether the DLSS feature was created, and whether frames are actually being
-delivered. This matters because the usual failure is silent: the game simply
-looks unchanged.
+**"Did it work?"** After you have played, press it. The tool reads the
+components' logs back and tells you in plain words what happened - whether
+the shader loaded, whether motion vectors are alive, whether the DLSS
+feature was created, and whether frames are actually being delivered. The
+usual failure is silent: the game simply looks unchanged.
 
 **It keeps working when GitHub rate-limits you.** GitHub allows 60 anonymous
-API calls an hour per address, which is easy to hit behind a VPN, a
-university network or CGNAT. Every API answer is cached on disk and reused
-when a live call fails, so an install still completes — with a note saying
-the version list is stale.
-
----
-
-## Settings
-
-The **Quality / speed** section writes `dlss5-feed.cfg`:
-
-- **Work area** (`work_resolution`, 50–100%) — the performance dial. Only the
-  64-bit **D3D11** path honours it; the add-on's own log line is
-  `settled D3D11 work resolution=…%`. On DX12, OpenGL and the 32-bit helper
-  the value is ignored, so the slider is disabled there rather than pretending.
-- **DLSS preset** — if you see warping around flames or transparent objects,
-  try Preset E or F (the legacy CNN).
-- **HDR** — auto / force SDR / force HDR
-
-### Why there is no "DLSS Performance mode"
-
-The feeder path is always DLAA and cannot be otherwise. DLSS5-Feeder never
-sees the game's low-resolution render; it sees the finished full-resolution
-frame at the end of the ReShade chain. There is no low-resolution source to
-upscale from, so Quality / Balanced / Performance have no meaning here. The
-performance dial is `work_resolution`.
+API calls an hour per address. Every API answer is cached on disk and reused
+when a live call fails, so an install still completes.
 
 ---
 
 ## Requirements
 
-Windows, and an NVIDIA RTX 20 series card or newer. The first install
+Windows, an NVIDIA RTX 20 series card or newer, and a recent driver
+(OptiScaler's DLSS-NR needs **616.56+**; the tool checks). The first install
 downloads roughly 150 MB (`nvngx_dlssnr.dll` alone unpacks to 165 MB) into
 `%LOCALAPPDATA%\dlss5-autopilot\cache`; later games install instantly.
 
 ---
 
-## Warnings
-
-- **Do not use this in online games.** ReShade with add-ons will be flagged by
-  anti-cheat. The tool detects BattlEye, Easy Anti-Cheat, Vanguard and others
-  in the game folder and marks those games `blocked` in the list — that is why
-  Arma 3 and Arma Reforger do nothing when set up. It is not a tool bug and
-  there is no way around it.
-- **Set your resolution before turning neural rendering on.** The DLSS
-  feature is created for one specific backbuffer size. Changing resolution,
-  display mode or DLSS settings while it is running forces a rebuild, which
-  can black-screen, freeze or crash the game. Turn neural rendering off, change
-  the resolution, then turn it back on.
-- Prefer **borderless** over exclusive fullscreen — swapchain recreation on
-  alt-tab can crash.
-- Neural rendering costs several milliseconds. With v-sync on at 60 Hz you can
-  drop to 30 fps; turn v-sync off or lower the work area.
-- Emulators must be set to a **Direct3D 11/12** backend, and ReShade may latch
-  onto the wrong depth buffer — pick the right one in its DX11/DX12 tab.
-
----
-
 ## Troubleshooting
 
-`dlss5-feed.log` in the game folder is the first place to look:
+`dlss5-feed.log` / `ReShade.log` / `OptiScaler.log` in the game folder are
+the first places to look, and **did it work?** reads them for you.
 
 | Line | Meaning |
 |---|---|
 | `feature ready … DLAA` | the contract was established |
 | `frame N delivered` | frames are being processed |
 | `MV probe … N% non-zero` | should not be 0% while moving |
-| `CreateFeature raised exception 0xC0000005` | the add-on and the `nvngx_dlssnr` build do not get along — try another combination |
-
-Everything the tool writes is recorded in `dlss5-autopilot.json` in the game
-folder. **Uninstall** removes exactly those files, restores backups, and
-leaves your own shaders and settings untouched.
+| `CreateFeature raised exception 0xC0000005` | add-on / feeder version mismatch (see above), or the runtime does not match the card |
 
 ### It worked, then stopped after I changed display mode
 
-On the **feeder** route the contract is built out of ReShade's depth buffer,
-and ReShade picks that buffer by matching it against the back buffer. Anything
-that makes the two disagree — borderless instead of fullscreen, Windows
-display scaling, or an in-game render scale below 100% — can leave it with
-nothing selected, and then everything sets up correctly and no frame is ever
-produced.
-
-Open the ReShade overlay, go to the **Add-ons** tab and find the depth buffer
-list. One entry has to be selected. If none is, turn **"Use aspect ratio
-heuristics"** off there. Trying the opposite display mode is the quick test:
-if fullscreen works and borderless does not, this is why.
-
-The **native**, **bridge** and **optiscaler** routes do not use ReShade's
-depth buffer at all, so they are unaffected — that is a reason to prefer them
-where your game supports them.
+The contract is built out of ReShade's depth buffer, chosen by matching it
+against the back buffer. Borderless instead of fullscreen, Windows display
+scaling, or an in-game render scale below 100% can leave nothing selected:
+everything sets up and no frame is ever produced. Open the ReShade overlay,
+**Add-ons** tab, depth buffer list - one entry has to be selected. If none
+is, turn **"Use aspect ratio heuristics"** off there.
 
 ### The tool does not list my game
 
-Not every launcher can be found from the registry, and an executable that is
-locked at the moment of the scan (antivirus, a running updater, OneDrive
-placeholders) cannot be read. Use **[choose folder]** and point at the folder
-the game's `.exe` is actually in.
+Not every launcher can be found from the registry, and an executable locked
+at the moment of the scan (antivirus, a running updater, OneDrive
+placeholders) cannot be read. The scan log (**open log file**) says what
+each store returned. **Choose folder…** always works.
 
-The log file — **[ open log file ]** in the left rail — records what each
-store returned and names every folder that was skipped and why.
+### Antivirus quarantined a file after install
+
+`renodx-dlss5.addon64`, `nvngx_dlssnr.dll` and OptiScaler are unsigned,
+freshly built, uncommon, and hook graphics APIs - everything heuristics look
+for. The install reports success and then the game does nothing. The tool
+notices the missing file and tells you; restore it from quarantine and add
+the game folder to your exclusions.
 
 ---
 
@@ -301,86 +269,32 @@ api.github.com  ·  github.com  ·  objects.githubusercontent.com
 codeload.github.com
 ```
 
-All download URLs live in a single file, [`core/sources.py`](core/sources.py),
-so they are easy to audit.
+All download URLs live in a single file, [`core/sources.py`](core/sources.py).
 
 ---
 
 ## Is it safe? How to check for yourself
 
-Fair question to ask about any .exe from a Discord link. Do not take anyone's
-word for it — here is what you can verify.
+Fair question to ask about any .exe from a Discord link. Do not take
+anyone's word for it - here is what you can check.
 
-**The executable is built by GitHub, not on anyone's PC.** Every release is
-compiled by the [`release` workflow](.github/workflows/release.yml) on GitHub's
-own runners, from the source in this repository. The build log is public: open
-the Actions tab and read exactly what was run. Nobody gets to slip anything in
-between the code you can read and the file you download.
-
-**Check the file is the one that build produced.** Every release ships a
-`SHA256SUMS.txt`. Compare it against your download:
-
-```powershell
-Get-FileHash .\dlss5-autopilot.exe -Algorithm SHA256
-```
-
-If it does not match, do not run it — it did not come from here.
-
-**Check the signed provenance**, which ties the binary to the exact commit and
-build run that produced it:
+**Every release is built by GitHub, not uploaded by a person.** Pushing a
+version tag runs [`release.yml`](.github/workflows/release.yml) on GitHub's
+own Windows runner: it builds the .exe from the commit you can read, writes
+`SHA256SUMS.txt`, and attaches a **signed provenance attestation** that ties
+the file to that exact commit and build log. Both are on every release page,
+with the hashes at the top of the notes.
 
 ```
+certutil -hashfile dlss5-autopilot.exe SHA256
 gh attestation verify dlss5-autopilot.exe --repo Kizzuwatnaa/DLSS5-Autopilot
 ```
 
-**About antivirus warnings.** The build is packed with PyInstaller, which
-bundles a Python interpreter into a single self-extracting .exe. That is the
-same shape a lot of real malware uses, so heuristic scanners flag it — a
-handful of the ~70 engines on VirusTotal will usually say something like
-`Trojan.Generic` or `Wacatac` on *any* PyInstaller build, including a script
-that does nothing at all. It is a false positive, and it is the price of
-shipping a single .exe with no installer.
+If the hash differs from the release page, the file did not come from here.
 
-**"It warned me once and now it doesn't."** That is not you imagining it, and
-it is worth understanding because it will happen to some of you.
-
-Windows Defender ships with **Block at First Sight** turned on. When it meets
-a file it has never seen before — unsigned, and downloaded by only a handful
-of people so far — it holds the file and asks Microsoft's cloud. For a brand
-new binary the cloud model has nothing to go on but shape, and it answers with
-a generic machine-learning verdict. Those are the ones whose names end in
-`!ml`: `Wacatac.C!ml`, `Ulthar.A!ml`, `Fonzi.A!ml`. Not a signature match — a
-guess. Once the file has been seen by enough machines the verdict flips and
-the same file scans clean from then on.
-
-So a fresh release can be flagged on the first day and clean a day later,
-without the file changing at all. That is why the SHA-256 above matters more
-than any scanner result: it tells you whether you have the file GitHub built.
-
-Two things you can do rather than guess:
-
-- **Check the hash** against `SHA256SUMS.txt`, and verify the attestation.
-- **Report a false positive to Microsoft** at
-  <https://www.microsoft.com/en-us/wdsi/filesubmission> — it is free, takes a
-  minute, and a confirmed false positive is corrected for everyone.
-
-A detection on the **components** is a separate matter and a more likely one.
-`renodx-dlss5.addon64`, `nvngx_dlssnr.dll` and OptiScaler are unsigned,
-freshly built, uncommon, and they hook into graphics APIs — everything the
-heuristics are looking for. Defender has called a renodx build
-`Trojan:Win32/Ulthar.A!ml` and OptiScaler `Trojan:Win32/Fonzi.A!ml`. Those
-detections are about that software, not about this tool, and they would happen
-just the same if you installed those files by hand.
-
-That has a practical consequence: antivirus quarantines the file **after** it
-is written, so the install reports success and the game then does nothing.
-Since v1.3 the installer checks every file it wrote is still on disk and says
-so plainly when one has gone. The fix is to restore it from quarantine and add
-the game folder to your antivirus exclusions.
-
-Nothing in this repository is signed, because a code signing certificate costs
-money the project does not have. If you would rather not take the .exe at all,
-**run it from source** — it is plain Python with no third-party packages:
+**The source is all here, and there is nothing else in it.** Plain Python,
+standard library and tkinter only; nothing from PyPI ends up in the build.
+Run it from source if you would rather not take the .exe at all:
 
 ```
 git clone https://github.com/Kizzuwatnaa/DLSS5-Autopilot
@@ -388,12 +302,27 @@ cd DLSS5-Autopilot
 python dlss5_autopilot.py
 ```
 
+**About antivirus warnings.** The build is packed with PyInstaller. Its
+stock bootloader is the same wrapper a lot of real malware uses, so heuristic
+scanners flag it - `Trojan.Generic`, `Wacatac.C!ml`, on *any* PyInstaller
+build. Since v1.3.0 the release workflow **compiles a fresh bootloader on the
+runner** rather than using the one every scanner has a signature for, which
+removes most of these. What it cannot remove is SmartScreen's
+*"Windows protected your PC"* on first run: that is about the missing
+publisher certificate, not the file. **More info → Run anyway**, once. A
+code-signing certificate costs money the project does not have.
+
+Windows Defender's **Block at First Sight** can also flag a brand-new
+release for a day and clear it after enough machines have seen it, without
+the file changing. Report a false positive at
+<https://www.microsoft.com/en-us/wdsi/filesubmission>; a confirmed one is
+corrected for everyone.
+
 **What it actually does to your machine**, all of which you can read:
 
 - writes only into the game folder you pick, and backs up anything it replaces
-- keeps its settings and log in `%LOCALAPPDATA%\dlss5-autopilot`
-- adds one registry key under `HKEY_CURRENT_USER` — and only for the Vulkan
-  route, which needs it, removed again on uninstall
+- the one exception is Vulkan: ReShade's layer is a per-user registry value, the tool says so before writing it and removes it with the last Vulkan game
+- keeps its settings and cache in `%LOCALAPPDATA%\dlss5-autopilot`
 - never needs administrator rights, and never asks for them
 - downloads only from the hosts listed above
 - sends nothing anywhere: no telemetry, no analytics, no account
@@ -402,32 +331,31 @@ python dlss5_autopilot.py
 
 ## Credits and licensing
 
-This tool is a downloader and configurator. It bundles nothing. Each component
-is fetched at run time from its own publisher and remains under its own
-licence:
+This tool is a downloader and configurator. It bundles nothing. Each
+component is fetched at run time from its own publisher and remains under
+its own licence:
 
 | Component | Project | Licence |
 |---|---|---|
-| dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
-| OptiScaler (DLSS-NR fork) | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | ReShade | [crosire/reshade](https://github.com/crosire/reshade) | BSD-3-Clause |
 | Shader headers | [crosire/reshade-shaders](https://github.com/crosire/reshade-shaders) | per-file |
 | DLSS5-Feeder | [jlrouzies-fr/DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder) | see repository |
+| dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
+| OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
 | dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
-| RenoDX DLSS 5 add-on, NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
+| RenoDX DLSS 5 add-ons (Krish, ShortFuse), NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
 
-The DLSS 5 neural-rendering add-on and the NVIDIA NGX runtimes are
-closed-source software with no published licence. **They are not in this
-repository, not in the release archive, and not redistributed by this
-project.** The tool downloads them from a public community mirror, exactly as
-a person would by hand. If you are not comfortable with that, do not use this
-tool.
+The DLSS 5 add-ons and the NVIDIA NGX runtimes are closed-source software
+with no published licence. **They are not in this repository, not in the
+release archive, and not redistributed by this project.** The tool downloads
+them from a public community mirror, exactly as a person would by hand. If
+you are not comfortable with that, do not use this tool.
 
-Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX or any
-of the projects above. Use at your own risk.
+Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX,
+OptiScaler or any of the projects above. Use at your own risk.
 
-The installer's own source code is MIT licensed — see [LICENSE](LICENSE).
+The installer's own source code is MIT licensed - see [LICENSE](LICENSE).
 
 If you are a rights holder and want something changed or removed, open an
 issue and it will be addressed.
@@ -440,8 +368,9 @@ issue and it will be addressed.
 build.bat
 ```
 
-Needs Python 3.10+ and `pip install pyinstaller`. The script installs
-PyInstaller if it is missing and produces `dlss5-autopilot.exe`.
+Needs Python 3.10+ and `pip install pyinstaller`. The release build is the
+one GitHub makes; a local build behaves the same but carries the stock
+bootloader.
 
 ### Tests
 
@@ -449,32 +378,32 @@ PyInstaller if it is missing and produces `dlss5-autopilot.exe`.
 python test_reshade_ini.py     ReShade ini/preset logic, including ordering
 python test_install.py         end-to-end install + uninstall in temp folders
 python test_clean_machine.py   empty cache, no local files: completeness check
+python test_all.py             the whole suite against the current tree
 ```
-
-`test_clean_machine.py` reproduces a fresh machine: it downloads everything
-from scratch and asserts that all three install paths end up complete.
 
 ### Layout
 
 ```
 dlss5_autopilot.py    entry point (GUI + CLI)
 core/pe.py            PE parsing: bitness, imports, API detection, exe ranking
-core/games.py         Steam / Epic / GOG / emulator scanning
+core/games.py         Steam / Epic / GOG / EA / Ubisoft / Battle.net / Rockstar /
+                      Amazon / itch / Heroic / Xbox / folder scanning
 core/emulators.py     emulator profiles and discovery
-core/gpu.py           GPU detection + CUDA architecture compatibility check
-core/sources.py       every download URL, in one place
+core/gpu.py           GPU + driver detection, CUDA architecture check, build tiers
+core/dlss.py          which route fits the game and the card
+core/sources.py       every download URL, in one place; version pins
 core/net.py           downloading, caching, zip extraction
-core/prefs.py         persistent settings, local renodx discovery
+core/prefs.py         persistent settings, local add-on discovery
 core/reshade_ini.py   ReShade.ini / preset writing and technique ordering
-core/feedcfg.py       dlss5-feed.cfg
+core/feedcfg.py       dlss5-feed.cfg and dlss5-bridge.cfg
+core/optiscaler.py    the OptiScaler route and its [DlssNr] dials
+core/vulkan.py        ReShade as a Vulkan implicit layer
 core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
-core/dlss.py          native-DLSS detection and route selection
-core/vulkan.py        registering ReShade as an implicit Vulkan layer
-core/anticheat.py     spotting anti-cheat before it wastes your time
-core/optiscaler.py    the OptiScaler DLSS-NR route
-core/installer.py     install engine and reliability assessment
+core/anticheat.py     BattlEye / EAC / Vanguard detection
+core/installer.py     install engine, route switching, uninstall
+core/components.py    are the installed parts still current?
 core/update.py        update check
-core/selfupdate.py    download and swap in a new build
-core/diagnose.py      reading dlss5-feed.log back into an answer
+core/selfupdate.py    download, verify and swap in a new build
+core/diagnose.py      reading the logs back into an answer
 core/gui.py           interface
 ```

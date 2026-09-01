@@ -83,11 +83,83 @@ def _fresh(path: Path, since: float) -> bool:
         return False
 
 
+OPTI_LOG = "OptiScaler.log"
+
+
+def _opti_log(install_dir: Path) -> Path | None:
+    """OptiScaler writes next to itself by default, or under Logs/."""
+    cands = [install_dir / OPTI_LOG]
+    try:
+        cands += sorted((install_dir / "Logs").glob("*.log"),
+                        key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    return next((c for c in cands if c.is_file()), None)
+
+
+def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float) -> "Report":
+    """The OptiScaler route has no ReShade: its own log says everything.
+
+    The fork's DLSS-NR lines are unambiguous - "running at WxH" is success,
+    "create failed" / "unavailable" / "did not run" name the reason.
+    """
+    p = _opti_log(install_dir)
+    text = _tail(p) if p else ""
+    if not text:
+        rep.add(BAD, "No OptiScaler log from this install yet.",
+                "Either the game has not been run since installing, or "
+                "OptiScaler is not loading at all - check that the proxy DLL "
+                "sits next to the executable the game actually launches, and "
+                "that antivirus did not quarantine it.")
+        rep.verdict = "Not run yet, or OptiScaler never loaded."
+        return rep
+    rep.ran = True
+    try:
+        rep.log_time = datetime.fromtimestamp(p.stat().st_mtime).strftime("%d %b %H:%M")
+    except OSError:
+        pass
+    if since and not _fresh(p, since):
+        rep.add(WARN, "The log predates the current install.",
+                "Play once and check again.")
+    lines = text.splitlines()
+    nr = [ln for ln in lines if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
+    running = [ln for ln in nr if "running at" in ln]
+    failed = [ln for ln in nr if any(k in ln for k in (
+        "create failed", "unavailable", "did not run", "not found beside",
+        "would not load", "disabling for this session", "refused"))]
+    if "forwarder loaded" in text:
+        rep.add(OK, "OptiScaler loaded and found the neural-rendering forwarder.")
+    if running:
+        rep.add(OK, "Neural rendering is running.", running[-1].strip()[-160:])
+        rep.verdict = "Working."
+    elif failed:
+        rep.add(BAD, "Neural rendering did not start.", failed[-1].strip()[-220:])
+        if "refuse" in failed[-1] or "unavailable" in failed[-1]:
+            rep.add(INFO, "This model runs on RTX 50 only, and needs driver "
+                          "616.56 or newer. On an older card use the native "
+                          "or renodx-dlss route instead.")
+        rep.verdict = "OptiScaler loaded, but the model refused or failed."
+    elif nr:
+        rep.add(WARN, "OptiScaler mentions neural rendering but never reports "
+                      "it running.", nr[-1].strip()[-160:])
+        rep.verdict = "Inconclusive - open the overlay (Insert) and read the "\
+                      "status under the Neural Rendering checkbox."
+    else:
+        rep.add(WARN, "OptiScaler ran, but neural rendering was never asked for.",
+                "Press Insert in game and tick Neural Rendering; the tool "
+                "writes Enabled=true, but a hand-edited OptiScaler.ini can "
+                "override it.")
+        rep.verdict = "OptiScaler loaded; neural rendering not switched on."
+    return rep
+
+
 def analyse(install_dir: Path) -> Report:
     """Read whatever logs apply to this install and explain the outcome."""
     rep = Report()
     since = _installed_at(install_dir)
     rep.route = _route(install_dir)
+    if rep.route == "optiscaler":
+        return _analyse_optiscaler(install_dir, rep, since)
 
     feed = install_dir / FEED_LOG
     host = install_dir / HOST_LOG
@@ -97,7 +169,7 @@ def analyse(install_dir: Path) -> Report:
     # not by timestamps: reinstalling bumps the manifest and would make every
     # existing log look stale, while a feeder log left behind after switching
     # to native would otherwise be reported as if it were current.
-    feeder_route = rep.route not in ("native", "bridge")
+    feeder_route = rep.route not in ("native", "bridge", "renodx")
     if feeder_route:
         text = _tail(feed)
         htext = _tail(host, 150_000)
@@ -282,13 +354,14 @@ def analyse(install_dir: Path) -> Report:
     elif "failure: resource build" in joined:
         rep.add(BAD, "Building the feed resources failed.")
         rep.verdict = "DLSS never started."
-    elif rep.route in ("native", "bridge"):
+    elif rep.route in ("native", "bridge", "renodx"):
+        panel = ("RenoDX DLSS tab" if rep.route == "renodx"
+                 else "DLSS 5 Neural Rendering panel")
         rep.add(INFO, "This route leaves no frame log of its own.",
-                "Open the ReShade overlay and check the DLSS 5 Neural "
-                "Rendering panel: it shows the live state and whether it is "
-                "switched on.")
-        rep.verdict = ("Add-ons loaded. Confirm in the DLSS 5 panel - this "
-                       "route does not log frames.")
+                f"Open the ReShade overlay and check the {panel}: it shows "
+                f"the live state and whether it is switched on.")
+        rep.verdict = (f"Add-ons loaded. Confirm in the {panel} - this "
+                       f"route does not log frames.")
     else:
         rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 

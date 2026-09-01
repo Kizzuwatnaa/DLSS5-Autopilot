@@ -5,10 +5,11 @@ separately.
 
 HOW IT WORKS
 ------------
-An emulator is just another D3D11/D3D12 application; once ReShade is loaded as
-dxgi.dll, DLSS5-Feeder behaves exactly as it does in a normal game. The
-condition is that the emulator's render backend must be Direct3D 11 or 12. If
-Vulkan or OpenGL is selected, dxgi.dll is never loaded at all.
+An emulator is just another D3D11/D3D12/Vulkan/OpenGL application; once
+ReShade is loaded, DLSS5-Feeder behaves exactly as it does in a normal game.
+Direct3D 11/12 is the proven backend. Vulkan works through ReShade's layer
+registration (64-bit emulators) and OpenGL through the feeder's interop; both
+are newer and less proven, and the tool says so per game.
 
 DEPTH BUFFER CAVEAT
 -------------------
@@ -61,18 +62,61 @@ PROFILES: tuple[Profile, ...] = (
     Profile("cemu", "Cemu", "Wii U",
             ("Cemu.exe",),
             False,
-            "Cemu only offers Vulkan/OpenGL",
-            "With OpenGL selected ReShade installs as opengl32.dll; "
-            "there is no automatic setup for Vulkan."),
+            "Cemu offers Vulkan/OpenGL - set Vulkan (beta path)",
+            "Vulkan goes through ReShade's layer registration; OpenGL "
+            "installs as opengl32.dll and is the least reliable."),
     Profile("rpcs3", "RPCS3", "PlayStation 3",
             ("rpcs3.exe",),
             False,
-            "RPCS3 only offers Vulkan/OpenGL",
-            "No D3D backend, so this tool cannot set it up automatically."),
+            "RPCS3 offers Vulkan/OpenGL - set Vulkan (beta path)"),
     Profile("ryujinx", "Ryujinx", "Switch",
-            ("Ryujinx.exe", "Ryujinx.Ava.exe"),
+            ("Ryujinx.exe", "Ryujinx.Ava.exe", "Ryujinx.Headless.SDL2.exe"),
             False,
-            "Vulkan/OpenGL only"),
+            "Vulkan/OpenGL only - set Vulkan (beta path)"),
+    Profile("yuzu", "yuzu / suyu / Eden / Citron", "Switch",
+            ("yuzu.exe", "suyu.exe", "eden.exe", "citron.exe", "sudachi.exe"),
+            False,
+            "Vulkan/OpenGL only - set Vulkan (beta path)"),
+    Profile("shadps4", "shadPS4", "PlayStation 4",
+            ("shadPS4.exe", "shadps4.exe"),
+            False,
+            "Vulkan only (beta path)"),
+    Profile("azahar", "Azahar / Citra / Lime3DS", "3DS",
+            ("azahar.exe", "citra.exe", "citra-qt.exe", "lime3ds.exe"),
+            False,
+            "Vulkan/OpenGL - set Vulkan (beta path)"),
+    Profile("melonds", "melonDS", "DS",
+            ("melonDS.exe",),
+            False,
+            "OpenGL only - the least reliable path"),
+    Profile("flycast", "Flycast", "Dreamcast",
+            ("flycast.exe",),
+            True,
+            "Set the renderer to DirectX 11"),
+    Profile("xemu", "xemu", "Xbox",
+            ("xemu.exe",),
+            False,
+            "Vulkan/OpenGL - set Vulkan (beta path)"),
+    Profile("vita3k", "Vita3K", "PS Vita",
+            ("Vita3K.exe",),
+            False,
+            "Vulkan/OpenGL - set Vulkan (beta path)"),
+    Profile("retroarch", "RetroArch", "multi-system",
+            ("retroarch.exe",),
+            True,
+            "Set the video driver to d3d11 or d3d12"),
+    Profile("mgba", "mGBA", "Game Boy Advance",
+            ("mGBA.exe",),
+            False,
+            "OpenGL only - the least reliable path"),
+    Profile("snes9x", "Snes9x", "SNES",
+            ("snes9x-x64.exe", "snes9x.exe"),
+            True,
+            "Set the output method to Direct3D"),
+    Profile("play", "Play!", "PlayStation 2",
+            ("Play.exe",),
+            False,
+            "Vulkan/OpenGL - set Vulkan (beta path)"),
 )
 
 _BY_EXE = {e.lower(): p for p in PROFILES for e in p.exes}
@@ -97,7 +141,9 @@ def _search_roots() -> list[Path]:
         if not base.is_dir():
             continue
         for name in ("Emulators", "Emulator", "Games", "Emu", "RetroArch",
-                     "PS2", "PS1", "Emulation", "Roms", "Apps", "Programs"):
+                     "PS2", "PS1", "Emulation", "Roms", "Apps", "Programs",
+                     "Oyunlar", "Tools", "Portable",
+                     "EmuDeck", "Emulators_Portable", "LaunchBox"):
             d = base / name
             if d.is_dir():
                 roots.append(d)

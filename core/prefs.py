@@ -52,7 +52,7 @@ def set_(key: str, value) -> None:
 
 
 def is_renodx(path: Path) -> bool:
-    """Is this actually the RenoDX DLSS 5 add-on?
+    """Is this actually a RenoDX DLSS 5 add-on (either family)?
 
     DLSS5-Feeder's own dlss5-feed.addon64 shares the extension, so we do not
     trust the name - we look for the signature string inside the binary.
@@ -65,6 +65,23 @@ def is_renodx(path: Path) -> bool:
         if data[:2] != b"MZ":
             return False
         return b"RenoDX" in data and b"DLSS" in data
+    except OSError:
+        return False
+
+
+def is_renodx_sf(path: Path) -> bool:
+    """ShortFuse's renodx-dlss build, as opposed to Krish's renodx-dlss5.
+
+    The two are not interchangeable: the SF build hooks D3D9/D3D11/D3D12
+    itself and carries its own module name in the PE, so that is what is
+    checked - not the file name, which people rename freely.
+    """
+    try:
+        if not is_renodx(path):
+            return False
+        data = path.read_bytes()
+        return (b"renodx-dlss.addon64" in data
+                or "renodx-dlss.addon64".encode("utf-16-le") in data)
     except OSError:
         return False
 
@@ -110,13 +127,17 @@ def _candidates() -> list[Path]:
     return good
 
 
-def find_renodx() -> tuple[Path | None, list[Path]]:
-    """(file_to_use, all_candidates). A remembered choice wins."""
-    cands = _candidates()
+def find_renodx(sf: bool = False) -> tuple[Path | None, list[Path]]:
+    """(file_to_use, all_candidates) of the requested family.
+
+    A remembered choice wins, but only if it is of the right family - a
+    remembered renodx-dlss5 must not be handed to the renodx-dlss route.
+    """
+    cands = [c for c in _candidates() if is_renodx_sf(c) == sf]
     saved = get("renodx_local")
     if saved:
         p = Path(saved)
-        if p.is_file():
+        if p.is_file() and is_renodx_sf(p) == sf:
             others = [c for c in cands if c.resolve() != p.resolve()]
             return p, [p] + others
     return (cands[0] if cands else None), cands

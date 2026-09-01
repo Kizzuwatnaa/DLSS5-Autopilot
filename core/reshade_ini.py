@@ -152,6 +152,19 @@ def write_addon_only_ini(dir_: Path) -> None:
     ini.save(p)
 
 
+def enable_renodx_dlss_nr(game_dir: Path) -> None:
+    """Ask ShortFuse's renodx-dlss add-on for neural rendering up front.
+
+    The add-on keeps its settings in ReShade.ini under [RENODX-DLSS]; the key
+    is what its overlay toggles. Only set when absent, so a user who turned it
+    off on purpose is not overruled.
+    """
+    p = game_dir / "ReShade.ini"
+    ini = Ini.load(p)
+    ini.set_default("RENODX-DLSS", "NeuralRenderingEnabled", "1")
+    ini.save(p)
+
+
 def write_preset(game_dir: Path, provider: int = 3) -> None:
     """Put the provider technique ABOVE DLSS5_Feed in the preset."""
     p = game_dir / "ReShadePreset.ini"
