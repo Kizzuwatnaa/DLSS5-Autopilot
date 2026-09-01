@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import (anticheat, dgvoodoo, dlss, feedcfg, games, gpu, net,
+from . import (anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
                optiscaler, pe, prefs, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
@@ -108,6 +108,7 @@ class Options:
     # The feeder's pre-releases are where support for the newer DLSS 5 add-on
     # generations lives; the stable release only accepts renodx-dlss5 4.55.
     feeder_prerelease: bool = False
+    dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
 
 
@@ -223,9 +224,41 @@ RESHADE_PROXY_HELP = {
 
 
 def _proxy_name(api: str, chosen: str = "") -> str:
+    if api == "Vulkan":
+        # No proxy DLL at all: ReShade reaches a Vulkan game as a layer.
+        return VULKAN_LAYER
     if chosen in RESHADE_PROXIES:
         return chosen
     return "opengl32.dll" if api == "OpenGL" else "dxgi.dll"
+
+
+# What the manifest and the labels say where a proxy name would go when the
+# game is reached through the Vulkan layer instead. Never a file.
+VULKAN_LAYER = "(vulkan layer)"
+
+
+def wants_dxvk(g: games.Game) -> str | None:
+    """The game's name when it is known to need DXVK, else None.
+
+    These games close themselves the moment ReShade hooks D3D11 - no crash,
+    no message. Through DXVK they render on Vulkan and ReShade stays outside.
+    """
+    return dxvk.wanted(g.exe) if g.api in dxvk.APIS else None
+
+
+def uses_dxvk(g: games.Game, opt: "Options") -> bool:
+    """Is this install going through DXVK? D3D11 or D3D9, on the ReShade
+    routes only - OptiScaler is itself the dxgi.dll DXVK would need to be,
+    and ShortFuse's renodx-dlss hooks D3D9 in-process."""
+    return (bool(opt.dxvk) and g.api in dxvk.APIS
+            and opt.path not in (OPTI, ROUTE_RENODX))
+
+
+def via_dxvk(g: games.Game, opt: "Options") -> games.Game:
+    """The game as the rest of the install sees it: a Vulkan game."""
+    if not uses_dxvk(g, opt):
+        return g
+    return replace(g, api="Vulkan", api_why=f"DXVK: {g.api} -> Vulkan")
 
 
 def check_supported(g: games.Game) -> tuple[bool, str]:
@@ -323,7 +356,10 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     headers, the .fx and a motion-vector provider.
     """
     steps: list[str] = []
-    if g.api == "DX9":
+    if uses_dxvk(g, opt):
+        steps.append(f"DXVK ({g.api} -> Vulkan)")
+        g = via_dxvk(g, opt)
+    elif g.api == "DX9":
         steps.append("dgVoodoo2 (DX9 -> D3D11)")
     if opt.path == OPTI:
         # OptiScaler replaces ReShade entirely - it is the proxy DLL itself.
@@ -375,12 +411,24 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
         + ("  (pre-release, as requested)" if opt.feeder_prerelease else ""))
     rep.components["feeder"] = tag
     addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
-    for name in (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ()):
-        if name not in assets:
+    needed = (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ())
+    # From 0.10.0 the feeder ships one zip instead of loose files.
+    zurl = next((u for n, u in assets.items()
+                 if n.lower().endswith(".zip") and "feeder" in n.lower()), None)
+    zpath = None
+    if zurl and any(n not in assets for n in needed):
+        zpath = dl(zurl, f"{tag}-{zurl.rsplit('/', 1)[-1]}")
+    for name in needed:
+        dest = (root / SHADERS / name) if name.endswith(".fx") else \
+               (host / name if name == FEEDER_HOST else root / name)
+        if name in assets:
+            f = dl(assets[name], f"{tag}-{name}")
+            _copy(f, dest, rep, root)
+        elif zpath is not None:
+            _extract(zpath, name, dest, rep, root)
+            rep.written.append(str(dest.relative_to(root)))
+        else:
             raise InstallError(f"The DLSS5-Feeder release has no {name}.")
-        f = dl(assets[name], f"{tag}-{name}")
-        dest = (root / SHADERS / name) if name.endswith(".fx") else                (host / name if name == FEEDER_HOST else root / name)
-        _copy(f, dest, rep, root)
         log(f"      {dest.relative_to(root)}")
 
     if opt.provider in (3, 4):
@@ -458,6 +506,36 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     if keep == ROUTE_RENODX:
         out.append((NATIVE, RENODX))
     return out
+
+
+def _clear_stale_reshade(root: Path, keep: str, rep: Report, log) -> None:
+    """Move every ReShade proxy that is not the one being installed out of
+    ReShade's reach. Ours go aside as orphans (uninstall deletes them); one we
+    did not record is backed up first, so uninstall puts it back."""
+    for name in RESHADE_PROXIES:
+        if name == keep:
+            continue
+        p = root / name
+        if not _is_reshade(p):
+            continue
+        try:
+            if name in rep.preinstalled:
+                aside = p.with_name(name + ORPHAN_SUFFIX)
+                if aside.exists():
+                    p.unlink()
+                else:
+                    p.rename(aside)
+                    rep.written.append(aside.name)
+            else:
+                _backup(p, rep, root)
+                p.unlink()
+        except OSError as e:
+            log(f"      could not move {name} aside ({e}) - if the game will "
+                f"not start, remove it by hand")
+            continue
+        rep.notes.append(f"moved aside a second ReShade copy: {name}")
+        log(f"      moved {name} out of the way - a second ReShade under "
+            f"another name would stop the game from starting")
 
 
 def _purge_foreign_addons(root: Path, keep: str, rep: Report, log) -> None:
@@ -539,6 +617,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "nr": opt.nr,
             "keep_game_dlss": opt.keep_game_dlss,
             "feeder_prerelease": opt.feeder_prerelease,
+            "dxvk": rep.components.get("dxvk"),
             "components": rep.components,
         }, ensure_ascii=False, indent=2), encoding="utf8")
     except OSError:
@@ -627,6 +706,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     root = g.install_dir
     rep = Report()
     x64 = g.bitness == 64
+    # Through DXVK the game is a Vulkan game from here on: no proxy DLL, the
+    # Vulkan layer instead. DXVK itself goes in at step 0, below.
+    dxvk_from = g.api if uses_dxvk(g, opt) else ""
+    steps = plan(g, opt)          # counted before the switch: DXVK is a step
+    g = via_dxvk(g, opt)
     proxy = _proxy_name(g.api, opt.reshade_proxy)
     host = root / HOST_DIR
 
@@ -697,13 +781,23 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 f"{proxy} already exists but is not ReShade (DXVK, Special K or "
                 f"another injector?). Remove it first, then try again.")
 
+    # Read before anything is written: what is here that we put here.
+    rep.preinstalled = _previously_ours(root)
+
+    # A ReShade left under ANOTHER name would be loaded as a second copy. It
+    # aborts itself ("Another ReShade instance was already loaded"), and the
+    # game may not start at all - MGS V did not. It happens when the name
+    # ReShade loads under is changed between installs, and when an uninstall
+    # that knew only the recorded name left the other one behind. Through
+    # DXVK or on a Vulkan game there must be none at all.
+    if opt.path != OPTI:
+        _clear_stale_reshade(root, proxy, rep, log)
+
     # Switching routes must not leave the previous one behind. The routes put
     # very different things in the folder - the feeder alone drops 28 files,
     # including a ReShade.ini that would sit next to OptiScaler and confuse
     # everything - and the new manifest would not list them, so a later
     # uninstall could never clean them up either.
-    # Read before anything is written: what is here that we put here.
-    rep.preinstalled = _previously_ours(root)
 
     previous = _previous_route(root)
     if previous and previous != opt.path:
@@ -717,7 +811,6 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # route may be left in the folder. ReShade loads them all.
     _purge_foreign_addons(root, opt.path, rep, log)
 
-    steps = plan(g, opt)
     n = len(steps)
     i = 0
     done = False
@@ -739,13 +832,24 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # does, we still record the files already written - otherwise they would
     # be orphaned in the game folder with no way to clean them up.
     try:
-        # --- 0) DX9 needs dgVoodoo2 first -------------------------------------
-        if g.api == "DX9":
+        # --- 0) DX9 needs dgVoodoo2 first (unless DXVK takes it to Vulkan) ---
+        if g.api == "DX9" and not dxvk_from:
             begin("dgVoodoo2 (DX9 -> D3D11)")
             for f in dgvoodoo.install(root, log):
                 rep.written.append(f)
             rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
                              "not start, raise VRAM with dgVoodooCpl.exe.")
+
+        # --- 0b) DXVK: the game renders on Vulkan, ReShade stays outside -----
+        if dxvk_from:
+            begin(f"DXVK ({dxvk_from} -> Vulkan)")
+            ver, files = dxvk.install(root, x64, log, api=dxvk_from)
+            rep.written += files
+            rep.components["dxvk"] = ver
+            rep.notes.append(f"DXVK {ver} installed ({dxvk_from} -> Vulkan): the "
+                             f"game renders on Vulkan and ReShade loads as a "
+                             f"Vulkan layer, so nothing hooks the game itself. "
+                             f"Use a borderless window, not exclusive fullscreen.")
 
         if opt.path == OPTI:
             begin("OptiScaler (DLSS-NR build)")
@@ -823,7 +927,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         if g.api == "Vulkan":
             # A Vulkan game never loads dxgi.dll. ReShade reaches it as an
             # implicit Vulkan layer instead - a registry value the loader reads.
-            manifest, fresh = vulkan.install_layer(setup, log)
+            manifest, fresh = vulkan.install_layer(setup, log, also32=not x64)
             prefs.add_vulkan_game(root)
             if fresh:
                 rep.notes.append("registered ReShade as a Vulkan layer for this "
@@ -1022,6 +1126,12 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             _backup(root / "ReShadePreset.ini", rep, root)
             reshade_ini.write_reshade_ini(root, opt.provider)
             reshade_ini.write_preset(root, opt.provider)
+            src = reshade_ini.carry_over(root, [Path(x) for x in prefs.installs()])
+            if src is not None:
+                log(f"      your ReShade keys and overlay settings carried over "
+                    f"from {src.parent.name}")
+                rep.notes.append(f"ReShade key bindings and overlay settings "
+                                 f"carried over from {src.parent.name}")
             rep.written += ["ReShade.ini", "ReShadePreset.ini"]
             label, tech, _ = reshade_ini.PROVIDERS[opt.provider]
             log(f"      DLSS5_MV_PROVIDER={opt.provider} ({label})")
@@ -1126,6 +1236,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
     # --- record -----------------------------------------------------------
     _write_manifest(root, g, opt, rep, proxy, level, complete=True)
+    prefs.add_install(root)
     prog(100, "Done")
     return rep
 
@@ -1142,6 +1253,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     # Read ours, or an older release's, whichever is there.
     sources_ = [man] + [root / n for n in LEGACY_MANIFESTS]
     found_man = next((m for m in sources_ if m.is_file()), None)
+    data: dict = {}
     if found_man is not None:
         try:
             data = json.loads(found_man.read_text(encoding="utf8"))
@@ -1152,6 +1264,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                     f"({found_man.name})")
         except (OSError, json.JSONDecodeError):
             files = []
+            data = {}
     else:
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, DLSSNR, DLSS,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
@@ -1171,6 +1284,10 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                       for f in (root / TEXTURES).glob("lumenite_*")]
         except OSError:
             pass
+        # ReShade under any of the other names it can load as - only when
+        # the file really is ReShade, a game's own d3d11.dll stays.
+        files += [n for n in RESHADE_PROXIES
+                  if n not in files and _is_reshade(root / n)]
         log("No install record found; cleaning up by known filenames.")
 
     # Restore backups first, then delete the rest
@@ -1238,6 +1355,18 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                 log(f"removed: {name} (log)")
         except OSError:
             pass
+    # DXVK names its logs after the executable; only when the DXVK was ours.
+    if data.get("dxvk"):
+        exe_rec = data.get("exe") or (g.exe.name if g.exe else "")
+        for name in dxvk.logs_for(Path(exe_rec)) if exe_rec else ():
+            p = root / name
+            try:
+                if p.is_file():
+                    p.unlink()
+                    removed.append(name)
+                    log(f"removed: {name} (log)")
+            except OSError:
+                pass
     # OptiScaler's own log folder: take out its files, and the folder only if
     # that leaves it empty - a game could have a folder of the same name.
     logs = root / OPTI_LOG_DIR
@@ -1256,6 +1385,10 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         pass
 
     reshade_ini.remove_our_techniques(root)
+    try:
+        prefs.drop_install(root)
+    except Exception:
+        pass
 
     # The Vulkan layer is registered once for the whole user, so it may only be
     # removed when the LAST game that needs it goes. Removing it while another

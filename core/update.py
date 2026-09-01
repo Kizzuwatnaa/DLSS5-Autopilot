@@ -15,7 +15,7 @@ import time
 
 from . import net, prefs
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 REPO = "Kizzuwatnaa/DLSS5-Autopilot"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"

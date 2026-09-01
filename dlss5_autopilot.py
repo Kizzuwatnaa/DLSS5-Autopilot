@@ -3,6 +3,11 @@ r"""DLSS 5 Autopilot - entry point.
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
                                                     [--route native|optiscaler|renodx|bridge|feeder]
+                                                    [--dxvk | --no-dxvk]
+
+--dxvk runs a D3D11 game on Vulkan through DXVK, with ReShade as a Vulkan
+layer instead of a DLL inside the game. Games known to need it (MGS V) get
+it by default; --no-dxvk turns that off.
 """
 from __future__ import annotations
 
@@ -36,11 +41,14 @@ def _console() -> None:
         pass
 
 
-def cli(target: Path, remove: bool, check: bool, route: str = "") -> int:
+def cli(target: Path, remove: bool, check: bool, route: str = "",
+        dxvk: bool | None = None) -> int:
     g = games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
         return 1
+    need = installer.wants_dxvk(g)
+    use_dxvk = bool(need) if dxvk is None else dxvk
     card, sm = gpu.detect()
     sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
     level, why_rel = installer.reliability(g, sup.recommended)
@@ -66,6 +74,10 @@ def cli(target: Path, remove: bool, check: bool, route: str = "") -> int:
               f"({', '.join(sup.evidence[:3])})")
     print(f"          {sup.reason}")
     print(f"outlook : {level} - {why_rel}")
+    if use_dxvk:
+        print(f"dxvk    : yes - {need + ' closes itself when ReShade hooks it; ' if need else ''}"
+              f"the game will render on Vulkan and ReShade loads as a Vulkan "
+              f"layer (--no-dxvk to turn this off)")
 
     ok, why = installer.check_supported(g)
     if check:
@@ -75,7 +87,7 @@ def cli(target: Path, remove: bool, check: bool, route: str = "") -> int:
         print(f"renodx   : {local.name if local else 'will download from the mirror'}")
         if ok:
             popt = installer.Options(path=sup.recommended,
-                                     native_dlss=sup.native_dlss)
+                                     native_dlss=sup.native_dlss, dxvk=use_dxvk)
             print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
         return 0
     if not ok:
@@ -88,7 +100,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "") -> int:
 
     try:
         rep = installer.install(
-            g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss),
+            g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
+                                 dxvk=use_dxvk),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
@@ -114,7 +127,9 @@ def main() -> int:
         return cli(Path(positional[0]),
                    remove="--remove" in args,
                    check="--check" in args,
-                   route=route)
+                   route=route,
+                   dxvk=(True if "--dxvk" in args
+                         else False if "--no-dxvk" in args else None))
     if "--help" in args or "-h" in args:
         _console()
         print(__doc__)

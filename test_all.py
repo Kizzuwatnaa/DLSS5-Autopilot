@@ -19,6 +19,7 @@ except Exception:
 
 FAILS: list[str] = []
 X64 = Path(r"C:\Users\Mustafa\Downloads\dlss5-feed-host64.exe")
+SRC_DIR = Path(__file__).resolve().parent
 
 
 def check(name: str, cond: bool, detail: str = "") -> bool:
@@ -40,7 +41,7 @@ section("1. every module imports cleanly, with warnings as errors")
 with warnings.catch_warnings():
     warnings.simplefilter("error")
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
-            "reshade_ini", "feedcfg", "dgvoodoo", "dlss", "vulkan",
+            "reshade_ini", "feedcfg", "dgvoodoo", "dxvk", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
             "log", "components",
             "installer", "gui")
@@ -545,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.3.1", update.VERSION == "1.3.1", update.VERSION)
+check("version is 1.3.2", update.VERSION == "1.3.2", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -741,6 +742,152 @@ check("renodx-dlss5 is not mistaken for sf", not prefs.is_renodx_sf(d / "b.addon
 shutil.rmtree(d, ignore_errors=True)
 
 
+
+
+# ------------------------------------------------------------ 9. v1.3.2
+section("9. dxvk for games that quit on reshade, stray reshade copies, "
+        "settings that travel, the feeder zip")
+from core import dxvk, reshade_ini, sources, prefs
+
+# The known list and the switch that follows it.
+d = Path(tempfile.mkdtemp(prefix="dxvk_"))
+shutil.copyfile(X64, d / "mgsvtpp.exe")
+g = games.manual(d)
+g.api = "DX11"            # the fixture exe is not the real game; MGS V is D3D11
+check("mgs v is recognised as needing dxvk", bool(installer.wants_dxvk(g)),
+      str(installer.wants_dxvk(g)))
+check("an ordinary game is not", installer.wants_dxvk(
+    games.Game(name="x", folder=d, exe=d / "Game.exe", bitness=64, api="DX11")) is None)
+o = installer.Options(path=dlss.FEEDER, dxvk=True)
+steps = installer.plan(g, o)
+check("dxvk is the first step and reshade becomes the vulkan layer",
+      steps[0].startswith("DXVK") and steps[1] == "ReShade (Vulkan layer)", str(steps[:2]))
+check("optiscaler never goes through dxvk",
+      not installer.uses_dxvk(g, installer.Options(path=dlss.OPTI, dxvk=True)))
+check("a vulkan game has no proxy dll name",
+      installer._proxy_name("Vulkan") == installer.VULKAN_LAYER)
+check("dxvk names its logs after the exe",
+      dxvk.logs_for(Path("mgsvtpp.exe"))[0] == "mgsvtpp_dxgi.log")
+g9 = games.Game(name="gta", folder=d, exe=d / "GTAIV.exe", bitness=32, api="DX9")
+s9 = installer.plan(g9, installer.Options(path=dlss.FEEDER, dxvk=True))
+check("dx9 through dxvk: no dgvoodoo, dxvk first, vulkan layer, host64 helper",
+      s9[0] == "DXVK (DX9 -> Vulkan)" and "dgVoodoo2 (DX9 -> D3D11)" not in s9
+      and s9[1] == "ReShade (Vulkan layer)" and "host64 helper process" in s9, str(s9))
+check("dx9 without dxvk still goes through dgvoodoo",
+      installer.plan(g9, installer.Options(path=dlss.FEEDER))[0].startswith("dgVoodoo2"))
+check("dxvk puts d3d9.dll for dx9 and dxgi+d3d11 for dx11",
+      dxvk.files_for("DX9") == ("d3d9.dll",) and "d3d11.dll" in dxvk.files_for("DX11"))
+check("the renodx-dlss route never goes through dxvk (it hooks in-process)",
+      not installer.uses_dxvk(g9, installer.Options(path=dlss.RENODX, dxvk=True)))
+from core import vulkan as _vk
+check("the 32-bit layer has its own manifest and both are unregistered",
+      _vk.MANIFEST32 == "ReShade32.json" and "MANIFEST32" in open(SRC_DIR / "core" / "vulkan.py", encoding="utf8").read())
+
+# The real thing: install through DXVK, check what landed, uninstall. Under
+# a name of its own: the install refuses while a process of that name runs,
+# and the owner may well be playing MGS V while this runs.
+shutil.move(d / "mgsvtpp.exe", d / "dxvktest.exe")
+dxvk.NEEDS_DXVK["dxvktest.exe"] = "test game"
+g = games.manual(d)
+g.api = "DX11"
+try:
+    installer.install(g, o, on_log=lambda t: None)
+    idir = g.install_dir
+    check("dxvk's dxgi.dll and d3d11.dll are in place, and they are dxvk",
+          dxvk.is_dxvk(idir / "dxgi.dll") and dxvk.is_dxvk(idir / "d3d11.dll"))
+    check("no reshade proxy dll beside them",
+          not any(installer._is_reshade(idir / n) for n in installer.RESHADE_PROXIES))
+    man = json.loads((idir / installer.MANIFEST).read_text(encoding="utf8"))
+    check("the manifest records dxvk and the vulkan layer",
+          man.get("dxvk") and man["api"] == "Vulkan"
+          and man["proxy"] == installer.VULKAN_LAYER, str((man.get("dxvk"), man["api"], man["proxy"])))
+    check("the folder counts as a vulkan install", str(idir) in prefs.vulkan_games())
+    check("the folder is remembered as an install", str(idir) in prefs.installs())
+    (idir / "dxvktest_dxgi.log").write_text("x")
+    (idir / "dxvktest_d3d11.log").write_text("x")
+    installer.uninstall(g, on_log=lambda t: None)
+    left = [p_.name for p_ in idir.rglob("*") if p_.is_file()]
+    check("uninstall removes dxvk and its logs too", left == ["dxvktest.exe"], str(left))
+    check("the folder is forgotten again", str(idir) not in prefs.installs())
+except Exception as e:
+    check("dxvk route installs", False, f"{type(e).__name__}: {e}")
+dxvk.NEEDS_DXVK.pop("dxvktest.exe", None)
+shutil.rmtree(d, ignore_errors=True)
+
+# A ReShade left under another name is moved out of the way, ours or not.
+d = Path(tempfile.mkdtemp(prefix="stray_"))
+shutil.copyfile(X64, d / "Game.exe")
+(d / "sl.interposer.dll").write_bytes(b"MZ" + bytes(300_000))
+(d / "d3d11.dll").write_bytes(b"MZ" + bytes(1 << 20) + b"ReShade")   # not ours
+g = games.manual(d)
+installer.install(g, installer.Options(path=dlss.BRIDGE, native_dlss=True),
+                  on_log=lambda t: None)
+check("a stray reshade d3d11.dll is moved aside before dxgi.dll goes in",
+      not (d / "d3d11.dll").exists() and (d / "dxgi.dll").is_file()
+      and (d / ("d3d11.dll" + installer.BACKUP_SUFFIX)).is_file())
+installer.uninstall(g, on_log=lambda t: None)
+check("uninstall puts the stray one back (it was not ours)",
+      (d / "d3d11.dll").is_file() and not (d / "dxgi.dll").exists())
+shutil.rmtree(d, ignore_errors=True)
+
+# Without a record, uninstall still finds ReShade under any name - and only
+# ReShade: a game's own d3d11.dll is left alone.
+d = Path(tempfile.mkdtemp(prefix="norec_"))
+shutil.copyfile(X64, d / "Game.exe")
+(d / "d3d12.dll").write_bytes(b"MZ" + bytes(1 << 20) + b"ReShade")
+(d / "d3d11.dll").write_bytes(b"MZ" + bytes(1 << 20) + b"the game's own")
+installer.uninstall(games.manual(d), on_log=lambda t: None)
+check("no record: a reshade d3d12.dll is removed", not (d / "d3d12.dll").exists())
+check("no record: a game's own d3d11.dll stays", (d / "d3d11.dll").is_file())
+shutil.rmtree(d, ignore_errors=True)
+
+# The user's ReShade keys and overlay settings travel to the next game.
+a = Path(tempfile.mkdtemp(prefix="carry_a_"))
+b = Path(tempfile.mkdtemp(prefix="carry_b_"))
+(a / "ReShade.ini").write_text("[GENERAL]\nEffectSearchPaths=.\\x\n\n[INPUT]\n"
+                               "KeyOverlay=36,0,0,0\nKeyEffects=145,0,0,0\n\n"
+                               "[OVERLAY]\nTutorialProgress=4\nShowFPS=1\n\n"
+                               "[STYLE]\nStyleIndex=2\n", encoding="utf8")
+(b / "ReShade.ini").write_text("[GENERAL]\nEffectSearchPaths=.\\y\n\n[INPUT]\n"
+                               "KeyOverlay=35,0,0,0\n", encoding="utf8")
+src = reshade_ini.carry_over(b, [a])
+bi = reshade_ini.Ini.load(b / "ReShade.ini")
+check("settings come from the other game", src == a / "ReShade.ini")
+check("the tutorial stays done and the fps counter follows",
+      bi.get("OVERLAY", "TutorialProgress") == "4" and bi.get("OVERLAY", "ShowFPS") == "1")
+check("a key this game already had is not overruled",
+      bi.get("INPUT", "KeyOverlay") == "35,0,0,0")
+check("this game's own paths are untouched",
+      bi.get("GENERAL", "EffectSearchPaths") == ".\\y")
+check("nothing to carry from an empty folder",
+      reshade_ini.carry_over(a, [Path(tempfile.mkdtemp())]) is None)
+shutil.rmtree(a, ignore_errors=True); shutil.rmtree(b, ignore_errors=True)
+
+# The feeder's newer releases ship one zip; the loose names still resolve.
+tag, assets = sources.resolve_feeder(prerelease=True)
+check("the newest feeder pre-release is found", tag.startswith("v"), tag)
+d = Path(tempfile.mkdtemp(prefix="feedzip_"))
+shutil.copyfile(X64, d / "Game.exe")
+g = games.manual(d)
+try:
+    installer.install(g, installer.Options(path=dlss.FEEDER, feeder_prerelease=True),
+                      on_log=lambda t: None)
+    idir = g.install_dir
+    check("the add-on and shader came out of the zip",
+          (idir / "dlss5-feed.addon64").is_file()
+          and (idir / "reshade-shaders/Shaders/DLSS5_Feed.fx").is_file())
+    man = json.loads((idir / installer.MANIFEST).read_text(encoding="utf8"))
+    check("the manifest names the pre-release", man["components"].get("feeder") == tag,
+          str(man["components"].get("feeder")))
+    installer.uninstall(g, on_log=lambda t: None)
+    left = [p_.name for p_ in idir.rglob("*") if p_.is_file()]
+    check("pre-release feeder uninstalls clean", left == ["Game.exe"], str(left))
+except Exception as e:
+    check("pre-release feeder installs", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(d, ignore_errors=True)
+
+check("dxvk is imported with the rest",
+      "dxvk" in open(Path(__file__).with_name("test_all.py"), encoding="utf8").read())
 
 
 section("RESULT")

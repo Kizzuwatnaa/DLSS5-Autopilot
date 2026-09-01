@@ -58,6 +58,8 @@ marks the ones your card cannot use. You can always pick another.
 | 64-bit D3D11 with DLSS | beta | bridge / optiscaler |
 | 64-bit D3D11 / D3D12 without DLSS | reliable | feeder (ReShade + shaders) |
 | Vulkan (64-bit) | beta | ReShade as a Vulkan layer + bridge or feeder |
+| 64-bit D3D11 that quits when ReShade loads (MGS V) | beta | DXVK (D3D11 → Vulkan) + the Vulkan path above |
+| DirectX 9 through DXVK (opt-in) | experimental | DXVK `d3d9.dll` → Vulkan → feeder; 32-bit games get the 32-bit layer + `host64\` helper |
 | OpenGL | often fails | feeder, ReShade as `opengl32.dll` |
 | 32-bit D3D11 / D3D12 | often fails | feeder + `host64\` helper process |
 | DirectX 9 (32-bit) | often fails | dgVoodoo2 → D3D11 → feeder |
@@ -187,6 +189,7 @@ copy out there offers to restart into it the next time it is opened.
 dlss5-autopilot.exe "D:\Games\Game"            install
 dlss5-autopilot.exe "D:\Games\Game" --check    detect only, write nothing
 dlss5-autopilot.exe "D:\Games\Game" --remove   uninstall
+dlss5-autopilot.exe "D:\Games\Game" --dxvk     run the game on Vulkan through DXVK (see below); --no-dxvk turns the automatic choice off
 ```
 
 ---
@@ -261,6 +264,30 @@ the first places to look, and **did it work?** reads them for you.
 | `frame N delivered` | frames are being processed |
 | `MV probe … N% non-zero` | should not be 0% while moving |
 | `CreateFeature raised exception 0xC0000005` | add-on / feeder version mismatch (see above), or the runtime does not match the card |
+
+### The game closes a second after starting, no crash, no message
+
+Some games watch their own process and quit the moment ReShade hooks
+Direct3D. **Metal Gear Solid V** is the known case: with ReShade as
+`dxgi.dll` or `d3d11.dll` it creates its D3D11 device and exits cleanly
+before the first frame - with or without any add-on. The tool recognises
+these games and runs them through **DXVK**: `dxgi.dll` + `d3d11.dll` become
+a Vulkan translation layer, ReShade loads as a Vulkan layer outside the
+game, and the feeder's Vulkan transport does the rest. Verified on MGS V.
+Any D3D11 game can be sent down this path with the checkbox on the install
+page or `--dxvk`. DX9 games can take it too (DXVK translates D3D9 as well)
+as an alternative to dgVoodoo2 - experimental, opt-in, and for a 32-bit game
+the tool registers ReShade's 32-bit Vulkan layer next to the 64-bit one.
+
+Two things to know on this path:
+
+- **Alt-tab and display-mode changes.** In exclusive fullscreen, leaving the
+  game re-creates the swap chain, and with it the DLSS feature - and that
+  second creation crashes the game on the Vulkan transport (feeder 0.7.0
+  and 0.10.0-beta.2 alike). Set the game to **borderless / windowed**
+  before enabling neural rendering, and do not switch modes mid-session.
+- DXVK writes `<game>_dxgi.log` and `<game>_d3d11.log` beside the game;
+  uninstall removes them.
 
 ### It worked, then stopped after I changed display mode
 
@@ -374,6 +401,7 @@ its own licence:
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
 | dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
+| DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
 | RenoDX DLSS 5 add-ons (Krish, ShortFuse), NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
 
 The DLSS 5 add-ons and the NVIDIA NGX runtimes are closed-source software
@@ -429,6 +457,7 @@ core/feedcfg.py       dlss5-feed.cfg and dlss5-bridge.cfg
 core/optiscaler.py    the OptiScaler route and its [DlssNr] dials
 core/vulkan.py        ReShade as a Vulkan implicit layer
 core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
+core/dxvk.py          D3D11 to Vulkan via DXVK, for games that quit on ReShade
 core/anticheat.py     BattlEye / EAC / Vanguard detection
 core/installer.py     install engine, route switching, uninstall
 core/components.py    are the installed parts still current?

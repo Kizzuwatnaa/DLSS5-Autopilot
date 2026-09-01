@@ -151,6 +151,23 @@ def remember_renodx(path: Path | None) -> None:
 # The Vulkan layer is registered once for the whole user, not per game, so it
 # must only be removed when the LAST Vulkan game that needs it is uninstalled.
 
+def installs() -> list[str]:
+    """Every folder this tool has set up (and not removed since)."""
+    return [str(x) for x in (get("installs") or [])]
+
+
+def add_install(install_dir) -> None:
+    lst = installs()
+    if str(install_dir) not in lst:
+        lst.append(str(install_dir))
+        set_("installs", lst)
+
+
+def drop_install(install_dir) -> None:
+    lst = [x for x in installs() if x != str(install_dir)]
+    set_("installs", lst)
+
+
 def vulkan_games() -> list[str]:
     v = get("vulkan_games", [])
     return v if isinstance(v, list) else []

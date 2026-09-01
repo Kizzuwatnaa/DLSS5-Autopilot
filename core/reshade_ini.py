@@ -144,6 +144,47 @@ def write_reshade_ini(game_dir: Path, provider: int = 3) -> None:
     ini.save(p)
 
 
+# The sections of ReShade.ini that hold what the user set up by hand in the
+# overlay: key bindings, overlay behaviour (tutorial done, fps counter, font
+# size), the theme. ReShade keeps them per game, so every fresh install used
+# to start from scratch - Home key tutorial and all.
+CARRY_SECTIONS = ("INPUT", "OVERLAY", "STYLE")
+
+
+def carry_over(game_dir: Path, others: list[Path]) -> Path | None:
+    """Seed this game's ReShade.ini with the user's settings from another.
+
+    The source is the most recently modified ReShade.ini among `others` that
+    carries any of the sections above. Only keys this file does not have yet
+    are copied - nothing the user set here is overruled. Returns the source
+    used, or None.
+    """
+    p = game_dir / "ReShade.ini"
+    cands = []
+    for d in others:
+        try:
+            d = Path(d)
+            if d.resolve() == game_dir.resolve():
+                continue
+            src = d / "ReShade.ini"
+            if src.is_file():
+                cands.append((src.stat().st_mtime, src))
+        except OSError:
+            continue
+    for _, src in sorted(cands, reverse=True):
+        theirs = Ini.load(src)
+        pairs = [(sec, k, v) for sec, kv in theirs.sections
+                 if sec.upper() in CARRY_SECTIONS for k, v in kv]
+        if not pairs:
+            continue
+        mine = Ini.load(p)
+        for sec, k, v in pairs:
+            mine.set_default(sec, k, v)
+        mine.save(p)
+        return src
+    return None
+
+
 def write_addon_only_ini(dir_: Path) -> None:
     r"""For the host64\ folder: load add-ons only, no shaders."""
     p = dir_ / "ReShade.ini"

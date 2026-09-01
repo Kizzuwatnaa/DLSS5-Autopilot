@@ -27,6 +27,10 @@ LAYER_KEY = r"Software\Khronos\Vulkan\ImplicitLayers"
 LAYER_NAME = "VK_LAYER_reshade"
 DLL = "ReShade64.dll"
 MANIFEST = "ReShade64.json"
+# A 32-bit game needs the 32-bit layer; the loader picks by the manifest's
+# DLL. Registered alongside the 64-bit one only when a 32-bit game asks.
+DLL32 = "ReShade32.dll"
+MANIFEST32 = "ReShade32.json"
 
 
 def layer_dir() -> Path:
@@ -73,13 +77,35 @@ def is_ours(path: Path) -> bool:
         return False
 
 
-def install_layer(setup_exe: Path, log=None) -> tuple[Path, bool]:
+def _place(setup_exe: Path, d: Path, dll: str, manifest: str) -> Path:
+    from . import net
+    net.extract_one(setup_exe, dll, d / dll)
+    net.extract_one(setup_exe, manifest, d / manifest)
+    # The manifest points at the DLL relative to itself, which is what we want,
+    # but rewrite it anyway so a moved folder cannot leave a dangling path.
+    try:
+        data = json.loads((d / manifest).read_text(encoding="utf8"))
+        data.setdefault("layer", {})["library_path"] = f".\\{dll}"
+        (d / manifest).write_text(json.dumps(data, indent=2), encoding="utf8")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+    return d / manifest
+
+
+def _register(manifest: Path) -> None:
+    import winreg
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, LAYER_KEY, 0,
+                            winreg.KEY_SET_VALUE) as k:
+        winreg.SetValueEx(k, str(manifest), 0, winreg.REG_DWORD, 0)
+
+
+def install_layer(setup_exe: Path, log=None, also32: bool = False) -> tuple[Path, bool]:
     """Extract the layer next to our data and register it.
 
     Returns (manifest path, newly_registered). An existing registration from
-    ReShade's own installer is reused untouched.
+    ReShade's own installer is reused untouched. `also32` adds the 32-bit
+    layer for a 32-bit game (it is registered under its own manifest).
     """
-    from . import net
     log = log or (lambda *_: None)
 
     found = existing_registration()
@@ -90,24 +116,13 @@ def install_layer(setup_exe: Path, log=None) -> tuple[Path, bool]:
 
     d = layer_dir()
     d.mkdir(parents=True, exist_ok=True)
-    net.extract_one(setup_exe, DLL, d / DLL)
-    net.extract_one(setup_exe, MANIFEST, d / MANIFEST)
-
-    # The manifest points at the DLL relative to itself, which is what we want,
-    # but rewrite it anyway so a moved folder cannot leave a dangling path.
+    manifest = _place(setup_exe, d, DLL, MANIFEST)
     try:
-        data = json.loads((d / MANIFEST).read_text(encoding="utf8"))
-        data.setdefault("layer", {})["library_path"] = f".\\{DLL}"
-        (d / MANIFEST).write_text(json.dumps(data, indent=2), encoding="utf8")
-    except (OSError, json.JSONDecodeError, AttributeError):
-        pass
-
-    manifest = d / MANIFEST
-    try:
-        import winreg
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, LAYER_KEY, 0,
-                                winreg.KEY_SET_VALUE) as k:
-            winreg.SetValueEx(k, str(manifest), 0, winreg.REG_DWORD, 0)
+        _register(manifest)
+        if also32:
+            m32 = _place(setup_exe, d, DLL32, MANIFEST32)
+            _register(m32)
+            log(f"      registered the 32-bit layer as well ({m32.name})")
     except OSError as e:
         raise RuntimeError(
             f"Could not register the Vulkan layer: {e}") from e
@@ -123,15 +138,16 @@ def unregister() -> bool:
     except ImportError:
         return False
     removed = False
-    target = str(layer_dir() / MANIFEST)
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, LAYER_KEY, 0,
-                            winreg.KEY_ALL_ACCESS) as k:
-            try:
-                winreg.DeleteValue(k, target)
-                removed = True
-            except OSError:
-                pass
-    except OSError:
-        pass
+    for m in (MANIFEST, MANIFEST32):
+        target = str(layer_dir() / m)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, LAYER_KEY, 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                try:
+                    winreg.DeleteValue(k, target)
+                    removed = True
+                except OSError:
+                    pass
+        except OSError:
+            pass
     return removed

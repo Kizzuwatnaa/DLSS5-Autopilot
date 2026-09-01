@@ -19,7 +19,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (anticheat, components, diagnose, dlss, feedcfg, games, gpu,
+from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg, games, gpu,
                installer, log, optiscaler, prefs, reshade_ini, selfupdate,
                sources, update)
 
@@ -38,6 +38,8 @@ FAINT   = "#3a3d43"     # decoration
 AMBER   = "#d8a657"     # accent
 GREEN   = "#6f9f6f"
 RUST    = "#b07a3c"     # warnings
+SLIDER_TROUGH = "#7a5a2c"   # the work-area slider's track: dark amber, unmissable
+SLIDER_HOT    = "#f0b25a"   # its handle under the mouse
 RED     = "#c96a5a"
 
 # Cascadia ships with Windows Terminal and VS; Consolas is on every Windows.
@@ -78,6 +80,7 @@ class App:
         self.keep_dlss = tk.BooleanVar(value=True)
         self.workres = tk.IntVar(value=100)
         self.feeder_pre = tk.BooleanVar(value=False)
+        self.dxvk = tk.BooleanVar(value=False)
         self.sm: int | None = None          # the card's architecture, once known
         self.stale: dict[str, int] = {}     # install folder -> outdated parts
         self.route_fit: dict[str, tuple[bool, str]] = {}
@@ -744,9 +747,12 @@ class App:
             lines.append(f"update {n_stale} installed part(s) have a newer version "
                          f"- press install again to bring them up to date")
         if ok:
-            lines.append(f"path   reshade as {proxy}"
+            need = installer.wants_dxvk(g)
+            lines.append(f"path   reshade as {installer.VULKAN_LAYER if need else proxy}"
                          + ("  +  host64/ helper" if g.bitness == 32 else "")
-                         + ("  +  dgvoodoo2" if g.api == "DX9" else ""))
+                         + ("  +  dgvoodoo2" if g.api == "DX9" else "")
+                         + ("  +  dxvk (this game quits when reshade hooks it)"
+                            if need else ""))
             if level != installer.STABLE:
                 lines.append(f"note   {why_rel}")
         else:
@@ -854,15 +860,20 @@ class App:
         tk.Frame(inner, bg=LINE, height=1).grid(row=7, column=0, columnspan=3,
                                                 sticky="ew", pady=(12, 9))
 
-        row(8, "work area")
+        row(8, "work area", TXT)
         wrap = tk.Frame(inner, bg=PANEL)
         wrap.grid(row=8, column=1, columnspan=2, sticky="ew", pady=3)
         self.sc_work = tk.Scale(wrap, from_=50, to=100, resolution=5,
                                 orient="horizontal", variable=self.workres,
-                                bg=PANEL, fg=BODY, troughcolor=FIELD,
+                                # The handle is drawn in `bg`: on the panel
+                                # colour it vanished until pressed. Amber at
+                                # rest, brighter under the mouse, a trough
+                                # you can actually see.
+                                bg=AMBER, fg=TXT, troughcolor=SLIDER_TROUGH,
                                 highlightthickness=0, borderwidth=0,
-                                showvalue=True, font=font(8), length=210,
-                                sliderrelief="flat", activebackground=AMBER,
+                                showvalue=True, font=font(9), length=230,
+                                sliderlength=22, sliderrelief="raised",
+                                activebackground=SLIDER_HOT,
                                 command=self._on_workres)
         self.sc_work.pack(side="left")
         self.workhint = tk.Label(wrap, text="", bg=PANEL, fg=DIM, font=font(8),
@@ -903,11 +914,23 @@ class App:
 
         # The feeder's pre-releases carry support for the newer add-on builds.
         self.ck_feederpre = tk.Checkbutton(
-            inner, text="use the feeder's pre-release build (supports the newer "
-                        "DLSS 5 add-on generations; less tested)",
+            inner, text="feeder build: tick for the newest pre-release (0.10.x: "
+                        "DLSS 5 add-on 4.7, alt-tab fixes on D3D11, no settings "
+                        "tab - preset and work area are set here); untick for "
+                        "the stable 0.7.0 with add-on 4.55 and its settings tab",
             variable=self.feeder_pre, bg=PANEL, fg=DIM, selectcolor=FIELD,
             activebackground=PANEL, activeforeground=TXT, font=font(8),
             borderwidth=0)
+
+        # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
+        # DXVK they render on Vulkan and ReShade loads as a layer instead.
+        self.ck_dxvk = tk.Checkbutton(
+            inner, text="run the game through DXVK (D3D11/D3D9 -> Vulkan): for "
+                        "games that close when ReShade loads inside them (MGS V); "
+                        "on DX9 an experimental alternative to dgVoodoo2",
+            variable=self.dxvk, bg=PANEL, fg=DIM, selectcolor=FIELD,
+            activebackground=PANEL, activeforeground=TXT, font=font(8),
+            borderwidth=0, command=lambda: self._set_pathlbl(self.game))
 
         self.reswarn = tk.Label(
             inner, bg=PANEL, fg=RUST, font=font(8), justify="left", anchor="w",
@@ -1091,12 +1114,14 @@ class App:
                 self.sc_work.configure(from_=50, to=100)
                 if self.workres.get() < 50:
                     self.workres.set(100)
-            self.sc_work.configure(state="normal", fg=BODY, troughcolor=FIELD)
+            self.sc_work.configure(state="normal", fg=TXT, bg=AMBER,
+                                   troughcolor=SLIDER_TROUGH)
             self._on_workres()
         else:
             self.workres.set(100)
             # Disabled, but still legible: the reason is in the hint next to it.
-            self.sc_work.configure(state="disabled", fg=DIM, troughcolor=LINE)
+            self.sc_work.configure(state="disabled", fg=DIM, bg=FAINT,
+                                   troughcolor=LINE)
             if route != dlss.FEEDER:
                 self.workhint.config(
                     text="n/a on this route - the game's own dlss quality mode "
@@ -1196,6 +1221,13 @@ class App:
             text="the feeder path is always dlaa" if feeder
             else "the game's own dlss quality mode applies")
         self.reswarn.grid() if feeder else self.reswarn.grid_remove()
+        if self.game and not opti and path != dlss.RENODX \
+                and self.game.api in dxvk.APIS:
+            self.ck_dxvk.grid(row=13, column=0, columnspan=3, sticky="w",
+                              pady=(6, 0))
+        else:
+            self.ck_dxvk.grid_remove()
+            self.dxvk.set(False)
         self._sync_workres()
         if self.game:
             level, why = installer.reliability(self.game, path)
@@ -1359,8 +1391,12 @@ class App:
         self.cb_renodx.set(tag)
 
     def _set_pathlbl(self, g: games.Game) -> None:
+        if g is None:
+            return
         extra = "  +  host64/ helper" if g.bitness == 32 else ""
-        if g.api == "DX9":
+        if self.dxvk.get() and g.api in dxvk.APIS:
+            extra += "  +  dxvk (vulkan)"
+        elif g.api == "DX9":
             extra += "  +  dgvoodoo2"
         # Long install paths ran off the right edge; show the path relative to
         # the game folder instead, the full one is in the log.
@@ -1368,13 +1404,20 @@ class App:
             short = str(g.exe.relative_to(g.folder))
         except ValueError:
             short = g.exe.name
+        api = "Vulkan" if (self.dxvk.get() and g.api in dxvk.APIS) else g.api
         self.pathlbl.config(
             text=f"{short}   ::   {g.bit_label} {g.api}  ->  "
-                 f"reshade = {installer._proxy_name(g.api, self._opts().reshade_proxy)}{extra}")
+                 f"reshade = {installer._proxy_name(api, self._opts().reshade_proxy)}{extra}")
 
     def _enter_install(self) -> None:
         g = self.game
         self.gamelbl.config(text=g.name)
+        need = installer.wants_dxvk(g)
+        self.dxvk.set(bool(need))
+        if need:
+            self._log(f"> {need} closes itself when reshade loads inside it - "
+                      f"it will run through dxvk (vulkan) instead, with reshade "
+                      f"as a vulkan layer. you can untick that below.", "ok")
         self._set_pathlbl(g)
         self._sync_workres()
 
@@ -1503,6 +1546,7 @@ class App:
             feed=feed,
             nr=nr,
             feeder_prerelease=self.feeder_pre.get(),
+            dxvk=self.dxvk.get(),
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
             opti_proxy=("" if self.cb_proxy.current() <= 0
@@ -1752,6 +1796,12 @@ class App:
                   "feature is built for one backbuffer size and rebuilding it "
                   "mid-session can crash the game. use borderless, not exclusive "
                   "fullscreen.", "warn")
+        if self.dxvk.get():
+            self._log("!! dxvk: the game renders on vulkan now. exclusive "
+                      "fullscreen re-creates the swap chain on every mode "
+                      "change and the feature with it - set the game to "
+                      "borderless/windowed first, then enable neural rendering.",
+                      "warn")
         if self.sm is not None and self.sm < 89:
             self._log("!! rtx 20/30: the pass is heavy on your card. if the fps "
                       "drop is too much, lower the work area / model resolution "
