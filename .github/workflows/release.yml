@@ -116,8 +116,7 @@ jobs:
             DLSS5-Autopilot-v${{ env.VERSION }}-win64.zip
 
       # Creates the release if the tag was pushed without one, so a plain
-      # `git push --tags` is enough to publish. The hashes go at the TOP of
-      # the notes, where people actually look, followed by the notes file.
+      # `git push --tags` is enough to publish.
       - name: Upload to the release
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -128,14 +127,10 @@ jobs:
           ZIP="DLSS5-Autopilot-v${VERSION}-win64.zip"
           NOTES="release-notes-${TAG}.md"
           TITLE="DLSS 5 Autopilot ${TAG}"
-          {
-            echo '```'
-            cat SHA256SUMS.txt
-            echo '```'
-            echo "Built by GitHub Actions from \`${GITHUB_SHA:0:7}\` ([log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})). Verify: \`certutil -hashfile dlss5-autopilot.exe SHA256\` or \`gh attestation verify dlss5-autopilot.exe --repo ${GITHUB_REPOSITORY}\`."
-            echo
-            if [ -f "$NOTES" ]; then cat "$NOTES"; fi
-          } > FULL-NOTES.md
+          # The notes are the notes file, nothing else. The hashes travel as
+          # SHA256SUMS.txt beside the build (the self-updater reads it) and the
+          # provenance attestation is on the commit - no essay on the page.
+          if [ -f "$NOTES" ]; then cp "$NOTES" FULL-NOTES.md; else echo "See the commit history for what changed." > FULL-NOTES.md; fi
           # A release whose tag was re-pushed comes back as a DRAFT and is
           # invisible to everyone; publish it explicitly and mark it latest.
           if gh release view "$TAG" >/dev/null 2>&1; then
