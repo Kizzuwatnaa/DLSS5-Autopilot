@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-UA = {"User-Agent": "dlss5-autopilot/1.3.1 (+local install helper)"}
+UA = {"User-Agent": "dlss5-autopilot/1.3 (+local install helper)"}
 
 RESHADE_HOME = "https://reshade.me"
 RESHADE_SETUP_RE = re.compile(r"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe")

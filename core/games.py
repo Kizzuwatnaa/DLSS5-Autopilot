@@ -549,7 +549,7 @@ def adopt_previous_install(g: Game) -> None:
 
 
 def _prefer_real_exe(g: Game) -> None:
-    """A store's launch executable is often a stub that starts the real one.
+    r"""A store's launch executable is often a stub that starts the real one.
 
     Epic's manifest names GWT.exe in the root of Ghostwire Tokyo; the game is
     Snowfall\Binaries\Win64\GWT.exe. Files placed beside the stub are never

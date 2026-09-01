@@ -43,6 +43,13 @@ game has to ask for neural rendering, and outside NBA 2K27 none do.
 - **"It does not find my game."** Added Rockstar, Amazon Games, itch,
   Heroic and plain `D:\Games\*` folders; ten more emulators; the scan log
   says what each store returned.
+- **"It says the game has no DLSS."** Unreal keeps `nvngx_dlss.dll` under
+  `Engine\Plugins\...`, CryEngine under `Bin\Win64Shared`; the tool only
+  looked beside the executable, so those games never got the native or
+  OptiScaler routes. It now looks where engines keep it.
+- **"It installed and nothing happens."** A store's launch executable can be
+  a stub in the root (Epic's Ghostwire Tokyo); the game runs from
+  `...\Binaries\Win64`. Files went beside the stub. The real one wins now.
 - A game search box.
 
 ### New
