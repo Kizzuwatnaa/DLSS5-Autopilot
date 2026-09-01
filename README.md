@@ -114,6 +114,14 @@ The tool then tells you, per route, what to press in the game. In short:
 
 Everywhere: turn the game's own **MSAA/SSAA off**.
 
+On the native, renodx-dlss and bridge routes ReShade's overlay says
+*"no .fx files found in the effect search paths"*. That is normal: those
+routes use no shaders, only add-ons. The add-on tab is what matters.
+
+Two executables in one folder (Medieval II and its Kingdoms expansion, a
+game and its launcher) share one install: the tool says so when you pick
+either, and uninstalling one removes the files for both.
+
 Press **Esc** to jump back to the start at any time; the step rail on the
 left is clickable too.
 

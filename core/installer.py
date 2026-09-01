@@ -634,6 +634,16 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     if level != STABLE:
         rep.warnings.append(f"{level}: {why_rel}")
 
+    # Two executables in one folder (Medieval II and its Kingdoms expansion,
+    # a game and its launcher) share one install. Say so, or uninstalling
+    # "the other one" looks like it broke this one.
+    other = games._recorded_exe(root)
+    if other and g.exe and other.lower() != g.exe.name.lower():
+        rep.notes.append(f"this folder was already set up for {other}; both "
+                         f"executables share these files, and uninstalling "
+                         f"either removes them for both")
+        log(f"      note: {other} in this folder uses the same files")
+
     # Unreal and CryEngine games run from a subfolder; the executable in the
     # root is a launcher stub. Everything goes beside the real one, and the
     # store still starts the game the normal way - say so, because "I put
@@ -1032,6 +1042,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 log("      [RENODX-DLSS] NeuralRenderingEnabled=1")
             rep.written.append("ReShade.ini")
             log("      add-on loading enabled (no shaders needed on this path)")
+            rep.notes.append("ReShade's overlay will report 'no .fx files found' "
+                             "on this route - normal, no shaders are used; the "
+                             "add-on tab is what matters")
 
         # --- 10) dlss5-feed.cfg ----------------------------------------------
         if opt.path == FEEDER:

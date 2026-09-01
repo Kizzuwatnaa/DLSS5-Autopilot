@@ -755,6 +755,11 @@ class App:
         if ac.present:
             lines.append(f"BLOCK  {ac.summary} is installed here - ReShade "
                          f"add-ons will be blocked or get you banned")
+        other = games._recorded_exe(g.install_dir)
+        if other and g.exe and other.lower() != g.exe.name.lower():
+            lines.append(f"shared this folder is already set up for {other}; both "
+                         f"executables use the same files, so installing or "
+                         f"uninstalling here affects both")
         if getattr(g, "emu", None):
             lines.append(f"emu    {g.emu.renderer_hint}")
         self.detail.config(text="\n".join(lines),
@@ -1090,7 +1095,8 @@ class App:
             self._on_workres()
         else:
             self.workres.set(100)
-            self.sc_work.configure(state="disabled", fg=FAINT, troughcolor=FIELD)
+            # Disabled, but still legible: the reason is in the hint next to it.
+            self.sc_work.configure(state="disabled", fg=DIM, troughcolor=LINE)
             if route != dlss.FEEDER:
                 self.workhint.config(
                     text="n/a on this route - the game's own dlss quality mode "
@@ -1714,11 +1720,16 @@ class App:
             self._log("   !  set the game's dlss quality mode as you like - it "
                       "still applies")
         elif route == dlss.RENODX:
+            self._log("   !  reshade's overlay will say 'no .fx files found' - "
+                      "normal on this route, it uses no shaders")
             self._log("   1. press Home to open reshade, then the RenoDX DLSS tab")
             self._log("   2. neural rendering is enabled; the tab shows its status "
                       "and lets you tune intensity and style")
             self._log("   3. turn OFF the game's own MSAA/SSAA")
         elif route in (dlss.NATIVE, dlss.BRIDGE):
+            self._log("   !  reshade's overlay will say 'no .fx files found' - "
+                      "normal on this route, it uses no shaders; the add-on "
+                      "tabs are what matter")
             self._log("   1. press Home to open reshade, then the DLSS 5 tab")
             self._log("   2. turn on neural rendering there (F5 toggles it in the "
                       "4.6+ builds)")

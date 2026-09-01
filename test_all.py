@@ -543,7 +543,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.3.0", update.VERSION == "1.3.0", update.VERSION)
+check("version is 1.3.1", update.VERSION == "1.3.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
