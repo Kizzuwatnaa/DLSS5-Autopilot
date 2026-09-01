@@ -200,6 +200,10 @@ class App:
                                 anchor="w", cursor="hand2", font=font(8))
         self.buglink.pack(fill="x", padx=20, pady=(0, 2))
         self.buglink.bind("<Button-1>", lambda e: self._report_bug())
+        self.ideallink = tk.Label(rail, text="[ suggest a feature ]", bg=RAIL,
+                                  fg=FAINT, anchor="w", cursor="hand2", font=font(8))
+        self.ideallink.pack(fill="x", padx=20, pady=(0, 2))
+        self.ideallink.bind("<Button-1>", lambda e: self._suggest())
         self.howlink = tk.Label(rail, text="[ how it works ]", bg=RAIL, fg=FAINT,
                                 anchor="w", cursor="hand2", font=font(8))
         self.howlink.pack(fill="x", padx=20, pady=(0, 18))
@@ -1290,6 +1294,22 @@ class App:
             self.root.clipboard_append(body)
             messagebox.showinfo(APP, "Details copied to the clipboard - paste "
                                      "them into a new issue on GitHub.")
+
+    def _suggest(self) -> None:
+        """A feature request lands in the same place as bugs, labelled apart."""
+        try:
+            name, sm = gpu.detect()
+        except Exception:
+            name, sm = "unknown", None
+        body = ("**What would you like it to do**\n\n\n"
+                "**Why / which game**\n\n\n---\n"
+                f"- version: {update.VERSION}\n- gpu: {name} (sm_{sm})\n")
+        try:
+            from urllib.parse import quote
+            webbrowser.open(f"https://github.com/{update.REPO}/issues/new"
+                            f"?labels=enhancement&title={quote('idea: ')}&body={quote(body)}")
+        except Exception:
+            webbrowser.open(f"https://github.com/{update.REPO}/issues/new")
 
     def _offer_crash_report(self) -> None:
         """Something went wrong this run: say so once, with a one-click report."""

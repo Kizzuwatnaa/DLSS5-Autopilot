@@ -169,7 +169,9 @@ Nothing is sent anywhere by itself - there is no telemetry. What there is:
 - After **did it work?** finds a problem, the diagnosis goes into the
   report too.
 
-That is where fixes come from. A fix ships as a new release, and every
+- **suggest a feature** (left rail) opens an issue labelled *enhancement*.
+
+That is where fixes and the next features come from. A fix ships as a new release, and every
 copy out there offers to restart into it the next time it is opened.
 
 ### Command line
