@@ -47,8 +47,13 @@ game has to ask for neural rendering, and outside NBA 2K27 none do.
 
 ### New
 
-- **Auto-update**: a newer build is downloaded and verified in the
-  background; one click restarts into it.
+- **Auto-update**: a newer build is downloaded in the background, checked
+  against the `SHA256SUMS.txt` GitHub published with it, and one click
+  restarts into it. Small fixes reach everyone this way.
+- **Bug reports that carry the facts**: *report a bug* opens a GitHub issue
+  with version, card, driver, game, route, the last diagnosis, the last
+  error and the log tail already filled in. An internal error offers the
+  same from the top bar. Nothing is sent by itself.
 - **Component updates**: after every scan, games set up earlier are checked
   against their publishers; the list shows **update (N newer)**. Press
   install again.

@@ -28,6 +28,7 @@ MAX_BYTES = 1 << 20
 
 _lock = threading.Lock()
 _crashed = False          # has anything gone wrong this run?
+_last_error = ""          # the most recent traceback, for a bug report
 
 
 def path() -> Path:
@@ -37,6 +38,20 @@ def path() -> Path:
 def crashed() -> bool:
     """True once an unhandled exception has been recorded this run."""
     return _crashed
+
+
+def last_error() -> str:
+    return _last_error
+
+
+def tail(lines: int = 40, max_chars: int = 3500) -> str:
+    """The end of the log, for pasting into a report. Never raises."""
+    try:
+        text = FILE.read_text(encoding="utf8", errors="replace")
+    except OSError:
+        return ""
+    out = "\n".join(text.splitlines()[-lines:])
+    return out[-max_chars:]
 
 
 def write(text: str, level: str = "info") -> None:
@@ -62,14 +77,15 @@ def write(text: str, level: str = "info") -> None:
 
 def exception(where: str, exc: BaseException | None = None) -> None:
     """Record a full traceback under a label saying what was being done."""
-    global _crashed
+    global _crashed, _last_error
     _crashed = True
     if exc is None:
         tb = traceback.format_exc()
     else:
         tb = "".join(traceback.format_exception(type(exc), exc,
                                                 exc.__traceback__))
-    write(f"{where}\n{tb.rstrip()}", "ERROR")
+    _last_error = f"{where}\n{tb.rstrip()}"
+    write(_last_error, "ERROR")
 
 
 def start(version: str) -> None:

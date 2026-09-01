@@ -82,6 +82,8 @@ class App:
         self.stale: dict[str, int] = {}     # install folder -> outdated parts
         self.route_fit: dict[str, tuple[bool, str]] = {}
         self.update_ready: Path | None = None
+        self._crash_shown = False
+        self._last_diag: object | None = None
 
         self._build()
         self.search.trace_add("write", self._search_changed)
@@ -995,6 +997,7 @@ class App:
         if not self.game:
             return
         rep = diagnose.analyse(self.game.install_dir)
+        self._last_diag = rep
         self._log("")
         self._log(f"=== diagnosis{f' :: log {rep.log_time}' if rep.log_time else ''} "
                   f"===", "head")
@@ -1008,6 +1011,11 @@ class App:
             self._log(f"{mark} {f_.title}", tag)
             if f_.detail:
                 self._log(f"        {f_.detail}")
+        if not rep.verdict.startswith("Working"):
+            self._log("")
+            self._log("> stuck? press [ report a bug ] on the left - the diagnosis "
+                      "above and the log tail go into the report, you post it.",
+                      "head")
 
     # ---------------------------------------------------------------- bits
     def _sm(self) -> int | None:
@@ -1224,39 +1232,76 @@ class App:
         except Exception:
             messagebox.showinfo(APP, f"The log file is at:\n\n{p}")
 
-    def _report_bug(self) -> None:
+    def _report_bug(self, kind: str = "bug") -> None:
         """Open a pre-filled issue with the machine details already in it.
 
-        "It crashes a lot" is unactionable. Filling in the version, the card
-        and the route means a report arrives with the parts that matter,
-        without asking anyone to hunt for them.
+        "It crashes a lot" is unactionable. Filling in the version, the card,
+        the route, the last error and the tail of the log means a report
+        arrives with the parts that matter, without asking anyone to hunt for
+        them. Nothing is sent by itself: the person sees the text in the
+        browser and decides whether to post it - and can edit it first.
         """
         try:
             name, sm = gpu.detect()
         except Exception:
             name, sm = "unknown", None
+        drv = gpu.driver_version() or "?"
         g = self.game
+        title = {"crash": "crash: ", "notwork": "not working: "}.get(kind, "bug: ")
+        if g:
+            title += g.name
+        diag = ""
+        d = self._last_diag
+        if d is not None:
+            try:
+                diag = f"\n**Diagnosis**: {d.verdict}\n" + "".join(
+                    f"- [{f_.level}] {f_.title}\n" for f_ in d.findings)
+            except Exception:
+                diag = ""
+        err = log.last_error()
         body = (
             "**What happened**\n\n\n"
             "**What I expected**\n\n\n"
             "---\n"
             f"- version: {update.VERSION}\n"
-            f"- gpu: {name} (sm_{sm})\n"
+            f"- gpu: {name} (sm_{sm}), driver {drv}\n"
             f"- game: {g.name if g else '-'}\n"
             f"- exe: {g.exe.name if g and g.exe else '-'}\n"
             f"- arch/api: {g.bit_label if g else '-'} / {g.api if g else '-'}\n"
             f"- route: {getattr(self, 'route', '-')}\n"
-            f"\nLog file (please attach or paste): `{log.path()}`\n")
+            + diag
+            + (f"\n**Last error**\n```\n{err[-1500:]}\n```\n" if err else "")
+            + f"\n**Log tail** (`{log.path()}`)\n```\n{log.tail(30, 2500)}\n```\n")
         try:
             from urllib.parse import quote
-            webbrowser.open(
-                f"https://github.com/{update.REPO}/issues/new"
-                f"?title={quote('bug: ')}&body={quote(body)}")
+            url = (f"https://github.com/{update.REPO}/issues/new"
+                   f"?title={quote(title)}&body={quote(body)}")
+            if len(url) > 7800:
+                # Browsers and GitHub cap the URL; hand over the long form
+                # through the clipboard instead of silently truncating it.
+                self.root.clipboard_clear()
+                self.root.clipboard_append(body)
+                url = (f"https://github.com/{update.REPO}/issues/new"
+                       f"?title={quote(title)}&body="
+                       + quote("(the details are on your clipboard - paste them here)"))
+            webbrowser.open(url)
         except Exception:
             self.root.clipboard_clear()
             self.root.clipboard_append(body)
             messagebox.showinfo(APP, "Details copied to the clipboard - paste "
                                      "them into a new issue on GitHub.")
+
+    def _offer_crash_report(self) -> None:
+        """Something went wrong this run: say so once, with a one-click report."""
+        if self._crash_shown:
+            return
+        self._crash_shown = True
+        self.update_url = None
+        self.bannerlbl.config(text="> something went wrong - the details are in "
+                                   "the log file")
+        self.updbtn.config(text="[ report it ]")
+        self.updbtn.bind("<Button-1>", lambda e: self._report_bug("crash"))
+        self.banner.pack(fill="x", before=self.body)
 
     def _on_proxy(self, _e=None) -> None:
         """Warn when the chosen name is already something else's file."""
@@ -1593,6 +1638,8 @@ class App:
                     self.pblbl.config(text="")
                     self.status.config(text="failed")
                     messagebox.showerror(APP, payload.strip().splitlines()[-1])
+                    if "Traceback" in payload:
+                        self._offer_crash_report()
         except queue.Empty:
             pass
         except Exception:
@@ -1610,6 +1657,8 @@ class App:
         finally:
             # Rescheduling is not optional: it is the only thing keeping the
             # interface connected to its worker threads.
+            if log.crashed() and not self._crash_shown:
+                self._offer_crash_report()
             self.root.after(60, self._pump)
 
     def _finish_ok(self, rep: installer.Report) -> None:

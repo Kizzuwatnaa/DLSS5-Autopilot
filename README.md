@@ -144,8 +144,9 @@ left is clickable too.
 ### Updating
 
 **The tool updates itself.** When a newer release exists it downloads it in
-the background, verifies it is a 64-bit Windows executable of a sane size,
-and the top bar offers **restart into it** - one click. The previous build is
+the background, checks it is a 64-bit Windows executable of a sane size **and
+that its SHA-256 matches the `SHA256SUMS.txt` GitHub published with the
+release**, and the top bar offers **restart into it** - one click. The previous build is
 kept next to it as `.old.exe`. Set `"auto_update": false` in
 `%LOCALAPPDATA%\dlss5-autopilot\settings.json` to keep the download manual.
 
@@ -154,6 +155,22 @@ are checked against what their publishers offer now; a game with newer parts
 shows **update (N newer)** in the list. Press install again on it - your
 settings and backups are kept. **check versions** on the install page shows
 the per-component detail.
+
+### Something crashed, or it does nothing?
+
+Nothing is sent anywhere by itself - there is no telemetry. What there is:
+
+- **report a bug** (left rail) opens a GitHub issue **already filled in**:
+  version, card, driver, game, route, the last diagnosis, the last error and
+  the tail of the log. You see the text in your browser and decide whether
+  to post it, and you can edit it first.
+- When the tool hits an internal error it says so in the top bar with a
+  **report it** button that does the same.
+- After **did it work?** finds a problem, the diagnosis goes into the
+  report too.
+
+That is where fixes come from. A fix ships as a new release, and every
+copy out there offers to restart into it the next time it is opened.
 
 ### Command line
 

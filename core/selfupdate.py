@@ -13,6 +13,7 @@ Deliberately conservative:
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import struct
 import subprocess
@@ -60,6 +61,8 @@ def fetch(progress=None) -> Path:
                     if a["name"].lower().endswith(".zip")), None)
     exe_url = next((a["browser_download_url"] for a in assets
                     if a["name"].lower().endswith(".exe")), None)
+    sums_url = next((a["browser_download_url"] for a in assets
+                     if a["name"] == "SHA256SUMS.txt"), None)
     tag = (rel.get("tag_name") or "new").lstrip("vV")
 
     workdir = Path(tempfile.mkdtemp(prefix="dlss5-autopilot-update-"))
@@ -86,7 +89,43 @@ def fetch(progress=None) -> Path:
     if not _is_win64_pe(out):
         raise UpdateError("The downloaded file is not a 64-bit Windows "
                           "executable - refusing to install it.")
+    # The release workflow publishes SHA256SUMS.txt next to the build. When
+    # it is there, the executable must match it: a swapped or corrupted
+    # download is refused rather than started. When it is missing (an older
+    # release, or a hand-made one) the shape checks above still apply.
+    if sums_url:
+        try:
+            sums = net.fetch_text(sums_url).decode("utf8", "replace")
+        except Exception as e:
+            raise UpdateError(f"Could not read SHA256SUMS.txt for the release "
+                              f"({e}) - refusing to install an unverified build.") from e
+        want = _expected_hash(sums, "dlss5-autopilot.exe")
+        if not want:
+            raise UpdateError("SHA256SUMS.txt does not list dlss5-autopilot.exe "
+                              "- refusing to install an unverified build.")
+        have = _sha256(out)
+        if have != want:
+            raise UpdateError(f"The downloaded build does not match the hash "
+                              f"GitHub published ({have[:12]}... vs "
+                              f"{want[:12]}...) - refusing to install it.")
     return out
+
+
+def _expected_hash(sums: str, name: str) -> str | None:
+    """The hash for `name` from a sha256sum-style listing (paths allowed)."""
+    for line in sums.splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2 and parts[1].lstrip("*").replace("\\", "/").endswith(name):
+            return parts[0].lower()
+    return None
+
+
+def _sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def apply_and_restart(new_exe: Path) -> None:
