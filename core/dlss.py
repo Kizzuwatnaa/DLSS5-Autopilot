@@ -49,6 +49,57 @@ STREAMLINE = ("sl.interposer.dll", "sl.dlss.dll", "sl.common.dll",
 # A game's own runtime, or one renamed by a user to disable it.
 OWN_RUNTIME = ("nvngx_dlss.dlsss", "nvngx_dlss.dll.bak", "_nvngx.dll")
 
+# Games do not keep DLSS next to the executable. Unreal ships it under
+# Engine/Plugins/Runtime/Nvidia/DLSS/Binaries/ThirdParty/Win64, CryEngine
+# (Kingdom Come 2) under Bin/Win64Shared, others under their own names. A
+# bounded walk finds them; the folders below never hold DLLs and can be
+# hundreds of thousands of files, so they are skipped outright.
+DLSS_FILES = ("nvngx_dlss.dll", "sl.interposer.dll", "sl.dlss.dll",
+              "nvngx_dlssg.dll", "nvngx_dlssd.dll")
+_SKIP_DIRS = {"content", "paks", "saved", "logs", "movies", "sounds", "music",
+              "videos", "localization", "shadercache", "derivedcache", "cache",
+              "textures", "maps", "levels", "audio", "data", "assets", "mods",
+              "screenshots", "steamapps", "redist", "_commonredist", "host64",
+              "reshade-shaders"}
+_WALK_DEPTH = 9
+
+
+def find_dlss_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
+    """Relative paths of the game's own DLSS files anywhere under `folder`.
+
+    `skip_dir` is the folder this tool installs into: a runtime we put there
+    must not count as the game's own (that is what _ours handles there).
+    """
+    import os
+    out: list[str] = []
+    try:
+        base_depth = len(Path(folder).resolve().parts)
+    except OSError:
+        return out
+    for root, dirs, files in os.walk(folder):
+        rp = Path(root)
+        depth = len(rp.resolve().parts) - base_depth if rp.exists() else 0
+        if depth >= _WALK_DEPTH:
+            dirs[:] = []
+        else:
+            dirs[:] = [d for d in dirs if d.lower() not in _SKIP_DIRS
+                       and not d.startswith(".")]
+        if skip_dir is not None:
+            try:
+                if rp.resolve() == Path(skip_dir).resolve():
+                    continue
+            except OSError:
+                pass
+        for f in files:
+            if f.lower() in DLSS_FILES:
+                try:
+                    out.append(str((rp / f).relative_to(folder)))
+                except ValueError:
+                    out.append(str(rp / f))
+        if len(out) >= 6:
+            break
+    return out
+
 
 @dataclass
 class Support:
@@ -153,6 +204,12 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
         if (d / "nvngx_dlss.dll").is_file() and not _ours(d, "nvngx_dlss.dll"):
             s.native_dlss = True
             s.evidence.append("nvngx_dlss.dll")
+    if not s.native_dlss:
+        # Nothing beside the executable: look where engines actually keep it.
+        # Only the install folder is excluded - anything we wrote lives there.
+        for rel in find_dlss_files(folder, skip_dir=install_dir):
+            s.native_dlss = True
+            s.evidence.append(rel)
     s.evidence = sorted(set(s.evidence))
 
     # --- pick a path ----------------------------------------------------
