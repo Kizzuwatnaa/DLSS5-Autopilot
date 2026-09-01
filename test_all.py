@@ -481,6 +481,56 @@ check("uninstall removes it under that name too",
       _left == ["Game.exe", "sl.interposer.dll"], str(_left))
 shutil.rmtree(_d, ignore_errors=True)
 
+section("6g. an install in a subfolder is still found")
+# The exe is picked fresh on every scan. Reported as "uninstall does not work":
+# the install went to Bin\Win64, the next scan ranked another exe first, and
+# the marker files were then looked for in a folder that never had them.
+_d = Path(tempfile.mkdtemp(prefix="adopt_"))
+_sub = _d / "Bin" / "Win64"
+_sub.mkdir(parents=True)
+shutil.copyfile(X64, _sub / "Game.exe")
+shutil.copyfile(X64, _d / "Decoy-Shipping.exe")   # ranks above the real exe
+_cands = pe.find_game_exes(_d)
+check("the ranking really does prefer the other exe",
+      bool(_cands) and _cands[0].parent == _d,
+      _cands[0].name if _cands else "no candidates")
+_g = games.manual(_d)
+check("with nothing installed, the top-ranked exe is used",
+      _g.install_dir == _d and not _g.installed, str(_g.install_dir))
+(_sub / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "exe": "Game.exe", "files": ["dxgi.dll"]}), encoding="utf8")
+_g2 = games.manual(_d)
+check("an install in a subfolder is adopted", _g2.install_dir == _sub,
+      str(_g2.install_dir))
+check("and the exe it was made for comes with it",
+      _g2.exe == _sub / "Game.exe", str(_g2.exe))
+check("so the uninstall button is enabled", _g2.installed)
+# an older release wrote no exe name - the folder must still be found
+(_sub / installer.MANIFEST).unlink()
+(_sub / "dlss5kur-kurulum.json").write_text("{}", encoding="utf8")
+_g3 = games.manual(_d)
+check("a record left by an older release counts too",
+      _g3.install_dir == _sub and _g3.installed, str(_g3.install_dir))
+(_sub / "dlss5kur-kurulum.json").unlink()
+_g4 = games.manual(_d)
+check("once nothing is installed, nothing is adopted",
+      _g4.install_dir == _d and not _g4.installed, str(_g4.install_dir))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("6h. the game list can be searched")
+from core import gui as _gui  # noqa: E402
+_m = _gui.App._matches       # the caller lowercases what was typed
+_fake = games.Game(name="Cyberpunk 2077", source="Steam",
+                   folder=Path(r"D:\SteamLibrary\common\Cyberpunk 2077"))
+check("an empty search matches everything", _m(_fake, []))
+check("part of the name matches", _m(_fake, ["cyber"]))
+check("typing does not have to match the case", _m(_fake, ["cyberpunk 2077".lower()]))
+check("every word has to match",
+      _m(_fake, ["cyber", "2077"]) and not _m(_fake, ["cyber", "witcher"]))
+check("the folder is searched as well", _m(_fake, ["steamlibrary"]))
+check("so is the store it came from", _m(_fake, ["steam"]))
+check("a word in neither matches nothing", not _m(_fake, ["skyrim"]))
+
 section("7. odds and ends")
 check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))

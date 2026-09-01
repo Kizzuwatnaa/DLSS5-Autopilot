@@ -61,8 +61,13 @@ class App:
         self.step = 1
 
         self.arch = tk.StringVar(value="all")
+        self.search = tk.StringVar(value="")
         self.all_games: list[games.Game] = []
         self.shown: list[games.Game] = []
+        # One row costs several folder reads, so keep them: without this a
+        # search box would re-read the whole library on every keystroke.
+        self._rows: dict[tuple, object] = {}
+        self._fill_job: str | None = None
         self.game: games.Game | None = None
         self.catalog: dict[str, list[dict]] = {}
         self.renodx_local: Path | None = None
@@ -74,6 +79,7 @@ class App:
         self.workres = tk.IntVar(value=100)
 
         self._build()
+        self.search.trace_add("write", self._search_changed)
         self._show(1)
         self.root.after(60, self._pump)
         self._check_update()
@@ -388,6 +394,21 @@ class App:
                        font=font(9), borderwidth=0)\
             .pack(side="right", padx=(0, 14))
 
+        # A library of two hundred games with no way to search reads as "the
+        # list is broken" - the only filter here used to be 32/64-bit.
+        srow = tk.Frame(f, bg=BG)
+        srow.pack(fill="x", pady=(10, 0))
+        ttk.Label(srow, text="search", style="Dim.TLabel").pack(side="left")
+        ent = tk.Entry(srow, textvariable=self.search, bg=FIELD, fg=TXT,
+                       insertbackground=AMBER, relief="flat", font=font(10),
+                       highlightthickness=1, highlightbackground=LINE,
+                       highlightcolor=EDGE)
+        ent.pack(side="left", fill="x", expand=True, padx=(10, 0), ipady=3)
+        ent.bind("<Escape>", lambda e: self.search.set(""))
+        ent.bind("<Return>", lambda e: self._focus_first())
+        ent.bind("<Down>", lambda e: self._focus_first())
+        self.searchbox = ent
+
         self.scanlbl = ttk.Label(f, text="", style="Dim.TLabel")
         self.scanlbl.pack(anchor="w", pady=(6, 10))
 
@@ -429,6 +450,9 @@ class App:
             messagebox.showwarning(APP, f"no executable found in:\n{d}")
             return
         self.all_games.insert(0, g)
+        # A search still in the box could hide the folder just chosen.
+        self.search.set("")
+        self._cancel_fill()
         self._fill()
         for iid in self.tree.get_children():
             if self.shown[int(iid)] is g:
@@ -440,6 +464,7 @@ class App:
         if self.busy:
             return
         self.busy = True
+        self._rows.clear()
         self.tree.delete(*self.tree.get_children())
         self.scanlbl.config(text="scanning...")
         self.btn_next.config(state="disabled")
@@ -453,10 +478,44 @@ class App:
                 self.q.put(("error", traceback.format_exc()))
         threading.Thread(target=work, daemon=True).start()
 
+    def _cancel_fill(self) -> None:
+        if self._fill_job is not None:
+            try:
+                self.root.after_cancel(self._fill_job)
+            except tk.TclError:
+                pass
+            self._fill_job = None
+
+    def _search_changed(self, *_args) -> None:
+        # Refilling reads folders, so coalesce a burst of typing into one pass.
+        if not hasattr(self, "tree"):
+            return
+        self._cancel_fill()
+        self._fill_job = self.root.after(180, self._fill)
+
+    def _focus_first(self) -> None:
+        """Enter (or Down) in the search box picks the first match."""
+        kids = self.tree.get_children()
+        if kids:
+            self.tree.selection_set(kids[0])
+            self.tree.focus(kids[0])
+            self.tree.see(kids[0])
+
+    @staticmethod
+    def _matches(g: games.Game, terms: list[str]) -> bool:
+        """Every word typed has to appear - in the name, folder or store."""
+        if not terms:
+            return True
+        hay = f"{g.name} {g.folder} {g.source}".lower()
+        return all(t in hay for t in terms)
+
     def _fill(self) -> None:
+        self._cancel_fill()
         self.tree.delete(*self.tree.get_children())
         a = self.arch.get()
         only = getattr(self, "only_installed", None)
+        q = self.search.get().strip().lower()
+        terms = q.split()
         # A game whose architecture could not be read (the executable was
         # locked by antivirus or a running updater, or it is a cloud
         # placeholder) used to vanish under a 32/64 filter with no explanation.
@@ -464,43 +523,58 @@ class App:
         self.shown = [g for g in self.all_games
                       if g.exe and (a == "all" or g.bitness is None
                                     or str(g.bitness) == a)
-                      and (not (only and only.get()) or g.installed)]
+                      and (not (only and only.get()) or g.installed)
+                      and self._matches(g, terms)]
         for i, g in enumerate(self.shown):
-            # Each of these reads the game folder, so any one of them can fail
-            # on a folder that has gone away or become unreadable. Letting
-            # that escape would abandon the whole list half-drawn.
-            try:
-                ok, _ = installer.check_supported(g)
-                sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0)
-                level, _ = installer.reliability(g, sup.recommended)
-                outlook = {installer.STABLE: "reliable", installer.BETA: "beta",
-                           installer.EXPERIMENTAL: "often fails"}[level]
-                ac = anticheat.detect(g.install_dir, g.folder)
-            except Exception as e:
-                log.exception(f"inspecting {g.name}", e)
+            key = (str(g.folder), str(g.exe))
+            row = self._rows.get(key)
+            if row is None:
+                # Each of these reads the game folder, so any one of them can
+                # fail on a folder that has gone away or become unreadable.
+                # Letting that escape would abandon the whole list half-drawn.
+                try:
+                    ok, _ = installer.check_supported(g)
+                    sup = dlss.detect(g.install_dir, g.folder, g.api,
+                                      g.bitness or 0)
+                    level, _ = installer.reliability(g, sup.recommended)
+                    outlook = {installer.STABLE: "reliable",
+                               installer.BETA: "beta",
+                               installer.EXPERIMENTAL: "often fails"}[level]
+                    ac = anticheat.detect(g.install_dir, g.folder)
+                    row = (ok, sup.recommended, level, outlook,
+                           ac.present, ac.summary)
+                except Exception as e:
+                    log.exception(f"inspecting {g.name}", e)
+                    row = False
+                self._rows[key] = row
+            if row is False:
                 self.tree.insert("", "end", iid=str(i), text="  " + g.name,
                                  values=(g.source.lower(), g.bit_label, g.api,
                                          "-", "-", "unreadable"),
                                  tags=("unsupported",))
                 continue
+            ok, route, level, outlook, ac_present, ac_summary = row
             if not ok:
                 status, tag, outlook = "unsupported", "unsupported", "-"
-            elif ac.present:
-                status, tag, outlook = f"{ac.summary}!", "unsupported", "blocked"
+            elif ac_present:
+                status, tag, outlook = f"{ac_summary}!", "unsupported", "blocked"
             elif g.installed:
+                # Read fresh every time: this changes on install and uninstall.
                 status, tag = "installed", "installed"
             else:
                 status = "ready"
                 tag = "shaky" if level == installer.EXPERIMENTAL else ""
             self.tree.insert("", "end", iid=str(i), text="  " + g.name,
                              values=(g.source.lower(), g.bit_label, g.api,
-                                     sup.recommended, outlook, status),
+                                     route, outlook, status),
                              tags=(tag,) if tag else ())
         hidden = len([g for g in self.all_games if not g.exe])
         n_inst = len([g for g in self.all_games if g.exe and g.installed])
         msg = f"{len(self.shown)} games  ::  {n_inst} installed"
         if a != "all":
             msg += f"  ::  {a}-bit filter"
+        if q:
+            msg += f'  ::  matching "{q}"'
         if only and only.get():
             msg += "  ::  showing installed only"
         if hidden:
@@ -508,7 +582,11 @@ class App:
         # An empty list used to say "0 games" and leave you stuck. Say what to
         # do instead: not every launcher can be discovered from the registry.
         if not self.shown:
-            if self.all_games:
+            if q and self.all_games:
+                listed = len([g for g in self.all_games if g.exe])
+                msg = (f'nothing matches "{q}"  ::  clear the search box for '
+                       f'all {listed} games')
+            elif self.all_games:
                 msg = ("no games match this filter  ::  set architecture to "
                        "'all', or use [choose folder]")
             else:
@@ -1191,6 +1269,7 @@ class App:
                 elif kind == "scanned":
                     self.busy = False
                     self.all_games = payload
+                    self._rows.clear()
                     self._fill()
                     self.status.config(text="scan complete")
                 elif kind == "update":
@@ -1223,6 +1302,7 @@ class App:
                     self._finish_ok(payload)
                 elif kind == "removed":
                     self._idle()
+                    self._rows.clear()
                     self._log(f"> uninstalled ({len(payload)} items)", "ok")
                     self.btn_remove.config(state="disabled")
                     if hasattr(self, "btn_rm2"):
@@ -1256,6 +1336,7 @@ class App:
 
     def _finish_ok(self, rep: installer.Report) -> None:
         self._idle()
+        self._rows.clear()
         self.pb["value"] = 100
         self.pblbl.config(text="")
         self._log("")

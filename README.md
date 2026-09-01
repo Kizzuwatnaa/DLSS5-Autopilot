@@ -56,6 +56,15 @@ are scanned automatically, along with the usual emulator locations. Anything
 else is added with **[choose folder]** — point it at the folder the game's
 `.exe` is actually in.
 
+**Search the list** by typing in the box above it: the game's name, the folder
+it lives in, or the store it came from all match, and several words have to
+match together. Enter or the down arrow jumps to the first hit, Escape clears
+the box.
+
+A game set up against an executable in a subfolder — `Bin\Win64\Game.exe` and
+the like — is recognised as installed again on the next scan, so **uninstall**
+stays available instead of greying out.
+
 ### The OptiScaler route loads under a name you choose
 
 OptiScaler works by wearing the name of a DLL the game already loads. The tool

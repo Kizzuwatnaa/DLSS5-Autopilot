@@ -34,6 +34,7 @@ class Game:
     candidates: list[Path] = field(default_factory=list)
     error: str = ""
     emu: object | None = None    # emulators.Profile, when applicable
+    install_root: Path | None = None   # folder an earlier install wrote to
 
     @property
     def install_dir(self) -> Path:
@@ -42,7 +43,12 @@ class Game:
         In many games the exe is not in the root (e.g. Kingdom Come 2 ->
         Bin\Win64MasterMasterSteamPGO\KingdomCome.exe). The ReShade proxy must
         sit beside the executable or it is never loaded.
+
+        Once an install has happened, the folder it wrote to wins - see
+        `adopt_previous_install`.
         """
+        if self.install_root is not None:
+            return self.install_root
         return self.exe.parent if self.exe else self.folder
 
     @property
@@ -346,6 +352,69 @@ def scan_emulators(progress=None) -> list[Game]:
 
 # ---------------------------------------------------------------- shared
 
+def _marked(d: Path) -> bool:
+    """Has an install of ours - or an older release's - left its record here?"""
+    try:
+        return any((d / m).is_file() for m in MARKER_FILES)
+    except OSError:
+        return False
+
+
+def _recorded_exe(d: Path) -> str | None:
+    """The executable name the manifest in this folder was written for."""
+    for name in ("dlss5-autopilot.json", "dlss5kur-kurulum.json",
+                 "dlss5-installer.json"):
+        f = d / name
+        if not f.is_file():
+            continue
+        try:
+            data = json.loads(f.read_text(encoding="utf8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            exe = data.get("exe")
+            if isinstance(exe, str) and exe.strip():
+                return exe.strip()
+    return None
+
+
+def adopt_previous_install(g: Game) -> None:
+    r"""Point the game at the folder an earlier install actually wrote to.
+
+    The executable is chosen fresh on every scan and `pe.find_game_exes` only
+    ranks the candidates - so a game installed against `Bin\Win64\Game.exe`
+    can be listed against a different executable the next time round.
+    `install_dir` then pointed at a folder holding nothing of ours: the
+    uninstall button stayed greyed out and the files stayed on disk. Reported
+    as "uninstall does not work".
+
+    So look for our record in every candidate executable's folder. When one is
+    found, adopt that folder - and the executable the manifest names, so the
+    architecture and api shown describe the game that was actually patched.
+    """
+    here = g.exe.parent if g.exe else None
+    dirs: list[Path] = []
+    for d in ([here] if here else []) + [g.folder] + [c.parent for c in g.candidates]:
+        if d is not None and d not in dirs:
+            dirs.append(d)
+    for d in dirs:
+        if not _marked(d):
+            continue
+        g.install_root = d
+        if here is not None and d != here:
+            log.write(f"{g.name}: an earlier install is recorded in {d}, "
+                      f"not next to {g.exe.name}")
+        chosen: Path | None = None
+        want = _recorded_exe(d)
+        if want and (d / want).is_file():
+            chosen = d / want
+        elif here != d:
+            chosen = next((c for c in g.candidates if c.parent == d), None)
+        if chosen is not None:
+            g.exe = chosen
+        return
+
+
 def enrich(g: Game) -> Game:
     """Pick the executable and detect its architecture / graphics API."""
     try:
@@ -353,11 +422,13 @@ def enrich(g: Game) -> Game:
             cands = pe.find_game_exes(g.folder)
             if not cands:
                 g.error = "no executable found"
+                adopt_previous_install(g)
                 return g
             g.candidates = cands
             g.exe = cands[0]
         elif not g.candidates:
             g.candidates = pe.find_game_exes(g.folder) or [g.exe]
+        adopt_previous_install(g)
         g.bitness = pe.exe_bitness(g.exe)
         g.api, g.api_why = pe.detect_api(g.exe)
         if g.emu is None:
