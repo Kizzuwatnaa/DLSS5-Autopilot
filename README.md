@@ -194,9 +194,13 @@ Play!). Anything else: **Choose folder…** and point at the folder the `.exe`
 is actually in.
 
 **The right executable.** Files must sit next to the executable that
-actually runs - many games keep it in a subfolder (`Bin\Win64…\Game.exe`).
-When a folder has several candidates you can pick which one, and an install
-made earlier is found again even if the ranking changes.
+actually runs, and in Unreal and CryEngine games that is a subfolder
+(`TXR\Binaries\Win64\TXR-Win64-Shipping.exe`, `Bin\Win64…\KingdomCome.exe`)
+while the `.exe` in the root is only a launcher. The tool installs beside
+the real one even when the store's manifest names the launcher, and you keep
+starting the game from Steam or Epic as usual. When a folder has several
+candidates you can pick which one, and an install made earlier is found again
+even if the ranking changes.
 
 **Nothing is overwritten without a backup.** Every file the tool replaces -
 the game's own `nvngx_dlss.dll`, a tuned `OptiScaler.ini`, an existing

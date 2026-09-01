@@ -634,6 +634,22 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     if level != STABLE:
         rep.warnings.append(f"{level}: {why_rel}")
 
+    # Unreal and CryEngine games run from a subfolder; the executable in the
+    # root is a launcher stub. Everything goes beside the real one, and the
+    # store still starts the game the normal way - say so, because "I put
+    # the files in the game folder" is the classic mistake here.
+    try:
+        if root.resolve() != g.folder.resolve():
+            rel_dir = root.relative_to(g.folder)
+            log(f"      installing into {rel_dir} - the game runs from there "
+                f"(the exe in the root is a launcher). Start it from the store "
+                f"as usual.")
+            rep.notes.append(f"files are in {rel_dir}, beside the executable "
+                             f"the game actually runs; start it from the store "
+                             f"as usual")
+    except (OSError, ValueError):
+        pass
+
     ac = anticheat.detect(root, g.folder)
     if ac.present:
         # Not refused: single-player-only users sometimes want this anyway,
