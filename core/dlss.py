@@ -176,7 +176,7 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None) -> tuple[bool, 
     if route == NATIVE:
         return True, "most proven for D3D12 games with DLSS"
     if route == RENODX:
-        return True, "newest add-on; in-process, no bridge"
+        return True, "new and unproven - reported not working in many games; try the others first"
     if route == BRIDGE:
         if api == "Vulkan":
             return True, "mirrors the game's DLSS onto D3D12"
@@ -284,17 +284,17 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
     # 64-bit D3D11 / D3D12 / unknown-but-DXGI from here on.
     if s.native_dlss:
         if api == "DX11":
-            s.options = [RENODX, BRIDGE, OPTI, FEEDER]
-            s.recommended = RENODX
-            s.reason = ("This game has its own DLSS but renders with D3D11. "
-                        "The renodx-dlss add-on hooks D3D11 in-process and "
-                        "shares the game's real depth and motion vectors "
-                        "across to D3D12 - the route its author and the "
-                        "bridge's now recommend. The bridge does the same in a "
-                        "private session; OptiScaler works too but needs a "
-                        "bridged upscaler on D3D11.")
+            s.options = [BRIDGE, OPTI, FEEDER, RENODX]
+            s.recommended = BRIDGE
+            s.reason = ("This game has its own DLSS but renders with D3D11, "
+                        "which the add-on cannot hook directly. The bridge "
+                        "reproduces the contract on a private D3D12 session "
+                        "and the game's own quality mode still applies. "
+                        "OptiScaler works too but replaces DLSS with FSR on "
+                        "D3D11. The renodx-dlss add-on is new and has not "
+                        "proven itself in the field yet.")
         else:                              # DX12 or unknown -> assume DXGI/D3D12
-            s.options = [NATIVE, RENODX, OPTI, BRIDGE, FEEDER]
+            s.options = [NATIVE, OPTI, BRIDGE, FEEDER, RENODX]
             s.recommended = NATIVE
             s.reason = ("This game ships its own DLSS and renders with D3D12, "
                         "so the DLSS 5 add-on hooks it directly. No synthetic "
@@ -304,19 +304,18 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
         return s
 
     # No DLSS of its own, D3D11/D3D12.
-    s.options = [FEEDER, RENODX, BRIDGE]
+    s.options = [FEEDER, BRIDGE, RENODX]
     s.recommended = FEEDER
     s.reason = ("No DLSS in this game. The feeder builds a DLAA contract from "
                 "ReShade's depth and shader motion vectors - the most proven "
-                "way. The renodx-dlss add-on can instead evaluate the finished "
-                "frame in-process with no shaders at all (simpler, no motion "
-                "vectors), and the bridge can build a contract from the "
-                "driver's optical flow.")
+                "way. The bridge can instead build one from the driver's "
+                "optical flow. The renodx-dlss add-on is the newest and least "
+                "proven of the three.")
     return s
 
 
 LABELS = {
-    RENODX: "renodx-dlss - hooks the game in-process (D3D9/11/12)",
+    RENODX: "renodx-dlss - new in-process add-on (D3D9/11/12), unproven",
     NATIVE: "native - hook the game's own DLSS",
     OPTI: "optiscaler - replace the upscaler, model resolution dial",
     BRIDGE: "bridge - private D3D12 session",
@@ -325,10 +324,9 @@ LABELS = {
 
 BLURB = {
     RENODX: ("ShortFuse's renodx-dlss add-on. Hooks D3D9, D3D11 and D3D12 "
-             "presentation in-process - no bridge, no shaders, no synthetic "
-             "contract. On D3D11 it shares the game's real depth and motion "
-             "vectors; without DLSS it evaluates the finished frame. New "
-             "(September 2026) and the build the other authors point to."),
+             "presentation in-process - no bridge, no shaders. Days old, and "
+             "reported not working in many games so far: try the recommended "
+             "route first and come here only if that fails."),
     NATIVE: ("Simplest and best quality: no synthetic contract, no motion "
              "vector shaders, and the game's own DLSS quality mode applies."),
     OPTI: ("No ReShade at all. OptiScaler takes over upscaling and runs the "

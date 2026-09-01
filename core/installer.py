@@ -145,9 +145,9 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
             return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
                           "evaluates the presentation backbuffer with no "
                           "motion vectors, so expect a softer result.")
-        return BETA, ("The renodx-dlss add-on hooks the game in-process. It is "
-                      "the build the other authors now point to, but it is "
-                      "only days old (September 2026).")
+        return EXPERIMENTAL, ("The renodx-dlss add-on hooks the game in-process. "
+                              "Days old, and reported not working in many "
+                              "games so far. Try the recommended route first.")
     if path == OPTI:
         return BETA, ("OptiScaler replaces the upscaler and runs the model over "
                       "its output. The game must already use DLSS; the author "

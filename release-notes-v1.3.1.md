@@ -12,6 +12,10 @@
 - **Two executables in one folder** (Medieval II + Kingdoms, game + launcher)
   share one install; the tool tells you, and that uninstalling one removes
   the files for both.
+- **renodx-dlss demoted.** ShortFuse's new add-on is reported not working in
+  many games, so it is no longer recommended anywhere but 64-bit DX9, and it
+  sits last in the list. D3D11 games with DLSS go to the bridge, D3D12 games
+  with DLSS to OptiScaler, games without DLSS to the feeder.
 - The work-area slider is readable when it is disabled, with the reason
   beside it.
 - Plain notice when no DLSS files were found, and where to report it.
