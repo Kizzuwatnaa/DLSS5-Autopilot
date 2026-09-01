@@ -548,6 +548,27 @@ def adopt_previous_install(g: Game) -> None:
         return
 
 
+def _prefer_real_exe(g: Game) -> None:
+    """A store's launch executable is often a stub that starts the real one.
+
+    Epic's manifest names GWT.exe in the root of Ghostwire Tokyo; the game is
+    Snowfall\Binaries\Win64\GWT.exe. Files placed beside the stub are never
+    loaded, and the install "does nothing". When the ranked candidates put an
+    executable under a Binaries folder first and the store's pick is not in
+    one, the ranking wins.
+    """
+    if not g.exe or not g.candidates:
+        return
+    top = g.candidates[0]
+    if top == g.exe:
+        return
+    in_bin = lambda p: any(part.lower() == "binaries" for part in p.parts)
+    if in_bin(top) and not in_bin(g.exe):
+        log.write(f"{g.name}: the store names {g.exe.name} but the game runs "
+                  f"from {top.relative_to(g.folder)} - using that")
+        g.exe = top
+
+
 def enrich(g: Game) -> Game:
     """Pick the executable and detect its architecture / graphics API."""
     try:
@@ -561,6 +582,7 @@ def enrich(g: Game) -> Game:
             g.exe = cands[0]
         elif not g.candidates:
             g.candidates = pe.find_game_exes(g.folder) or [g.exe]
+        _prefer_real_exe(g)
         adopt_previous_install(g)
         g.bitness = pe.exe_bitness(g.exe)
         g.api, g.api_why = pe.detect_api(g.exe)

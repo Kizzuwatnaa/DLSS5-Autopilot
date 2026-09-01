@@ -719,6 +719,17 @@ shutil.copyfile(X64, d / "Game.exe")
 check("a dll inside Content does not count", not dlss.detect(d, d, "DX12", 64).native_dlss)
 shutil.rmtree(d, ignore_errors=True)
 
+# A store's launch stub in the root must not win over the real Binaries exe.
+d = Path(tempfile.mkdtemp(prefix="stub_"))
+real = d / "Snowfall" / "Binaries" / "Win64"
+real.mkdir(parents=True)
+shutil.copyfile(X64, real / "GWT.exe")
+shutil.copyfile(X64, d / "GWT.exe")
+gs = games.Game(name="stub", folder=d, exe=d / "GWT.exe", source="Epic")
+games.enrich(gs)
+check("the real Binaries exe wins over the root stub", gs.exe == real / "GWT.exe", str(gs.exe))
+shutil.rmtree(d, ignore_errors=True)
+
 # The SF add-on is told apart from renodx-dlss5 by content, not by name.
 d = Path(tempfile.mkdtemp(prefix="sf_"))
 (d / "a.addon64").write_bytes(b"MZ" + bytes(300_000) + b"RenoDX DLSS renodx-dlss.addon64")

@@ -8,3 +8,8 @@ them to the feeder. The tool now looks where engines actually keep it.
 
 If you installed one of these games with v1.3.0, open it again: the route list
 will now offer OptiScaler and native, and installing switches routes cleanly.
+
+Also: when a store's launch executable is a stub in the game's root
+(Epic's Ghostwire Tokyo names `GWT.exe`; the game runs from
+`Snowfall\Binaries\Win64\GWT.exe`), the tool now installs beside the real
+one. Files beside the stub were never loaded, so the install did nothing.
