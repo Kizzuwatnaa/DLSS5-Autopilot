@@ -60,7 +60,13 @@ SETTINGS = {
 
 # The panel hotkeys the finished-install notes point at. F6 is the DLSS 5
 # add-on's neural-rendering toggle (renodx-dlss5 4.6+), Home the overlay.
+# Checked against MPC-HC 2.8.1's own bindings (its [Commands2] table, ids
+# from resource.h): F6 is unbound, F5 = "Save image" (harmless beside the
+# add-on's own F5 screenshot), but Home = ID_PLAY_SEEKSET, "jump to the
+# start" - opening ReShade's overlay restarted the video. That binding is
+# taken away below; the menu still offers the command.
 TOGGLE_KEY = "F6"
+UNBIND_COMMANDS = {"996": "Home (jump to start) - ReShade's overlay key"}
 
 
 def default_dir() -> Path:
@@ -119,10 +125,21 @@ def _write_ini(folder: Path) -> None:
     seen: set[str] = set()
     out: list[str] = []
     in_settings = False
+    in_commands = False
     have_section = False
     for ln in lines:
         s = ln.strip()
+        if in_commands and s.startswith("CommandMod") and "=" in s:
+            # "CommandModN=<id> <mod> <vk> ..." - drop the key of the
+            # commands that collide with the add-on / ReShade keys.
+            key, _, val = s.partition("=")
+            parts = val.split(" ")
+            if len(parts) >= 3 and parts[0] in UNBIND_COMMANDS and parts[2] != "0":
+                parts[2] = "0"
+                out.append(f"{key}={' '.join(parts)}")
+                continue
         if s.startswith("[") and s.endswith("]"):
+            in_commands = s.lower() == "[commands2]"
             if in_settings:
                 # Leaving [Settings]: append the keys it did not have.
                 for k, v in settings.items():
@@ -484,7 +501,8 @@ CHECKLIST = (
     "YouTube link (yt-dlp fetches the stream, nothing is downloaded)",
     f"2. {TOGGLE_KEY} switches neural rendering on and off while it plays - "
     f"compare for yourself",
-    "3. Home opens the ReShade overlay if you want the DLSS 5 panel",
+    "3. Home opens the ReShade overlay if you want the DLSS 5 panel (the "
+    "player's own Home = 'jump to start' is unbound for that reason)",
     "!  there is no depth buffer in a video, the feed runs on colour and "
     "motion only - 'depth is flat' in the log is expected here",
 )

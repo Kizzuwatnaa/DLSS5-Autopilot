@@ -1142,6 +1142,16 @@ check("three rewrites keep the BOM, CRLF only, and add no blank lines",
       and b"\r\n\r\n" not in _raw and b"\n" not in _raw.replace(b"\r\n", b""))
 (_d / video.INI).write_bytes(b"[Settings]\r\nYDLExePath=C:\\x\\yt-dlp.exe\r\n")
 video._write_ini(_d)
+(_d / video.INI).write_bytes(
+    b"[Settings]\r\nDSVidRen=14\r\n[Commands2]\r\n"
+    b"CommandMod9=807 3 74 \"\" 5 0 0 0 0 0\r\n"
+    b"CommandMod38=996 3 24 \"\" 5 0 0 0 0 0\r\n"
+    b"CommandMod40=830 3 0 \"\" 5 0 0 0 0 0\r\n")
+video._write_ini(_d)
+_txt = (_d / video.INI).read_text(encoding="utf8")
+check("the player's Home = jump-to-start binding is taken away",
+      "CommandMod38=996 3 0 " in _txt and "CommandMod9=807 3 74 " in _txt
+      and "CommandMod40=830 3 0 " in _txt, _txt[-200:])
 check("a stray YDLExePath is dropped",
       "YDLExePath" not in (_d / video.INI).read_text(encoding="utf8"))
 check("helper tools live under tools/, yt-dlp beside the player",
@@ -2122,6 +2132,168 @@ check("the folder's own add-on is not called a foreign hook",
 _r = diagnose.analyse(_d)
 check("renodx-dlss5 beside upstream is two NGX hooks",
       any("Two NGX hooks" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("22. FSR and XeSS games through OptiScaler")
+# A 64-bit D3D12 game with FSR 2 (or XeSS) and no DLSS: OptiScaler hooks the
+# game's upscaler calls as its input and runs DLSS in their place, so the
+# route is offered and the tool has to bring a nvngx_dlss.dll of its own.
+
+
+def _upscaler_game(prefix: str, runtime: str):
+    d = Path(tempfile.mkdtemp(prefix=prefix))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / runtime).write_bytes(b"MZ" + bytes(4096))
+    g = games.manual(d)
+    g.api = "DX12"
+    return d, g
+
+
+for _runtime, _kind, _name in (("ffx_fsr2_api_x64.dll", "fsr", "FSR"),
+                               ("libxess.dll", "xess", "XeSS")):
+    _d, _g = _upscaler_game(f"opti_{_kind}_", _runtime)
+    _sup = dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness, 89)
+    check(f"{_name}: detect reports upscaler {_kind} and no native DLSS",
+          _sup.upscaler == _kind and not _sup.native_dlss
+          and _runtime in _sup.upscaler_evidence,
+          f"{_sup.upscaler} {_sup.upscaler_evidence}")
+    check(f"{_name}: optiscaler is offered, feeder stays recommended",
+          dlss.OPTI in _sup.options and _sup.options[0] == dlss.FEEDER
+          and _sup.recommended == dlss.FEEDER, str(_sup.options))
+    check(f"{_name}: the reason names the upscaler seen",
+          _runtime in _sup.reason and "OptiScaler" in _sup.reason, _sup.reason)
+    check(f"{_name}: rtx 50 is steered to optiscaler",
+          dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness, 120).recommended
+          == dlss.OPTI)
+    _ok, _note = dlss.fit(dlss.OPTI, "DX12", False, 89, upscaler=_kind)
+    check(f"{_name}: fit accepts optiscaler with the upscaler passed",
+          _ok and "redirected into DLSS" in _note, _note)
+    check(f"{_name}: fit without the upscaler still refuses (old positional call)",
+          dlss.fit(dlss.OPTI, "DX12", False, 89)[0] is False)
+    _opt = installer.Options(path=dlss.OPTI, upscaler=_kind)
+    _steps = installer.plan(_g, _opt)
+    check(f"{_name}: the plan lists nvngx_dlss.dll",
+          "nvngx_dlss.dll" in _steps and "OptiScaler (DLSS-NR build)" in _steps,
+          str(_steps))
+    _pv = installer.preview(_g, _opt)
+    check(f"{_name}: the preview lists nvngx_dlss.dll and says beta",
+          "nvngx_dlss.dll" in _pv.writes
+          and any("redirected into DLSS" in w for w in _pv.warnings),
+          str(_pv.writes))
+    _lvl, _why = installer.reliability(_g, dlss.OPTI, _kind)
+    check(f"{_name}: reliability is beta and honest",
+          _lvl == installer.BETA and "not all" in _why, _why)
+    try:
+        _rep = installer.install(_g, _opt, on_log=lambda t: None)
+        _files = {p.name for p in _d.iterdir() if p.is_file()}
+        check(f"{_name}: install writes OptiScaler, nvngx_dlssnr and nvngx_dlss",
+              "dxgi.dll" in _files and optiscaler.FORWARDER in _files
+              and installer.DLSSNR in _files and installer.DLSS in _files,
+              str(sorted(_files)))
+        check(f"{_name}: the plan and the steps taken agree",
+              len(_steps) == len(installer.plan(_g, _opt))
+              and any("dlss version" in n for n in _rep.notes), str(_rep.notes))
+        _ini = (_d / optiscaler.INI).read_text(encoding="utf8")
+        _want = "EnableFsr2Inputs=true" if _kind == "fsr" else "EnableXeSSInputs=true"
+        check(f"{_name}: the ini enables the input and picks dlss on D3D12",
+              _want in _ini and "Dx12Upscaler=dlss" in _ini
+              and "Enabled=true" in _ini,
+              str([ln for ln in _ini.splitlines()
+                   if "Inputs=" in ln or "Dx12Upscaler" in ln]))
+        _man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+        check(f"{_name}: the manifest records the upscaler",
+              _man.get("upscaler") == _kind and _man.get("path") == "optiscaler"
+              and "nvngx_dlss.dll" in _man.get("files", []), str(_man.get("upscaler")))
+        _back = installer.options_from_manifest(_d)
+        check(f"{_name}: the manifest round-trips upscaler and native_dlss",
+              _back.upscaler == _kind and not _back.native_dlss
+              and _back.path == dlss.OPTI)
+        check(f"{_name}: with ours installed detect still says {_kind}",
+              dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness).upscaler
+              == _kind and not dlss.detect(_g.install_dir, _g.folder, _g.api,
+                                           _g.bitness).native_dlss)
+        installer.uninstall(_g, on_log=lambda t: None)
+        _left = sorted(p.name for p in _d.rglob("*") if p.is_file())
+        check(f"{_name}: uninstall removes all of ours and leaves the {_name} dll",
+              _left == ["Game.exe", _runtime], str(_left))
+    except Exception as e:
+        check(f"{_name}: installs", False, f"{type(e).__name__}: {e}")
+    shutil.rmtree(_d, ignore_errors=True)
+
+# Neither DLSS nor an upscaler: OptiScaler has nothing to hook.
+_bare = Path(tempfile.mkdtemp(prefix="opti_none_"))
+shutil.copyfile(X64, _bare / "Game.exe")
+_gb = games.manual(_bare)
+_gb.api = "DX12"
+_sb = dlss.detect(_gb.install_dir, _gb.folder, _gb.api, _gb.bitness, 120)
+check("a game with neither DLSS nor FSR/XeSS is not offered optiscaler",
+      dlss.OPTI not in _sb.options and _sb.upscaler == ""
+      and _sb.recommended == dlss.FEEDER, str(_sb.options))
+shutil.rmtree(_bare, ignore_errors=True)
+
+# A native-DLSS game keeps the old behaviour: no upscaler, no extra dlss step.
+_gn = _fake_game("opti_native_")
+_sn = dlss.detect(_gn.install_dir, _gn.folder, "DX12", 64)
+check("a game with its own DLSS reports no upscaler",
+      _sn.native_dlss and _sn.upscaler == "" and _sn.dlss_source)
+check("native optiscaler plan is unchanged",
+      "nvngx_dlss.dll" not in installer.plan(
+          _gn, installer.Options(path=dlss.OPTI, native_dlss=True)))
+shutil.rmtree(_gn.folder, ignore_errors=True)
+
+# The ini writer on its own, D3D11 included.
+_d = Path(tempfile.mkdtemp(prefix="opti_ini_"))
+(_d / optiscaler.INI).write_text(
+    "[Upscalers]\nDx11Upscaler=auto\nDx12Upscaler=auto\n\n[Inputs]\n"
+    "EnableFsr2Inputs=auto\nUseFsr2Dx11Inputs=auto\nEnableXeSSInputs=auto\n",
+    encoding="utf8")
+optiscaler.enable_inputs(_d, "fsr", "DX11")
+_ini = (_d / optiscaler.INI).read_text(encoding="utf8")
+check("on D3D11 the FSR2 D3D11 inputs are hooked and dlss is not the upscaler",
+      "UseFsr2Dx11Inputs=true" in _ini and "EnableFsr2Inputs=true" in _ini
+      and "Dx12Upscaler=auto" in _ini and _ini.count("[Inputs]") == 1, _ini)
+optiscaler.enable_inputs(_d, "xess", "DX12")
+_ini = (_d / optiscaler.INI).read_text(encoding="utf8")
+check("xess on D3D12 enables XeSS inputs and pins dlss",
+      "EnableXeSSInputs=true" in _ini and "Dx12Upscaler=dlss" in _ini, _ini)
+shutil.rmtree(_d, ignore_errors=True)
+
+# The diagnosis: with an upscaler recorded, the log has to show the hook.
+_log_head = ("[00:00:01.000] [I] DLLMain forwarder loaded\n"
+             "[00:00:01.100] [I] HookFSR2ExeInputs Trying to hook FSR2 methods\n"
+             "[00:00:05.000] [I] DLSS-NR running at 1920x1080\n")
+_d = _diag_dir("diag_optifsr_", addons=False, path="optiscaler",
+               upscaler="fsr", files=["dxgi.dll"])
+(_d / "OptiScaler.log").write_text(_log_head, encoding="utf8")
+_r = diagnose.analyse(_d)
+check("no FSR context through OptiScaler is a warning that names the feeder",
+      any("never saw the game's FSR calls" in t for t in _levels(_r, "warn")),
+      str(_levels(_r, "warn")))
+(_d / "OptiScaler.log").write_text(
+    _log_head + "[00:00:02.000] [I] hk_ffxFsr2ContextCreate_Dx12 context created: 1A2B\n",
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("an FSR context created through OptiScaler is not flagged",
+      not any("never saw" in t for t in _levels(_r, "warn") + _levels(_r, "bad"))
+      and _r.verdict == "Working.", str(_r.findings))
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_optixess_", addons=False, path="optiscaler",
+               upscaler="xess", files=["dxgi.dll"])
+(_d / "OptiScaler.log").write_text(
+    _log_head + "[00:00:01.200] [W] Config::CheckXeSS libxess.dll not found!\n",
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("'libxess.dll not found!' is bad and names the feeder",
+      any("never saw the game's XeSS calls" in t for t in _levels(_r, "bad"))
+      and any("feeder" in f_.detail for f_ in _r.findings if f_.level == "bad"),
+      str(_levels(_r, "bad")))
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_optinative_", addons=False, path="optiscaler",
+               files=["dxgi.dll"])
+(_d / "OptiScaler.log").write_text(_log_head, encoding="utf8")
+_r = diagnose.analyse(_d)
+check("a native-DLSS OptiScaler install is not asked about FSR/XeSS inputs",
+      not any("never saw" in t for t in _levels(_r, "warn") + _levels(_r, "bad")))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

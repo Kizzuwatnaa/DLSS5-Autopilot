@@ -28,7 +28,9 @@ directly and keeps its own Quality/Balanced/Performance modes.
              model over its output, with a model-resolution dial (25-100%)
              that is the biggest fps lever there is. The author tested RTX 50
              only; with the per-card runtime this tool installs it runs on
-             RTX 20/30/40 as well. The game must already use DLSS.
+             RTX 20/30/40 as well. The game must already use DLSS - or FSR
+             2/3 or XeSS: OptiScaler hooks those calls as its INPUT and
+             runs DLSS in their place, which is what it is known for.
 
     BRIDGE   dlss5-bridge: reproduces the DLSS contract on a private D3D12
              session. The route for Vulkan games with DLSS (mirror), and a
@@ -72,12 +74,32 @@ _SKIP_DIRS = {"content", "paks", "saved", "logs", "movies", "sounds", "music",
               "reshade-shaders"}
 _WALK_DEPTH = 9
 
+# A game without DLSS may still ship AMD FSR 2/3 or Intel XeSS. OptiScaler
+# hooks those calls as its input ([Inputs] EnableFsr2Inputs / EnableFsr3Inputs
+# / EnableFfxInputs / EnableXeSSInputs in its ini) and runs DLSS in their
+# place, so such a game can take the OPTI route with no DLSS of its own.
+# These are the runtime DLLs the SDKs ship under; a game that statically
+# links FSR shows none of them and cannot be told apart from one without.
+FSR_FILES = ("ffx_fsr2_api_x64.dll", "ffx_fsr2_api_dx12_x64.dll",
+             "ffx_fsr2_api_vk_x64.dll", "ffx_fsr3upscaler_x64.dll",
+             "ffx_fsr3_x64.dll", "amd_fidelityfx_dx12.dll",
+             "amd_fidelityfx_vk.dll", "ffx_backend_dx12_x64.dll")
+XESS_FILES = ("libxess.dll", "libxess_dx11.dll", "libxess_fg.dll")
+UPSCALER_FILES = FSR_FILES + XESS_FILES
+UPSCALER_NAMES = {"fsr": "AMD FSR 2/3", "xess": "Intel XeSS"}
+# OptiScaler's own package carries libxess.dll and amd_fidelityfx_*.dll under
+# OptiScaler/ - its bundled upscalers, not the game's. Never evidence.
+_UPSCALER_SKIP = ("optiscaler", "licenses")
 
-def find_dlss_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
+
+def find_dlss_files(folder: Path, skip_dir: Path | None = None,
+                    names: tuple[str, ...] = DLSS_FILES,
+                    extra_skip: tuple[str, ...] = ()) -> list[str]:
     """Relative paths of the game's own DLSS files anywhere under `folder`.
 
     `skip_dir` is the folder this tool installs into: a runtime we put there
     must not count as the game's own (that is what _ours handles there).
+    `names` lets the same bounded walk look for other runtimes (FSR, XeSS).
     """
     import os
     out: list[str] = []
@@ -92,6 +114,7 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
             dirs[:] = []
         else:
             dirs[:] = [d for d in dirs if d.lower() not in _SKIP_DIRS
+                       and d.lower() not in extra_skip
                        and not d.startswith(".")]
         if skip_dir is not None:
             try:
@@ -100,7 +123,7 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
             except OSError:
                 pass
         for f in files:
-            if f.lower() in DLSS_FILES:
+            if f.lower() in names:
                 try:
                     out.append(str((rp / f).relative_to(folder)))
                 except ValueError:
@@ -108,6 +131,26 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
         if len(out) >= 6:
             break
     return out
+
+
+def find_upscaler_files(folder: Path, skip_dir: Path | None = None) -> list[str]:
+    """Relative paths of the game's own FSR 2/3 and XeSS runtimes."""
+    return find_dlss_files(folder, skip_dir, names=UPSCALER_FILES,
+                           extra_skip=_UPSCALER_SKIP)
+
+
+def upscaler_kind(evidence: list[str]) -> str:
+    """"fsr", "xess" or "" for a list of runtime files seen.
+
+    A game shipping both gets "fsr": OptiScaler's FSR 2/3 input hooks are its
+    oldest and most exercised, and the ini enables both anyway.
+    """
+    names = {Path(e).name.lower() for e in evidence}
+    if names & set(FSR_FILES):
+        return "fsr"
+    if names & set(XESS_FILES):
+        return "xess"
+    return ""
 
 
 @dataclass
@@ -119,12 +162,21 @@ class Support:
     options: list[str] = None             # type: ignore[assignment]
     supported: bool = True                # False: no component reaches this API
     why_not: str = ""
+    # "fsr" / "xess" / "": the upscaler the game ships when it has no DLSS.
+    # OptiScaler can take those calls as its input and run DLSS instead; the
+    # GUI passes this into fit() and Options.upscaler (wired in a follow-up).
+    upscaler: str = ""
+    upscaler_evidence: list[str] = None   # type: ignore[assignment]
+    # Where DLSS comes from on the OPTI route, for the reason texts.
+    dlss_source: str = ""
 
     def __post_init__(self) -> None:
         if self.evidence is None:
             self.evidence = []
         if self.options is None:
             self.options = []
+        if self.upscaler_evidence is None:
+            self.upscaler_evidence = []
 
 
 def _ours(folder: Path, name: str) -> bool:
@@ -151,7 +203,9 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int,
     card a D3D12 game with DLSS is steered to OptiScaler, whose
     model-resolution dial is the biggest fps lever there is - and the lever
     matters most on the cards where the pass is heaviest. A card below RTX
-    20 gets no such steer; nothing runs there anyway.
+    20 gets no such steer; nothing runs there anyway. A D3D12 game with FSR
+    or XeSS instead of DLSS is steered only on RTX 50, the cards the author
+    tested - one more hook has to land there.
     """
     s = _detect(install_dir, folder, api, bitness)
     if OPTI in s.options and s.recommended == NATIVE and (sm is None or sm >= 75):
@@ -164,19 +218,41 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int,
                     + ("" if (sm or 120) >= 120 else
                        " The author tested RTX 50 only; on your card it runs "
                        "on the community runtime this tool installs."))
+    elif (OPTI in s.options and s.upscaler and not s.native_dlss
+          and api == "DX12" and sm is not None and sm >= 120):
+        # An FSR/XeSS game is a step further from what the author tested
+        # (OptiScaler must hook the game's upscaler first), so only the cards
+        # they actually used are steered off the feeder; the rest keep the
+        # proven route and see OptiScaler as an option.
+        s.recommended = OPTI
+        s.reason = (f"This game has no DLSS but ships {UPSCALER_NAMES[s.upscaler]} "
+                    f"({', '.join(s.upscaler_evidence[:3])}). OptiScaler takes "
+                    f"those calls as its input, runs DLSS in their place and "
+                    f"then neural rendering, with the model-resolution dial. "
+                    f"Works in many games, not all - the feeder is the proven "
+                    f"fallback.")
     return s
 
 
-def fit(route: str, api: str, native_dlss: bool, sm: int | None) -> tuple[bool, str]:
+def fit(route: str, api: str, native_dlss: bool, sm: int | None,
+        upscaler: str = "") -> tuple[bool, str]:
     """(usable on this machine, short note) for a route the game offers.
 
     The route list says what the GAME allows; this says what the CARD and
     the route's own rules add to it, so the dropdown can label each entry.
+
+    `upscaler` is Support.upscaler: with no DLSS in the game, OptiScaler is
+    usable only when there is an FSR/XeSS call for it to redirect. The GUI
+    still calls this positionally without it (a follow-up wires it in), so
+    the default must keep the old answers for every other route.
     """
     if route == OPTI:
-        if not native_dlss:
-            return False, "the game must already use DLSS"
+        if not native_dlss and not upscaler:
+            return False, "the game must already use DLSS, FSR 2/3 or XeSS"
         note = "model resolution dial: the fps lever"
+        if not native_dlss:
+            note = (f"the game's {'FSR' if upscaler == 'fsr' else 'XeSS'} calls "
+                    f"are redirected into DLSS, then neural rendering; " + note)
         if api == "DX11":
             note = "on D3D11 the upscaler becomes FSR on D3D12"
         if sm is not None and sm < 120:
@@ -225,6 +301,25 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
             s.native_dlss = True
             s.evidence.append(rel)
     s.evidence = sorted(set(s.evidence))
+
+    if not s.native_dlss:
+        # No DLSS: does the game ship FSR 2/3 or XeSS for OptiScaler to hook?
+        # Same two-stage look as DLSS - beside the executable first (the
+        # walk skips the install folder, and _ours rules out anything we
+        # wrote), then the engine's own folders.
+        for d in {install_dir, folder}:
+            for m in UPSCALER_FILES:
+                if (d / m).is_file() and not _ours(d, m):
+                    s.upscaler_evidence.append(m)
+        if not s.upscaler_evidence:
+            s.upscaler_evidence = find_upscaler_files(folder, skip_dir=install_dir)
+        s.upscaler_evidence = sorted(set(s.upscaler_evidence))
+        s.upscaler = upscaler_kind(s.upscaler_evidence)
+    if s.native_dlss:
+        s.dlss_source = "the game's own DLSS"
+    elif s.upscaler:
+        s.dlss_source = (f"the game's {'FSR 2/3' if s.upscaler == 'fsr' else 'XeSS'} "
+                         f"calls, redirected into DLSS by OptiScaler")
 
     # --- pick a path ----------------------------------------------------
     if api == "DX10":
@@ -320,6 +415,27 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
         return s
 
     # No DLSS of its own, D3D11/D3D12.
+    if s.upscaler:
+        # OptiScaler's founding trick: hook the game's FSR 2/3 or XeSS calls
+        # and run DLSS in their place - then the fork's neural rendering on
+        # top. The feeder stays the proven recommendation (detect() steers
+        # RTX 50 to OptiScaler); the bridge and renodx-dlss are unchanged.
+        # Vulkan is not offered: this tool installs OptiScaler as a DXGI
+        # proxy, which a Vulkan game never loads.
+        s.options = [FEEDER, OPTI, BRIDGE, RENODX]
+        s.recommended = FEEDER
+        s.reason = (f"No DLSS in this game, but it ships "
+                    f"{UPSCALER_NAMES[s.upscaler]} "
+                    f"({', '.join(s.upscaler_evidence[:3])}). The feeder "
+                    f"builds a DLAA contract from ReShade's depth and shader "
+                    f"motion vectors - the most proven way. OptiScaler can "
+                    f"instead take the game's "
+                    f"{'FSR' if s.upscaler == 'fsr' else 'XeSS'} calls as its "
+                    f"input and run DLSS in their place, then neural "
+                    f"rendering - real upscaling, works in many games, not "
+                    f"all. The bridge and the renodx-dlss add-on are the "
+                    f"less proven alternatives.")
+        return s
     s.options = [FEEDER, BRIDGE, RENODX]
     s.recommended = FEEDER
     s.reason = ("No DLSS in this game. The feeder builds a DLAA contract from "
@@ -359,7 +475,8 @@ BLURB = {
            "fps lever there is: cost falls with the square of it, and the "
            "frame itself stays full detail. The author tested RTX 50 only; "
            "on RTX 20/30/40 it runs on the community runtime this tool "
-           "installs. The game must already use DLSS."),
+           "installs. The game must already use DLSS - or FSR 2/3 or XeSS, "
+           "whose calls OptiScaler redirects into DLSS."),
     BRIDGE: ("Reproduces the DLSS contract on a private D3D12 session. The "
              "route for Vulkan games with DLSS. Its author has stopped "
              "development at 1.3.0."),
@@ -382,7 +499,7 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
                "overlay, or expect stutter",
                "does not upscale - the game's own DLSS still does"),
     OPTI: ("no ReShade at all on this route; other RenoDX add-ons will not load",
-           "the game must already use DLSS",
+           "the game must already use DLSS, FSR 2/3 or XeSS",
            "not with a frame-gen unlocker or dlss-enabler in the folder"),
     BRIDGE: ("not with the feeder or renodx-dlss add-on in the same folder "
              "- both build a contract and the game dies before its swap chain",

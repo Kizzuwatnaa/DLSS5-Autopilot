@@ -149,11 +149,58 @@ def _opti_log(install_dir: Path) -> Path | None:
     return next((c for c in cands if c.is_file()), None)
 
 
-def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float) -> "Report":
+# When the game has no DLSS and OptiScaler is meant to hook its FSR/XeSS
+# calls instead, the log must show those calls arriving. OptiScaler's LOG_*
+# macros prefix every line with the C++ function name (SysUtils.h:
+# `spdlog::info(__FUNCTION__ " " msg)`), so the hook functions themselves
+# are the evidence. Phrases and where they come from, all under
+# _research/forkrepo/OptiScaler/:
+#   "context created"     inputs/FSR2_Dx12.cpp:442 / FSR3_Dx12.cpp:293 /
+#                         FfxApiExe_Dx12.cpp:96 - an FSR context created
+#                         through the hook (the game's call reached us)
+#   "hk_ffxFsr2" / "hk_ffxFsr3" / "hk_ffxCreateContext" / "hk_xess"
+#                         the hooked entry points' own function names
+#   "XeSS Version:"       proxies/XeSS_Proxy.h:909, once libxess is wrapped
+#   "libxess.dll found"   Config.cpp:1703/1709 "libxess.dll found in memory"
+#                         / "found in game folder"
+# and the two lines that say the hook can never land:
+#   "libxess.dll not found!"  Config.cpp:1705
+#   "disabling FSR2 hooks!"   inputs/FSR2_Dx12.cpp:976 "Katana Engine
+#                             exports detected, disabling FSR2 hooks!"
+# "Trying to hook FSR2 methods" (FSR2_Dx12.cpp:969) is NOT evidence: it is
+# logged on every start whenever EnableFsr2Inputs is on, hooked or not.
+_INPUT_SEEN = ("context created", "hk_ffxFsr2", "hk_ffxFsr3",
+               "hk_ffxCreateContext", "hk_xess", "XeSS Version:",
+               "libxess.dll found")
+_INPUT_NEVER = ("libxess.dll not found!", "disabling FSR2 hooks!")
+
+
+def _check_inputs(text: str, upscaler: str, rep: "Report") -> None:
+    """Did the game's FSR/XeSS calls ever reach OptiScaler?"""
+    if not upscaler:
+        return
+    name = "FSR" if upscaler == "fsr" else "XeSS"
+    dead = [k for k in _INPUT_NEVER if k in text]
+    if dead:
+        rep.add(BAD, f"OptiScaler never saw the game's {name} calls.",
+                f"The log says '{dead[0]}' - the game loads no "
+                f"{name} runtime OptiScaler can hook, so it may link its own "
+                f"statically. Try the feeder route.")
+    elif not any(k in text for k in _INPUT_SEEN):
+        rep.add(WARN, f"OptiScaler never saw the game's {name} calls.",
+                f"No {name} context was created through OptiScaler. Make "
+                f"sure {name} is selected in the game's own menu; if it is, "
+                f"the game may load its own {name} statically and there is "
+                f"nothing to hook - try the feeder route.")
+
+
+def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
+                        man: dict | None = None) -> "Report":
     """The OptiScaler route has no ReShade: its own log says everything.
 
     The fork's DLSS-NR lines are unambiguous - "running at WxH" is success,
-    "create failed" / "unavailable" / "did not run" name the reason.
+    "create failed" / "unavailable" / "did not run" name the reason. With an
+    upscaler recorded in the manifest the input hook has to show up too.
     """
     p = _opti_log(install_dir)
     text = _tail(p) if p else ""
@@ -173,6 +220,7 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float) -> "Repo
     if since and not _fresh(p, since):
         rep.add(WARN, "The log predates the current install.",
                 "Play once and check again.")
+    _check_inputs(text, str((man or {}).get("upscaler") or ""), rep)
     lines = text.splitlines()
     nr = [ln for ln in lines if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
     running = [ln for ln in nr if "running at" in ln]
@@ -301,7 +349,7 @@ def analyse(install_dir: Path) -> Report:
     man = _manifest(install_dir)
     rep.route = man.get("path") or ""
     if rep.route == "optiscaler":
-        return _analyse_optiscaler(install_dir, rep, since)
+        return _analyse_optiscaler(install_dir, rep, since, man)
 
     feed = install_dir / FEED_LOG
     host = install_dir / HOST_LOG

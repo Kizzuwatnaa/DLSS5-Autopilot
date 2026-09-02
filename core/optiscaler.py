@@ -24,7 +24,12 @@ REQUIREMENTS the author states:
     makes the pass affordable there.
   - a driver shipping nvngx_dlssnr.dll (>= 616.56)
   - a D3D12 or D3D11 game that ALREADY uses DLSS. It reads that game's own
-    DLSS inputs, so a game without DLSS gives it nothing to read.
+    DLSS inputs, so a game without DLSS gives it nothing to read - unless
+    the game ships FSR 2/3 or XeSS: upstream OptiScaler hooks those calls
+    as its input (its [Inputs] section) and runs DLSS in their place, and
+    the fork's pass then sits behind that DLSS. enable_inputs() below sets
+    that up; the tool puts a nvngx_dlss.dll beside it, since such a game
+    has none.
 
 Two things it does better than the feeder, beyond speed:
   - the pass runs right after the upscaler and BEFORE the interface is drawn,
@@ -318,6 +323,85 @@ def set_dx11_bridged_upscaler(exe_dir: Path, log=None) -> None:
                      encoding="utf8")
         log("      OptiScaler.ini: [Upscalers] Dx11Upscaler=fsr22_12 (the "
             "model does not run on D3D11 itself; FSR 2.2 on D3D12 carries it)")
+    except OSError:
+        log("      could not write OptiScaler.ini")
+
+
+# What OptiScaler_dlssnr.ini (the fork's shipped ini, in _research/) says
+# about its [Inputs] section - every default is already "auto" = true, but a
+# hand-tuned ini or an older one may say otherwise, so they are written out:
+#   ; OptiScaler will hook (libxess.dll) and use XeSS Inputs
+#   ; true or false - Default (auto) is true
+#   EnableXeSSInputs=auto
+#   ; OptiScaler will hook Fsr2 Inputs
+#   ; true or false - Default (auto) is true
+#   EnableFsr2Inputs=auto
+#   ; OptiScaler will hook Fsr2 Dx11 Inputs instead of Dx12 one
+#   ; true or false - Default (auto) is false
+#   UseFsr2Dx11Inputs=auto
+#   ; OptiScaler will use Fsr2 Inputs
+#   ; true or false - Default (auto) is true
+#   UseFsr2Inputs=auto
+#   ; OptiScaler will hook Fsr3 Inputs
+#   ; true or false - Default (auto) is true
+#   EnableFsr3Inputs=auto
+#   ; OptiScaler will use Fsr3 Inputs
+#   ; true or false - Default (auto) is true
+#   UseFsr3Inputs=auto
+#   ; OptiScaler will hook FidelityFX (amd_fidelityfx_dx12.dll) API Inputs
+#   ; true or false - Default (auto) is true
+#   EnableFfxInputs=auto
+#   ; OptiScaler will use FidelityFX API Inputs
+#   ; true or false - Default (auto) is true
+#   UseFfxInputs=auto
+# Fsr2Pattern / Fsr3Pattern ("Try to find FSR2 methods with pattern
+# matching - Will slow down the loading of the game") stay at their default:
+# the export hooks come first, and the overlay can turn pattern search on.
+INPUT_KEYS = {
+    "fsr": {"EnableFsr2Inputs": "true", "UseFsr2Inputs": "true",
+            "EnableFsr3Inputs": "true", "UseFsr3Inputs": "true",
+            "EnableFfxInputs": "true", "UseFfxInputs": "true"},
+    "xess": {"EnableXeSSInputs": "true"},
+}
+
+# And its [Upscalers] section, for the API the game renders with:
+#   ; Select Upscaler for Dx12 games
+#   ; xess, fsr21, fsr22, ffx (FSR 2.3; 3.1; 4.x), dlss
+#   ; Default (auto) is DLSS when capable gpu, FSR4 when capable gpu, XeSS otherwise
+#   Dx12Upscaler=auto
+# "auto" already lands on DLSS on an RTX card, but the whole point of this
+# route is DLSS, so it is pinned. D3D11 is different - see
+# set_dx11_bridged_upscaler: the model refuses D3D11, so the bridged FSR
+# stays there and DLSS is never the D3D11 upscaler.
+DX12_UPSCALER = "dlss"
+
+
+def enable_inputs(exe_dir: Path, upscaler: str, api: str, log=None) -> None:
+    """Make OptiScaler take the game's FSR/XeSS calls as input and run DLSS.
+
+    Only the keys for the upscaler actually seen are touched; the rest of the
+    [Inputs] section keeps whatever the file says.
+    """
+    log = log or (lambda *_: None)
+    keys = dict(INPUT_KEYS.get(upscaler, {}))
+    if not keys:
+        return
+    if upscaler == "fsr" and api == "DX11":
+        # A D3D11 game calls the D3D11 FSR2 entry points, which OptiScaler
+        # hooks "instead of Dx12 one" only when told to.
+        keys["UseFsr2Dx11Inputs"] = "true"
+    p = exe_dir / INI
+    try:
+        text = p.read_text(encoding="utf8", errors="replace") if p.is_file() else ""
+        text = _ini_set(text, "Inputs", keys)
+        if api != "DX11":
+            text = _ini_set(text, "Upscalers", {"Dx12Upscaler": DX12_UPSCALER})
+        p.write_text(text, encoding="utf8")
+        log("      OptiScaler.ini: [Inputs] "
+            + ", ".join(f"{k}={v}" for k, v in keys.items())
+            + (f"; [Upscalers] Dx12Upscaler={DX12_UPSCALER}" if api != "DX11" else ""))
+        log(f"      the game's {'FSR' if upscaler == 'fsr' else 'XeSS'} calls "
+            f"go into OptiScaler, which runs DLSS in their place")
     except OSError:
         log("      could not write OptiScaler.ini")
 

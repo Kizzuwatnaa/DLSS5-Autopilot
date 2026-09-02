@@ -165,6 +165,10 @@ class Options:
     opti_proxy: str = ""                    # "" = pick a free name for this game
     reshade_proxy: str = ""                 # "" = choose from the API
     native_dlss: bool = False               # game ships its own DLSS
+    # "fsr" / "xess" / "": the upscaler a game WITHOUT DLSS ships. On the
+    # OptiScaler route its calls become OptiScaler's input and DLSS runs in
+    # their place, so the tool also puts a nvngx_dlss.dll in the folder.
+    upscaler: str = ""
     # The feeder's pre-releases are where support for the newer DLSS 5 add-on
     # generations lives; the stable release only accepts renodx-dlss5 4.55.
     feeder_prerelease: bool = False
@@ -195,8 +199,14 @@ class Report:
 # DXGI; everything else is a bolt-on and fails far more often.
 STABLE, BETA, EXPERIMENTAL = "stable", "beta", "experimental"
 
-def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
-    """(level, explanation) - how likely this route is to actually work."""
+def reliability(g: games.Game, path: str = FEEDER,
+                upscaler: str = "") -> tuple[str, str]:
+    """(level, explanation) - how likely this route is to actually work.
+
+    `upscaler` is set on the OptiScaler route when the game has no DLSS and
+    OptiScaler is redirecting its FSR/XeSS calls instead - one more hook
+    that has to land, so it says so.
+    """
     if g.api == "DX10":
         return EXPERIMENTAL, ("DirectX 10 is not supported by any DLSS 5 "
                               "component.")
@@ -217,6 +227,14 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
         return EXPERIMENTAL, ("The renodx-dlss add-on hooks the game in-process. "
                               "Days old, and reported not working in many "
                               "games so far. Try the recommended route first.")
+    if path == OPTI and upscaler:
+        return BETA, ("FSR/XeSS redirected into DLSS by OptiScaler - works in "
+                      "many games, not all. OptiScaler has to hook the game's "
+                      f"{'FSR 2/3' if upscaler == 'fsr' else 'XeSS'} calls "
+                      "first; a game that links its upscaler statically gives "
+                      "it nothing to hook, and the feeder is the fallback."
+                      + (" On D3D11 it needs a bridged upscaler (FSR on D3D12) "
+                         "in place of DLSS." if g.api == "DX11" else ""))
     if path == OPTI:
         return BETA, ("OptiScaler replaces the upscaler and runs the model over "
                       "its output. The game must already use DLSS; the author "
@@ -421,6 +439,12 @@ def _copy(src: Path, dst: Path, rep: Report, root: Path) -> None:
 
 # ---------------------------------------------------------------- plan
 
+def _opti_needs_dlss(opt: Options) -> bool:
+    """OptiScaler running DLSS in place of the game's FSR/XeSS: the game
+    ships no nvngx_dlss.dll, so the route has to bring one."""
+    return opt.path == OPTI and bool(opt.upscaler) and not opt.native_dlss
+
+
 def plan(g: games.Game, opt: Options) -> list[str]:
     """The steps for this game on the selected path.
 
@@ -436,8 +460,11 @@ def plan(g: games.Game, opt: Options) -> list[str]:
         steps.append("dgVoodoo2 (DX9 -> D3D11)")
     if opt.path == OPTI:
         # OptiScaler replaces ReShade entirely - it is the proxy DLL itself.
-        return ["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll",
-                "OptiScaler configuration"]
+        # A game with DLSS keeps its own nvngx_dlss.dll; one whose FSR/XeSS
+        # calls are being redirected has none, so one goes in.
+        return (["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll"]
+                + (["nvngx_dlss.dll"] if _opti_needs_dlss(opt) else [])
+                + ["OptiScaler configuration"])
     steps.append("ReShade (Vulkan layer)" if g.api == "Vulkan" else "ReShade")
 
     if opt.path == UPSTREAM:
@@ -544,7 +571,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
         pv.blockers.append(f"{g.exe.name} is running. Close the game first.")
 
     # Warnings, worded as install() records them.
-    level, why_rel = reliability(g, opt.path)
+    level, why_rel = reliability(g, opt.path,
+                                 "" if opt.native_dlss else opt.upscaler)
     if level != STABLE:
         pv.warnings.append(f"{level}: {why_rel}")
     hw = hook_warning(root, opt.path)
@@ -688,6 +716,9 @@ def preview(g: games.Game, opt: Options) -> Preview:
             write(optiscaler.INI)
             add(pv.writes, "OptiScaler/* and Licenses/* (the rest of the package)")
         write(DLSSNR)
+        if _opti_needs_dlss(opt) and not (present(DLSS) and opt.keep_game_dlss
+                                          and DLSS not in preinstalled):
+            write(DLSS)
         for r in sorted(preinstalled):
             if present(r):
                 add(pv.writes, r)
@@ -1077,6 +1108,8 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "warnings": rep.warnings,
             "feed_cfg": opt.feed,
             "nr": opt.nr,
+            "native_dlss": opt.native_dlss,
+            "upscaler": opt.upscaler,
             "keep_game_dlss": opt.keep_game_dlss,
             "feeder_prerelease": opt.feeder_prerelease,
             "feeder_tag": opt.feeder_tag,
@@ -1102,7 +1135,9 @@ def options_from_manifest(root: Path) -> Options | None:
     path = data.get("path") or FEEDER
     if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM):
         return None
+    upscaler = str(data.get("upscaler") or "")
     return Options(
+        upscaler=upscaler,
         provider=int(data.get("provider") or 3),
         feed=dict(data.get("feed_cfg") or {}),
         nr=dict(data.get("nr") or {}),
@@ -1110,7 +1145,10 @@ def options_from_manifest(root: Path) -> Options | None:
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
         feeder_tag=str(data.get("feeder_tag") or ""),
-        native_dlss=path in (NATIVE, OPTI, UPSTREAM) or bool(data.get("native_dlss", False)),
+        # OptiScaler used to imply the game's own DLSS; with an upscaler
+        # recorded it is OptiScaler's DLSS in place of the game's FSR/XeSS.
+        native_dlss=(path in (NATIVE, UPSTREAM) or (path == OPTI and not upscaler)
+                     or bool(data.get("native_dlss", False))),
         opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
     )
 
@@ -1249,7 +1287,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     proxy = _proxy_name(g.api, opt.reshade_proxy)
     host = root / HOST_DIR
 
-    level, why_rel = reliability(g, opt.path)
+    level, why_rel = reliability(g, opt.path,
+                                 "" if opt.native_dlss else opt.upscaler)
     if level != STABLE:
         rep.warnings.append(f"{level}: {why_rel}")
 
@@ -1443,10 +1482,41 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 raise InstallError(
                     f"Build {e_['label']} will not run on your card.\n\n{why_}")
 
+            if _opti_needs_dlss(opt):
+                # The game has FSR/XeSS and no DLSS: OptiScaler will call
+                # DLSS in their place, so the runtime has to be here. Same
+                # pick as the ReShade routes - newest unless pinned - and a
+                # copy someone put here by hand is kept, as everywhere else.
+                begin("nvngx_dlss.dll")
+                game_has = (root / DLSS).is_file() and DLSS not in rep.written \
+                    and DLSS not in rep.preinstalled
+                if game_has and opt.keep_game_dlss:
+                    log("      a nvngx_dlss.dll is already here, left untouched")
+                    rep.skipped.append(DLSS)
+                else:
+                    e_ = sources.pick(catalog_["dlss"], opt.dlss)
+                    f_ = dl(e_["url"], f"dlss-{e_['label']}.zip")
+                    _extract(f_, DLSS, root / DLSS, rep, root)
+                    rep.written.append(DLSS)
+                    log(f"      nvngx_dlss {e_['label']} (the game has none: "
+                        f"OptiScaler runs DLSS in place of its "
+                        f"{'FSR' if opt.upscaler == 'fsr' else 'XeSS'})")
+                    rep.notes.append(f"dlss version: {e_['label']}")
+                    rep.components["dlss"] = e_["label"]
+
             begin("OptiScaler configuration")
             optiscaler.enable_nr(root, log, settings=opt.nr)
             for line in optiscaler.describe_nr(opt.nr):
                 rep.notes.append(line)
+            if _opti_needs_dlss(opt):
+                optiscaler.enable_inputs(root, opt.upscaler, g.api, log)
+                rep.notes.append(
+                    f"no DLSS in this game: OptiScaler hooks its "
+                    f"{'FSR 2/3' if opt.upscaler == 'fsr' else 'XeSS'} calls "
+                    f"and runs DLSS in their place, then neural rendering. "
+                    f"Pick the upscaler you would normally pick in the game's "
+                    f"own menu; if nothing changes in game, the game probably "
+                    f"links its upscaler statically - use the feeder route.")
             if g.api == "DX11":
                 # The model refuses to run on a D3D11 device. OptiScaler gets
                 # around it by running the upscaler on D3D12 underneath -

@@ -67,12 +67,16 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         sup.recommended = route
     print(f"route   : {dlss.LABELS[sup.recommended]}")
     for o in sup.options:
-        usable, note = dlss.fit(o, g.api, sup.native_dlss, sm)
+        usable, note = dlss.fit(o, g.api, sup.native_dlss, sm,
+                                upscaler=sup.upscaler)
         print(f"          {'*' if o == sup.recommended else ' '} {o:<11}"
               f"{'' if usable else 'NOT FOR THIS PC - '}{note}")
     if sup.native_dlss:
         print(f"          this game ships its own DLSS "
               f"({', '.join(sup.evidence[:3])})")
+    elif sup.upscaler:
+        print(f"          this game ships {dlss.UPSCALER_NAMES[sup.upscaler]} "
+              f"and no DLSS ({', '.join(sup.upscaler_evidence[:3])})")
     print(f"          {sup.reason}")
     print(f"outlook : {level} - {why_rel}")
     if use_dxvk:
@@ -88,7 +92,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         print(f"renodx   : {local.name if local else 'will download from the mirror'}")
         if ok:
             popt = installer.Options(path=sup.recommended,
-                                     native_dlss=sup.native_dlss, dxvk=use_dxvk)
+                                     native_dlss=sup.native_dlss, dxvk=use_dxvk,
+                                     upscaler=sup.upscaler)
             print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
         return 0
     if not ok:
@@ -102,7 +107,7 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     try:
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
-                                 dxvk=use_dxvk),
+                                 dxvk=use_dxvk, upscaler=sup.upscaler),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:

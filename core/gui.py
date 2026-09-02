@@ -728,6 +728,29 @@ class App:
         except Exception as e:
             messagebox.showerror(APP, f"could not start the player:\n{e}")
 
+    def _open_downloads(self) -> None:
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        d = self.game.install_dir / video.DOWNLOADS
+        d.mkdir(exist_ok=True)
+        webbrowser.open(str(d))
+
+    def _open_file(self) -> None:
+        """A video already on disk, whoever downloaded it: play it here."""
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        f = filedialog.askopenfilename(
+            title="video to play through DLSS 5",
+            filetypes=[("video", "*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.ts *.wmv"),
+                       ("all files", "*.*")])
+        if not f:
+            return
+        try:
+            video.launch(self.game.install_dir, f)
+            self._log(f"> playing {Path(f).name} - F6 toggles neural rendering", "ok")
+        except Exception as e:
+            messagebox.showerror(APP, "could not start the player:\n" + str(e))
+
     def _download_url(self) -> None:
         if self.busy or not self.game or getattr(self.game, "kind", "") != "video":
             return
@@ -743,6 +766,8 @@ class App:
         full = self.fullq.get()
         self._log("")
         self._log(f"=== download: {u[:90]} ===", "head")
+        self._log(f"> saving under {folder / video.DOWNLOADS} - the 'downloads "
+                  f"folder' button opens it")
 
         def work() -> None:
             try:
@@ -1225,6 +1250,10 @@ class App:
                    command=self._play_url).pack(side="left")
         ttk.Button(ui, text="download, then play",
                    command=self._download_url).pack(side="left", padx=(8, 0))
+        ttk.Button(ui, text="open a video file...",
+                   command=self._open_file).pack(side="left", padx=(8, 0))
+        ttk.Button(ui, text="downloads folder",
+                   command=self._open_downloads).pack(side="left", padx=(8, 0))
         self.fullq = tk.BooleanVar(value=False)
         tk.Checkbutton(ui, text="4K", variable=self.fullq, bg=PANEL, fg=DIM,
                        selectcolor=FIELD, activebackground=PANEL,
@@ -1232,7 +1261,8 @@ class App:
         self.urlhint = tk.Label(
             self.urlrow, bg=PANEL, fg=DIM, font=font(8), anchor="w",
             text="a youtube (or any yt-dlp) link: 'play' streams it live in the "
-                 "player; 'download' saves it under the player's downloads "
+                 "player; a file already on disk opens with 'open a video "
+                 "file' (or drop it on the player); 'download' saves it under the player's downloads "
                  "folder first (up to 1440p, or 4K when ticked; the first "
                  "download fetches ffmpeg once, 170 MB). a link on the "
                  "clipboard is picked up by itself.")
@@ -1785,13 +1815,18 @@ class App:
         # card, and preselect the best. The dropdown says so on every line,
         # and the choice stays the user's.
         self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
-        self.route_fit = {o: dlss.fit(o, g.api, self.support.native_dlss, sm)
+        self.route_fit = {o: dlss.fit(o, g.api, self.support.native_dlss, sm,
+                                       upscaler=getattr(self.support, 'upscaler', ''))
                           for o in self.support.options}
         self.cb_route["values"] = [self._route_label(o) for o in self.support.options]
         self.cb_route.current(self.support.options.index(self.support.recommended))
         if self.support.native_dlss:
             self._log(f"> this game ships its own dlss "
                       f"({', '.join(self.support.evidence[:3])})", "ok")
+        elif getattr(self.support, "upscaler", ""):
+            self._log(f"> no dlss, but the game ships {self.support.upscaler.upper()} "
+                      f"({', '.join(self.support.upscaler_evidence[:2])}) - optiscaler "
+                      f"can redirect those calls into dlss, then neural rendering", "ok")
         elif g.api in ("DX11", "DX12", "Unknown") and g.bitness == 64:
             self._log(f"> no dlss files found under {g.folder} - the native and "
                       f"optiscaler routes need the game's own dlss. if this game "
@@ -1906,6 +1941,7 @@ class App:
             dxvk=self.dxvk.get(),
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
+            upscaler=str(getattr(self.support, 'upscaler', '') or ''),
             opti_proxy=("" if self.cb_proxy.current() <= 0
                         else optiscaler.PROXY_NAMES[self.cb_proxy.current() - 1]),
             reshade_proxy=("" if self.cb_rproxy.current() <= 0
