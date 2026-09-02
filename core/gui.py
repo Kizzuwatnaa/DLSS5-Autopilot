@@ -728,6 +728,49 @@ class App:
         except Exception as e:
             messagebox.showerror(APP, f"could not start the player:\n{e}")
 
+    def _open_processed(self) -> None:
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        d = self.game.install_dir / video.PROCESSED
+        d.mkdir(exist_ok=True)
+        webbrowser.open(str(d))
+
+    def _process_file(self) -> None:
+        if self.busy or not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        if not self.game.installed:
+            messagebox.showinfo(APP, "press INSTALL first - the processor uses the "
+                                     "DLSS runtimes the install puts beside the player")
+            return
+        f = filedialog.askopenfilename(
+            title="video to render through DLSS 5",
+            filetypes=[("video", "*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.ts"),
+                       ("all files", "*.*")])
+        if not f:
+            return
+        self.busy = True
+        self.btn_next.config(state="disabled", text="rendering")
+        self.pb["value"] = 0
+        folder = self.game.install_dir
+        scale = self.cb_scale.get()
+        style = list(video.STYLES.values()).index(self.cb_style.get())
+        self._log("")
+        self._log(f"=== render: {Path(f).name} ===", "head")
+        self._log("> this runs the model on every frame; a minute of 1080p takes "
+                  "a minute or two on an RTX 40. the player stays usable meanwhile.")
+
+        def work() -> None:
+            try:
+                out = video.process(
+                    folder, Path(f), scale=scale, style=style,
+                    on_prog=lambda p_, m: self.q.put(("prog", (p_, m))),
+                    on_log=lambda t: self.q.put(("log", t)))
+                self.q.put(("processed", out))
+            except Exception as e:
+                log.exception("rendering a video")
+                self.q.put(("fail", str(e)))
+        threading.Thread(target=work, daemon=True).start()
+
     def _open_downloads(self) -> None:
         if not self.game or getattr(self.game, "kind", "") != "video":
             return
@@ -1258,11 +1301,32 @@ class App:
         tk.Checkbutton(ui, text="4K", variable=self.fullq, bg=PANEL, fg=DIM,
                        selectcolor=FIELD, activebackground=PANEL,
                        activeforeground=TXT, font=font(8), borderwidth=0)            .pack(side="left", padx=(10, 0))
+        # Second line: neural-render a clip on disk and keep the result.
+        pr = tk.Frame(self.urlrow, bg=PANEL)
+        pr.pack(fill="x", padx=12, pady=(0, 8))
+        tk.Label(pr, text="process a file", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
+        ttk.Button(pr, text="pick a video and render it",
+                   command=self._process_file).pack(side="left", padx=(10, 10))
+        tk.Label(pr, text="size", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
+        self.cb_scale = ttk.Combobox(pr, state="readonly", width=14,
+                                     values=list(video.SCALES))
+        self.cb_scale.current(0)
+        self.cb_scale.pack(side="left", padx=(6, 12))
+        tk.Label(pr, text="style", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
+        self.cb_style = ttk.Combobox(pr, state="readonly", width=10,
+                                     values=list(video.STYLES.values()))
+        self.cb_style.current(0)
+        self.cb_style.pack(side="left", padx=(6, 12))
+        ttk.Button(pr, text="processed folder",
+                   command=self._open_processed).pack(side="left")
         self.urlhint = tk.Label(
             self.urlrow, bg=PANEL, fg=DIM, font=font(8), anchor="w",
             text="a youtube (or any yt-dlp) link: 'play' streams it live in the "
                  "player; a file already on disk opens with 'open a video "
                  "file' (or drop it on the player); 'download' saves it under the player's downloads "
+                 "folder; 'process a file' renders a clip through DLSS 5 offline (and DLSS "
+                 "upscales it when a bigger size is picked) into the player's processed "
+                 "folder - the first run fetches the small video2dlssnr tool. downloads "
                  "folder first (up to 1440p, or 4K when ticked; the first "
                  "download fetches ffmpeg once, 170 MB). a link on the "
                  "clipboard is picked up by itself.")
@@ -2097,6 +2161,16 @@ class App:
                     self._show_components(payload)
                 elif kind == "done":
                     self._finish_ok(payload)
+                elif kind == "processed":
+                    self._idle()
+                    self.pblbl.config(text="")
+                    self._log(f"> rendered: {payload}", "ok")
+                    self._log("> opening it in the player - compare with the original "
+                              "side by side if you like", "ok")
+                    try:
+                        video.launch(self.game.install_dir, str(payload))
+                    except Exception as e:
+                        self._log(f"!! could not start the player: {e}", "err")
                 elif kind == "downloaded":
                     self._idle()
                     self.pblbl.config(text="")

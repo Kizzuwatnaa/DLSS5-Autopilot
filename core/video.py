@@ -280,7 +280,181 @@ def launch(folder: Path, target: str = "") -> None:
 FFMPEG_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
 FFMPEG_ASSET = "ffmpeg-master-latest-win64-gpl.zip"
 FFMPEG = "ffmpeg.exe"
+FFPROBE = "ffprobe.exe"
 DOWNLOADS = "downloads"
+
+# Offline processing: DaniilSokolyuk/video2dlssnr, a pure D3D12 command-line
+# tool that takes raw RGBA frames on stdin and returns them neural-rendered
+# (and optionally DLSS-upscaled) on stdout. The "light" release is the exe
+# plus its NGX forwarder only (a quarter of a megabyte); the NVIDIA runtimes
+# it needs are the ones the feeder install already put beside the player,
+# handed over with --dll-dir. ffmpeg decodes and encodes around it, exactly
+# as the project's own nr_video.py does.
+PROCESSOR_API = "https://api.github.com/repos/DaniilSokolyuk/video2dlssnr/releases/latest"
+PROCESSOR_ASSET = "video2dlssnr_release_light.zip"
+PROCESSOR_LATEST = ("https://github.com/DaniilSokolyuk/video2dlssnr/releases/latest/"
+                    "download/video2dlssnr_release_light.zip")
+PROCESSOR_DIR = "video2dlssnr"
+PROCESSOR_EXE = "video2dlssnr.exe"
+PROCESSED = "processed"
+# NR styles as the tool numbers them.
+STYLES = {0: "default", 1: "natural", 2: "cinematic"}
+SCALES = {"native": 1.0, "2x": 2.0, "4K (3840 wide)": 0.0}
+
+
+def has_processor(folder: Path) -> bool:
+    d = tools_dir(folder) / PROCESSOR_DIR
+    return (d / PROCESSOR_EXE).is_file() and (d / "nvngx.dll_dlssnr.dll").is_file()
+
+
+def ensure_processor(folder: Path, on_prog=None, on_log=None) -> Path:
+    """Put video2dlssnr.exe (+ its forwarder) under tools/, fetch ffmpeg too."""
+    folder = Path(folder)
+    say = on_log or (lambda *_: None)
+    d = tools_dir(folder) / PROCESSOR_DIR
+    if not has_processor(folder):
+        url = PROCESSOR_LATEST
+        try:
+            data = sources._json(PROCESSOR_API)
+            url = next((a["browser_download_url"] for a in data.get("assets", [])
+                        if a.get("name") == PROCESSOR_ASSET), url)
+        except Exception:
+            pass
+
+        def p(done: int, total: int) -> None:
+            if on_prog:
+                on_prog(int(done * 100 / total) if total else 0,
+                        f"{PROCESSOR_ASSET} - {net.human(done)}")
+        z = net.download(url, PROCESSOR_ASSET, progress=p)
+        d.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(z) as zf:
+            for n in zf.namelist():
+                base = n.rsplit("/", 1)[-1]
+                if base.lower() in (PROCESSOR_EXE, "nvngx.dll_dlssnr.dll"):
+                    with zf.open(n) as src, open(d / base, "wb") as out:
+                        out.write(src.read())
+        say(f"      video2dlssnr -> {d}")
+    if not (has_ffmpeg(folder) and (tools_dir(folder) / FFPROBE).is_file()):
+        # an older tools/ has ffmpeg without ffprobe: fetch the pair again
+        try:
+            (tools_dir(folder) / FFMPEG).unlink()
+        except OSError:
+            pass
+        ensure_ffmpeg(folder, on_prog=on_prog, on_log=on_log)
+    for dll in ("nvngx_dlssnr.dll", "nvngx_dlss.dll"):
+        if not (folder / dll).is_file():
+            raise RuntimeError(f"{dll} is not beside the player - press INSTALL "
+                               f"first, the processor uses the same runtimes")
+    return d / PROCESSOR_EXE
+
+
+def _probe(folder: Path, src: Path) -> tuple[int, int, float, int]:
+    import subprocess
+    out = subprocess.run(
+        [str(tools_dir(folder) / FFPROBE), "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
+         "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1",
+         str(src)], capture_output=True, text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    d = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    if "width" not in d:
+        raise RuntimeError("ffprobe could not read the video")
+    num, den = (d.get("r_frame_rate", "30/1").split("/") + ["1"])[:2]
+    fps = float(num) / float(den or 1)
+    frames = int(d.get("nb_frames") or 0)
+    if frames <= 0:
+        try:
+            frames = round(float(d.get("duration") or 0) * fps)
+        except ValueError:
+            frames = 0
+    return int(d["width"]), int(d["height"]), fps, frames
+
+
+def process(folder: Path, src: Path, scale: str = "native", style: int = 0,
+            intensity: float = 1.0, on_prog=None, on_log=None) -> Path:
+    """Neural-render a clip on disk into <folder>/processed/<name>_nr.mp4.
+
+    ffmpeg decodes to raw RGBA, video2dlssnr runs DLSS SR (when scaling) and
+    the neural pass on every frame on the GPU, ffmpeg re-encodes with NVENC
+    and copies the audio across. Progress comes from the tool's NRPROG
+    lines on stderr.
+    """
+    import re
+    import subprocess
+    import threading
+    folder = Path(folder)
+    src = Path(src)
+    say = on_log or (lambda *_: None)
+    prog = on_prog or (lambda *_: None)
+    exe = ensure_processor(folder, on_prog=on_prog, on_log=on_log)
+    ffmpeg = str(tools_dir(folder) / FFMPEG)
+    in_w, in_h, fps, total = _probe(folder, src)
+    factor = SCALES.get(scale, 1.0)
+    if factor == 0.0:                      # 4K: pin the width, keep aspect
+        out_w, out_h = 3840, round(in_h * 3840 / in_w)
+    else:
+        out_w, out_h = round(in_w * factor), round(in_h * factor)
+    out_w -= out_w % 2
+    out_h -= out_h % 2
+    out_dir = folder / PROCESSED
+    out_dir.mkdir(exist_ok=True)
+    dst = out_dir / f"{src.stem}_nr{'' if factor == 1.0 else '_' + str(out_w)}.mp4"
+    say(f"      {in_w}x{in_h} @ {fps:.2f} fps, {total or '?'} frames -> "
+        f"{out_w}x{out_h}, style {STYLES.get(style, style)}, intensity {intensity}")
+    say(f"      saving as {dst}")
+
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    vf = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709,format=rgba"
+    dec = [ffmpeg, "-v", "error", "-i", str(src), "-vf", vf, "-f", "rawvideo", "-"]
+    tool = [str(exe), "--nr-video", "--nr-in", f"{in_w}x{in_h}",
+            "--nr-style", str(int(style)), "--nr-intensity", str(float(intensity)),
+            "--nr-ui-correction", "0", "--nr-motion", "1",
+            "--dll-dir", str(folder)]
+    if (out_w, out_h) != (in_w, in_h):
+        tool += ["--nr-width", str(out_w), "--nr-height", str(out_h)]
+    enc = [ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+           "-s", f"{out_w}x{out_h}", "-r", f"{fps}", "-i", "-",
+           "-i", str(src), "-map", "0:v:0", "-map", "1:a:0?",
+           "-c:v", "hevc_nvenc", "-preset", "p5", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest",
+           str(dst)]
+    p1 = subprocess.Popen(dec, stdout=subprocess.PIPE, creationflags=flags)
+    p2 = subprocess.Popen(tool, stdin=p1.stdout, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, cwd=str(exe.parent), creationflags=flags)
+    p1.stdout.close()
+    p3 = subprocess.Popen(enc, stdin=p2.stdout, stderr=subprocess.PIPE, creationflags=flags)
+    p2.stdout.close()
+    errs: list[str] = []
+    rx = re.compile(rb"^NRPROG (\d+) ([\d.]+)")
+
+    def pump() -> None:
+        assert p2.stderr is not None
+        for raw in iter(p2.stderr.readline, b""):
+            m = rx.match(raw)
+            if m:
+                n, f = int(m.group(1)), float(m.group(2))
+                pct = int(n * 100 / total) if total else 0
+                left = (total - n) / f if (total and f > 0) else 0
+                prog(min(pct, 99), f"frame {n}/{total or '?'} at {f:.1f} fps"
+                                   + (f", {int(left // 60)}:{int(left % 60):02d} left"
+                                      if left else ""))
+            else:
+                line = raw.decode("utf8", "replace").strip()
+                if line and not line.startswith("done:"):
+                    errs.append(line)
+    t = threading.Thread(target=pump, daemon=True)
+    t.start()
+    rc3 = p3.wait()
+    p2.wait()
+    p1.wait()
+    t.join(timeout=5)
+    enc_err = (p3.stderr.read().decode("utf8", "replace").strip() if p3.stderr else "")
+    if rc3 != 0 or p2.returncode not in (0, None) or not dst.is_file():
+        raise RuntimeError("processing failed: " + " | ".join((errs[-3:] + [enc_err])[-3:])
+                           or "no output written")
+    prog(100, dst.name)
+    return dst
+
 
 
 DENO_API = "https://api.github.com/repos/denoland/deno/releases/latest"
@@ -390,12 +564,14 @@ def ensure_ffmpeg(folder: Path, on_prog=None, on_log=None) -> Path:
                     + (f" / {net.human(total)}" if total else ""))
     z = net.download(url, FFMPEG_ASSET, progress=p)
     with zipfile.ZipFile(z) as zf:
-        member = next((n for n in zf.namelist() if n.endswith("/bin/ffmpeg.exe")), None)
-        if not member:
-            raise RuntimeError("ffmpeg.exe not in the zip")
-        with zf.open(member) as src, open(dst, "wb") as out:
-            out.write(src.read())
-    say(f"      ffmpeg -> {dst}")
+        for exe_name in (FFMPEG, FFPROBE):
+            member = next((n for n in zf.namelist()
+                           if n.endswith("/bin/" + exe_name)), None)
+            if not member:
+                raise RuntimeError(f"{exe_name} not in the zip")
+            with zf.open(member) as src, open(folder / exe_name, "wb") as out:
+                out.write(src.read())
+    say(f"      ffmpeg + ffprobe -> {folder}")
     return dst
 
 
