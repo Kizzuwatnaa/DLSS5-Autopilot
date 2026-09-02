@@ -546,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.4.3", update.VERSION == "1.4.3", update.VERSION)
+check("version is 1.4.4", update.VERSION == "1.4.4", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1978,6 +1978,42 @@ check("the crash line names the exception and the step",
 _det = " ".join(f_.detail for f_ in _r.findings if f_.level == "bad")
 check("the advice names the dump and another feeder build",
       "dlss5-feed-crash.dmp" in _det and "feeder build" in _det, _det[:200])
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# ------------------------------------------------- 20. their own LumeniteFX
+section("20. a LumeniteFX the person installed is not duplicated")
+_d = Path(tempfile.mkdtemp(prefix="lum_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_theirs = _d / "reshade-shaders" / "Shaders" / "LumeniteFX"
+_theirs.mkdir(parents=True)
+(_theirs / "lumenite_Kernel.fx").write_text("// theirs\n", encoding="utf8")
+_g = games.manual(_d)
+_pv = installer.preview(_g, installer.Options())
+check("the preview says their copy is used",
+      any("already installed" in w for w in _pv.warnings)
+      and not any("lumenite_" in w for w in _pv.writes), str(_pv.warnings))
+_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+check("no second lumenite_Kernel.fx is written",
+      not (_d / "reshade-shaders" / "Shaders" / "lumenite_Kernel.fx").exists()
+      and any("already installed" in n for n in _rep.notes), str(_rep.notes))
+check("the technique is still wired in ReShade.ini",
+      "Lumenite_Kernel@lumenite_Kernel.fx" in (_d / "ReShadePreset.ini").read_text(encoding="utf8"))
+installer.uninstall(_g, on_log=lambda t: None)
+check("their copy survives uninstall", (_theirs / "lumenite_Kernel.fx").read_text(encoding="utf8") == "// theirs\n")
+shutil.rmtree(_d, ignore_errors=True)
+
+# and our own earlier copy is still overwritten, not mistaken for theirs
+_d = Path(tempfile.mkdtemp(prefix="lum_ours_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d)
+installer.install(_g, installer.Options(), on_log=lambda t: None)
+_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+check("our own copy from the first install is refreshed, not skipped",
+      not any("already installed" in n for n in _rep.notes), str(_rep.notes))
+installer.uninstall(_g, on_log=lambda t: None)
+check("uninstall removes our lumenite files",
+      not list((_d / "reshade-shaders").rglob("lumenite_*")) if (_d / "reshade-shaders").is_dir() else True)
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

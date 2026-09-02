@@ -707,7 +707,10 @@ def preview(g: games.Game, opt: Options) -> Preview:
         write(rel(SHADERS, FEEDER_FX))
         if not x64:
             add(pv.writes, rel(host, FEEDER_HOST))
-        if opt.provider in (3, 4):
+        if opt.provider in (3, 4) and foreign_lumenite(root, _previously_ours(root)):
+            pv.warnings.append("LumeniteFX is already installed here - your "
+                               "copy is used, nothing duplicated")
+        elif opt.provider in (3, 4):
             listed = False
             for m in _cached_zip_members("LumeniteFX-mainline.zip") or []:
                 parts = m.split("/")[1:]        # drop the archive root
@@ -829,6 +832,20 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
 
     if opt.provider in (3, 4):
         begin("LumeniteFX (motion vectors)")
+        theirs = foreign_lumenite(root, rep.preinstalled)
+        if theirs:
+            # ReShade loads every .fx under reshade-shaders, whatever the
+            # subfolder; a second lumenite_Kernel.fx beside theirs is two
+            # copies of the same technique and a red error in the overlay.
+            # Theirs wins - it is their install, and the technique name
+            # in ReShade.ini matches by file name, not by path.
+            rel_t = theirs.relative_to(root)
+            rep.notes.append(f"LumeniteFX is already installed at {rel_t.parent} "
+                             f"- your copy is used, nothing duplicated")
+            rep.skipped.append("LumeniteFX (already installed)")
+            log(f"      already installed at {rel_t.parent} - using your copy, "
+                f"no duplicate")
+            return
         z = dl(sources.LUMENITE_ZIP, "LumeniteFX-mainline.zip")
         w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",))
         w += net.extract_tree(z, "Shaders/include", str(INCLUDE), root,
@@ -841,6 +858,34 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
 
 
 # ---------------------------------------------------------------- install
+
+LUMENITE_MARKER = "lumenite_Kernel.fx"
+
+
+def foreign_lumenite(root: Path, preinstalled=()) -> Path | None:
+    """A LumeniteFX the person installed themselves, anywhere under
+    reshade-shaders - or None. A copy an earlier install of OURS wrote (in
+    the manifest) does not count: that one is overwritten as usual."""
+    base = root / "reshade-shaders"
+    try:
+        hits = sorted(base.rglob(LUMENITE_MARKER))
+    except OSError:
+        return None
+    ours = {str(Path(p)).replace("\\", "/").lower() for p in preinstalled}
+    for h in hits:
+        try:
+            rel = str(h.relative_to(root)).replace("\\", "/").lower()
+        except ValueError:
+            continue
+        if rel in ours:
+            continue
+        if h.parent == root / SHADERS and not preinstalled:
+            # Same place we would write to, and no record of ours: theirs.
+            return h
+        if h.parent != root / SHADERS:
+            return h
+    return None
+
 
 def _previous_manifest(root: Path) -> dict | None:
     """The install record already in this folder, ours or an older release's."""
