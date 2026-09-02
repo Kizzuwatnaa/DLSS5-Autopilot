@@ -17,5 +17,5 @@ renodx/
 # Local settings
 settings.json
 
-# Claude Code session files
+# Local editor / tooling state
 .claude/
