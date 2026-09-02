@@ -546,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.4.2", update.VERSION == "1.4.2", update.VERSION)
+check("version is 1.4.3", update.VERSION == "1.4.3", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1954,6 +1954,30 @@ check("the install warns about the other hook",
       any("another DLSS hook" in w for w in _rep.warnings), str(_rep.warnings))
 installer.uninstall(_g, on_log=lambda t: None)
 check("the other mod's file is left alone", (_d / "dlss-enabler.dll").is_file())
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# ------------------------------------------------- 19. feeder crash record
+section("19. the feeder's own crash record is read")
+_d = _diag_dir("diag_crash_", feed=(
+    "22:31:54.185  [feed32] frame 1 delivered (1920x1080, reset=0)\n"
+    "22:31:54.235  [feed32] frame 3 delivered (1920x1080, reset=0)\n"
+    "22:31:54.839  ### CRASH RECORDED ###  exception 0xC0000005 at 00C5ED39 in "
+    "V:\\Games\\Bayonetta\\Bayonetta.exe; this add-on was last doing: "
+    "preparing work-resolution inputs\n"
+    "22:31:55.613  [feed32] crash dump written: V:\\Games\\Bayonetta\\dlss5-feed-crash.dmp "
+    "-- attach it to the issue with this log\n"), reshade=(
+    'INFO | Registered add-on "DLSS 5 Feed (32-bit) 0.12.0" v0.0.0.0\n'
+    "INFO | Redirecting IDXGIFactory::CreateSwapChain(...)\n"))
+_r = diagnose.analyse(_d)
+check("a recorded crash is not reported as Working",
+      not _r.verdict.startswith("Working") and "crashed" in _r.verdict, _r.verdict)
+_bad = _levels(_r, "bad")
+check("the crash line names the exception and the step",
+      any("0xC0000005" in b and "work-resolution" in b for b in _bad), str(_bad))
+_det = " ".join(f_.detail for f_ in _r.findings if f_.level == "bad")
+check("the advice names the dump and another feeder build",
+      "dlss5-feed-crash.dmp" in _det and "feeder build" in _det, _det[:200])
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

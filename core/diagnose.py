@@ -529,6 +529,25 @@ def analyse(install_dir: Path) -> Report:
 
     # --- the decisive part, from whichever log has it --------------------
     joined = "\n".join(x for x in (text, htext, rtext) if x)
+    # The feeder's own crash handler: "### CRASH RECORDED ###  exception
+    # 0xC0000005 at ... in Game.exe; this add-on was last doing: <step>" and
+    # a dump path on the next line. Frames may have been delivered just
+    # before, so this has to be read before "Working." is declared.
+    rec = re.search(r"### CRASH RECORDED ###\s+exception (0x[0-9A-Fa-f]+)[^\n]*?"
+                    r"last doing: ([^\n]+)", joined)
+    if rec:
+        dump = re.search(r"crash dump written: ([^\n]+?)\s+--", joined)
+        rep.add(BAD, f"The feed recorded a crash ({rec.group(1)}) while "
+                     f"{rec.group(2).strip()}.",
+                "That is the feeder itself going down, not the install. Two "
+                "things to try from the install page: another 'feeder build' "
+                "from the list (the stable 0.7.0 is the long-tested 32-bit "
+                "path), and a lower work resolution. Then report it to the "
+                "DLSS5-Feeder project with this log"
+                + (f" and the dump ({dump.group(1).strip()}; zip it, it "
+                   f"shrinks to a few MB)" if dump else "") + ".")
+        rep.verdict = "The feed crashed after starting - a feeder bug; try another feeder build."
+        return rep
     crash = re.search(r"CreateFeature raised exception (0x[0-9A-Fa-f]+)", joined)
     ready = re.search(r"feature ready[:\s]", joined)
     delivered = re.findall(r"frame (\d+) (?:delivered|evaluated)", joined)
