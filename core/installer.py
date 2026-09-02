@@ -43,6 +43,51 @@ FEEDER_FX = "DLSS5_Feed.fx"
 RENODX = "renodx-dlss5.addon64"
 # ShortFuse's add-on - the "SF" build - which hooks D3D9/D3D11/D3D12 itself.
 RENODX_SF = "renodx-dlss.addon64"
+
+# Other hooks on the same NGX entry points. A game with one of these plus
+# our add-on gets two things rewriting the same calls: flicker, frame-gen
+# multipliers greyed out, or nothing at all (Cyberpunk 2077 with OptiScaler
+# and a frame-gen unlocker, issue #3). Not refused - stated.
+OTHER_NGX_HOOKS = ("OptiScaler.ini", "nvngx.ini", "fakenvapi.ini",
+                   "dlss-enabler.dll", "dlss-enabler-upscaler.dll",
+                   "nvngx-wrapper.dll", "dlssg_to_fsr3_amd_is_better.dll",
+                   "dlssg_to_fsr3.ini", "nvngx.dll_dlssnr.dll")
+
+
+def other_ngx_hooks(root: Path) -> list[str]:
+    """Files in the folder that belong to another DLSS/NGX hook."""
+    found: list[str] = []
+    try:
+        names = {f.name.lower(): f.name for f in root.iterdir() if f.is_file()}
+    except OSError:
+        return found
+    for n in OTHER_NGX_HOOKS:
+        if n.lower() in names:
+            found.append(names[n.lower()])
+    # A ReShade add-on we did not write - another RenoDX build, say - is
+    # loaded by ReShade regardless and hooks the same swap chain.
+    for low, orig in names.items():
+        if low.endswith(".addon64") and low not in (
+                "dlss5-feed.addon64", "dlss5-bridge.addon64",
+                RENODX.lower(), RENODX_SF.lower()):
+            found.append(orig)
+    return found
+
+
+def hook_warning(root: Path, path: str) -> str:
+    """One sentence, or "" when the folder is clean."""
+    if path == OPTI:
+        found = [n for n in other_ngx_hooks(root) if n.lower() != "optiscaler.ini"
+                 and n.lower() != "nvngx.dll_dlssnr.dll"]
+    else:
+        found = other_ngx_hooks(root)
+    if not found:
+        return ""
+    return (f"another DLSS hook is already in this folder ({', '.join(found[:5])}"
+            f"{', ...' if len(found) > 5 else ''}). Two things rewriting the "
+            f"same NGX calls means flicker, greyed-out frame-gen multipliers "
+            f"or nothing happening. If it misbehaves, remove that mod (or "
+            f"uninstall this) and try one at a time.")
 DLSSNR = "nvngx_dlssnr.dll"
 DLSS = "nvngx_dlss.dll"
 HOST_DIR = "host64"
@@ -485,6 +530,9 @@ def preview(g: games.Game, opt: Options) -> Preview:
     level, why_rel = reliability(g, opt.path)
     if level != STABLE:
         pv.warnings.append(f"{level}: {why_rel}")
+    hw = hook_warning(root, opt.path)
+    if hw:
+        pv.warnings.append(hw)
     ac = anticheat.detect(root, g.folder)
     if ac.present:
         pv.warnings.append(
@@ -1165,6 +1213,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     except (OSError, ValueError):
         pass
 
+    hw = hook_warning(root, opt.path)
+    if hw:
+        rep.warnings.append(hw)
+        log(f"      !! {hw.split('.')[0]}")
     ac = anticheat.detect(root, g.folder)
     if ac.present:
         # Not refused: single-player-only users sometimes want this anyway,

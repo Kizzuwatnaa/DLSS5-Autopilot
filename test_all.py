@@ -546,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.4.1", update.VERSION == "1.4.1", update.VERSION)
+check("version is 1.4.2", update.VERSION == "1.4.2", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1908,6 +1908,53 @@ try:
     check("xbox / folder / emulator scans survive it", not _errs, str(_errs))
 finally:
     _pl.Path.is_dir = _orig_is_dir
+
+
+# ------------------------------------------------- 18. other NGX hooks
+section("18. another DLSS hook in the folder is called out")
+_d = _diag_dir("diag_hooks_", reshade=(
+    'INFO | Registered add-on "RenoDX" v0.0.0.0\n'
+    'INFO | Registered add-on "RenoDX DLSS" v0.0.0.0\n'
+    'INFO | Registered add-on "Auto Reload" v16.2.1.0\n'
+    "INFO | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(...)\n"), path="native")
+(_d / "OptiScaler.ini").write_text("[Upscalers]\n", encoding="utf8")
+(_d / "dlssg_to_fsr3_amd_is_better.dll").write_bytes(b"MZ")
+(_d / "renodx-cp2077.addon64").write_bytes(b"MZ")
+_r = diagnose.analyse(_d)
+_bad = _levels(_r, "bad")
+_warn = _levels(_r, "warn")
+check("our add-on missing from the loaded list is a failure",
+      any("did not load" in b for b in _bad), str(_bad))
+check("other RenoDX add-ons are named",
+      any("Other ReShade add-ons" in w and "RenoDX" in w for w in _warn), str(_warn))
+check("OptiScaler / frame-gen files are named",
+      any("Another DLSS hook" in w and "OptiScaler.ini" in w for w in _warn), str(_warn))
+_hooks = installer.other_ngx_hooks(_d)
+check("other_ngx_hooks sees the ini, the dll and the foreign add-on",
+      "OptiScaler.ini" in _hooks and "dlssg_to_fsr3_amd_is_better.dll" in _hooks
+      and "renodx-cp2077.addon64" in _hooks and "dlss5-feed.addon64" not in _hooks,
+      str(_hooks))
+check("the OptiScaler route ignores its own ini",
+      "OptiScaler.ini" not in installer.hook_warning(_d, "optiscaler")
+      and "dlssg" in installer.hook_warning(_d, "optiscaler"))
+check("a clean folder gives no warning",
+      installer.hook_warning(Path(tempfile.mkdtemp(prefix="clean_")), "native") == "")
+shutil.rmtree(_d, ignore_errors=True)
+
+# and the install itself says so
+_d = Path(tempfile.mkdtemp(prefix="hooks_install_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "dlss-enabler.dll").write_bytes(b"MZ")
+_g = games.manual(_d)
+_pv = installer.preview(_g, installer.Options())
+check("the preview warns about the other hook",
+      any("another DLSS hook" in w for w in _pv.warnings), str(_pv.warnings))
+_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+check("the install warns about the other hook",
+      any("another DLSS hook" in w for w in _rep.warnings), str(_rep.warnings))
+installer.uninstall(_g, on_log=lambda t: None)
+check("the other mod's file is left alone", (_d / "dlss-enabler.dll").is_file())
+shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")
 if FAILS:

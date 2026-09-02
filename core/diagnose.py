@@ -329,6 +329,21 @@ def analyse(install_dir: Path) -> Report:
                 pass
             break
 
+    # Another NGX hook in the folder is a conflict whatever the logs say.
+    try:
+        from . import installer as _inst
+        hooks = _inst.other_ngx_hooks(install_dir) if rep.route != "optiscaler" \
+            else [n for n in _inst.other_ngx_hooks(install_dir)
+                  if n.lower() not in ("optiscaler.ini", "nvngx.dll_dlssnr.dll")]
+    except Exception:
+        hooks = []
+    if hooks:
+        rep.add(WARN, "Another DLSS hook shares this folder: " + ", ".join(hooks[:5]),
+                "OptiScaler, a frame-gen unlocker or another RenoDX build "
+                "rewrites the same NGX calls as the DLSS 5 add-on. Flicker "
+                "and greyed-out frame-gen multipliers are the usual result. "
+                "Try one at a time.")
+
     if not (text or rtext or htext):
         return _explain_no_log(install_dir, man, rep, stale_reshade)
 
@@ -363,6 +378,39 @@ def analyse(install_dir: Path) -> Report:
         # bridge each establish a DLSS contract of their own, so both at once
         # is not a slow path - it is two things fighting, and the game can die
         # before it ever creates a swapchain.
+        # Did OUR add-on load? Everything downstream assumes it did. On the
+        # renodx route it is ShortFuse's "RenoDX DLSS"; on the others the
+        # "DLSS 5 Neural Rendering" add-on. A folder full of other RenoDX
+        # add-ons (an HDR mod, another DLSS build) shows up here as a list
+        # of things that loaded while ours is missing - and the person reads
+        # "add-ons loaded" as "working" (Cyberpunk 2077, issue #3).
+        want = "RenoDX DLSS" if rep.route == "renodx" else "DLSS 5 Neural Rendering"
+        ours = [n for n in loaded if n.strip().lower() == want.lower()]
+        # The feed log names the add-on it found; that counts as loaded too
+        # (ReShade.log can be truncated to the tail that fits).
+        if not ours and "DLSS 5 add-on: renodx" in (text or ""):
+            ours = [want]
+        others = [n for n in loaded if n not in ours and "Feed" not in n
+                  and "Bridge" not in n]
+        # With the feed loaded, the feed's own log is the judge of the add-on
+        # (it names it, or says it is missing); this check is for the routes
+        # where nothing else would notice.
+        if loaded and not ours and rep.route != "optiscaler"                 and not any("Feed" in n for n in loaded):
+            rep.add(BAD, f"The '{want}' add-on did not load.",
+                    "ReShade registered " + (", ".join(others) if others else
+                    "nothing else") + " but not the DLSS 5 add-on this route "
+                    "needs. Check the .addon64 is still in the folder "
+                    "(antivirus), then reinstall.")
+        if ours and any(n.strip().lower() == "renodx dlss" for n in others):
+            rep.add(BAD, "Two DLSS add-ons are loaded: ours and ShortFuse's "
+                         "renodx-dlss.",
+                    "Both hook the same NGX calls. Keep one: uninstall here, "
+                    "delete the other .addon64, install again.")
+        elif others:
+            rep.add(WARN, "Other ReShade add-ons are loaded: " + ", ".join(others),
+                    "They share the swap chain with the DLSS 5 add-on. If the "
+                    "picture flickers or nothing happens, move their .addon64 "
+                    "files out of the folder and test with ours alone.")
         feeder_on = any("Feed" in n for n in loaded)
         bridge_on = any("Bridge" in n for n in loaded)
         if feeder_on and bridge_on:
