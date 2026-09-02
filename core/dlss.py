@@ -180,7 +180,7 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None) -> tuple[bool, 
     if route == BRIDGE:
         if api == "Vulkan":
             return True, "mirrors the game's DLSS onto D3D12"
-        return True, "author has stopped development"
+        return True, "mirrors the game's DLSS onto D3D12 - maintained, every release tested on D3D11 and Vulkan"
     if route == FEEDER:
         if api in ("Vulkan", "OpenGL") or not native_dlss:
             return True, "always DLAA, shader motion vectors"

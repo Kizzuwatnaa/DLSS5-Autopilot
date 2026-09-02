@@ -151,8 +151,23 @@ class App:
     def _build(self) -> None:
         r = self.root
         r.title(APP)
+        r.after(0, lambda: _dark_titlebar(r))
+        # Our own icon in the title bar and the taskbar, not Python's feather.
+        try:
+            import base64
+            from .icon_png import ICON_PNG_B64
+            self._icon = tk.PhotoImage(data=base64.b64decode(ICON_PNG_B64))
+            r.iconphoto(True, self._icon)
+        except Exception:
+            pass
         r.geometry("1060x830")
         r.minsize(980, 720)
+        # Open filling the screen: the three-column layout reads better with
+        # room, and a small window in a corner looked like a dialog box.
+        try:
+            r.state("zoomed")
+        except tk.TclError:
+            pass
         r.configure(bg=BG)
         self._style()
 
@@ -2186,6 +2201,38 @@ class App:
                   "logs and tells you what happened.", "head")
         self.btn_remove.config(state="normal")
         self.status.config(text="install complete")
+
+
+def _dark_titlebar(win) -> None:
+    """Paint the Windows title bar in the app's own colours.
+
+    Tk draws only the client area; Windows draws the frame in the system
+    theme, so a dark app came with a white strip on top. DWM attributes
+    since Windows 10 20H1 (dark mode) and Windows 11 (caption / text
+    colour) fix that; on anything older the calls fail and nothing changes.
+    """
+    try:
+        import ctypes
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        if not hwnd:
+            return
+        dwm = ctypes.windll.dwmapi
+
+        def colorref(hexcolour: str) -> int:
+            r, g, b = (int(hexcolour[i:i + 2], 16) for i in (1, 3, 5))
+            return (b << 16) | (g << 8) | r
+
+        on = ctypes.c_int(1)
+        dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), 4)      # dark mode
+        cap = ctypes.c_int(colorref(RAIL))
+        dwm.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(cap), 4)     # caption
+        txt = ctypes.c_int(colorref(BODY))
+        dwm.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(txt), 4)     # text
+        bdr = ctypes.c_int(colorref(LINE))
+        dwm.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(bdr), 4)     # border
+    except Exception:
+        pass
 
 
 def run() -> int:

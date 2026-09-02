@@ -76,6 +76,7 @@ jobs:
           python -m PyInstaller --onefile --windowed --noupx `
             --name dlss5-autopilot `
             --version-file version_info.txt `
+            --icon dlss5-autopilot.ico `
             --distpath dist `
             --noconfirm `
             dlss5_autopilot.py
