@@ -17,5 +17,3 @@ renodx/
 # Local settings
 settings.json
 
-# Local editor / tooling state
-.claude/
