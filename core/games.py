@@ -21,6 +21,56 @@ MARKER_FILES = ("dlss5-feed.addon64", "dlss5-feed.addon32",
                 "dlss5-bridge.addon64", "dlss5-autopilot.json",
                 "dlss5kur-kurulum.json", "dlss5-installer.json")
 
+# What to tell someone whose Xbox / Game Pass game we cannot even read.
+# One sentence, shared with the installer so both places say the same thing.
+XBOX_HINT = ("Xbox app: open the game's page, Manage > Files > Enable mods, "
+             "then rescan - Windows hides these files from everything else "
+             "until then.")
+
+# Folder names Windows keeps under its own ownership for store games. Exact
+# segment match on purpose: ModifiableWindowsApps is the one that IS meant
+# to be touched and must not be caught by a substring test.
+_LOCKED_STORE_DIRS = ("xboxgames", "windowsapps")
+
+
+def is_locked_store_path(path: Path) -> bool:
+    r"""Is this path inside C:\XboxGames or a WindowsApps folder?
+
+    Says nothing about whether it is readable - a game that has had "Enable
+    mods" applied stays under XboxGames and works fine. It only tells the
+    caller that a permission failure here has a known, non-admin fix.
+    """
+    try:
+        parts = Path(path).parts
+    except TypeError:
+        return False
+    return any(p.lower() in _LOCKED_STORE_DIRS for p in parts)
+
+
+def _xbox_locked(g: "Game") -> bool:
+    r"""Sets the Enable-mods error when a store-owned executable is unreadable.
+
+    Game Pass installs under C:\XboxGames\<Game>\Content belong to the system:
+    a normal user cannot open the exe for reading, so every scan logged
+    "Permission denied" as a warning and the game showed a cryptic header
+    error. The fix is a switch in the Xbox app, not "run as administrator",
+    and taking ownership of the folder for the person is not our business.
+    os.access() is not used because on Windows it only looks at the read-only
+    attribute, not the ACL that is actually in the way.
+    """
+    if g.exe is None or not is_locked_store_path(g.exe):
+        return False
+    try:
+        with open(g.exe, "rb") as f:
+            f.read(1)
+    except PermissionError:
+        g.error = XBOX_HINT
+        log.write(f"{g.name}: {g.exe} is not readable yet - {XBOX_HINT}")
+        return True
+    except OSError:
+        return False
+    return False
+
 
 @dataclass
 class Game:
@@ -35,6 +85,7 @@ class Game:
     error: str = ""
     emu: object | None = None    # emulators.Profile, when applicable
     install_root: Path | None = None   # folder an earlier install wrote to
+    kind: str = "game"             # "game" or "video" (a player, no depth)
 
     @property
     def install_dir(self) -> Path:
@@ -331,6 +382,12 @@ def scan_xbox() -> list[Game]:
     Only ModifiableWindowsApps is readable and writable; the protected
     WindowsApps copy cannot be modified at all, so listing it would offer
     installs that can never work.
+
+    XboxGames is listed even though its Content folders are system-owned
+    until the person flips "Enable mods" in the Xbox app: `enrich` turns the
+    resulting permission error into that instruction, and after the switch
+    (or when the game moved to a folder of their choosing) the same entry
+    reads and installs like any other.
     """
     out: list[Game] = []
     roots = []
@@ -584,6 +641,10 @@ def enrich(g: Game) -> Game:
             g.candidates = pe.find_game_exes(g.folder) or [g.exe]
         _prefer_real_exe(g)
         adopt_previous_install(g)
+        if _xbox_locked(g):
+            # Keep the game in the list with its executable, so the detail
+            # card can show the fix; there is nothing else to read here.
+            return g
         g.bitness = pe.exe_bitness(g.exe)
         g.api, g.api_why = pe.detect_api(g.exe)
         if g.emu is None:

@@ -19,7 +19,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg, games, gpu,
+from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg,
+               games, gpu, profiles, video,
                installer, log, optiscaler, prefs, reshade_ini, selfupdate,
                sources, update)
 
@@ -49,6 +50,9 @@ MONO = ("Cascadia Mono", "Consolas", "Courier New")
 def font(size: int = 10, weight: str = "normal") -> tuple:
     return (MONO[0], size, weight)
 
+
+FEEDER_CHOICES = ("stable - newest release",
+                  "newest pre-release")
 
 STEPS = (("architecture", "what to install for"),
          ("game", "pick from your library"),
@@ -398,6 +402,32 @@ class App:
                      justify="left", wraplength=660, font=font(9))\
                 .pack(anchor="w", padx=22, pady=(2, 11))
 
+        # Video is the same feed with no depth buffer: a D3D11 player set up
+        # once, after which any file or a YouTube link plays through DLSS 5.
+        vcard = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        vcard.pack(fill="x", pady=(10, 0))
+        vi = tk.Frame(vcard, bg=PANEL)
+        vi.pack(fill="x", padx=16, pady=12)
+        vtop = tk.Frame(vi, bg=PANEL)
+        vtop.pack(fill="x")
+        tk.Label(vtop, text="video and youtube", bg=PANEL, fg=TXT,
+                 font=font(10, "bold")).pack(side="left")
+        tk.Label(vtop, text="new", bg=PANEL, fg=AMBER, font=font(8))\
+            .pack(side="left", padx=10)
+        ttk.Button(vtop, text="set up the video player",
+                   command=self._video_setup).pack(side="right")
+        self.videolbl = tk.Label(
+            vi, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
+            wraplength=660,
+            text="a portable MPC-HC in a folder of your choice, with dlss5 fed "
+                 "into it. play any file, or File > Open URL with a youtube "
+                 "link - it streams live, nothing is downloaded. F6 switches "
+                 "neural rendering on and off while it plays. tested: 60 fps, "
+                 "the feed costs about 5% of the frame.")
+        self.videolbl.pack(anchor="w", pady=(4, 0))
+        vi.bind("<Configure>",
+                lambda e: self.videolbl.configure(wraplength=max(380, e.width - 10)))
+
         # What the publishers ship right now - the tool always fetches these.
         self.boardlbl = tk.Label(f, text="", bg=BG, fg=FAINT, font=font(8),
                                  anchor="w", justify="left", wraplength=680)
@@ -513,6 +543,218 @@ class App:
                 self.tree.selection_set(iid)
                 self.tree.see(iid)
                 break
+
+    # ------------------------------------------------------------- video
+    def _video_setup(self) -> None:
+        """Fetch a portable player into a folder, then treat it as a game."""
+        if self.busy:
+            return
+        known = video.known()
+        folder = known.install_dir if known else video.default_dir()
+        if not known:
+            if not messagebox.askyesno(
+                    APP, f"the video player ({video.PLAYER}, portable) goes into:\n\n"
+                         f"{folder}\n\nnothing is written anywhere else. ok?\n\n"
+                         f"'no' lets you pick another folder."):
+                d = filedialog.askdirectory(
+                    title="folder for the video player (a new, empty one is fine)")
+                if not d:
+                    return
+                folder = Path(d)
+        self.busy = True
+        self.game = None
+        self._show(3)
+        self.gamelbl.config(text=f"Video player ({video.PLAYER})")
+        self.btn_next.config(state="disabled", text="preparing")
+        self.btn_back.config(state="disabled")
+        self.pb["value"] = 0
+        self._log("")
+        self._log("=== video player ===", "head")
+        self._log(f"> fetching {video.PLAYER} and yt-dlp into {folder}")
+
+        def work() -> None:
+            try:
+                g = video.prepare(
+                    folder,
+                    on_prog=lambda p_, m: self.q.put(("prog", (p_, m))),
+                    on_log=lambda t: self.q.put(("log", t)))
+                self.q.put(("video_ready", g))
+            except Exception:
+                log.exception("setting up the video player")
+                self.q.put(("fail", traceback.format_exc()))
+        threading.Thread(target=work, daemon=True).start()
+
+    # ------------------------------------------------- profiles / preview
+    def _refresh_profiles(self, select: str = "") -> None:
+        names = ["(none)"] + profiles.list_profiles()
+        self.cb_profile["values"] = names
+        self.cb_profile.current(names.index(select) if select in names else 0)
+
+    def _on_profile(self, _e=None) -> None:
+        """Load a profile into the visible settings.
+
+        The widgets stay the source of truth: the profile only moves them,
+        so anything changed afterwards still wins at install time. Values
+        with no widget of their own (extra feed keys) ride along in
+        self.profile_extra and are merged underneath the widgets' values.
+        """
+        name = self.cb_profile.get()
+        self.profile_extra = None
+        if name == "(none)":
+            return
+        try:
+            opt = profiles.load(name)
+        except Exception as e:
+            messagebox.showerror(APP, str(e))
+            return
+        self.profile_extra = opt
+        if self.support and opt.path in self.support.options:
+            self.cb_route.current(self.support.options.index(opt.path))
+            self._apply_route(opt.path)
+        elif opt.path != getattr(self, "route", None):
+            self._log(f"!! profile wants the {opt.path} route, which this game "
+                      f"does not offer - keeping {getattr(self, 'route', '?')}",
+                      "warn")
+        if opt.provider in reshade_ini.PROVIDERS:
+            self.provider.set(opt.provider)
+            try:
+                self.cb_prov.current(list(reshade_ini.PROVIDERS).index(opt.provider))
+            except Exception:
+                pass
+        wr = opt.feed.get("work_resolution")
+        ws = opt.nr.get("WorkingScale")
+        if getattr(self, "route", None) == dlss.OPTI and ws is not None:
+            self.workres.set(int(round(float(ws) * 100)))
+        elif wr is not None:
+            self.workres.set(int(wr))
+        self._on_workres()
+        self.keep_dlss.set(bool(opt.keep_game_dlss))
+        self.dxvk.set(bool(opt.dxvk))
+        try:
+            pr = int(opt.feed.get("preset", 0) or 0)
+            self.cb_preset.current(list(feedcfg.PRESETS).index(pr))
+        except Exception:
+            pass
+        self._log(f"> profile '{name}': " + ", ".join(profiles.describe(opt)), "ok")
+
+    def _save_profile(self) -> None:
+        from tkinter import simpledialog
+        name = simpledialog.askstring(APP, "profile name (these settings, for "
+                                           "any game):", parent=self.root)
+        if not name:
+            return
+        try:
+            p = profiles.save(name.strip(), self._opts())
+        except Exception as e:
+            messagebox.showerror(APP, str(e))
+            return
+        self._refresh_profiles(name.strip())
+        self._log(f"> profile saved: {p.name} - pick it from the list on any "
+                  f"game", "ok")
+
+    def _delete_profile(self) -> None:
+        name = self.cb_profile.get()
+        if name == "(none)" or profiles.is_builtin(name):
+            messagebox.showinfo(APP, "pick one of your own profiles to delete")
+            return
+        if messagebox.askyesno(APP, f"delete the profile '{name}'?"):
+            profiles.delete(name)
+            self._refresh_profiles()
+
+    def _preview(self) -> None:
+        """Say what INSTALL would do, without doing it."""
+        if not self.game or self.busy:
+            return
+        try:
+            pv = installer.preview(self.game, self._opts())
+        except Exception as e:
+            log.exception("preview")
+            self._log(f"!! preview failed: {e}", "err")
+            return
+        self._log("")
+        self._log("=== what will happen ===", "head")
+        for line in installer.preview_lines(pv):
+            tag = ("err" if line.startswith("cannot") else
+                   "warn" if line.startswith(("warning", "outside")) else "")
+            self._log(f"   {line}", tag)
+        self._log("   nothing is downloaded or written by this preview")
+
+    def _compare(self) -> None:
+        if not self.game:
+            return
+        try:
+            from . import compareui   # imports gui's colours: not at top level
+            compareui.show(self.root, self.game.install_dir, self.game.name)
+        except Exception as e:
+            log.exception("compare window")
+            messagebox.showerror(APP, f"could not open the comparison:\n{e}")
+
+    def _open_player(self) -> None:
+        if self.game and getattr(self.game, "kind", "") == "video":
+            try:
+                video.launch(self.game.install_dir)
+            except Exception as e:
+                messagebox.showerror(APP, f"could not start the player:\n{e}")
+
+    def _play_url(self) -> None:
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        u = self.url.get().strip() or video.clipboard_url(self.root)
+        if not video.looks_like_url(u):
+            messagebox.showinfo(APP, "paste a link first (https://...)")
+            return
+        if not self.game.installed:
+            self._log("!! dlss5 is not installed into the player yet - press "
+                      "INSTALL first, the link still plays but plain", "warn")
+        self.url.set(u)
+        try:
+            video.play_url(self.game.install_dir, u)
+            self._log(f"> playing {u[:90]}", "ok")
+        except Exception as e:
+            messagebox.showerror(APP, f"could not start the player:\n{e}")
+
+    def _download_url(self) -> None:
+        if self.busy or not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        u = self.url.get().strip() or video.clipboard_url(self.root)
+        if not video.looks_like_url(u):
+            messagebox.showinfo(APP, "paste a link first (https://...)")
+            return
+        self.url.set(u)
+        self.busy = True
+        self.btn_next.config(state="disabled", text="downloading")
+        self.pb["value"] = 0
+        folder = self.game.install_dir
+        full = self.fullq.get()
+        self._log("")
+        self._log(f"=== download: {u[:90]} ===", "head")
+
+        def work() -> None:
+            try:
+                if not video.has_ffmpeg(folder):
+                    self.q.put(("log", "      fetching ffmpeg once (170 MB) - "
+                                       "youtube only serves video and audio "
+                                       "apart, it joins them"))
+                    video.ensure_ffmpeg(
+                        folder,
+                        on_prog=lambda p_, m: self.q.put(("prog", (p_, m))),
+                        on_log=lambda t: self.q.put(("log", t)))
+                f_ = video.download(
+                    folder, u, full_quality=full,
+                    on_prog=lambda p_, m: self.q.put(("prog", (p_, m))),
+                    on_log=lambda t: self.q.put(("log", t)))
+                self.q.put(("downloaded", f_))
+            except Exception as e:
+                log.exception("downloading a video")
+                self.q.put(("fail", str(e)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _toggle_nr(self) -> None:
+        """Send the add-on's toggle key to the running player."""
+        if not video.toggle_nr():
+            messagebox.showinfo(APP, "the player is not running - open it and "
+                                     "start a video first. F6 inside the "
+                                     "player does the same thing.")
 
     def _scan(self) -> None:
         if self.busy:
@@ -912,15 +1154,21 @@ class App:
         self.nrhint = tk.Label(inner, text="the rest is on the overlay (Insert)",
                                bg=PANEL, fg=FAINT, font=font(8))
 
-        # The feeder's pre-releases carry support for the newer add-on builds.
-        self.ck_feederpre = tk.Checkbutton(
-            inner, text="feeder build: tick for the newest pre-release (0.10.x: "
-                        "DLSS 5 add-on 4.7, alt-tab fixes on D3D11, no settings "
-                        "tab - preset and work area are set here); untick for "
-                        "the stable 0.7.0 with add-on 4.55 and its settings tab",
-            variable=self.feeder_pre, bg=PANEL, fg=DIM, selectcolor=FIELD,
-            activebackground=PANEL, activeforeground=TXT, font=font(8),
-            borderwidth=0)
+        # The feeder's pre-releases carry support for the newer add-on builds;
+        # any exact release can be pinned when the newest one breaks a game.
+        self.lbl_feederver = row(11, "feeder build")
+        self.cb_feederver = ttk.Combobox(inner, state="readonly",
+                                         values=list(FEEDER_CHOICES))
+        self.cb_feederver.current(0)
+        self.cb_feederver.bind("<<ComboboxSelected>>", self._on_feederver)
+        self.feeder_tags: list[str] = []
+        self.feederhint = tk.Label(
+            inner, bg=PANEL, fg=FAINT, font=font(8), anchor="w", justify="left",
+            text="stable = what GitHub marks as the latest release; or pin an "
+                 "exact build when the newest one breaks a game. builds "
+                 "before 0.8 pair with DLSS 5 add-on 4.55 and have a settings "
+                 "tab; 0.10 and later use add-on 4.7 and take preset and work "
+                 "area from here")
 
         # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
         # DXVK they render on Vulkan and ReShade loads as a layer instead.
@@ -939,9 +1187,38 @@ class App:
                  "on. the feature is created for one backbuffer size; changing "
                  "resolution or display mode while it runs forces a rebuild that "
                  "can freeze or crash the game.")
-        self.reswarn.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        self.reswarn.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         inner.bind("<Configure>",
                    lambda e: self.reswarn.configure(wraplength=max(360, e.width - 8)))
+
+        # The video player's link box: paste, play. Packed in _enter_install.
+        self.urlrow = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        ui = tk.Frame(self.urlrow, bg=PANEL)
+        ui.pack(fill="x", padx=12, pady=8)
+        tk.Label(ui, text="link", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
+        self.url = tk.StringVar()
+        self.urlbox = tk.Entry(ui, textvariable=self.url, bg=FIELD, fg=TXT,
+                               insertbackground=AMBER, relief="flat", font=font(10),
+                               highlightthickness=1, highlightbackground=LINE,
+                               highlightcolor=EDGE)
+        self.urlbox.pack(side="left", fill="x", expand=True, padx=(10, 10), ipady=3)
+        self.urlbox.bind("<Return>", lambda e: self._play_url())
+        ttk.Button(ui, text="play", style="Accent.TButton",
+                   command=self._play_url).pack(side="left")
+        ttk.Button(ui, text="download, then play",
+                   command=self._download_url).pack(side="left", padx=(8, 0))
+        self.fullq = tk.BooleanVar(value=False)
+        tk.Checkbutton(ui, text="4K", variable=self.fullq, bg=PANEL, fg=DIM,
+                       selectcolor=FIELD, activebackground=PANEL,
+                       activeforeground=TXT, font=font(8), borderwidth=0)            .pack(side="left", padx=(10, 0))
+        self.urlhint = tk.Label(
+            self.urlrow, bg=PANEL, fg=FAINT, font=font(8), anchor="w",
+            text="a youtube (or any yt-dlp) link: 'play' streams it live in the "
+                 "player; 'download' saves it under the player's downloads "
+                 "folder first (up to 1440p, or 4K when ticked; the first "
+                 "download fetches ffmpeg once, 170 MB). a link on the "
+                 "clipboard is picked up by itself.")
+        self.urlhint.pack(fill="x", padx=12, pady=(0, 8))
 
         barwrap = tk.Frame(f, bg=BG)
         barwrap.pack(fill="x", pady=(12, 2))
@@ -963,6 +1240,28 @@ class App:
         ttk.Button(act, text="open folder",
                    command=lambda: self.game and webbrowser.open(str(self.game.install_dir)))\
             .pack(side="left")
+        act2 = tk.Frame(f, bg=BG)
+        act2.pack(side="bottom", fill="x", pady=(8, 0))
+        ttk.Button(act2, text="what will happen?", command=self._preview)\
+            .pack(side="left")
+        ttk.Button(act2, text="before / after", command=self._compare)\
+            .pack(side="left", padx=10)
+        tk.Label(act2, text="profile", bg=BG, fg=DIM, font=font(9))\
+            .pack(side="left", padx=(14, 6))
+        self.cb_profile = ttk.Combobox(act2, state="readonly", width=22,
+                                       values=["(none)"] + profiles.list_profiles())
+        self.cb_profile.current(0)
+        self.cb_profile.bind("<<ComboboxSelected>>", self._on_profile)
+        self.cb_profile.pack(side="left")
+        ttk.Button(act2, text="save as...", command=self._save_profile)\
+            .pack(side="left", padx=(6, 0))
+        ttk.Button(act2, text="delete", command=self._delete_profile)\
+            .pack(side="left", padx=(6, 0))
+        # Only shown for the video player; packed in _enter_install.
+        self.btn_play = ttk.Button(act, text="open the player",
+                                   style="Accent.TButton", command=self._open_player)
+        self.btn_toggle = ttk.Button(act, text="neural rendering on/off (F6)",
+                                     command=self._toggle_nr)
 
         logwrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
         logwrap.pack(fill="both", expand=True, pady=(6, 0))
@@ -1178,7 +1477,7 @@ class App:
         for w in (self.lbl_preset, self.cb_preset, self.lbl_hdr, self.cb_hdr,
                   self.dlaalbl, self.lbl_nrpreset, self.cb_nrpreset,
                   self.lbl_nrstyle, self.cb_nrstyle, self.nrhint,
-                  self.ck_feederpre):
+                  self.lbl_feederver, self.cb_feederver, self.feederhint):
             w.grid_remove()
         if opti:
             self.lbl_nrpreset.grid(row=9, column=0, sticky="w", padx=(0, 14), pady=5)
@@ -1193,8 +1492,9 @@ class App:
             self.cb_hdr.grid(row=10, column=1, sticky="w", pady=5)
             self.dlaalbl.grid(row=10, column=2, sticky="w", padx=(10, 0))
         if feeder:
-            self.ck_feederpre.grid(row=11, column=0, columnspan=3, sticky="w",
-                                   pady=(4, 0))
+            self.lbl_feederver.grid(row=11, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_feederver.grid(row=11, column=1, columnspan=2, sticky="ew", pady=5)
+            self.feederhint.grid(row=12, column=0, columnspan=3, sticky="w")
         # OptiScaler is loaded by the game under one of several names; the
         # feeder's motion-vector provider sits in the same place on screen.
         # Row 3 carries whichever of the three this route actually needs:
@@ -1292,28 +1592,17 @@ class App:
         title = {"crash": "crash: ", "notwork": "not working: "}.get(kind, "bug: ")
         if g:
             title += g.name
-        diag = ""
-        d = self._last_diag
-        if d is not None:
-            try:
-                diag = f"\n**Diagnosis**: {d.verdict}\n" + "".join(
-                    f"- [{f_.level}] {f_.title}\n" for f_ in d.findings)
-            except Exception:
-                diag = ""
-        err = log.last_error()
-        body = (
-            "**What happened**\n\n\n"
-            "**What I expected**\n\n\n"
-            "---\n"
-            f"- version: {update.VERSION}\n"
-            f"- gpu: {name} (sm_{sm}), driver {drv}\n"
-            f"- game: {g.name if g else '-'}\n"
-            f"- exe: {g.exe.name if g and g.exe else '-'}\n"
-            f"- arch/api: {g.bit_label if g else '-'} / {g.api if g else '-'}\n"
-            f"- route: {getattr(self, 'route', '-')}\n"
-            + diag
-            + (f"\n**Last error**\n```\n{err[-1500:]}\n```\n" if err else "")
-            + f"\n**Log tail** (`{log.path()}`)\n```\n{log.tail(30, 2500)}\n```\n")
+        # The body is assembled in diagnose, where the log formats live: it
+        # reads the folder and the add-on logs so the report carries the
+        # evidence, not just the verdict.
+        try:
+            install_dir = g.install_dir if g else None
+        except Exception:
+            install_dir = None
+        body = diagnose.issue_body(
+            update.VERSION, name, sm, drv, g, getattr(self, "route", "-"),
+            self._last_diag, log.tail(60, 6000), log.path(), install_dir,
+            last_error=log.last_error())
         try:
             from urllib.parse import quote
             url = (f"https://github.com/{update.REPO}/issues/new"
@@ -1412,6 +1701,24 @@ class App:
     def _enter_install(self) -> None:
         g = self.game
         self.gamelbl.config(text=g.name)
+        self.profile_extra = None
+        self._refresh_profiles()
+        is_video = getattr(g, "kind", "") == "video"
+        if is_video:
+            self.btn_toggle.pack(side="right")
+            self.btn_play.pack(side="right", padx=(0, 10))
+            self.urlrow.pack(fill="x", pady=(10, 0), before=self.pb.master)
+            cb = video.clipboard_url(self.root)
+            if cb and not self.url.get():
+                self.url.set(cb)
+                self._log(f"> link on the clipboard picked up: {cb[:80]}")
+            self._log("> video player: there is no depth buffer here, the feed "
+                      "runs on colour and motion only - that is all dlss5 needs "
+                      "for video.", "ok")
+        else:
+            self.btn_play.pack_forget()
+            self.btn_toggle.pack_forget()
+            self.urlrow.pack_forget()
         need = installer.wants_dxvk(g)
         self.dxvk.set(bool(need))
         if need:
@@ -1497,7 +1804,25 @@ class App:
                 self.q.put(("catalog", sources.rhi_catalog()))
             except Exception as e:
                 self.q.put(("caterr", str(e)))
+            try:
+                self.q.put(("feeders", sources.feeder_releases()))
+            except Exception as e:
+                log.write(f"feeder release list: {e}", "warn")
         threading.Thread(target=work, daemon=True).start()
+
+    def _fill_feeders(self, rels: list) -> None:
+        self.feeder_tags = [t for t, _ in rels]
+        # GitHub's pre-release flag is not set consistently upstream; the tag
+        # itself says what a build is.
+        self.cb_feederver["values"] = list(FEEDER_CHOICES) + [
+            f"{t}{'  (pre-release)' if pre or 'beta' in t.lower() else ''}"
+            for t, pre in rels]
+
+    def _on_feederver(self, _e=None) -> None:
+        i = self.cb_feederver.current()
+        if i >= 2:
+            self._log(f"> feeder pinned to {self.feeder_tags[i - 2]} - the "
+                      f"matching DLSS 5 add-on build is chosen for it")
 
     def _fill_catalog(self, cat: dict) -> None:
         self.catalog = cat
@@ -1536,6 +1861,10 @@ class App:
                 nr["Preset"] = list(optiscaler.NR_PRESETS.keys())[self.cb_nrpreset.current()]
             if self.cb_nrstyle.current() > 0:
                 nr["Style"] = list(optiscaler.NR_STYLES.keys())[self.cb_nrstyle.current()]
+        extra = getattr(self, "profile_extra", None)
+        if extra is not None:
+            feed = {**extra.feed, **feed}
+            nr = {**extra.nr, **nr}
         return installer.Options(
             provider=self.provider.get(),
             renodx=None if local else clean(val),
@@ -1545,7 +1874,9 @@ class App:
             keep_game_dlss=self.keep_dlss.get(),
             feed=feed,
             nr=nr,
-            feeder_prerelease=self.feeder_pre.get(),
+            feeder_prerelease=self.cb_feederver.current() == 1,
+            feeder_tag=(self.feeder_tags[self.cb_feederver.current() - 2]
+                        if self.cb_feederver.current() >= 2 else ""),
             dxvk=self.dxvk.get(),
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
@@ -1651,6 +1982,10 @@ class App:
                 elif kind == "scanned":
                     self.busy = False
                     self.all_games = payload
+                    kp = video.known()
+                    if kp and not any(x.install_dir == kp.install_dir
+                                      for x in payload):
+                        self.all_games.insert(0, kp)
                     self._rows.clear()
                     self._fill()
                     self.status.config(text="scan complete")
@@ -1682,6 +2017,8 @@ class App:
                     self.pblbl.config(text="")
                 elif kind == "catalog":
                     self._fill_catalog(payload)
+                elif kind == "feeders":
+                    self._fill_feeders(payload)
                 elif kind == "caterr":
                     self._log(f"!! could not fetch the version list: {payload}",
                               "warn")
@@ -1698,6 +2035,28 @@ class App:
                     self._show_components(payload)
                 elif kind == "done":
                     self._finish_ok(payload)
+                elif kind == "downloaded":
+                    self._idle()
+                    self.pblbl.config(text="")
+                    self._log(f"> saved: {payload}", "ok")
+                    try:
+                        video.launch(self.game.install_dir, str(payload))
+                        self._log("> opening it in the player", "ok")
+                    except Exception as e:
+                        self._log(f"!! could not start the player: {e}", "err")
+                elif kind == "video_ready":
+                    self._idle()
+                    self.pb["value"] = 0
+                    self.pblbl.config(text="")
+                    g = payload
+                    self.all_games = [x for x in self.all_games
+                                      if x.install_dir != g.install_dir]
+                    self.all_games.insert(0, g)
+                    self.game = g
+                    self._log("> player ready. press INSTALL to feed dlss5 "
+                              "into it.", "ok")
+                    self._enter_install()
+                    self._show(3)
                 elif kind == "removed":
                     self._idle()
                     self._rows.clear()
@@ -1750,8 +2109,24 @@ class App:
         if rep.skipped:
             self._log(f"    left untouched: {', '.join(rep.skipped)}")
         self._log("")
-        self._log("> now launch the game and:", "head")
         route = getattr(self, "route", dlss.FEEDER)
+        if self.game and getattr(self.game, "kind", "") == "video":
+            self._log("> now open the player and:", "head")
+            for line in video.CHECKLIST:
+                self._log(f"   {line}")
+            self._log("")
+            self._log("!! neural rendering re-draws EVERYTHING in the window, "
+                      "menus and subtitles included - use the player fullscreen "
+                      "(double-click the video). the first seconds after a "
+                      "seek or a resolution change look smeared while the "
+                      "history rebuilds.", "warn")
+            self._log("")
+            self._log("> watched something? come back and press 'did it work?' - "
+                      "it reads the logs and tells you what happened.", "head")
+            self.btn_remove.config(state="normal")
+            self.status.config(text="install complete - open the player")
+            return
+        self._log("> now launch the game and:", "head")
         if route == dlss.OPTI:
             self._log("   1. press Insert to open the optiscaler overlay")
             self._log("   2. neural rendering is switched on already; if the "

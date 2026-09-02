@@ -4,6 +4,7 @@ GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
                                                     [--route native|optiscaler|renodx|bridge|feeder]
                                                     [--dxvk | --no-dxvk]
+                dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 
 --dxvk runs a D3D11 game on Vulkan through DXVK, with ReShade as a Vulkan
 layer instead of a DLL inside the game. Games known to need it (MGS V) get
@@ -42,8 +43,8 @@ def _console() -> None:
 
 
 def cli(target: Path, remove: bool, check: bool, route: str = "",
-        dxvk: bool | None = None) -> int:
-    g = games.manual(target)
+        dxvk: bool | None = None, game=None) -> int:
+    g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
         return 1
@@ -122,6 +123,21 @@ def main() -> int:
         route = args[args.index("--route") + 1]
         args.remove(route)
     positional = [a for a in args if not a.startswith("-")]
+    if "--video" in args:
+        _console()
+        from core import video
+        folder = Path(positional[0]) if positional else video.default_dir()
+        print(f"video player -> {folder}")
+        try:
+            g = video.prepare(folder, on_log=print,
+                              on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}",
+                                                         end="", flush=True))
+        except Exception as e:
+            print(f"\nerror: {e}", file=sys.stderr)
+            return 1
+        print()
+        return cli(g.exe, remove="--remove" in args, check="--check" in args,
+                   route=route or "feeder", dxvk=False, game=g)
     if positional:
         _console()
         return cli(Path(positional[0]),

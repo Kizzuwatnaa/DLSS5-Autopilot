@@ -13,6 +13,11 @@ Which log matters depends on the route:
 
 A log older than the install is from a previous setup and is ignored rather
 than reported as if it described the current one.
+
+When there is no log at all, the folder itself is the evidence: a proxy DLL
+that has vanished says "antivirus", an untouched folder says "not started
+yet". "Not run yet, or ReShade never loaded" told nobody anything, and a real
+bug report arrived carrying exactly that and nothing else.
 """
 from __future__ import annotations
 
@@ -28,6 +33,25 @@ RESHADE_LOG = "ReShade.log"
 MANIFEST = "dlss5-autopilot.json"
 
 OK, WARN, BAD, INFO = "ok", "warn", "bad", "info"
+
+# The shaders the feed actually runs. ReShade compiles every .fx in the
+# folder, and the lumenite pack ships a dozen the feed never uses; a compile
+# error in one of those is noise, not a failure.
+FEED_SHADERS = ("dlss5_feed.fx", "lumenite_kernel.fx", "lumenite_quantmotion.fx")
+
+_DEPTH_HINT = (
+    "In the ReShade overlay open the Add-ons tab and look at the depth "
+    "buffer list: one has to be selected. If none is, or it switches when "
+    "you change display mode, try 'Use aspect ratio heuristics' set to off "
+    "there. Borderless, display scaling and an in-game render scale below "
+    "100% are the usual reason the buffer stops matching.")
+
+_COMPILER_FIX = (
+    "The game ships its own d3dcompiler_47.dll and it predates Shader Model "
+    "5.1, so the neural pass never compiles - frames still flow, nothing "
+    "changes on screen. Rename that file to d3dcompiler_47.dll.dlss5-off so "
+    "Windows uses the System32 copy; the tool's next install does this by "
+    "itself.")
 
 
 @dataclass
@@ -67,12 +91,16 @@ def _installed_at(install_dir: Path) -> float:
         return 0.0
 
 
-def _route(install_dir: Path) -> str:
+def _manifest(install_dir: Path) -> dict:
     try:
         data = json.loads((install_dir / MANIFEST).read_text(encoding="utf8"))
-        return data.get("path") or ""
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return ""
+        return {}
+
+
+def _route(install_dir: Path) -> str:
+    return _manifest(install_dir).get("path") or ""
 
 
 def _fresh(path: Path, since: float) -> bool:
@@ -81,6 +109,16 @@ def _fresh(path: Path, since: float) -> bool:
         return path.is_file() and path.stat().st_mtime >= since - 60
     except OSError:
         return False
+
+
+def _addons(man: dict) -> list[str]:
+    """The add-on files the install recorded - the ones antivirus goes for."""
+    return [f for f in man.get("files") or []
+            if isinstance(f, str) and f.lower().endswith((".addon64", ".addon32"))]
+
+
+def _missing_addons(install_dir: Path, man: dict) -> list[str]:
+    return [f for f in _addons(man) if not (install_dir / f).is_file()]
 
 
 OPTI_LOG = "OptiScaler.log"
@@ -154,11 +192,100 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float) -> "Repo
     return rep
 
 
+def _explain_no_log(install_dir: Path, man: dict, rep: Report,
+                    stale_reshade: bool) -> Report:
+    """No current log: read the folder instead and name the likeliest cause.
+
+    The order matters. A missing proxy DLL or add-on explains everything
+    downstream, so it wins; a folder that is intact and has no ReShade.log at
+    all means nothing has loaded ReShade since the install, and the hints go
+    to why that can be; a ReShade.log older than the manifest means the
+    install came after the last run.
+    """
+    rep.ran = False
+    proxy = man.get("proxy") or ""
+    exe = man.get("exe") or "the game's executable"
+    app = "app" if man.get("kind") == "video" else "game"
+    missing = _missing_addons(install_dir, man)
+
+    if proxy and not (install_dir / proxy).is_file():
+        rep.add(BAD, f"ReShade's {proxy} is gone from the folder.",
+                "The install wrote it and it is no longer there: antivirus "
+                "quarantined it, or the game verified its files and removed "
+                "it. Restore it from quarantine (and exclude the folder), "
+                "then install again.")
+        rep.verdict = f"ReShade's {proxy} is missing from the folder - reinstall."
+        return rep
+
+    if missing:
+        rep.add(BAD, f"Add-on missing from the folder: {', '.join(missing)}.",
+                "The install wrote it and it is no longer there - almost "
+                "always antivirus quarantine. Restore it, exclude the folder, "
+                "and install again.")
+        rep.verdict = "An add-on was quarantined - reinstall."
+        return rep
+
+    if stale_reshade:
+        rep.add(WARN, "ReShade.log is older than the install.",
+                f"The {app} was last run before this install, so nothing "
+                f"has loaded the new files yet. Play once and check again.")
+        rep.verdict = "Installed after the last run - play once and check again."
+        return rep
+
+    rep.add(WARN, f"The {app} has not been started since the install.",
+            "ReShade writes ReShade.log the moment it loads, and there is "
+            "none in the folder. All the files are still in place.")
+    rep.add(INFO, f"If you DID start it, it launches something other than "
+                  f"{exe}.",
+            "A launcher or a different executable in another folder does not "
+            "pick up the files here. Point the tool at the folder holding the "
+            "executable that actually runs.")
+    if proxy:
+        alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
+        rep.add(INFO, f"Or the {app} ignores {proxy}.",
+                f"Some load the graphics DLLs in a way that skips {proxy}. "
+                f"Try the {alt} proxy name in the settings and install again.")
+    rep.verdict = f"Not started since the install - run the {app} once, then check again."
+    return rep
+
+
+def _shader_failures(rtext: str, provider_tech: str, rep: Report) -> None:
+    """ReShade's "Failed to compile/load" lines, sorted by whether they matter.
+
+    ReShade compiles every .fx it finds. The feed needs three of them plus
+    whichever provides motion vectors; a failure anywhere else is reported
+    once, as information, so a broken lumenite_RTAO.fx does not read as a
+    broken install.
+    """
+    essential = set(FEED_SHADERS)
+    if provider_tech:
+        essential.add(provider_tech.lower() + ".fx")
+    others: list[str] = []
+    seen: set[str] = set()
+    for m in re.finditer(r"Failed to (compile|load) ([^\n]{0,200})", rtext):
+        what = m.group(2).strip()
+        fm = re.search(r"([^\\/'\"]+\.(?:fxh?|addon64|addon32|dll))\b", what)
+        name = fm.group(1) if fm else what[:80]
+        key = (m.group(1), name.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        if name.lower().endswith((".fx", ".fxh")) and name.lower() not in essential:
+            others.append(name)
+            continue
+        rep.add(BAD, f"ReShade failed to {m.group(1)}: {name}")
+    if others:
+        rep.add(INFO, f"{len(others)} other shader{'s' if len(others) != 1 else ''} "
+                      f"failed to compile - not used by the feed, ignore.",
+                ", ".join(others))
+
+
 def analyse(install_dir: Path) -> Report:
     """Read whatever logs apply to this install and explain the outcome."""
     rep = Report()
     since = _installed_at(install_dir)
-    rep.route = _route(install_dir)
+    man = _manifest(install_dir)
+    rep.route = man.get("path") or ""
     if rep.route == "optiscaler":
         return _analyse_optiscaler(install_dir, rep, since)
 
@@ -187,6 +314,12 @@ def analyse(install_dir: Path) -> Report:
                 "You have reinstalled since this was written, so it may "
                 "describe the previous setup. Play once and check again.")
 
+    # A ReShade.log from before the install, with no newer log beside it,
+    # describes the previous setup - it is not evidence that this one ran.
+    stale_reshade = bool(rtext) and bool(since) and not _fresh(reshade, since)
+    if stale_reshade and not (text or htext):
+        rtext = ""
+
     for p, t in ((feed, text), (reshade, rtext), (host, htext)):
         if t:
             try:
@@ -197,14 +330,27 @@ def analyse(install_dir: Path) -> Report:
             break
 
     if not (text or rtext or htext):
-        rep.add(BAD, "No log from this install yet.",
-                "Either the game has not been run since installing, or "
-                "ReShade is not loading at all - check that the proxy DLL sits "
-                "next to the executable the game actually launches.")
-        rep.verdict = "Not run yet, or ReShade never loaded."
-        return rep
+        return _explain_no_log(install_dir, man, rep, stale_reshade)
 
     rep.ran = True
+
+    # Files that went missing after the install are worth saying even when
+    # a log exists: the log is from before the quarantine.
+    for f in _missing_addons(install_dir, man):
+        rep.add(BAD, f"Add-on missing from the folder: {f}.",
+                "It was installed and is no longer there - antivirus "
+                "quarantine, most likely. Restore it and install again.")
+
+    # The motion-vector provider is named several times; the last is real.
+    prov = re.findall(
+        r"DLSS5_MV_PROVIDER=(\d+) \(([^)]+)\) -> (\S+) \(([^)]+)\)", text) if text else []
+    provider_tech = prov[-1][2] if prov and prov[-1][2] != "none" else ""
+
+    # ReShade attaching to a D3D9 device while the install is for DXGI means
+    # the app renders with D3D9 here: a video player on EVR, or a game whose
+    # settings put it in D3D9 mode. The feed has nothing to hook.
+    d3d9_only = bool(rtext) and "Direct3DCreate9" in rtext \
+        and "CreateSwapChain" not in rtext
 
     # --- what loaded ----------------------------------------------------
     if rtext:
@@ -227,10 +373,18 @@ def analyse(install_dir: Path) -> Report:
                     "dlss5-feed.addon64 or dlss5-bridge.addon64 is left in "
                     "the folder, then install again.")
 
+        if d3d9_only and str(man.get("api") or "").upper() in ("DX11", "DX12"):
+            rep.add(WARN, "ReShade attached to a Direct3D 9 device, not DXGI.",
+                    "The app renders with D3D9 here (a video player on the EVR "
+                    "renderer, or a game in D3D9 mode); the feed needs "
+                    "D3D11/12. Switch the renderer to one that uses D3D11, or "
+                    "the game to DX11/DX12, and play again.")
+
         # The game exiting before a swapchain exists means it never got to
         # rendering at all - nothing downstream of this is worth reading.
         if "Registered add-on" in rtext and "Exiting" in rtext \
-                and "CreateSwapChain" not in rtext and "Presenting" not in rtext:
+                and "CreateSwapChain" not in rtext and "Presenting" not in rtext \
+                and not d3d9_only:
             rep.add(BAD, "The game closed before it drew a single frame.",
                     "ReShade attached and the device was created, but no swap "
                     "chain ever was, so the game quit during start-up. That "
@@ -241,11 +395,14 @@ def analyse(install_dir: Path) -> Report:
             rep.add(BAD, "ReShade loaded no add-ons.",
                     "Add-on support requires the ReShade build WITH add-ons, "
                     "and AddonPath must point at the game folder.")
-        for m in re.finditer(r"Failed to (compile|load) ([^\n]{0,90})", rtext):
-            rep.add(BAD, f"ReShade failed to {m.group(1)}: {m.group(2).strip()}")
+        _shader_failures(rtext, provider_tech, rep)
         if "untested build" in rtext:
             rep.add(WARN, "The add-on flagged your nvngx_dlssnr as an untested build.",
                     "It accepted it, but failures may be specific to that file.")
+        if "focus window is the desktop window" in rtext:
+            rep.add(INFO, "ReShade skipped a device whose window is the desktop.",
+                    "Harmless: the app created a throwaway device before its "
+                    "real one.")
 
     # --- the feeder path -------------------------------------------------
     if text:
@@ -255,16 +412,25 @@ def analyse(install_dir: Path) -> Report:
                     "An older add-on build. Feeder behaviour differs from the "
                     "newer 'v45+' engine.")
 
-        if "is not loaded" in text and "technique found" not in text:
+        # The feed reports its effects once per runtime, and the first
+        # runtime in a process can be a throwaway that says MISSING while a
+        # later one says found. Only the last describes reality.
+        states = re.findall(r"DLSS5_Feed\.fx technique (found|MISSING)", text)
+        if states:
+            found = states[-1] == "found"
+        elif "technique found" in text:
+            found = True
+        elif "is not loaded" in text:
+            found = False
+        else:
+            found = None
+        if found:
+            rep.add(OK, "DLSS5_Feed.fx loaded and its textures were found.")
+        elif found is False:
             rep.add(BAD, "DLSS5_Feed.fx never loaded.",
                     "Check the ReShade overlay for a compile error and that "
                     "reshade-shaders\\Shaders holds DLSS5_Feed.fx.")
-        elif "technique found" in text:
-            rep.add(OK, "DLSS5_Feed.fx loaded and its textures were found.")
 
-        # This line is logged several times; only the last describes reality.
-        prov = re.findall(
-            r"DLSS5_MV_PROVIDER=(\d+) \(([^)]+)\) -> (\S+) \(([^)]+)\)", text)
         if prov:
             _n, name, _t, state = prov[-1]
             if "enabled" in state:
@@ -285,6 +451,16 @@ def analyse(install_dir: Path) -> Report:
                         "and you will see smearing.")
             else:
                 rep.add(OK, f"Motion vectors look alive ({last}% non-zero).")
+
+        # Flat depth means ReShade handed the feed no depth buffer. A video
+        # player has none to give, so there it is the expected state.
+        depth = re.findall(r"Depth probe[^\n]*", text)
+        if depth and "sampled depth is flat" in depth[-1]:
+            if man.get("kind") == "video":
+                rep.add(INFO, "No depth in a video player - expected.")
+            else:
+                rep.add(WARN, "ReShade is not giving the feed a depth buffer.",
+                        "The sampled depth is flat. " + _DEPTH_HINT)
 
         if "host spawned" in text:
             rep.add(OK, "The 32-bit helper process started.")
@@ -310,6 +486,12 @@ def analyse(install_dir: Path) -> Report:
     delivered = re.findall(r"frame (\d+) (?:delivered|evaluated)", joined)
     perf = re.search(r"(\d+) frames: feed CPU ([\d.]+) ms/frame[^\n]*?"
                      r"([\d.]+) fps", joined)
+    # The neural pass is cs_5_1. A game's bundled d3dcompiler_47.dll that
+    # predates it fails the compile, and the feed keeps delivering frames
+    # into a pass that does nothing - "Working." would be a lie.
+    old_compiler = re.search(
+        r"is too old for Shader Model 5\.1|rejects cs_5_1|"
+        r"unrecognized compiler target 'cs_5_1'", joined)
 
     if "NVSDK_NGX" in joined and "-> 0x00000001" in joined:
         rep.add(OK, "NGX initialised successfully.")
@@ -333,7 +515,13 @@ def analyse(install_dir: Path) -> Report:
         if perf:
             rep.add(INFO, f"{perf.group(1)} frames at {perf.group(3)} fps, "
                           f"{perf.group(2)} ms/frame spent on the feed.")
-        rep.verdict = "Working."
+        if old_compiler:
+            rep.add(BAD, "The game's own d3dcompiler_47.dll is too old for "
+                         "the neural pass.", _COMPILER_FIX)
+            rep.verdict = ("Frames flow, but neural rendering is silently doing "
+                           "nothing - old d3dcompiler_47.dll in the game folder.")
+        else:
+            rep.verdict = "Working."
     elif ready:
         rep.add(WARN, "The feature was created but no frames were delivered.",
                 "Neural rendering may still be switched off in the DLSS 5 panel.")
@@ -344,17 +532,15 @@ def analyse(install_dir: Path) -> Report:
         # buffer, and borderless, resolution scaling or a render scale below
         # 100% make the two disagree.
         rep.add(INFO, "If it is switched on and still does nothing, check the "
-                      "depth buffer.",
-                "In the ReShade overlay open the Add-ons tab and look at the "
-                "depth buffer list: one has to be selected. If none is, or it "
-                "switches when you change display mode, try 'Use aspect ratio "
-                "heuristics' set to off there. Borderless, display scaling "
-                "and an in-game render scale below 100% are the usual reason "
-                "the buffer stops matching.")
+                      "depth buffer.", _DEPTH_HINT)
         rep.verdict = "Set up correctly, but not switched on yet."
     elif "failure: resource build" in joined:
         rep.add(BAD, "Building the feed resources failed.")
         rep.verdict = "DLSS never started."
+    elif old_compiler:
+        rep.add(BAD, "The game's own d3dcompiler_47.dll is too old for "
+                     "the neural pass.", _COMPILER_FIX)
+        rep.verdict = "The neural pass cannot compile - old d3dcompiler_47.dll in the game folder."
     elif rep.route in ("native", "bridge", "renodx"):
         panel = ("RenoDX DLSS tab" if rep.route == "renodx"
                  else "DLSS 5 Neural Rendering panel")
@@ -367,3 +553,113 @@ def analyse(install_dir: Path) -> Report:
         rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 
     return rep
+
+
+# ---------------------------------------------------------------------------
+# the bug report body
+# ---------------------------------------------------------------------------
+
+_RESHADE_KEEP = ("WARN", "ERROR", "Registered add-on", "CreateSwapChain",
+                 "Direct3DCreate9", "Exiting")
+
+
+def _last_lines(text: str, n: int, keep=None, width: int = 200) -> list[str]:
+    lines = [ln.rstrip() for ln in text.splitlines()]
+    if keep is not None:
+        lines = [ln for ln in lines if keep(ln)]
+    return [ln[:width] for ln in lines[-n:]]
+
+
+def _block(title: str, lines: list[str], budget: int) -> str:
+    """A fenced log excerpt that never exceeds its share of the report.
+
+    GitHub's URL cap is the reason everything here is measured: over it, the
+    report has to go through the clipboard, which loses people.
+    """
+    body = "\n".join(lines) if lines else "(none)"
+    if len(body) > budget:
+        body = "...\n" + body[-budget:].split("\n", 1)[-1]
+    return f"\n**{title}**\n```\n{body}\n```\n"
+
+
+def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
+    """One line per file that decides whether anything can load at all."""
+    names: list[str] = []
+    proxy = man.get("proxy")
+    if proxy:
+        names.append(proxy)
+    names += _addons(man)
+    if route != "optiscaler":
+        names.append("ReShade.ini")
+    names.append("nvngx_dlssnr.dll")
+    out = []
+    for n in dict.fromkeys(names):
+        state = "present" if (install_dir / n).is_file() else "MISSING"
+        out.append(f"- {n}: {state}")
+    # The game's own compiler beside the exe is the cause of the silent
+    # "frames flow, nothing happens" case; worth a line whenever it is there.
+    if (install_dir / "d3dcompiler_47.dll").is_file():
+        out.append("- d3dcompiler_47.dll: present (the game's own)")
+    elif any(install_dir.glob("d3dcompiler_47.dll.*")):
+        out.append("- d3dcompiler_47.dll: renamed aside")
+    return out
+
+
+def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
+               last_diag, autopilot_tail: str, autopilot_log_path,
+               install_dir, last_error: str = "") -> str:
+    """The text of a bug report, with the evidence already in it.
+
+    A report is only as good as what it carries. The machine, the verdict,
+    which files are actually in the folder and the tail of each log the
+    add-ons wrote answer the first five questions a maintainer would ask, so
+    the reply can be a fix instead of "please attach ReShade.log".
+    """
+    diag = ""
+    if last_diag is not None:
+        try:
+            diag = f"\n**Diagnosis**: {last_diag.verdict}\n" + "".join(
+                f"- [{f_.level}] {f_.title}\n" for f_ in last_diag.findings)
+        except Exception:
+            diag = ""
+
+    exe = getattr(getattr(game, "exe", None), "name", None) or "-"
+    head = (
+        "**What happened**\n\n\n"
+        "**What I expected**\n\n\n"
+        "---\n"
+        f"- version: {version}\n"
+        f"- gpu: {gpu_name} (sm_{sm}), driver {driver}\n"
+        f"- game: {getattr(game, 'name', None) or '-'}\n"
+        f"- exe: {exe}\n"
+        f"- arch/api: {getattr(game, 'bit_label', None) or '-'} / "
+        f"{getattr(game, 'api', None) or '-'}\n"
+        f"- route: {route or '-'}\n"
+        + diag[:1200])
+
+    files = ""
+    reshade = feed = opti = ""
+    d = Path(install_dir) if install_dir else None
+    if d is not None and d.is_dir():
+        man = _manifest(d)
+        files = "\n**Files in the folder**\n" + "\n".join(_presence(d, man, route)) + "\n"
+        reshade = _tail(d / RESHADE_LOG, 250_000)
+        feed = _tail(d / FEED_LOG, 100_000)
+        if route == "optiscaler":
+            p = _opti_log(d)
+            opti = _tail(p, 100_000) if p else ""
+
+    parts = [head, files]
+    parts.append(_block("ReShade.log", _last_lines(
+        reshade, 25, lambda ln: any(k in ln for k in _RESHADE_KEEP)), 1500))
+    parts.append(_block("dlss5-feed.log", _last_lines(feed, 20), 1400))
+    if route == "optiscaler":
+        parts.append(_block("OptiScaler.log", _last_lines(opti, 20), 900))
+    if last_error:
+        parts.append(f"\n**Last error**\n```\n{last_error[-900:]}\n```\n")
+    parts.append(_block(
+        f"autopilot.log (`{autopilot_log_path}`)",
+        _last_lines(autopilot_tail or "", 15,
+                    lambda ln: not re.search(r"scan \S+: \d+ found", ln)), 900))
+    body = "".join(parts)
+    return body[:6000]

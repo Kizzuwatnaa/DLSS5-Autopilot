@@ -127,14 +127,35 @@ def resolve_reshade() -> tuple[str, str]:
     return m.group(1), RESHADE_HOME + m.group(0)
 
 
-def resolve_feeder(prerelease: bool = False) -> tuple[str, dict[str, str]]:
+def feeder_releases() -> list[tuple[str, bool]]:
+    """Every feeder release GitHub lists, newest first: (tag, is_prerelease).
+
+    The version dropdown is built from this, so a build that broke a game can
+    be swapped for the one before it without leaving the tool.
+    """
+    rels = _json(FEEDER_LIST_API)
+    if not isinstance(rels, list):
+        return []
+    return [(r.get("tag_name", "?"), bool(r.get("prerelease")))
+            for r in rels if not r.get("draft") and r.get("tag_name")]
+
+
+def resolve_feeder(prerelease: bool = False, tag: str = "") -> tuple[str, dict[str, str]]:
     """DLSS5-Feeder release: (tag, {filename: download_url}).
 
-    `prerelease=True` takes the newest build of any kind, which is where the
-    feeder's support for the newer DLSS 5 add-on generations lives. Otherwise
-    the newest stable release, exactly as GitHub's /latest reports it.
+    `tag` pins one exact release. Otherwise `prerelease=True` takes the newest
+    build of any kind, which is where the feeder's support for the newer
+    DLSS 5 add-on generations lives, and the default is the newest stable
+    release, exactly as GitHub's /latest reports it.
     """
-    if prerelease:
+    if tag:
+        rels = _json(FEEDER_LIST_API)
+        rel = next((r for r in (rels if isinstance(rels, list) else [])
+                    if r.get("tag_name") == tag), None)
+        if rel is None:
+            raise RuntimeError(f"DLSS5-Feeder release {tag} is not on GitHub's "
+                               f"release list (the newest 15 are checked).")
+    elif prerelease:
         rels = _json(FEEDER_LIST_API)
         rels = [r for r in rels if not r.get("draft")] if isinstance(rels, list) else []
         rel = rels[0] if rels else _json(FEEDER_API)

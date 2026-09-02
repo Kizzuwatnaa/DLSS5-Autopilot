@@ -21,11 +21,12 @@ DX9: dgVoodoo2 translates to D3D11 first, then the 32-bit path applies.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import (anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
+from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
                optiscaler, pe, prefs, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
@@ -54,6 +55,15 @@ BRIDGE_ADDON = "dlss5-bridge.addon64"
 BRIDGE_CFG = "dlss5-bridge.cfg"
 
 BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+
+# Files a game ships that break the neural pass when Windows loads them in
+# preference to System32's copy. They are renamed, not deleted, and the
+# manifest records it so uninstall puts them back. MPC-HC and a number of
+# older games bundle a D3DCompiler_47.dll that rejects the cs_5_1 target the
+# DLSS 5 add-on compiles with; the feed then reports frames delivered while
+# neural rendering silently does nothing.
+SIDELINE = ("d3dcompiler_47.dll",)
+SIDELINE_SUFFIX = ".dlss5-off"
 # An add-on from another route, moved out of the way. A separate suffix on
 # purpose: BACKUP_SUFFIX means "put this back on uninstall", which is the one
 # thing that must not happen to a file that was causing a conflict.
@@ -108,6 +118,7 @@ class Options:
     # The feeder's pre-releases are where support for the newer DLSS 5 add-on
     # generations lives; the stable release only accepts renodx-dlss5 4.55.
     feeder_prerelease: bool = False
+    feeder_tag: str = ""                    # "" = stable or newest pre-release
     dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
 
@@ -124,6 +135,8 @@ class Report:
     # Relative paths a PREVIOUS install of ours put in this folder. They must
     # never be backed up as "the game's own file" - see _backup.
     preinstalled: set = field(default_factory=set)
+    # Game files renamed out of the way (see SIDELINE), relative paths.
+    sidelined: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- reliability
@@ -265,6 +278,11 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
     """Can this game be set up automatically?"""
     if not g.exe:
         return False, "No game executable found."
+    if g.error:
+        # The scan already knows why this one cannot be set up (an Xbox game
+        # that has not had "Enable mods" yet, an unreadable header). The GUI
+        # shows this reason in the detail card, so it must come from here.
+        return False, g.error
     if g.bitness not in (32, 64):
         return False, "Could not read the architecture."
     if g.api == "Vulkan":
@@ -388,6 +406,334 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     return steps
 
 
+# ---------------------------------------------------------------- preview
+
+@dataclass
+class Preview:
+    """What an install would do to this folder, worked out without doing it.
+
+    Every list holds relative paths (or one-line descriptions where a path
+    does not exist, such as the Vulkan layer). `blockers` non-empty means
+    install() would raise before writing anything.
+    """
+    steps: list[str] = field(default_factory=list)      # from plan()
+    writes: list[str] = field(default_factory=list)     # created / overwritten
+    backups: list[str] = field(default_factory=list)    # kept as *.backup first
+    removes: list[str] = field(default_factory=list)    # cleaned up beforehand
+    outside: list[str] = field(default_factory=list)    # written outside the folder
+    blockers: list[str] = field(default_factory=list)   # would make install() raise
+    warnings: list[str] = field(default_factory=list)   # anti-cheat, reliability
+
+
+def _cached_zip_members(pattern: str) -> list[str] | None:
+    """Member names of the newest download matching `pattern` in the cache,
+    or None when nothing is cached. Read-only: the preview may look at what an
+    earlier install fetched, but it never fetches anything itself."""
+    try:
+        zips = sorted(net.CACHE.glob(pattern), key=lambda p: p.stat().st_mtime)
+        if not zips:
+            return None
+        import zipfile
+        with zipfile.ZipFile(zips[-1]) as z:
+            return [n for n in z.namelist() if not n.endswith("/")]
+    except Exception:
+        return None
+
+
+def preview(g: games.Game, opt: Options) -> Preview:
+    """Everything install() would write, back up, remove or touch outside
+    the game folder - without a single network request or write.
+
+    People want to know "did this delete my files?" BEFORE they press
+    Install, so this mirrors install() step by step and reports its
+    decisions on the folder as it is now. Anything whose exact file list
+    only a download reveals (LumeniteFX shaders, the OptiScaler package) is
+    read from the download cache when an earlier install left one there,
+    and described by pattern otherwise.
+    """
+    pv = Preview()
+    root = g.install_dir
+
+    ok, why = check_supported(g)
+    if not ok:
+        pv.blockers.append(why)
+    pv.steps = plan(g, opt)
+    x64 = g.bitness == 64
+    dxvk_from = g.api if uses_dxvk(g, opt) else ""
+    g = via_dxvk(g, opt)
+    proxy = _proxy_name(g.api, opt.reshade_proxy)
+
+    def rel(*parts) -> str:
+        return "/".join(str(p).replace("\\", "/") for p in parts if str(p))
+
+    def add(lst: list[str], item: str) -> None:
+        if item not in lst:
+            lst.append(item)
+
+    # Blockers: the checks preflight() and install() make, minus the write
+    # probe - os.access instead, because a preview must not create files.
+    if not root.is_dir():
+        pv.blockers.append(f"{root} does not exist.")
+        return pv
+    if not os.access(root, os.W_OK):
+        pv.blockers.append(f"No permission to write into {root} - close the "
+                           f"game if it is running, or run as administrator.")
+    if g.exe and g.exe.name.lower() in _running_processes():
+        pv.blockers.append(f"{g.exe.name} is running. Close the game first.")
+
+    # Warnings, worded as install() records them.
+    level, why_rel = reliability(g, opt.path)
+    if level != STABLE:
+        pv.warnings.append(f"{level}: {why_rel}")
+    ac = anticheat.detect(root, g.folder)
+    if ac.present:
+        pv.warnings.append(
+            f"{ac.summary} detected ({', '.join(ac.evidence)}). ReShade "
+            f"add-ons and anti-cheat do not coexist: expect the game not to "
+            f"start, or nothing to happen, or a ban. Do not use this online.")
+
+    preinstalled = _previously_ours(root)
+
+    # What the previous-route uninstall takes away first. Worked out before
+    # anything else: a file it removes will not be there to back up later.
+    gone: set[str] = set()
+    previous = _previous_route(root)
+    if previous and previous != opt.path:
+        data = _previous_manifest(root) or {}
+        files = [str(f).replace("\\", "/")
+                 for f in (data.get("files") or data.get("dosyalar") or [])]
+        suffixes = (BACKUP_SUFFIX,) + LEGACY_BACKUP_SUFFIXES
+        restored = set()
+        for f in files:
+            s = next((s for s in suffixes if f.endswith(s)), None)
+            if s and (root / f).is_file():
+                restored.add(f[:-len(s)])
+                add(pv.removes, f"{f[:-len(s)]} (put back from its backup)")
+                gone.add(f)
+        for f in files:
+            if any(f.endswith(s) for s in suffixes) or f in restored:
+                continue
+            if (root / f).is_file():
+                add(pv.removes, f"{f} (previous {previous} install)")
+                gone.add(f)
+        if (root / HOST_DIR).is_dir():
+            add(pv.removes, f"{HOST_DIR}/ (previous {previous} install)")
+            gone.update(rel(p.relative_to(root))
+                        for p in (root / HOST_DIR).rglob("*"))
+        for name in RUNTIME_ARTIFACTS:
+            if (root / name).is_file():
+                add(pv.removes, f"{name} (log)")
+                gone.add(name)
+
+    def present(r: str) -> bool:
+        """Will this file still be there when install() reaches it?"""
+        return (root / r).is_file() and r not in gone
+
+    def backup(r: str) -> None:
+        """_backup's decision: the game's own file is kept, ours is not."""
+        if present(r) and r not in preinstalled:
+            add(pv.backups, r)
+
+    def plain_backup(r: str) -> None:
+        """dgvoodoo/dxvk keep a copy whenever no backup exists yet."""
+        if present(r) and not (root / (r + BACKUP_SUFFIX)).exists():
+            add(pv.backups, r)
+
+    def write(r: str, keep: bool = True) -> None:
+        if keep:
+            backup(r)
+        add(pv.writes, r)
+
+    # Another injector already under the proxy name?
+    if opt.path != OPTI and proxy != VULKAN_LAYER:
+        existing = root / proxy
+        if existing.is_file() and not _is_reshade(existing):
+            if optiscaler.is_optiscaler(existing):
+                backup(proxy)
+                add(pv.removes, f"{proxy} (an OptiScaler installed by hand)")
+                for extra in (optiscaler.FORWARDER, optiscaler.INI):
+                    if (root / extra).is_file():
+                        backup(extra)
+                        add(pv.removes, f"{extra} (OptiScaler, installed by hand)")
+            else:
+                pv.blockers.append(
+                    f"{proxy} already exists but is not ReShade (DXVK, Special "
+                    f"K or another injector?). Remove it first, then try again.")
+
+    # A ReShade under another name.
+    if opt.path != OPTI:
+        for name in RESHADE_PROXIES:
+            if name == proxy or not present(name) or not _is_reshade(root / name):
+                continue
+            if name in preinstalled:
+                add(pv.writes, name + ORPHAN_SUFFIX)
+                add(pv.removes, f"{name} (our ReShade under another name)")
+            else:
+                backup(name)
+                add(pv.removes, f"{name} (a second ReShade copy)")
+
+    # Add-ons of another route.
+    for route, name in _foreign_addons(opt.path):
+        if not present(name):
+            continue
+        if name in preinstalled:
+            add(pv.writes, name + ORPHAN_SUFFIX)
+        else:
+            backup(name)
+        add(pv.removes, f"{name} ({route} add-on)")
+
+    # The game's too-old compiler goes aside; uninstall brings it back.
+    if opt.path != OPTI:
+        try:
+            for f in root.iterdir():
+                if f.is_file() and f.name.lower() in SIDELINE:
+                    add(pv.backups, f"{f.name} -> {f.name}{SIDELINE_SUFFIX}")
+        except OSError:
+            pass
+
+    # 0) dgVoodoo2 / DXVK
+    if g.api == "DX9" and not dxvk_from:
+        plain_backup(dgvoodoo.D3D9)
+        write(dgvoodoo.D3D9, keep=False)
+        write(dgvoodoo.CONF, keep=False)
+        write(dgvoodoo.CPL, keep=False)
+    if dxvk_from:
+        for name in dxvk.files_for(dxvk_from) or dxvk.FILES:
+            plain_backup(name)
+            write(name, keep=False)
+
+    # OptiScaler: the whole route in one go.
+    if opt.path == OPTI:
+        oproxy = opt.opti_proxy or optiscaler.suggest_proxy(root)
+        for other in optiscaler.find_existing(root, ignore=oproxy):
+            backup(other.name)
+            add(pv.removes, f"{other.name} (another OptiScaler copy)")
+        for old in optiscaler.find_legacy(root):
+            backup(old.name)
+            add(pv.removes, f"{old.name} (pre-0.9 OptiScaler leftover)")
+        members = _cached_zip_members("OptiScaler-DLSSNR-*.zip")
+        if members:
+            for m in members:
+                if Path(m).name in optiscaler.SKIP:
+                    continue
+                write(oproxy if m == optiscaler.MAIN_DLL else m)
+        else:
+            write(oproxy)
+            write(optiscaler.FORWARDER)
+            write(optiscaler.INI)
+            add(pv.writes, "OptiScaler/* and Licenses/* (the rest of the package)")
+        write(DLSSNR)
+        for r in sorted(preinstalled):
+            if present(r):
+                add(pv.writes, r)
+        write(MANIFEST, keep=False)
+        return pv
+
+    # 1) ReShade
+    if g.api == "Vulkan":
+        found = vulkan.existing_registration()
+        if found is not None and not vulkan.is_ours(found):
+            pv.outside.append(f"reuses the existing ReShade Vulkan layer ({found})")
+        else:
+            pv.outside.append(
+                f"Vulkan layer: {vulkan.LAYER_NAME} registered for this user "
+                f"(files in {vulkan.layer_dir()}) - it loads into EVERY Vulkan "
+                f"application until 'Uninstall' removes it")
+            pv.warnings.append("the Vulkan layer is global; 'Uninstall' "
+                               "removes it again")
+    else:
+        write(proxy)
+    host = HOST_DIR
+    if not x64 and opt.path == FEEDER:
+        add(pv.writes, rel(host, "dxgi.dll"))
+
+    # 2) the path-specific middle
+    if opt.path == BRIDGE:
+        write(BRIDGE_ADDON)
+        if present("dlss5-dx11-bridge.addon64"):
+            add(pv.removes, "dlss5-dx11-bridge.addon64 (older bridge, conflicts)")
+    if opt.path == FEEDER:
+        for h in sources.RESHADE_HEADERS:
+            write(rel(SHADERS, h))
+        write(FEEDER_ADDON64 if x64 else FEEDER_ADDON32)
+        write(rel(SHADERS, FEEDER_FX))
+        if not x64:
+            add(pv.writes, rel(host, FEEDER_HOST))
+        if opt.provider in (3, 4):
+            listed = False
+            for m in _cached_zip_members("LumeniteFX-mainline.zip") or []:
+                parts = m.split("/")[1:]        # drop the archive root
+                if len(parts) not in (2, 3):
+                    continue
+                tail = parts[-1].lower()
+                where = "/".join(parts[:-1]).lower()
+                if where == "shaders" and tail.endswith(".fx"):
+                    add(pv.writes, rel(SHADERS, parts[-1]))
+                elif where == "shaders/include" and tail.endswith(".fxh"):
+                    add(pv.writes, rel(INCLUDE, parts[-1]))
+                elif where == "textures" and tail.endswith(".png"):
+                    add(pv.writes, rel(TEXTURES, parts[-1]))
+                else:
+                    continue
+                listed = True
+            if not listed:
+                add(pv.writes, rel(SHADERS, "lumenite_*.fx"))
+                add(pv.writes, rel(INCLUDE, "lumenite_*.fxh"))
+                add(pv.writes, rel(TEXTURES, "lumenite_*.png"))
+
+    # 5/6/7) DLSS parts: in host64/ on the 32-bit feeder path
+    dlss_dir = "" if (x64 or opt.path != FEEDER) else host
+    write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
+    write(rel(dlss_dir, DLSSNR))
+    game_has = present(DLSS)
+    if not (x64 and game_has and opt.keep_game_dlss):
+        write(rel(dlss_dir, DLSS))
+
+    # 8/9/10) host64, ReShade configuration, the cfg
+    if not x64 and opt.path == FEEDER:
+        add(pv.writes, rel(host, "ReShade.ini"))
+    write("ReShade.ini")
+    if opt.path == FEEDER:
+        write("ReShadePreset.ini")
+        write(feedcfg.NAME)
+    elif opt.path == BRIDGE:
+        write(feedcfg.BRIDGE_NAME)
+
+    # The manifest carries forward what an earlier install of ours left and
+    # this one does not touch, so those are recorded as well.
+    for r in sorted(preinstalled):
+        if present(r):
+            add(pv.writes, r)
+    write(MANIFEST, keep=False)
+    return pv
+
+
+def preview_lines(pv: Preview) -> list[str]:
+    """The preview as short lines for the log widget."""
+    out: list[str] = []
+    for b in pv.blockers:
+        out.append(f"cannot install: {b}")
+    if pv.blockers:
+        return out
+    for w in pv.warnings:
+        out.append(f"warning: {w}")
+    if pv.removes:
+        out.append(f"will clean up first: {', '.join(pv.removes)}")
+    n = len(pv.writes)
+    shown = ", ".join(pv.writes[:3]) + (", ..." if n > 3 else "")
+    out.append(f"will write {n} file{'s' if n != 1 else ''} ({shown})")
+    if pv.backups:
+        out.append(f"will back up: {', '.join(pv.backups)}")
+    else:
+        out.append("nothing of yours is overwritten - no backups needed")
+    if pv.outside:
+        for o in pv.outside:
+            out.append(f"outside: {o}")
+    else:
+        out.append("nothing is written outside this folder")
+    return out
+
+
 def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
                           rep: "Report", begin, dl, log) -> None:
     """Shader headers, the feeder add-on and the motion-vector provider.
@@ -406,9 +752,11 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
     log(f"      {', '.join(sources.RESHADE_HEADERS)}")
 
     begin("DLSS5-Feeder")
-    tag, assets = sources.resolve_feeder(prerelease=opt.feeder_prerelease)
+    tag, assets = sources.resolve_feeder(prerelease=opt.feeder_prerelease,
+                                         tag=opt.feeder_tag)
     log(f"      DLSS5-Feeder {tag}"
-        + ("  (pre-release, as requested)" if opt.feeder_prerelease else ""))
+        + ("  (this exact build, as requested)" if opt.feeder_tag
+           else "  (pre-release, as requested)" if opt.feeder_prerelease else ""))
     rep.components["feeder"] = tag
     addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
     needed = (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ())
@@ -617,8 +965,11 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "nr": opt.nr,
             "keep_game_dlss": opt.keep_game_dlss,
             "feeder_prerelease": opt.feeder_prerelease,
+            "feeder_tag": opt.feeder_tag,
             "dxvk": rep.components.get("dxvk"),
             "components": rep.components,
+            "kind": g.kind,
+            "sidelined": rep.sidelined,
         }, ensure_ascii=False, indent=2), encoding="utf8")
     except OSError:
         pass
@@ -644,6 +995,7 @@ def options_from_manifest(root: Path) -> Options | None:
         path=path,
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
+        feeder_tag=str(data.get("feeder_tag") or ""),
         native_dlss=path in (NATIVE, OPTI) or bool(data.get("native_dlss", False)),
         opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
     )
@@ -678,6 +1030,12 @@ def preflight(g: games.Game) -> None:
         probe.write_bytes(b"x")
         probe.unlink()
     except PermissionError:
+        if games.is_locked_store_path(root):
+            # Xbox / Game Pass: the folder is owned by the system, and
+            # elevation does not help - the Xbox app has the switch for it.
+            raise InstallError(
+                f"No permission to write into:\n{root}\n\n"
+                f"This is an Xbox / Game Pass game. {games.XBOX_HINT}") from None
         raise InstallError(
             f"No permission to write into:\n{root}\n\n"
             f"Close the game if it is running, then try again. If that is not "
@@ -692,6 +1050,69 @@ def preflight(g: games.Game) -> None:
             f"{g.exe.name} is running. Close the game first - Windows will not "
             f"let anything replace files a running program has open, and a "
             f"half-finished install is worse than none.")
+
+def _sideline(root: Path, rep: Report, log) -> None:
+    """Move a game-shipped file that breaks the neural pass out of the way.
+
+    Only when the file is really the game's: one a previous install of ours
+    already moved has the suffix and is left alone. The rename is recorded
+    under its own manifest key, never in `files`, because uninstall deletes
+    everything in `files`.
+    """
+    try:
+        present = {f.name.lower(): f for f in root.iterdir() if f.is_file()}
+    except OSError:
+        return
+    for name in SIDELINE:
+        f = present.get(name)
+        if f is None:
+            continue
+        moved = f.with_name(f.name + SIDELINE_SUFFIX)
+        try:
+            if moved.exists():
+                f.unlink()          # an earlier run already kept a copy
+            else:
+                f.rename(moved)
+        except OSError as e:
+            rep.warnings.append(f"{f.name} could not be moved aside ({e}); "
+                                f"if it is too old for the neural pass, "
+                                f"nothing will visibly happen in game")
+            continue
+        rep.sidelined.append(f.name)
+        rep.notes.append(f"{f.name} renamed to {moved.name}: the game's copy "
+                         f"is older than Windows' and the neural pass will not "
+                         f"compile against it; uninstall puts it back")
+        log(f"      {f.name} moved aside ({moved.name}) - the game's copy "
+            f"is too old for the neural pass; Windows' own is used instead")
+
+
+def _restore_sidelined(root: Path, names, log) -> list[str]:
+    """Undo _sideline: the game's file goes back under its own name."""
+    back: list[str] = []
+    cands = list(names or [])
+    try:
+        for f in root.iterdir():
+            if f.is_file() and f.name.lower().endswith(SIDELINE_SUFFIX):
+                n = f.name[:-len(SIDELINE_SUFFIX)]
+                if n not in cands:
+                    cands.append(n)
+    except OSError:
+        pass
+    for name in cands:
+        moved = root / (name + SIDELINE_SUFFIX)
+        orig = root / name
+        if not moved.is_file():
+            continue
+        try:
+            if orig.exists():
+                orig.unlink()
+            moved.rename(orig)
+            back.append(name)
+            log(f"restored: {name} (the game's own file, moved aside)")
+        except OSError as e:
+            log(f"could not restore: {name} ({e})")
+    return back
+
 
 def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None) -> Report:
     ok, why = check_supported(g)
@@ -810,6 +1231,19 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # Belt and braces: whatever the manifest said, no add-on from another
     # route may be left in the folder. ReShade loads them all.
     _purge_foreign_addons(root, opt.path, rep, log)
+    if opt.path != OPTI:
+        _sideline(root, rep, log)
+    # An emulator on the wrong render backend never gets a DXGI swap chain,
+    # and ReShade then attaches to nothing. Switch it for them, say so, and
+    # let uninstall put the config back.
+    if getattr(g, "emu", None) is not None and g.exe:
+        try:
+            for line in emulators.set_backend(g.emu, g.exe):
+                rep.notes.append(line)
+                log(f"      {line}")
+        except Exception as e:      # never let a config quirk stop the install
+            rep.warnings.append(f"could not set the emulator's render backend "
+                                f"({e}); {g.emu.renderer_hint}")
 
     n = len(steps)
     i = 0
@@ -1316,6 +1750,15 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                 log(f"restored: {orig.name} (the game's own file)")
         except OSError as e:
             log(f"could not restore: {orig.name} ({e})")
+
+    if getattr(g, "emu", None) is not None and g.exe:
+        try:
+            for line in emulators.restore_backend(g.emu, g.exe):
+                log(line)
+        except Exception as e:
+            log(f"could not restore the emulator's render backend: {e}")
+    for name in _restore_sidelined(root, data.get("sidelined"), log):
+        removed.append(name + SIDELINE_SUFFIX)
 
     restored = set()
     for rel in files:

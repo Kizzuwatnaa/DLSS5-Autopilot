@@ -165,6 +165,32 @@ shows **update (N newer)** in the list. Press install again on it - your
 settings and backups are kept. **check versions** on the install page shows
 the per-component detail.
 
+### Video and YouTube
+
+The feed does not care what draws the frame. The **video and youtube** card
+on the first page fetches a portable **MPC-HC** into a folder of your
+choice (default `Videos\DLSS5 Player`), sets its renderer to the D3D11
+MPC Video Renderer, and then the normal install feeds DLSS 5 into it like
+any game. There is no depth buffer in a video and the feed does not need
+one.
+
+- **File > Open File** for anything on disk.
+- Paste a YouTube link into the **link** box and press **play**: yt-dlp
+  sits next to the player, so the stream plays live and nothing is
+  downloaded. A link on the clipboard is picked up by itself.
+- **download, then play** saves it under the player's `downloads` folder
+  first (up to 1440p, or 4K when ticked). YouTube only serves video and
+  audio apart, so the first download fetches ffmpeg once (170 MB) to join
+  them.
+- **F6** switches neural rendering on and off while it plays; the
+  **neural rendering on/off** button does the same.
+
+Neural rendering re-draws everything in the window, menus included - use
+the player fullscreen. Text looks hand-drawn while it is on; that is the
+model, not a bug. A Chromium build was tried too and works technically,
+but the whole browser goes through the model and the picture smears; it
+is not offered.
+
 ### Something crashed, or it does nothing?
 
 Nothing is sent anywhere by itself - there is no telemetry. What there is:
@@ -190,6 +216,7 @@ dlss5-autopilot.exe "D:\Games\Game"            install
 dlss5-autopilot.exe "D:\Games\Game" --check    detect only, write nothing
 dlss5-autopilot.exe "D:\Games\Game" --remove   uninstall
 dlss5-autopilot.exe "D:\Games\Game" --dxvk     run the game on Vulkan through DXVK (see below); --no-dxvk turns the automatic choice off
+dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  set up the video player and feed it
 ```
 
 ---
