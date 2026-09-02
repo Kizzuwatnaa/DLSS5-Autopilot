@@ -9,6 +9,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+import pathlib
 from pathlib import Path
 
 from . import emulators, log, pe
@@ -20,6 +21,20 @@ from . import emulators, log, pe
 MARKER_FILES = ("dlss5-feed.addon64", "dlss5-feed.addon32",
                 "dlss5-bridge.addon64", "dlss5-autopilot.json",
                 "dlss5kur-kurulum.json", "dlss5-installer.json")
+
+
+def _isdir(p) -> bool:
+    """Path.is_dir() that survives a drive letter Windows will not talk about.
+
+    A card reader with no card, a BitLocker volume that is locked, or a
+    drive that went away raise OSError 87 ("wrong parameter") from stat()
+    instead of returning False, and one such letter used to take the whole
+    Xbox / folder / emulator scan down with it (issue #2).
+    """
+    try:
+        return pathlib.Path(p).is_dir()
+    except OSError:
+        return False
 
 # What to tell someone whose Xbox / Game Pass game we cannot even read.
 # One sentence, shared with the installer so both places say the same thing.
@@ -315,7 +330,7 @@ def scan_ea() -> list[Game]:
     # The EA app also keeps a plain games folder.
     for guess in (r"C:\Program Files\EA Games", r"C:\Program Files (x86)\EA Games"):
         root = Path(guess)
-        if not root.is_dir():
+        if not _isdir(root):
             continue
         try:
             for f in root.iterdir():
@@ -395,7 +410,7 @@ def scan_xbox() -> list[Game]:
         roots.append(Path(f"{drive}:/Program Files/ModifiableWindowsApps"))
         roots.append(Path(f"{drive}:/XboxGames"))
     for root in roots:
-        if not root.is_dir():
+        if not _isdir(root):
             continue
         try:
             for f in root.iterdir():
@@ -457,7 +472,7 @@ def scan_amazon() -> list[Game]:
         roots.append(Path(f"{drive}:/Amazon Games/Library"))
     for r in roots:
         try:
-            if r.is_dir():
+            if _isdir(r):
                 out += [Game(name=f.name, folder=f, source="Amazon")
                         for f in r.iterdir() if f.is_dir()]
         except OSError:
@@ -470,7 +485,7 @@ def scan_itch() -> list[Game]:
     out: list[Game] = []
     base = Path(os.environ.get("APPDATA", "")) / "itch" / "apps"
     try:
-        if base.is_dir():
+        if _isdir(base):
             out += [Game(name=f.name, folder=f, source="itch")
                     for f in base.iterdir() if f.is_dir()]
     except OSError:
@@ -515,7 +530,7 @@ def scan_folders() -> list[Game]:
              "My Games", "PC Games", "Installed Games")
     for drive in "CDEFGHIJ":
         base = Path(f"{drive}:/")
-        if not base.is_dir():
+        if not _isdir(base):
             continue
         for n in names:
             d = base / n

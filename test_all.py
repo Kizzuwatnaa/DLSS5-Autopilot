@@ -546,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.4.0", update.VERSION == "1.4.0", update.VERSION)
+check("version is 1.4.1", update.VERSION == "1.4.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1882,6 +1882,32 @@ for _name in ("Ryujinx.exe", "yuzu.exe"):
     check(f"{_p.name}: note only", any("no DXGI backend" in n for n in emulators.set_backend(_p, Path(_name)))
           and emulators.backend_status(_p, Path(_name)) == ("unknown", None))
 
+
+
+# ------------------------------------------------- 17. an unready drive
+section("17. an unready drive letter does not kill a scan")
+import pathlib as _pl  # noqa: E402
+_orig_is_dir = _pl.Path.is_dir
+
+
+def _angry_is_dir(self, *a, **k):
+    if str(self).upper().startswith("Q:"):
+        raise OSError(87, "The parameter is incorrect", str(self))
+    return _orig_is_dir(self, *a, **k)
+
+
+try:
+    _pl.Path.is_dir = _angry_is_dir
+    check("_isdir swallows OSError 87", games._isdir(_pl.Path("Q:/")) is False)
+    _errs = []
+    for _fn in (games.scan_xbox, games.scan_folders, emulators.scan):
+        try:
+            _fn()
+        except OSError as e:
+            _errs.append(f"{_fn.__name__}: {e}")
+    check("xbox / folder / emulator scans survive it", not _errs, str(_errs))
+finally:
+    _pl.Path.is_dir = _orig_is_dir
 
 section("RESULT")
 if FAILS:

@@ -23,8 +23,23 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
+import pathlib
 from pathlib import Path
 from typing import Callable
+
+
+def _isdir(p) -> bool:
+    """Path.is_dir() that survives a drive letter Windows will not talk about.
+
+    A card reader with no card, a BitLocker volume that is locked, or a
+    drive that went away raise OSError 87 ("wrong parameter") from stat()
+    instead of returning False, and one such letter used to take the whole
+    Xbox / folder / emulator scan down with it (issue #2).
+    """
+    try:
+        return pathlib.Path(p).is_dir()
+    except OSError:
+        return False
 
 
 @dataclass
@@ -134,21 +149,21 @@ def _search_roots() -> list[Path]:
     env = os.environ
     for v in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA", "APPDATA"):
         d = env.get(v)
-        if d and Path(d).is_dir():
+        if d and _isdir(d):
             roots.append(Path(d))
     home = Path.home()
     roots += [home / "Desktop", home / "Downloads", home / "Documents"]
     # Common folders at drive roots
     for drive in "CDEFGH":
         base = Path(f"{drive}:/")
-        if not base.is_dir():
+        if not _isdir(base):
             continue
         for name in ("Emulators", "Emulator", "Games", "Emu", "RetroArch",
                      "PS2", "PS1", "Emulation", "Roms", "Apps", "Programs",
                      "Oyunlar", "Tools", "Portable",
                      "EmuDeck", "Emulators_Portable", "LaunchBox"):
             d = base / name
-            if d.is_dir():
+            if _isdir(d):
                 roots.append(d)
         # People also unpack an emulator straight to D:\PCSX2. Searching the
         # drive root itself catches that; the walk below is depth-limited, so
@@ -173,7 +188,7 @@ def _search_roots() -> list[Path]:
     out: list[Path] = []
     for r in roots:
         try:
-            if r.is_dir() and r.resolve() not in seen:
+            if _isdir(r) and r.resolve() not in seen:
                 seen.add(r.resolve())
                 out.append(r)
         except OSError:
