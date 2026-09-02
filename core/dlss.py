@@ -1,6 +1,6 @@
 """Does this game ship its own DLSS, and which install path suits it?
 
-This decides between five ways of getting DLSS 5 neural rendering into a
+This decides between six ways of getting DLSS 5 neural rendering into a
 game. Getting it right matters: the feeder path is always DLAA and needs
 motion-vector shaders, whereas a game with its own DLSS can be hooked
 directly and keeps its own Quality/Balanced/Performance modes.
@@ -15,6 +15,14 @@ directly and keeps its own Quality/Balanced/Performance modes.
              Krish's renodx-dlss5 add-on detours the game's own NGX D3D12
              calls. Nothing synthetic, and the game's own quality mode applies.
              The most proven route for D3D12 games that ship DLSS.
+
+    UPSTREAM matiasLombo's neural-upstream add-on. Hooks the same NGX
+             EvaluateFeature call but runs the network ITSELF, on the
+             render-resolution colour buffer, and hands the result to the
+             game's own DLSS as its input. Same-resolution network on a
+             smaller image: proportionally cheaper, and the game's quality
+             mode still applies. No renodx add-on beside it - two NGX hooks
+             fight. Days old, tested on two games by its author.
 
     OPTI     Dagherbou's OptiScaler fork. Replaces the upscaler and runs the
              model over its output, with a model-resolution dial (25-100%)
@@ -40,7 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 NATIVE, BRIDGE, FEEDER, OPTI, RENODX = "native", "bridge", "feeder", "optiscaler", "renodx"
-ALL_ROUTES = (RENODX, NATIVE, OPTI, BRIDGE, FEEDER)
+UPSTREAM = "upstream"
+ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER)
 
 # Streamline is NVIDIA's own plugin layer; if a game ships it, it ships DLSS.
 # These are never files this tool installs, so they are unambiguous.
@@ -175,6 +184,11 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None) -> tuple[bool, 
         return True, note
     if route == NATIVE:
         return True, "most proven for D3D12 games with DLSS"
+    if route == UPSTREAM:
+        if not native_dlss:
+            return False, "the game must already use DLSS"
+        return True, ("runs the network before the game's DLSS, at render "
+                      "resolution - cheaper; days old, two games tested")
     if route == RENODX:
         return True, "new and unproven - reported not working in many games; try the others first"
     if route == BRIDGE:
@@ -294,13 +308,15 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
                         "D3D11. The renodx-dlss add-on is new and has not "
                         "proven itself in the field yet.")
         else:                              # DX12 or unknown -> assume DXGI/D3D12
-            s.options = [NATIVE, OPTI, BRIDGE, FEEDER, RENODX]
+            s.options = [NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, RENODX]
             s.recommended = NATIVE
             s.reason = ("This game ships its own DLSS and renders with D3D12, "
                         "so the DLSS 5 add-on hooks it directly. No synthetic "
                         "contract, and your in-game DLSS quality setting "
                         "(Quality / Balanced / Performance) still applies. "
-                        "OptiScaler adds a model-resolution dial for more fps.")
+                        "OptiScaler adds a model-resolution dial for more fps; "
+                        "neural-upstream runs the network before the game's "
+                        "DLSS instead, at render resolution, for much less.")
         return s
 
     # No DLSS of its own, D3D11/D3D12.
@@ -317,6 +333,7 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
 LABELS = {
     RENODX: "renodx-dlss - new in-process add-on (D3D9/11/12), unproven",
     NATIVE: "native - hook the game's own DLSS",
+    UPSTREAM: "neural-upstream - the network before the upscaler, cheaper",
     OPTI: "optiscaler - replace the upscaler, model resolution dial",
     BRIDGE: "bridge - private D3D12 session",
     FEEDER: "feeder - synthetic DLAA contract",
@@ -329,6 +346,14 @@ BLURB = {
              "route first and come here only if that fails."),
     NATIVE: ("Simplest and best quality: no synthetic contract, no motion "
              "vector shaders, and the game's own DLSS quality mode applies."),
+    UPSTREAM: ("matiasLombo's neural-upstream add-on runs the network at "
+               "render resolution, BEFORE the game's own DLSS upscales - "
+               "the same enhancement on a smaller image, so it costs much "
+               "less, and your DLSS quality mode still applies. It does "
+               "the neural rendering itself, so no renodx add-on goes in "
+               "beside it. Configured from its tab in the ReShade overlay. "
+               "Days old; its author tested GTA V Enhanced and Bright "
+               "Memory Infinite."),
     OPTI: ("No ReShade at all. OptiScaler takes over upscaling and runs the "
            "model over its output. Its model-resolution dial is the biggest "
            "fps lever there is: cost falls with the square of it, and the "
@@ -341,4 +366,33 @@ BLURB = {
     FEEDER: ("Builds a DLAA contract from ReShade's depth buffer and "
              "shader-estimated motion vectors. Always DLAA, never upscaling. "
              "The only route for 32-bit and OpenGL games."),
+}
+
+# What must NOT sit in the folder or run beside each route, and what breaks
+# when it does. Short and honest: these are the conflicts people actually
+# hit, not a legal disclaimer. ReShade loads every .addon64 it finds, and
+# two things hooking the same NGX calls means flicker or nothing at all.
+CONFLICTS: dict[str, tuple[str, ...]] = {
+    NATIVE: ("not with OptiScaler or a frame-gen unlocker in the same folder "
+             "- two NGX hooks: flicker, greyed-out frame-gen or nothing",
+             "NVIDIA Smooth Motion off for this game"),
+    UPSTREAM: ("not with the renodx-dlss5 add-on, OptiScaler or another NGX "
+               "hook in the folder - installing removes ours, name theirs",
+               "with DLSS Frame Generation set its cadence to Quality in the "
+               "overlay, or expect stutter",
+               "does not upscale - the game's own DLSS still does"),
+    OPTI: ("no ReShade at all on this route; other RenoDX add-ons will not load",
+           "the game must already use DLSS",
+           "not with a frame-gen unlocker or dlss-enabler in the folder"),
+    BRIDGE: ("not with the feeder or renodx-dlss add-on in the same folder "
+             "- both build a contract and the game dies before its swap chain",
+             "NVIDIA Smooth Motion off for this game",
+             "an older dlss5-dx11-bridge.addon64 is removed - the two conflict"),
+    FEEDER: ("always DLAA; the game's own DLSS is ignored",
+             "NVIDIA Smooth Motion off",
+             "not with the bridge or renodx-dlss add-on in the same folder"),
+    RENODX: ("not with the renodx-dlss5 add-on, the feeder or the bridge in "
+             "the folder - both hook NGX",
+             "reported not working in many games; nothing to tune if it does "
+             "nothing, switch route"),
 }

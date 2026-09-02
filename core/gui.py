@@ -35,7 +35,7 @@ EDGE    = "#2a2e35"
 TXT     = "#e6e8ea"     # bright text
 BODY    = "#b9bcc2"     # normal text
 DIM     = "#5c6069"     # labels
-FAINT   = "#3a3d43"     # decoration
+FAINT   = "#454952"     # decoration
 AMBER   = "#d8a657"     # accent
 GREEN   = "#6f9f6f"
 RUST    = "#b07a3c"     # warnings
@@ -206,27 +206,27 @@ class App:
                 w.bind("<Button-1>", lambda ev, n=i: self._jump(n))
 
         tk.Frame(rail, bg=RAIL).pack(fill="both", expand=True)
-        self.gpulbl = tk.Label(rail, text="", bg=RAIL, fg=FAINT, anchor="w",
+        self.gpulbl = tk.Label(rail, text="", bg=RAIL, fg=DIM, anchor="w",
                                justify="left", font=font(8), wraplength=196)
         self.gpulbl.pack(fill="x", padx=20, pady=(0, 6))
-        self.verlbl = tk.Label(rail, text=f"v{update.VERSION}", bg=RAIL, fg=FAINT,
+        self.verlbl = tk.Label(rail, text=f"v{update.VERSION}", bg=RAIL, fg=DIM,
                                anchor="w", font=font(8))
         self.verlbl.pack(fill="x", padx=20, pady=(0, 4))
         # A bug report needs something to attach. This opens the log file so
         # it can be pasted somewhere useful.
-        self.loglink = tk.Label(rail, text="[ open log file ]", bg=RAIL, fg=FAINT,
+        self.loglink = tk.Label(rail, text="[ open log file ]", bg=RAIL, fg=DIM,
                                 anchor="w", cursor="hand2", font=font(8))
         self.loglink.pack(fill="x", padx=20, pady=(0, 2))
         self.loglink.bind("<Button-1>", lambda e: self._open_log())
-        self.buglink = tk.Label(rail, text="[ report a bug ]", bg=RAIL, fg=FAINT,
+        self.buglink = tk.Label(rail, text="[ report a bug ]", bg=RAIL, fg=DIM,
                                 anchor="w", cursor="hand2", font=font(8))
         self.buglink.pack(fill="x", padx=20, pady=(0, 2))
         self.buglink.bind("<Button-1>", lambda e: self._report_bug())
         self.ideallink = tk.Label(rail, text="[ suggest a feature ]", bg=RAIL,
-                                  fg=FAINT, anchor="w", cursor="hand2", font=font(8))
+                                  fg=DIM, anchor="w", cursor="hand2", font=font(8))
         self.ideallink.pack(fill="x", padx=20, pady=(0, 2))
         self.ideallink.bind("<Button-1>", lambda e: self._suggest())
-        self.howlink = tk.Label(rail, text="[ how it works ]", bg=RAIL, fg=FAINT,
+        self.howlink = tk.Label(rail, text="[ how it works ]", bg=RAIL, fg=DIM,
                                 anchor="w", cursor="hand2", font=font(8))
         self.howlink.pack(fill="x", padx=20, pady=(0, 18))
         self.howlink.bind("<Button-1>", lambda e: webbrowser.open(
@@ -259,7 +259,7 @@ class App:
         self.p2 = self._page_games()
         self.p3 = self._page_install()
 
-        self.status = tk.Label(bar, text="ready", bg=BG, fg=FAINT,
+        self.status = tk.Label(bar, text="ready", bg=BG, fg=DIM,
                                font=font(9), anchor="w")
         self.status.pack(side="left", fill="x", expand=True)
         self.btn_back = ttk.Button(bar, text="back", command=self._back)
@@ -444,7 +444,7 @@ class App:
                 lambda e: self.videolbl.configure(wraplength=max(380, e.width - 10)))
 
         # What the publishers ship right now - the tool always fetches these.
-        self.boardlbl = tk.Label(f, text="", bg=BG, fg=FAINT, font=font(8),
+        self.boardlbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8),
                                  anchor="w", justify="left", wraplength=680)
         self.boardlbl.pack(fill="x", pady=(10, 0))
         self._load_board()
@@ -1063,6 +1063,9 @@ class App:
         self.routelbl = tk.Label(inner, bg=PANEL, fg=DIM, font=font(8),
                                  justify="left", anchor="w", wraplength=680)
         self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        inner.bind("<Configure>",
+                   lambda e: self.routelbl.configure(wraplength=max(360, e.width - 8)),
+                   add="+")
 
         self.lbl_mv = row(3, "motion vectors")
         self.cb_prov = ttk.Combobox(inner, state="readonly",
@@ -1148,7 +1151,7 @@ class App:
                                    values=list(feedcfg.HDR.values()))
         self.cb_hdr.current(0)
         self.cb_hdr.grid(row=10, column=1, sticky="w", pady=5)
-        self.dlaalbl = tk.Label(inner, text="", bg=PANEL, fg=FAINT, font=font(8))
+        self.dlaalbl = tk.Label(inner, text="", bg=PANEL, fg=DIM, font=font(8))
         self.dlaalbl.grid(row=10, column=2, sticky="w", padx=(10, 0))
 
         # OptiScaler's own dials sit in the same two rows; only one route's
@@ -1167,7 +1170,7 @@ class App:
             values=[f"{v}" for v in optiscaler.NR_STYLES.values()])
         self.cb_nrstyle.current(0)
         self.nrhint = tk.Label(inner, text="the rest is on the overlay (Insert)",
-                               bg=PANEL, fg=FAINT, font=font(8))
+                               bg=PANEL, fg=DIM, font=font(8))
 
         # The feeder's pre-releases carry support for the newer add-on builds;
         # any exact release can be pinned when the newest one breaks a game.
@@ -1178,7 +1181,7 @@ class App:
         self.cb_feederver.bind("<<ComboboxSelected>>", self._on_feederver)
         self.feeder_tags: list[str] = []
         self.feederhint = tk.Label(
-            inner, bg=PANEL, fg=FAINT, font=font(8), anchor="w", justify="left",
+            inner, bg=PANEL, fg=DIM, font=font(8), anchor="w", justify="left",
             text="stable = what GitHub marks as the latest release; or pin an "
                  "exact build when the newest one breaks a game. builds "
                  "before 0.8 pair with DLSS 5 add-on 4.55 and have a settings "
@@ -1227,7 +1230,7 @@ class App:
                        selectcolor=FIELD, activebackground=PANEL,
                        activeforeground=TXT, font=font(8), borderwidth=0)            .pack(side="left", padx=(10, 0))
         self.urlhint = tk.Label(
-            self.urlrow, bg=PANEL, fg=FAINT, font=font(8), anchor="w",
+            self.urlrow, bg=PANEL, fg=DIM, font=font(8), anchor="w",
             text="a youtube (or any yt-dlp) link: 'play' streams it live in the "
                  "player; 'download' saves it under the player's downloads "
                  "folder first (up to 1440p, or 4K when ticked; the first "
@@ -1239,7 +1242,7 @@ class App:
         barwrap.pack(fill="x", pady=(12, 2))
         self.pb = ttk.Progressbar(barwrap, mode="determinate", maximum=100)
         self.pb.pack(fill="x")
-        self.pblbl = tk.Label(f, text="", bg=BG, fg=FAINT, font=font(8), anchor="w")
+        self.pblbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8), anchor="w")
         self.pblbl.pack(fill="x")
 
         # Packed to the bottom BEFORE the log, so a growing log can never push
@@ -1281,7 +1284,7 @@ class App:
         logwrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
         logwrap.pack(fill="both", expand=True, pady=(6, 0))
         self.log = tk.Text(logwrap, bg=PANEL, fg=BODY, insertbackground=BODY,
-                           font=font(9), borderwidth=0, height=9,
+                           font=font(9), borderwidth=0, height=14,
                            wrap="word", state="disabled", spacing1=1)
         lsb = ttk.Scrollbar(logwrap, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=lsb.set)
@@ -1483,6 +1486,9 @@ class App:
             text = f"NOT FOR THIS PC - {note}.\n{text}"
         elif note:
             text = f"{text}\n({note})"
+        # What this route will not tolerate, in plain words, before INSTALL.
+        for line in getattr(dlss, "CONFLICTS", {}).get(path, ()):
+            text += "\n  !  " + line
         self.routelbl.config(text=text, fg=RUST if not usable else DIM)
         feeder = path == dlss.FEEDER
         opti = path == dlss.OPTI
@@ -1531,6 +1537,11 @@ class App:
         # synthetic contract; the other routes hook the game's real DLSS calls
         # and ignore all three.
         self.cb_prov.configure(state="readonly" if feeder else "disabled")
+        # neural-upstream does the neural rendering itself: no renodx add-on
+        # goes in, so its version dropdown would only mislead.
+        self.cb_renodx.configure(
+            state="disabled" if path == getattr(dlss, "UPSTREAM", "upstream")
+            else "readonly")
         self.cb_preset.configure(state="readonly" if feeder else "disabled")
         self.dlaalbl.config(
             text="the feeder path is always dlaa" if feeder
@@ -2160,6 +2171,16 @@ class App:
             self._log("   2. neural rendering is enabled; the tab shows its status "
                       "and lets you tune intensity and style")
             self._log("   3. turn OFF the game's own MSAA/SSAA")
+        elif route == getattr(dlss, "UPSTREAM", "upstream"):
+            self._log("   !  reshade's overlay will say 'no .fx files found' - "
+                      "normal on this route, it uses no shaders")
+            self._log("   1. keep the game's own DLSS ON - the network runs "
+                      "before it, at render resolution")
+            self._log("   2. press Home to open reshade, then the 'NR Pre-Upscale' "
+                      "tab: strength and cadence live there")
+            self._log("   3. using DLSS Frame Generation? set cadence to Quality "
+                      "(every frame) or it stutters")
+            self._log("   4. turn OFF the game's own MSAA/SSAA")
         elif route in (dlss.NATIVE, dlss.BRIDGE):
             self._log("   !  reshade's overlay will say 'no .fx files found' - "
                       "normal on this route, it uses no shaders; the add-on "
@@ -2237,7 +2258,20 @@ def _dark_titlebar(win) -> None:
 
 def run() -> int:
     log.start(update.VERSION)
+    try:
+        import ctypes
+        # Per-monitor DPI awareness: without it Windows stretches the whole
+        # window like a bitmap on 125%/150% displays and the text goes soft.
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        pass
     root = tk.Tk()
+    try:
+        import ctypes
+        dpi = ctypes.windll.user32.GetDpiForWindow(root.winfo_id()) or 96
+        root.tk.call("tk", "scaling", dpi / 72.0)
+    except Exception:
+        pass
     # Installed before the window is built: a failure while building it is
     # exactly the kind that used to disappear without trace.
     log.install_handlers(root)

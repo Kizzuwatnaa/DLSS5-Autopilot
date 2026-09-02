@@ -10,6 +10,7 @@ Which log matters depends on the route:
              on the 32-bit path where the real NGX work happens
     bridge   dlss5-bridge writes into ReShade.log
     native   nothing but ReShade.log - the add-on hooks the game's own calls
+    upstream the same: neural-upstream shows its state in its overlay tab
 
 A log older than the install is from a previous setup and is ignored rather
 than reported as if it described the current one.
@@ -33,6 +34,19 @@ RESHADE_LOG = "ReShade.log"
 MANIFEST = "dlss5-autopilot.json"
 
 OK, WARN, BAD, INFO = "ok", "warn", "bad", "info"
+
+# What neural-upstream registers itself as (NAME in its addon.cpp) and the
+# overlay tab it draws. Matched loosely as well, in case a later build
+# renames it - but never on "neural", which our own add-on's name contains.
+UPSTREAM_ADDON_NAME = "DLSS5 NR Pre-Upscale"
+UPSTREAM_PANEL = "'NR Pre-Upscale' tab (neural-upstream)"
+NATIVE_ADDON_NAME = "DLSS 5 Neural Rendering"
+
+
+def _upstream_named(name: str) -> bool:
+    low = name.strip().lower()
+    return (low == UPSTREAM_ADDON_NAME.lower() or "pre-upscale" in low
+            or "upstream" in low)
 
 # The shaders the feed actually runs. ReShade compiles every .fx in the
 # folder, and the lumenite pack ships a dozen the feed never uses; a compile
@@ -297,7 +311,7 @@ def analyse(install_dir: Path) -> Report:
     # not by timestamps: reinstalling bumps the manifest and would make every
     # existing log look stale, while a feeder log left behind after switching
     # to native would otherwise be reported as if it were current.
-    feeder_route = rep.route not in ("native", "bridge", "renodx")
+    feeder_route = rep.route not in ("native", "bridge", "renodx", "upstream")
     if feeder_route:
         text = _tail(feed)
         htext = _tail(host, 150_000)
@@ -384,8 +398,16 @@ def analyse(install_dir: Path) -> Report:
         # add-ons (an HDR mod, another DLSS build) shows up here as a list
         # of things that loaded while ours is missing - and the person reads
         # "add-ons loaded" as "working" (Cyberpunk 2077, issue #3).
-        want = "RenoDX DLSS" if rep.route == "renodx" else "DLSS 5 Neural Rendering"
-        ours = [n for n in loaded if n.strip().lower() == want.lower()]
+        if rep.route == "renodx":
+            want = "RenoDX DLSS"
+        elif rep.route == "upstream":
+            want = UPSTREAM_ADDON_NAME
+        else:
+            want = NATIVE_ADDON_NAME
+        if rep.route == "upstream":
+            ours = [n for n in loaded if _upstream_named(n)]
+        else:
+            ours = [n for n in loaded if n.strip().lower() == want.lower()]
         # The feed log names the add-on it found; that counts as loaded too
         # (ReShade.log can be truncated to the tail that fits).
         if not ours and "DLSS 5 add-on: renodx" in (text or ""):
@@ -406,6 +428,20 @@ def analyse(install_dir: Path) -> Report:
                          "renodx-dlss.",
                     "Both hook the same NGX calls. Keep one: uninstall here, "
                     "delete the other .addon64, install again.")
+        elif rep.route == "upstream" and any(
+                n.strip().lower() == NATIVE_ADDON_NAME.lower() for n in others):
+            rep.add(BAD, "Two NGX hooks are loaded: neural-upstream and the "
+                         "renodx-dlss5 add-on.",
+                    "neural-upstream runs the network itself; renodx-dlss5 "
+                    "hooks the same EvaluateFeature call, so both rewrite it. "
+                    "Install this route again - it removes "
+                    "renodx-dlss5.addon64 - or switch to the native route.")
+        elif rep.route != "upstream" and any(_upstream_named(n) for n in others):
+            rep.add(BAD, "Two NGX hooks are loaded: the DLSS 5 add-on and "
+                         "neural-upstream.",
+                    "nvngx.dll.addon64 belongs to the neural-upstream route. "
+                    "Install this route again - it moves that add-on aside - "
+                    "or switch to the neural-upstream route.")
         elif others:
             rep.add(WARN, "Other ReShade add-ons are loaded: " + ", ".join(others),
                     "They share the swap chain with the DLSS 5 add-on. If the "
@@ -608,8 +644,9 @@ def analyse(install_dir: Path) -> Report:
         rep.add(BAD, "The game's own d3dcompiler_47.dll is too old for "
                      "the neural pass.", _COMPILER_FIX)
         rep.verdict = "The neural pass cannot compile - old d3dcompiler_47.dll in the game folder."
-    elif rep.route in ("native", "bridge", "renodx"):
+    elif rep.route in ("native", "bridge", "renodx", "upstream"):
         panel = ("RenoDX DLSS tab" if rep.route == "renodx"
+                 else UPSTREAM_PANEL if rep.route == "upstream"
                  else "DLSS 5 Neural Rendering panel")
         rep.add(INFO, "This route leaves no frame log of its own.",
                 f"Open the ReShade overlay and check the {panel}: it shows "

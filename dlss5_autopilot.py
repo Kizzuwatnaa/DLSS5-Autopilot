@@ -2,7 +2,7 @@ r"""DLSS 5 Autopilot - entry point.
 
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
-                                                    [--route native|optiscaler|renodx|bridge|feeder]
+                                                    [--route native|upstream|optiscaler|renodx|bridge|feeder]
                                                     [--dxvk | --no-dxvk]
                 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 

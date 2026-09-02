@@ -28,6 +28,7 @@ LABELS = {
     "dlssnr":     "nvngx_dlssnr",
     "dlss":       "nvngx_dlss",
     "bridge":     "dlss5-bridge",
+    "upstream":   "neural-upstream",
     "feeder":     "DLSS5-Feeder",
     "optiscaler": "OptiScaler",
 }
@@ -47,6 +48,8 @@ def _latest(name: str) -> str:
         latest = optiscaler.resolve()[0]
     elif name == "bridge":
         latest = sources.resolve_bridge()[0]
+    elif name == "upstream":
+        latest = sources.resolve_upstream()[0]
     elif name == "feeder":
         latest = sources.resolve_feeder()[0]
     elif name in ("renodx", "renodx_sf", "dlssnr", "dlss"):
@@ -113,7 +116,10 @@ def check(root: Path) -> list[Item]:
         except Exception as e:
             log.write(f"component check: could not resolve {name} ({e})", "warn")
             continue
-        if not latest:
+        # "latest" is what an install records when GitHub's API was out
+        # of reach and the download redirect was used: a real file, but no
+        # version to compare. Not behind, not current - left out.
+        if not latest or latest == "latest" or installed == "latest":
             continue
         # Only call it outdated when the numbers actually go up. A different
         # build family (an -RTX40 against an SF build, say) is a choice, not a

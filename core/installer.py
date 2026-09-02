@@ -5,6 +5,7 @@ r"""Install engine: 64-bit, 32-bit and DX9 paths.
     dlss5-feed.addon64          (feeder route)
     renodx-dlss5.addon64        (feeder / native / bridge routes)
     renodx-dlss.addon64         (renodx route - ShortFuse's SF build)
+    nvngx.dll.addon64           (upstream route - neural-upstream, no renodx add-on)
     nvngx_dlssnr.dll
     nvngx_dlss.dll
     ReShade.ini / ReShadePreset.ini / dlss5-feed.cfg
@@ -31,7 +32,7 @@ from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, 
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
-from .dlss import BRIDGE, FEEDER, NATIVE, OPTI
+from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, UPSTREAM
 from .dlss import RENODX as ROUTE_RENODX   # the route; RENODX below is a file name
 
 MANIFEST = "dlss5-autopilot.json"
@@ -43,6 +44,10 @@ FEEDER_FX = "DLSS5_Feed.fx"
 RENODX = "renodx-dlss5.addon64"
 # ShortFuse's add-on - the "SF" build - which hooks D3D9/D3D11/D3D12 itself.
 RENODX_SF = "renodx-dlss.addon64"
+# matiasLombo's neural-upstream. The name is not ours to choose: the NGX
+# snippet only creates the feature for a caller whose path contains
+# "nvngx.dll", and under any other name it returns 0xBAD00002.
+UPSTREAM_ADDON = "nvngx.dll.addon64"
 
 # Other hooks on the same NGX entry points. A game with one of these plus
 # our add-on gets two things rewriting the same calls: flicker, frame-gen
@@ -69,7 +74,7 @@ def other_ngx_hooks(root: Path) -> list[str]:
     for low, orig in names.items():
         if low.endswith(".addon64") and low not in (
                 "dlss5-feed.addon64", "dlss5-bridge.addon64",
-                RENODX.lower(), RENODX_SF.lower()):
+                RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower()):
             found.append(orig)
     return found
 
@@ -199,6 +204,11 @@ def reliability(g: games.Game, path: str = FEEDER) -> tuple[str, str]:
         return STABLE, ("The game's own DLSS is hooked directly - no synthetic "
                         "contract, no motion-vector shaders, and your in-game "
                         "DLSS quality setting still applies.")
+    if path == UPSTREAM:
+        return BETA, ("neural-upstream runs the network at render resolution, "
+                      "before the game's own DLSS. Days old, tested on two "
+                      "games by its author (GTA V Enhanced, Bright Memory "
+                      "Infinite).")
     if path == ROUTE_RENODX:
         if g.api == "DX9":
             return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
@@ -309,7 +319,7 @@ def uses_dxvk(g: games.Game, opt: "Options") -> bool:
     routes only - OptiScaler is itself the dxgi.dll DXVK would need to be,
     and ShortFuse's renodx-dlss hooks D3D9 in-process."""
     return (bool(opt.dxvk) and g.api in dxvk.APIS
-            and opt.path not in (OPTI, ROUTE_RENODX))
+            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM))
 
 
 def via_dxvk(g: games.Game, opt: "Options") -> games.Game:
@@ -429,6 +439,13 @@ def plan(g: games.Game, opt: Options) -> list[str]:
         return ["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll",
                 "OptiScaler configuration"]
     steps.append("ReShade (Vulkan layer)" if g.api == "Vulkan" else "ReShade")
+
+    if opt.path == UPSTREAM:
+        # neural-upstream does the neural rendering itself, so no renodx
+        # add-on beside it (two NGX hooks), and the game's nvngx_dlss.dll is
+        # never replaced: its DLSS is what the network feeds.
+        return steps + ["neural-upstream", "nvngx_dlssnr.dll",
+                        "ReShade configuration"]
 
     if opt.path == FEEDER:
         steps.append("ReShade shader headers")
@@ -734,10 +751,13 @@ def preview(g: games.Game, opt: Options) -> Preview:
 
     # 5/6/7) DLSS parts: in host64/ on the 32-bit feeder path
     dlss_dir = "" if (x64 or opt.path != FEEDER) else host
-    write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
+    if opt.path == UPSTREAM:
+        write(UPSTREAM_ADDON)
+    else:
+        write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
     write(rel(dlss_dir, DLSSNR))
     game_has = present(DLSS)
-    if not (x64 and game_has and opt.keep_game_dlss):
+    if opt.path != UPSTREAM and not (x64 and game_has and opt.keep_game_dlss):
         write(rel(dlss_dir, DLSS))
 
     # 8/9/10) host64, ReShade configuration, the cfg
@@ -935,6 +955,7 @@ ROUTE_ADDONS = {
     FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32),
     BRIDGE: (BRIDGE_ADDON,),
     ROUTE_RENODX: (RENODX_SF,),
+    UPSTREAM: (UPSTREAM_ADDON,),
 }
 
 
@@ -942,9 +963,9 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     """(route, filename) of every add-on that must not sit beside `keep`."""
     out = [(r, n) for r, names in ROUTE_ADDONS.items() if r != keep for n in names]
     # renodx-dlss5 is shared by the native, bridge and feeder routes, so it is
-    # not in the table - but it and ShortFuse's build both hook NGX, and the
-    # two loaded together fight over the same entry points.
-    if keep == ROUTE_RENODX:
+    # not in the table - but it, ShortFuse's build and neural-upstream all
+    # hook NGX, and two loaded together fight over the same entry points.
+    if keep in (ROUTE_RENODX, UPSTREAM):
         out.append((NATIVE, RENODX))
     return out
 
@@ -1079,7 +1100,7 @@ def options_from_manifest(root: Path) -> Options | None:
     if not data:
         return None
     path = data.get("path") or FEEDER
-    if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX):
+    if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM):
         return None
     return Options(
         provider=int(data.get("provider") or 3),
@@ -1089,7 +1110,7 @@ def options_from_manifest(root: Path) -> Options | None:
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
         feeder_tag=str(data.get("feeder_tag") or ""),
-        native_dlss=path in (NATIVE, OPTI) or bool(data.get("native_dlss", False)),
+        native_dlss=path in (NATIVE, OPTI, UPSTREAM) or bool(data.get("native_dlss", False)),
         opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
     )
 
@@ -1515,62 +1536,77 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             if sources.last_fallback not in rep.warnings:
                 rep.warnings.append(sources.last_fallback)
 
-        sf = opt.path == ROUTE_RENODX
-        addon_name = RENODX_SF if sf else RENODX
-        begin("DLSS 5 add-on (renodx-dlss SF)" if sf else "DLSS 5 add-on (renodx)")
-        # Even without an explicit choice, prefer a local build if one exists:
-        # Discord releases are not on the mirror. Only a build of the right
-        # family, though - the two add-ons are not interchangeable.
-        if not opt.renodx_local and not opt.renodx:
-            found, _ = prefs.find_renodx(sf=sf)
-            if found:
-                opt.renodx_local = found
-                log(f"      found a local renodx build: {found.name}")
-        if opt.renodx_local:
-            src = Path(opt.renodx_local)
-            if not src.is_file():
-                raise InstallError(f"Selected renodx file not found: {src}")
-            try:
-                if pe.exe_bitness(src) != 64:
-                    raise InstallError("The selected renodx file is not 64-bit.")
-            except pe.PEError as e:
-                raise InstallError(f"The selected renodx file is not valid: {e}") from e
-            _copy(src, dlss_dir / addon_name, rep, root)
-            log(f"      {src.name} (your local file) -> {addon_name}")
-            rep.notes.append(f"renodx: local file used ({src.name})")
-        elif sf:
-            fam = catalog.get("renodx_sf") or []
-            if not fam:
-                raise InstallError("The mirror lists no renodx-dlss (SF) build. "
-                                   "Pick 'use my file' with the add-on from the "
-                                   "RenoDX Discord, or choose another route.")
-            e = sources.pick(fam, opt.renodx)
-            f = dl(e["url"], f"renodx-sf-{e['label']}.zip")
-            _extract(f, ".addon64", dlss_dir / RENODX_SF, rep, root)
-            rep.written.append(str((dlss_dir / RENODX_SF).relative_to(root)))
-            log(f"      renodx-dlss SF {e['label']}")
-            rep.notes.append(f"renodx-dlss SF version: {e['label']}")
-            rep.components["renodx_sf"] = e["label"]
+        if opt.path == UPSTREAM:
+            begin("neural-upstream")
+            utag, uurl = sources.resolve_upstream()
+            uf = dl(uurl, f"neural-upstream-{utag}.addon64")
+            _copy(uf, dlss_dir / UPSTREAM_ADDON, rep, root)
+            log(f"      neural-upstream {utag} -> {UPSTREAM_ADDON}")
+            if utag == "latest":
+                log("      (GitHub's API was out of reach; took the newest "
+                    "release by its download redirect)")
+            rep.notes.append(f"upstream version: {utag}")
+            rep.components["upstream"] = utag
+            rep.notes.append("neural-upstream runs the network itself, before "
+                             "the game's DLSS: no renodx-dlss5 add-on on this "
+                             "route, and the game's nvngx_dlss.dll is left alone")
         else:
-            want = opt.renodx
-            if not want and opt.path == FEEDER:
-                # The feeder's stable release only accepts 4.55; anything
-                # newer overlaps it and the DLSS feature dies in CreateFeature.
-                want = sources.renodx_for_feeder(rep.components.get("feeder", ""))
-                if want:
-                    log(f"      DLSS5-Feeder {rep.components.get('feeder')} accepts "
-                        f"renodx-dlss5 up to {want} - pinning to it (newer builds "
-                        f"conflict; tick 'feeder pre-release' to use them)")
-                    rep.notes.append(f"renodx-dlss5 pinned to {want} for this "
-                                     f"feeder release - newer builds conflict "
-                                     f"with it")
-            e = sources.pick(catalog["renodx"], want)
-            f = dl(e["url"], f"renodx-{e['label']}.zip")
-            _extract(f, ".addon64", dlss_dir / RENODX, rep, root)
-            rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
-            log(f"      renodx-dlss5 {e['label']}")
-            rep.notes.append(f"renodx version: {e['label']}")
-            rep.components["renodx"] = e["label"]
+            sf = opt.path == ROUTE_RENODX
+            addon_name = RENODX_SF if sf else RENODX
+            begin("DLSS 5 add-on (renodx-dlss SF)" if sf else "DLSS 5 add-on (renodx)")
+            # Even without an explicit choice, prefer a local build if one exists:
+            # Discord releases are not on the mirror. Only a build of the right
+            # family, though - the two add-ons are not interchangeable.
+            if not opt.renodx_local and not opt.renodx:
+                found, _ = prefs.find_renodx(sf=sf)
+                if found:
+                    opt.renodx_local = found
+                    log(f"      found a local renodx build: {found.name}")
+            if opt.renodx_local:
+                src = Path(opt.renodx_local)
+                if not src.is_file():
+                    raise InstallError(f"Selected renodx file not found: {src}")
+                try:
+                    if pe.exe_bitness(src) != 64:
+                        raise InstallError("The selected renodx file is not 64-bit.")
+                except pe.PEError as e:
+                    raise InstallError(f"The selected renodx file is not valid: {e}") from e
+                _copy(src, dlss_dir / addon_name, rep, root)
+                log(f"      {src.name} (your local file) -> {addon_name}")
+                rep.notes.append(f"renodx: local file used ({src.name})")
+            elif sf:
+                fam = catalog.get("renodx_sf") or []
+                if not fam:
+                    raise InstallError("The mirror lists no renodx-dlss (SF) build. "
+                                       "Pick 'use my file' with the add-on from the "
+                                       "RenoDX Discord, or choose another route.")
+                e = sources.pick(fam, opt.renodx)
+                f = dl(e["url"], f"renodx-sf-{e['label']}.zip")
+                _extract(f, ".addon64", dlss_dir / RENODX_SF, rep, root)
+                rep.written.append(str((dlss_dir / RENODX_SF).relative_to(root)))
+                log(f"      renodx-dlss SF {e['label']}")
+                rep.notes.append(f"renodx-dlss SF version: {e['label']}")
+                rep.components["renodx_sf"] = e["label"]
+            else:
+                want = opt.renodx
+                if not want and opt.path == FEEDER:
+                    # The feeder's stable release only accepts 4.55; anything
+                    # newer overlaps it and the DLSS feature dies in CreateFeature.
+                    want = sources.renodx_for_feeder(rep.components.get("feeder", ""))
+                    if want:
+                        log(f"      DLSS5-Feeder {rep.components.get('feeder')} accepts "
+                            f"renodx-dlss5 up to {want} - pinning to it (newer builds "
+                            f"conflict; tick 'feeder pre-release' to use them)")
+                        rep.notes.append(f"renodx-dlss5 pinned to {want} for this "
+                                         f"feeder release - newer builds conflict "
+                                         f"with it")
+                e = sources.pick(catalog["renodx"], want)
+                f = dl(e["url"], f"renodx-{e['label']}.zip")
+                _extract(f, ".addon64", dlss_dir / RENODX, rep, root)
+                rep.written.append(str((dlss_dir / RENODX).relative_to(root)))
+                log(f"      renodx-dlss5 {e['label']}")
+                rep.notes.append(f"renodx version: {e['label']}")
+                rep.components["renodx"] = e["label"]
 
         begin("nvngx_dlssnr.dll")
         card, sm = gpu.detect()
@@ -1628,20 +1664,23 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         else:
             rep.warnings.append(f"could not verify GPU compatibility ({why_gpu})")
 
-        begin("nvngx_dlss.dll")
-        game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
-        if x64 and game_has and opt.keep_game_dlss:
-            log("      the game ships its own nvngx_dlss.dll, left untouched")
+        if opt.path == UPSTREAM:
             rep.skipped.append(DLSS)
         else:
-            e = sources.pick(catalog["dlss"], opt.dlss)
-            f = dl(e["url"], f"dlss-{e['label']}.zip")
-            _backup(dlss_dir / DLSS, rep, root)
-            _extract(f, DLSS, dlss_dir / DLSS, rep, root)
-            rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
-            log(f"      nvngx_dlss {e['label']}")
-            rep.notes.append(f"dlss version: {e['label']}")
-            rep.components["dlss"] = e["label"]
+            begin("nvngx_dlss.dll")
+            game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
+            if x64 and game_has and opt.keep_game_dlss:
+                log("      the game ships its own nvngx_dlss.dll, left untouched")
+                rep.skipped.append(DLSS)
+            else:
+                e = sources.pick(catalog["dlss"], opt.dlss)
+                f = dl(e["url"], f"dlss-{e['label']}.zip")
+                _backup(dlss_dir / DLSS, rep, root)
+                _extract(f, DLSS, dlss_dir / DLSS, rep, root)
+                rep.written.append(str((dlss_dir / DLSS).relative_to(root)))
+                log(f"      nvngx_dlss {e['label']}")
+                rep.notes.append(f"dlss version: {e['label']}")
+                rep.components["dlss"] = e["label"]
 
         # --- 8) host64 --------------------------------------------------------
         if not x64 and opt.path == FEEDER:
@@ -1681,6 +1720,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             if opt.path == ROUTE_RENODX:
                 reshade_ini.enable_renodx_dlss_nr(root)
                 log("      [RENODX-DLSS] NeuralRenderingEnabled=1")
+            if opt.path == UPSTREAM:
+                rep.notes.append("neural-upstream is configured from its 'NR "
+                                 "Pre-Upscale' tab in the ReShade overlay. With "
+                                 "DLSS Frame Generation on, set its cadence to "
+                                 "Quality (every frame) or expect stutter.")
             rep.written.append("ReShade.ini")
             log("      add-on loading enabled (no shaders needed on this path)")
             rep.notes.append("ReShade's overlay will report 'no .fx files found' "
@@ -1797,7 +1841,8 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             files = []
             data = {}
     else:
-        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, DLSSNR, DLSS,
+        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
+                 DLSSNR, DLSS,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
                  "D3D9.dll", "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",

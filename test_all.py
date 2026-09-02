@@ -2016,6 +2016,113 @@ check("uninstall removes our lumenite files",
       not list((_d / "reshade-shaders").rglob("lumenite_*")) if (_d / "reshade-shaders").is_dir() else True)
 shutil.rmtree(_d, ignore_errors=True)
 
+# ------------------------------------------------- 21. neural-upstream
+section("21. the neural-upstream route")
+# A DX12 game with its own DLSS: the only place the route is offered.
+_d = Path(tempfile.mkdtemp(prefix="upstream_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_own = b"MZ" + bytes(range(256)) * 40
+(_d / "nvngx_dlss.dll").write_bytes(_own)
+_g = games.manual(_d)
+_sup = dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness)
+check("upstream is offered second, after native",
+      _sup.options[:2] == [dlss.NATIVE, dlss.UPSTREAM], str(_sup.options))
+check("upstream is never the recommendation", _sup.recommended != dlss.UPSTREAM)
+_ok, _note = dlss.fit(dlss.UPSTREAM, _g.api, True, None)
+check("fit says upstream is usable", _ok and bool(_note), _note)
+_bare = Path(tempfile.mkdtemp(prefix="upstream_nodlss_"))
+shutil.copyfile(X64, _bare / "Game.exe")
+_gb = games.manual(_bare)
+check("a game without DLSS is not offered upstream",
+      dlss.UPSTREAM not in dlss.detect(_gb.install_dir, _gb.folder, _gb.api,
+                                       _gb.bitness).options)
+shutil.rmtree(_bare, ignore_errors=True)
+check("every route has a conflicts entry of 2-3 lines",
+      set(dlss.CONFLICTS) == set(dlss.ALL_ROUTES)
+      and all(2 <= len(v) <= 3 for v in dlss.CONFLICTS.values()),
+      str(sorted(dlss.CONFLICTS)))
+check("upstream has a label and a blurb",
+      dlss.UPSTREAM in dlss.LABELS and dlss.UPSTREAM in dlss.BLURB)
+
+_opt = installer.Options(path=dlss.UPSTREAM, native_dlss=True)
+_steps = installer.plan(_g, _opt)
+check("the plan has no renodx step and never touches nvngx_dlss.dll",
+      not any("renodx" in s for s in _steps) and "nvngx_dlss.dll" not in _steps
+      and "neural-upstream" in _steps, str(_steps))
+_pv = installer.preview(_g, _opt)
+check("the preview lists nvngx.dll.addon64 and not renodx-dlss5.addon64",
+      installer.UPSTREAM_ADDON in _pv.writes and installer.RENODX not in _pv.writes
+      and "nvngx_dlss.dll" not in _pv.writes, str(_pv.writes))
+check("reliability is beta and says so",
+      installer.reliability(_g, dlss.UPSTREAM)[0] == installer.BETA
+      and "two games" in installer.reliability(_g, dlss.UPSTREAM)[1])
+try:
+    _rep = installer.install(_g, _opt, on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("install writes the add-on and nvngx_dlssnr.dll",
+          installer.UPSTREAM_ADDON in _files and installer.DLSSNR in _files,
+          str(sorted(_files)))
+    check("install writes no renodx add-on",
+          installer.RENODX not in _files and installer.RENODX_SF not in _files)
+    check("the game's nvngx_dlss.dll is byte-identical, no backup made",
+          (_d / "nvngx_dlss.dll").read_bytes() == _own
+          and not (_d / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).exists())
+    check("the plan and the steps taken agree",
+          len(_steps) == len(installer.plan(_g, _opt)) and
+          any("upstream version" in n for n in _rep.notes), str(_rep.notes))
+    _man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+    check("the manifest records path upstream and its version",
+          _man.get("path") == "upstream"
+          and bool((_man.get("components") or {}).get("upstream")),
+          str(_man.get("components")))
+    check("the manifest round-trips the route",
+          installer.options_from_manifest(_d).path == dlss.UPSTREAM
+          and installer.options_from_manifest(_d).native_dlss)
+    check("our own add-on is not reported as a foreign hook",
+          installer.UPSTREAM_ADDON not in installer.other_ngx_hooks(_d)
+          and installer.hook_warning(_d, dlss.UPSTREAM) == "",
+          str(installer.other_ngx_hooks(_d)))
+    installer.install(_g, installer.Options(path=dlss.NATIVE, native_dlss=True),
+                      on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("switching to native removes nvngx.dll.addon64",
+          installer.UPSTREAM_ADDON not in _files and installer.RENODX in _files,
+          str(sorted(_files)))
+    installer.install(_g, _opt, on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("switching back removes renodx-dlss5.addon64",
+          installer.RENODX not in _files and installer.UPSTREAM_ADDON in _files,
+          str(sorted(_files)))
+    installer.uninstall(_g, on_log=lambda t: None)
+    _left = sorted(p.name for p in _d.rglob("*") if p.is_file())
+    check("uninstall leaves only the game and its DLSS",
+          _left == ["Game.exe", "nvngx_dlss.dll"], str(_left))
+except Exception as e:
+    check("upstream: installs", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
+# The diagnosis: no frame log, the overlay tab is the judge, and the
+# renodx-dlss5 add-on registered beside it is two NGX hooks.
+_d = _diag_dir("diag_upstream_", addons=False, reshade=(
+    'INFO | Registered add-on "DLSS5 NR Pre-Upscale" v0.3.0.0\n'
+    "INFO | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(...)\n"),
+    path="upstream", files=["dxgi.dll", "nvngx.dll.addon64"])
+(_d / "nvngx.dll.addon64").write_bytes(b"MZ")
+_r = diagnose.analyse(_d)
+check("upstream loaded alone is not a failure",
+      not _levels(_r, "bad") and "Pre-Upscale" in _r.verdict,
+      str(_levels(_r, "bad")) + " / " + _r.verdict)
+check("the folder's own add-on is not called a foreign hook",
+      not any("Another DLSS hook" in w for w in _levels(_r, "warn")),
+      str(_levels(_r, "warn")))
+(_d / "ReShade.log").write_text(
+    'INFO | Registered add-on "DLSS5 NR Pre-Upscale" v0.3.0.0\n'
+    'INFO | Registered add-on "DLSS 5 Neural Rendering" v4.7.0.0\n', encoding="utf8")
+_r = diagnose.analyse(_d)
+check("renodx-dlss5 beside upstream is two NGX hooks",
+      any("Two NGX hooks" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+shutil.rmtree(_d, ignore_errors=True)
+
 section("RESULT")
 if FAILS:
     print(f"{len(FAILS)} FAILED:")

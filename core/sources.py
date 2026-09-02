@@ -32,6 +32,14 @@ FEEDER_LIST_API = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releas
 LUMENITE_ZIP = "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"
 RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
 BRIDGE_API = "https://api.github.com/repos/NIGos/dlss5-bridge/releases/latest"
+UPSTREAM_API = "https://api.github.com/repos/matiasLombo/neural-upstream/releases/latest"
+# The file name is load-bearing: the NGX snippet only creates the feature
+# for a caller whose module path contains "nvngx.dll".
+UPSTREAM_ASSET = "nvngx.dll.addon64"
+# GitHub's plain redirect to the newest asset. Not an API call, so it still
+# works when the 60-an-hour allowance is spent and nothing is cached yet.
+UPSTREAM_LATEST = ("https://github.com/matiasLombo/neural-upstream/releases/"
+                   "latest/download/" + UPSTREAM_ASSET)
 
 # None = take the newest build from the mirror. On the feeder route the pick
 # is narrowed by renodx_for_feeder(): the feeder's stable release only works
@@ -197,6 +205,23 @@ def resolve_bridge() -> tuple[str, str]:
         if a["name"].lower().endswith(".addon64"):
             return rel.get("tag_name", "?"), a["browser_download_url"]
     raise RuntimeError("The dlss5-bridge release has no .addon64 asset.")
+
+
+def resolve_upstream() -> tuple[str, str]:
+    """Latest neural-upstream release: (tag, addon download url).
+
+    Falls back to the "latest" redirect when the API is out of reach and
+    nothing is cached: the route must not be unavailable just because this
+    machine has spent its anonymous allowance on the other components.
+    """
+    try:
+        rel = _json(UPSTREAM_API)
+    except Exception:
+        return "latest", UPSTREAM_LATEST
+    for a in rel.get("assets", []):
+        if a["name"].lower() == UPSTREAM_ASSET:
+            return rel.get("tag_name", "?"), a["browser_download_url"]
+    raise RuntimeError(f"The neural-upstream release has no {UPSTREAM_ASSET} asset.")
 
 
 def _ver_key(tag: str, prefix: str) -> tuple:
