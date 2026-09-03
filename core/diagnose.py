@@ -113,6 +113,32 @@ class Report:
         self.findings.append(Finding(level, title, detail))
 
 
+def _area(size: str) -> int:
+    try:
+        w, h = size.split("x")
+        return int(w) * int(h)
+    except (ValueError, AttributeError):
+        return 0
+
+
+def _biggest(sizes) -> str:
+    """The largest "WxH" in the set - the one a full-screen present uses."""
+    return max(sizes, key=_area) if sizes else ""
+
+
+def _near(a: str, b: str, tol: float = 0.10) -> bool:
+    """Is `a` within `tol` of `b` in area, without being the same size?
+
+    A bordered window is the display minus a title bar and a frame: 1920x1071
+    against 1920x1080 is 0.8% smaller. A genuinely different resolution (a
+    minimized 160x28, or a real mode change) is nowhere near.
+    """
+    ab, bb = _area(a), _area(b)
+    if not ab or not bb or a == b:
+        return False
+    return (1.0 - tol) <= (ab / bb) < 1.0
+
+
 def _tail(path: Path, limit: int = 400_000) -> str:
     try:
         size = path.stat().st_size
@@ -766,7 +792,6 @@ def analyse(install_dir: Path) -> Report:
                           "is there too, but do not alt-tab to it while "
                           "playing - that minimizes the game and tears the "
                           "feature down.")
-
         # A minimized window has a 160x28 client area on Windows, so the swap
         # chain comes back that size and every DLSS create against it fails
         # with InvalidParameter until the window is restored. Found on
@@ -779,6 +804,23 @@ def analyse(install_dir: Path) -> Report:
         tiny = sorted(s for s in sizes
                       if int(s.split("x")[0]) < 640 or int(s.split("x")[1]) < 360)
         rest = sorted(sizes.difference(tiny))
+        # The feed builds at whatever size the swap chain reports. In a
+        # bordered window that is the CLIENT area - a few pixels short of the
+        # display - and the neural result then never lands on screen:
+        # everything reports success and the picture is untouched, at any
+        # setting. Measured on Bayonetta, where three builds at 1920x1071 did
+        # nothing and the first build at a true 1920x1080 worked at once.
+        _big = _biggest(rest)
+        short = sorted(s for s in rest if _near(s, _big))
+        if short:
+            rep.add(WARN, f"The game was presenting a few pixels short of its "
+                          f"display size ({', '.join(short)} against {_big}).",
+                    "That is a bordered window: the swap chain is the client "
+                    "area, and the neural result does not land on the screen "
+                    "- everything reports success and nothing changes, "
+                    "whatever you set. Use borderless or true fullscreen so "
+                    "the game presents at the full display size, then switch "
+                    "neural rendering on (F6).")
         if tiny:
             rep.add(WARN, f"The game window was minimized while the feed was "
                           f"running (rebuilt at {', '.join(tiny)}).",
@@ -789,7 +831,7 @@ def analyse(install_dir: Path) -> Report:
                     "exactly that. The panel's settings are saved, so set them "
                     "once, then restart and play without alt-tabbing - or run "
                     "the game windowed / borderless.")
-        if len(rest) > 1:
+        if len(rest) > 1 and not short:
             rep.add(WARN, f"Rebuilt at {len(rest)} different resolutions "
                           f"({', '.join(rest)}).",
                     "Changing resolution while neural rendering is on forces a "

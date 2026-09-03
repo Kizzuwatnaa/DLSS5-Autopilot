@@ -2498,6 +2498,12 @@ class App:
             else:
                 self._log("   3. turn on neural rendering in the DLSS 5 panel")
             self._log("   4. turn OFF the game's own MSAA/SSAA")
+            self._log("   !  play BORDERLESS or true fullscreen, at your "
+                      "display's own resolution. In a bordered window the "
+                      "game presents a few pixels short (1920x1071 instead "
+                      "of 1920x1080) and the neural result never lands on "
+                      "screen - everything looks fine in the logs and "
+                      "nothing changes. Proven on Bayonetta", "warn")
             self._log("   5. NVIDIA Smooth Motion and this feeder do not mix - "
                       "turn it off for this game if the picture flickers")
         self._log("")

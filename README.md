@@ -367,6 +367,23 @@ Two things to know on this path:
 - DXVK writes `<game>_dxgi.log` and `<game>_d3d11.log` beside the game;
   uninstall removes them.
 
+### Everything says it is working and the picture never changes
+
+Play in a **bordered window** and the swap chain is the client area, a few
+pixels short of the display - 1920x1071 instead of 1920x1080. The neural
+result then never lands on the screen, while every log reports success:
+feature ready, thousands of frames evaluated. No setting fixes it because
+nothing is wrong with the settings.
+
+Use **borderless or true fullscreen at your display's own resolution**, then
+switch neural rendering on (**F6**). Found on Bayonetta, where three builds
+at 1920x1071 did nothing and the first at a true 1920x1080 worked at once.
+**did it work?** now spots this and names it.
+
+The one-launch sanity check for the feeder: set `mode=1` in
+`dlss5-feed.cfg`. Half the screen goes black if the frames really are making
+the round trip.
+
 ### It worked, then stopped after I changed display mode
 
 The contract is built out of ReShade's depth buffer, chosen by matching it

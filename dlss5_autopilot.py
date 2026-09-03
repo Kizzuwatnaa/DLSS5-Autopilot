@@ -134,10 +134,12 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         # own overlay and drives the 64-bit helper; the helper's separate
         # window must NOT be alt-tabbed to while playing.
         print("In game: press Home, then turn on neural rendering in the "
-              "DLSS 5 page - it drives the 64-bit helper for you. Do NOT "
-              "alt-tab to the helper's own window while playing: that "
-              "minimizes the game and DLSS is torn down every time. Turn "
-              "the game's own MSAA/SSAA off.")
+              "DLSS 5 page (F6 toggles it) - it drives the 64-bit helper for "
+              "you. Play BORDERLESS or true fullscreen at your display's own "
+              "resolution: in a bordered window the game presents a few "
+              "pixels short and the result never lands on screen. Do NOT "
+              "alt-tab to the helper's window while playing. Turn the game's "
+              "own MSAA/SSAA off.")
     else:
         print("In game: press Home, then enable neural rendering in the DLSS 5 "
               "panel. Turn the game's own MSAA/SSAA off.")

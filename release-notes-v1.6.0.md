@@ -62,25 +62,42 @@ transport.
 An install made by an older release still uninstalls completely: dgVoodoo's
 files stay on the cleanup list.
 
-## The 32-bit DLSS 5 panel is a separate window, and the tool now says so
+## Play a window a few pixels short and nothing happens - now it says so
 
-On a 32-bit game the DLSS 5 panel cannot live in the game's own ReShade
-overlay - a 32-bit process cannot load the 64-bit add-on, so the panel is in
-the `host64` helper's own window. The instructions after an install said
-"press Home, then enable neural rendering in the DLSS 5 panel", which reads
-like it is right there under Home. It is not, and people never found it.
+The one that cost the most to find, on Bayonetta (32-bit, DirectX 9). The
+feed builds at whatever size the swap chain reports, and in a **bordered
+window that is the client area**: 1920x1071 instead of 1920x1080. The neural
+result then never lands on the screen - while every log says success,
+`feature ready`, tens of thousands of frames evaluated. No setting changes
+anything, because nothing is wrong with the settings.
 
-Alongside that, **"did it work?" now recognises a minimized game**: alt-tab
-out of an exclusive-fullscreen game and Windows reports a 160x28 client
-area, so the swap chain comes back that size and every DLSS create against
-it fails until the window is restored. On 32-bit that is a trap, because
-reaching the panel *means* alt-tabbing. The report now says exactly that,
-and points out the panel's settings are saved - set them once, restart, play
-without alt-tabbing, or run the game windowed.
+Three builds at 1920x1071 did nothing; the first build at a true 1920x1080
+worked immediately. **"did it work?" now detects exactly this** and says to
+use borderless or true fullscreen at the display's own resolution, and the
+instructions after an install say it up front.
 
-It also no longer claims a Vulkan game "closed before it drew a single
-frame": that check only knew the DXGI spelling of a swap chain, so every
-DXVK and native-Vulkan session tripped it.
+Two more things it learned from the same session:
+
+- **A minimized game.** Alt-tab out of an exclusive-fullscreen game and
+  Windows reports a 160x28 client area, so the swap chain comes back that
+  size and every DLSS create against it fails until the window is back.
+- **A Vulkan game is no longer called dead.** The "closed before it drew a
+  single frame" check only knew the DXGI spelling of a swap chain, so every
+  DXVK and native-Vulkan session tripped it, right beside "frames are being
+  processed".
+
+The 32-bit instructions were wrong too: they sent people to the helper's own
+window. The DLSS 5 page in the game's own overlay drives the helper (F6
+toggles it), and alt-tabbing to the helper is the very thing that tears the
+feature down.
+
+## Uninstall no longer leaves the translation layer behind
+
+Installing twice backed up our **own** DXVK as though it were the game's
+file. Uninstall then restored that backup and the game was left rendering
+through DXVK for good, with nothing on disk admitting it. DXVK and
+REFramework now recognise their own binary by content and skip that backup,
+so an uninstall really does empty the folder.
 
 ## A D3D12 game no longer reads as D3D11
 
