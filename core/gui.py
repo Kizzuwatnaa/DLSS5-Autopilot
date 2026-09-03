@@ -2482,7 +2482,18 @@ class App:
                           f"the feed")
             else:
                 self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
-            self._log("   3. turn on neural rendering in the DLSS 5 panel")
+            if self.game and self.game.bitness == 32:
+                # A 32-bit process cannot load the 64-bit DLSS 5 add-on, so
+                # the panel is not in this ReShade overlay at all - it is in
+                # the host64 helper's OWN window, a separate process. Saying
+                # "in the DLSS 5 panel" here with no further hint reads like
+                # it is right there under Home, and it is not.
+                self._log("   3. turn on neural rendering in the separate "
+                          "'32-bit DLSS 5 Feeder' window - it is its own "
+                          "window (the host64 helper), not inside this "
+                          "reshade overlay; alt-tab if you do not see it")
+            else:
+                self._log("   3. turn on neural rendering in the DLSS 5 panel")
             self._log("   4. turn OFF the game's own MSAA/SSAA")
             self._log("   5. NVIDIA Smooth Motion and this feeder do not mix - "
                       "turn it off for this game if the picture flickers")
