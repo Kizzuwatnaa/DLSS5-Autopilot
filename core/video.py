@@ -644,6 +644,83 @@ def download(folder: Path, url: str, on_prog=None, on_log=None,
     return result
 
 
+# Webcam: the player's own "Open Device" needs a camera picked in its
+# options first, so ffmpeg (already in tools/) reads the camera through
+# DirectShow and hands it to the player as a local MPEG-TS stream over UDP.
+# Half a second of latency, and the feed sees it like any other video.
+WEBCAM_PORT = 47321
+WEBCAM_URL = f"udp://@127.0.0.1:{WEBCAM_PORT}"
+_webcam_proc = None
+
+
+def list_cameras(folder: Path) -> list[str]:
+    """DirectShow video devices, as ffmpeg names them."""
+    import re
+    import subprocess
+    ff = tools_dir(folder) / FFMPEG
+    if not ff.is_file():
+        return []
+    try:
+        out = subprocess.run([str(ff), "-hide_banner", "-list_devices", "true",
+                              "-f", "dshow", "-i", "dummy"],
+                             capture_output=True, text=True, encoding="utf8",
+                             errors="replace", timeout=20,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception:
+        return []
+    cams: list[str] = []
+    for line in ((out.stderr or "") + "\n" + (out.stdout or "")).splitlines():
+        m = re.search(r'"([^"]+)"\s+\(video\)', line)
+        if m and m.group(1) not in cams:
+            cams.append(m.group(1))
+    return cams
+
+
+def start_webcam(folder: Path, camera: str, size: str = "1280x720", fps: int = 30):
+    """Start the camera stream and the player on it. Returns the ffmpeg process."""
+    import subprocess
+    global _webcam_proc
+    stop_webcam()
+    ff = tools_dir(folder) / FFMPEG
+    if not ff.is_file():
+        raise RuntimeError("ffmpeg is not in the player's tools folder yet - "
+                           "run one download first, or press 'set up the video "
+                           "player' again")
+    args = [str(ff), "-hide_banner", "-loglevel", "error", "-f", "dshow",
+            "-rtbufsize", "64M", "-video_size", size, "-framerate", str(fps),
+            "-i", f"video={camera}",
+            "-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-g", str(fps), "-pix_fmt", "yuv420p", "-f", "mpegts",
+            f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"]
+    _webcam_proc = subprocess.Popen(args, cwd=str(tools_dir(folder)),
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    import time
+    time.sleep(2.0)
+    if _webcam_proc.poll() is not None:
+        # The size/rate was refused: try the camera's own default.
+        args = [a for a in args if a not in ("-video_size", size, "-framerate", str(fps))]
+        _webcam_proc = subprocess.Popen(args, cwd=str(tools_dir(folder)),
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        time.sleep(2.0)
+        if _webcam_proc.poll() is not None:
+            _webcam_proc = None
+            raise RuntimeError(f"ffmpeg could not open the camera '{camera}' - is "
+                               f"another app using it?")
+    launch(folder, WEBCAM_URL)
+    return _webcam_proc
+
+
+def stop_webcam() -> None:
+    global _webcam_proc
+    if _webcam_proc is not None:
+        try:
+            _webcam_proc.kill()
+            _webcam_proc.wait(timeout=3)
+        except Exception:
+            pass
+        _webcam_proc = None
+
+
 WINDOW_CLASS = "MediaPlayerClassicW"
 
 

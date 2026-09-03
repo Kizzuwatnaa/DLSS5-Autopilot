@@ -195,6 +195,9 @@ one.
   2x, or 4K (DLSS Super Resolution does the upscale) with a style choice -
   into the player's `processed` folder, then opens it. The first run
   fetches the small video2dlssnr tool; ffmpeg is shared with downloads.
+- **webcam**: pick a camera, press start, and it plays live through DLSS 5
+  (ffmpeg reads it over DirectShow and hands it to the player; about half
+  a second behind). Stop ends the stream.
 - **F6** switches neural rendering on and off while it plays; the
   **neural rendering on/off** button does the same. The player's own Home
   key (jump to start) is unbound so ReShade's overlay key does not restart

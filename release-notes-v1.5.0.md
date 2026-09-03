@@ -37,6 +37,8 @@ shader and its includes go in; a reinstall removes the rest.
   native size, 2x, or 4K (DLSS Super Resolution does the upscale), with a
   style choice, into the player's `processed` folder. Uses video2dlssnr
   and ffmpeg, fetched on first use.
+- **Webcam**: pick a camera and it plays live through DLSS 5 in the
+  player (ffmpeg reads it, about half a second behind); F6 to compare.
 - **Open a video file** and **downloads folder** buttons; the download path
   is shown before a download starts.
 - The player's Home key used to jump to the start of the video whenever

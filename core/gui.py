@@ -734,6 +734,36 @@ class App:
         except Exception as e:
             messagebox.showerror(APP, f"could not start the player:\n{e}")
 
+    def _refresh_cameras(self) -> None:
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        cams = video.list_cameras(self.game.install_dir)
+        self.cb_camera["values"] = cams or ["(no camera found - ffmpeg must be in "
+                                            "tools/, run one download first)"]
+        self.cb_camera.current(0)
+        if cams:
+            self._log(f"> cameras: {', '.join(cams)}")
+
+    def _start_webcam(self) -> None:
+        if not self.game or getattr(self.game, "kind", "") != "video":
+            return
+        cam = self.cb_camera.get()
+        if not cam or cam.startswith("("):
+            self._refresh_cameras()
+            cam = self.cb_camera.get()
+            if not cam or cam.startswith("("):
+                return
+        try:
+            video.start_webcam(self.game.install_dir, cam)
+            self._log(f"> webcam '{cam}' is playing through the feed - F6 toggles "
+                      f"neural rendering, 'stop' ends the stream", "ok")
+        except Exception as e:
+            messagebox.showerror(APP, str(e))
+
+    def _stop_webcam(self) -> None:
+        video.stop_webcam()
+        self._log("> webcam stream stopped")
+
     def _open_processed(self) -> None:
         if not self.game or getattr(self.game, "kind", "") != "video":
             return
@@ -1353,6 +1383,20 @@ class App:
         self.cb_style.pack(side="left", padx=(6, 12))
         ttk.Button(pr, text="processed folder",
                    command=self._open_processed).pack(side="left")
+        # Third line: a webcam through the feed - the thing people show off.
+        wr = tk.Frame(self.urlrow, bg=PANEL)
+        wr.pack(fill="x", padx=12, pady=(0, 8))
+        tk.Label(wr, text="webcam", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
+        self.cb_camera = ttk.Combobox(wr, state="readonly", width=34, values=["(press refresh)"])
+        self.cb_camera.current(0)
+        self.cb_camera.pack(side="left", padx=(10, 6))
+        ttk.Button(wr, text="refresh", command=self._refresh_cameras).pack(side="left")
+        ttk.Button(wr, text="start", style="Accent.TButton",
+                   command=self._start_webcam).pack(side="left", padx=(10, 6))
+        ttk.Button(wr, text="stop", command=self._stop_webcam).pack(side="left")
+        tk.Label(wr, text="live camera through DLSS 5 in the player, about half "
+                          "a second behind; F6 to compare",
+                 bg=PANEL, fg=DIM, font=font(8)).pack(side="left", padx=(12, 0))
         self.urlhint = tk.Label(
             self.urlrow, bg=PANEL, fg=DIM, font=font(8), anchor="w",
             text="a youtube (or any yt-dlp) link: 'play' streams it live in the "
@@ -2496,5 +2540,10 @@ def run() -> int:
         log.exception("building the main window", e)
         raise
     root.mainloop()
+    try:
+        from . import video as _video
+        _video.stop_webcam()
+    except Exception:
+        pass
     log.write("closed normally")
     return 0
