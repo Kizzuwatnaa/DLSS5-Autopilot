@@ -129,17 +129,6 @@ def main() -> int:
     if "--route" in args and args.index("--route") + 1 < len(args):
         route = args[args.index("--route") + 1]
         args.remove(route)
-    consumer, consumer_dir, passes = "renodx", None, 1
-    for flag in ("--consumer", "--consumer-dir", "--passes"):
-        if flag in args and args.index(flag) + 1 < len(args):
-            val = args[args.index(flag) + 1]
-            args.remove(val)
-            if flag == "--consumer":
-                consumer = val
-            elif flag == "--consumer-dir":
-                consumer_dir = Path(val)
-            else:
-                passes = int(val)
     positional = [a for a in args if not a.startswith("-")]
     if "--video" in args:
         _console()
@@ -161,8 +150,7 @@ def main() -> int:
         return cli(Path(positional[0]),
                    remove="--remove" in args,
                    check="--check" in args,
-                   route=route, consumer=consumer, consumer_dir=consumer_dir,
-                   passes=passes,
+                   route=route,
                    dxvk=(True if "--dxvk" in args
                          else False if "--no-dxvk" in args else None))
     if "--help" in args or "-h" in args:
