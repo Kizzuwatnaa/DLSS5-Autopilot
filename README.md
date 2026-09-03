@@ -26,7 +26,7 @@ It is unofficial, it is early, and the components change daily.
 
 ---
 
-## Who does what: the five routes
+## Who does what: the seven routes
 
 Every game gets one of these. The tool picks the best fit and says why; the
 dropdown shows every route the game allows, marks the recommended one, and
@@ -37,14 +37,18 @@ marks the ones your card cannot use. You can always pick another.
 | **native** | Krish's `renodx-dlss5` ReShade add-on hooks the game's own DLSS calls on D3D12. | 64-bit D3D12 games that ship DLSS. The most proven route. | The game's own DLSS quality mode |
 | **optiscaler** | Dagherbou's OptiScaler fork replaces the upscaler and runs the model over its output. No ReShade. | 64-bit D3D12 (D3D11 works with FSR underneath), game must already use DLSS. Author tested RTX 50; runs on RTX 20/30/40 with the per-card runtime the tool installs. | **Model resolution 25-100%** - the biggest fps lever there is |
 | **renodx-dlss** | ShortFuse's `renodx-dlss` add-on (the "SF" build) hooks D3D9, D3D11 and D3D12 in-process. No bridge, no shaders. | 64-bit D3D9 / D3D11 / D3D12. Days old and **reported not working in many games**; offered last, never recommended except for 64-bit DX9 where nothing else exists. | The game's own DLSS mode where it has one |
-| **bridge** | NIGos' `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session. | Vulkan games with DLSS (mirror). D3D11 fallback. Author has stopped at 1.3.0. | The game's own DLSS mode |
+| **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's own DLSS upscales. No renodx add-on beside it. | 64-bit D3D12 games with DLSS. Beta: days old, two games tested by its author. | Cadence (every frame, or one in two or three); the game's DLSS mode still applies |
+| **bridge** | NIGos' `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session. | Vulkan games with DLSS (mirror). D3D11 fallback. Maintained; every release is tested on D3D11 and Vulkan. | The game's own DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract out of ReShade's depth buffer and shader motion vectors. | Games with **no** DLSS: D3D11, D3D12, Vulkan, OpenGL, and the only route for **32-bit** games (host64 helper) and DX9 (via dgVoodoo2). | `work_resolution` 50-100% (64-bit D3D11 only) |
+| **standalone-dlssnr** | kibblerz's add-on brings its own feed, DLAA or DLSS Super Resolution, and frame generation, presented through its own window on top. | 64-bit D3D11/D3D12, with or without DLSS. Experimental; turn the game's DLSS, frame generation and anti-aliasing off. | Run the game below native resolution and it upscales |
 
 **How the recommendation is made:**
 
 - D3D12 game with DLSS → **optiscaler** (the fps dial, which matters most on the cards where the pass is heaviest). Native is one click away.
 - D3D11 game with DLSS → **bridge**; optiscaler (FSR underneath) and feeder as alternatives.
 - No DLSS in the game (D3D11/12) → **feeder**; bridge as the alternative.
+- No DLSS but **FSR 2/3 or XeSS** in the game → **optiscaler** is offered too: it takes the game's upscaler calls as input, runs DLSS instead, then neural rendering.
+- Every route lists, under its description on the install page, what must not sit in the same folder and what to switch off. Two things hooking the same NGX calls means flicker or nothing; the tool names the other one when it sees it.
 - Vulkan with DLSS → **bridge**; Vulkan without → **feeder**.
 - OpenGL, 32-bit, DX9 (32-bit) → **feeder**.
 - 64-bit DX9 → **renodx-dlss** (nothing else reaches it).
@@ -54,7 +58,8 @@ marks the ones your card cannot use. You can always pick another.
 
 | Path | Status | How |
 |---|---|---|
-| 64-bit D3D12 with DLSS | reliable | native / optiscaler / renodx-dlss |
+| 64-bit D3D12 with DLSS | reliable | native / optiscaler / neural-upstream / renodx-dlss |
+| 64-bit D3D11 / D3D12 with FSR 2/3 or XeSS, no DLSS | beta | optiscaler (upscaler calls redirected into DLSS) |
 | 64-bit D3D11 with DLSS | beta | bridge / optiscaler |
 | 64-bit D3D11 / D3D12 without DLSS | reliable | feeder (ReShade + shaders) |
 | Vulkan (64-bit) | beta | ReShade as a Vulkan layer + bridge or feeder |
@@ -65,7 +70,8 @@ marks the ones your card cannot use. You can always pick another.
 | DirectX 9 (32-bit) | often fails | dgVoodoo2 → D3D11 → feeder |
 | DirectX 9 (64-bit) | beta | renodx-dlss |
 | DirectX 10 | not supported | nothing hooks D3D10 |
-| Emulators | reliable* | D3D11/12 backend; Vulkan is the beta path |
+| 64-bit D3D11 / D3D12, own feed with upscaling and frame generation | experimental | standalone-dlssnr |
+| Emulators | reliable* | D3D11/12 backend, set by the install; Vulkan is the beta path |
 
 \* set the emulator's renderer to Direct3D 11/12. Vulkan works through the
 layer registration; OpenGL is the least reliable.
@@ -182,8 +188,16 @@ one.
   first (up to 1440p, or 4K when ticked). YouTube only serves video and
   audio apart, so the first download fetches ffmpeg once (170 MB) to join
   them.
+- **open a video file** plays anything already on disk, whoever downloaded
+  it; **downloads folder** opens where downloads land.
+- **process a file** renders a clip through DLSS 5 offline - native size,
+  2x, or 4K (DLSS Super Resolution does the upscale) with a style choice -
+  into the player's `processed` folder, then opens it. The first run
+  fetches the small video2dlssnr tool; ffmpeg is shared with downloads.
 - **F6** switches neural rendering on and off while it plays; the
-  **neural rendering on/off** button does the same.
+  **neural rendering on/off** button does the same. The player's own Home
+  key (jump to start) is unbound so ReShade's overlay key does not restart
+  the video.
 
 Neural rendering re-draws everything in the window, menus included - use
 the player fullscreen. Text looks hand-drawn while it is on; that is the

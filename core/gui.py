@@ -230,7 +230,7 @@ class App:
                                 anchor="w", cursor="hand2", font=font(8))
         self.howlink.pack(fill="x", padx=20, pady=(0, 18))
         self.howlink.bind("<Button-1>", lambda e: webbrowser.open(
-            f"https://github.com/{update.REPO}#who-does-what-the-five-routes"))
+            f"https://github.com/{update.REPO}#who-does-what-the-seven-routes"))
 
         right = tk.Frame(r, bg=BG)
         right.pack(side="left", fill="both", expand=True)
