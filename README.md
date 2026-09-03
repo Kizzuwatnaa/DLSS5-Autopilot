@@ -16,13 +16,12 @@ publisher, and writes the configuration. One executable, no installation.
 
 ## What is DLSS 5
 
-DLSS 5 "neural rendering" is a model that runs over a finished frame and
-re-lights it - materials, skin, tone. NVIDIA launches it on **3 September 2026
-in NBA 2K27, for RTX 50 only.** The runtime leaked a week early from that
-game's build, and the modding community wired it into other games through
-ReShade add-ons and an OptiScaler fork, then patched builds of the runtime so
-RTX 40, 30 and 20 cards can run it too. This tool automates that whole setup.
-It is unofficial, it is early, and the components change daily.
+A model that runs over a finished frame and re-lights it - materials, skin,
+tone. NVIDIA ships it 3 September 2026 in NBA 2K27, RTX 50 only. The modding
+community wired it into other games through ReShade add-ons and an
+OptiScaler fork, and re-targeted the runtime so RTX 40/30/20 can run it too.
+This tool automates that setup. **Unofficial, early, and the components
+change daily.**
 
 ---
 
@@ -45,16 +44,19 @@ marks the ones your card cannot use. You can always pick another.
 
 **How the recommendation is made:**
 
-- D3D12 game with DLSS → **optiscaler** (the fps dial, which matters most on the cards where the pass is heaviest). Native is one click away.
-- D3D11 game with DLSS → **bridge**; optiscaler (FSR underneath) and feeder as alternatives.
-- No DLSS in the game (D3D11/12) → **feeder**; bridge as the alternative.
-- No DLSS but **FSR 2/3 or XeSS** in the game → **optiscaler** is offered too: it takes the game's upscaler calls as input, runs DLSS instead, then neural rendering.
-- Every route lists, under its description on the install page, what must not sit in the same folder and what to switch off. Two things hooking the same NGX calls means flicker or nothing; the tool names the other one when it sees it.
-- Vulkan with DLSS → **bridge**; Vulkan without → **feeder**.
-- OpenGL, 32-bit, DX9 (32-bit) → **feeder**.
-- 64-bit DX9 → **renodx-dlss** (nothing else reaches it).
-- **A game with an RTX Remix mod** -> **remix**, always. Every other route is refused there: ReShade crashes a Remix game before it draws, and on DirectX 9 it would write over the Remix runtime itself.
-- **DirectX 10 is not supported by anything.** The tool says so instead of installing.
+- D3D12 with DLSS → **optiscaler** (native one click away). D3D11 with DLSS →
+  **bridge** (optiscaler/feeder as alternatives).
+- No DLSS → **feeder**; bridge as the alternative. FSR 2/3 or XeSS instead of
+  DLSS → **optiscaler** redirects those calls into DLSS, then neural rendering.
+- Vulkan → **bridge** (with DLSS) or **feeder** (without). OpenGL, 32-bit,
+  32-bit DX9 → **feeder**. 64-bit DX9 → **renodx-dlss**, the only route that
+  reaches it.
+- **RTX Remix mod present → remix, always.** Every other route is refused:
+  ReShade crashes a Remix game before it draws, and on DX9 it would overwrite
+  the Remix runtime itself.
+- **DirectX 10 is not supported.** The tool says so instead of installing.
+- Each route's card on the install page names what must not sit in the same
+  folder - two things hooking the same NGX calls is flicker or nothing.
 
 ### Support matrix
 
@@ -83,11 +85,11 @@ layer registration; OpenGL is the least reliable.
 
 ## Your graphics card, honestly
 
-The neural-rendering runtime (`nvngx_dlssnr.dll`) is compiled per GPU
-architecture. NVIDIA's own build carries FP8 kernels for RTX 50 only; the
-community re-targeted it for older cards. The tool detects your card, picks
-the right build, then **opens the downloaded file and checks the CUDA fatbin
-records** to confirm it really contains code for your architecture.
+The runtime (`nvngx_dlssnr.dll`) is compiled per GPU architecture - NVIDIA's
+own build is FP8 for RTX 50 only, the community re-targeted it for older
+cards. The tool detects your card, picks the right build, then **opens the
+downloaded file and checks the CUDA fatbin records** to confirm it really
+matches your architecture.
 
 | Card | Build the tool installs | What to expect |
 |---|---|---|
@@ -96,14 +98,13 @@ records** to confirm it really contains code for your architecture.
 | **RTX 20 / 30** | `310.8.SF` / `SF-v2` - community, FP16 path | Works. **Heavy**: roughly half your fps at full model resolution. Use the resolution dial. |
 | GTX / RTX below 20 | - | Does not run. |
 
-**"I have an RTX 50, can I just swap the DLSS DLL?"** No. The driver brings
-the runtime, but a game has to *ask* for neural rendering, and outside NBA
-2K27 none do. That is what the add-on (native / renodx-dlss) or OptiScaler is
-for, on every card. What RTX 50 saves you is the patched runtime and the
-frame-time penalty.
+**"I have an RTX 50, can I just swap the DLSS DLL?"** No - a game has to
+*ask* for neural rendering, and outside NBA 2K27 none do. That's what the
+add-on or OptiScaler is for, on every card; RTX 50 just skips the patched
+runtime and its frame-time cost.
 
-The table above is not hard-coded - it is read from the files - so new
-builds work too. The install log tells you which tier you are on.
+The table above isn't hard-coded - it's read from the files, so new builds
+work too. The install log names the tier you're on.
 
 ---
 
@@ -185,73 +186,54 @@ the per-component detail.
 
 ### Video and YouTube
 
-The feed does not care what draws the frame. The **video and youtube** card
-on the first page fetches a portable **MPC-HC** into a folder of your
-choice (default `Videos\DLSS5 Player`), sets its renderer to the D3D11
-MPC Video Renderer, and then the normal install feeds DLSS 5 into it like
-any game. There is no depth buffer in a video and the feed does not need
-one.
+The feed doesn't care what draws the frame. The **video and youtube** card on
+the first page fetches a portable **MPC-HC** into a folder of your choice
+(default `Videos\DLSS5 Player`), sets its renderer to D3D11, and installs
+DLSS 5 into it like any game - no depth buffer needed for video.
 
-- **File > Open File** for anything on disk.
-- Paste a YouTube link into the **link** box and press **play**: yt-dlp
-  sits next to the player, so the stream plays live and nothing is
-  downloaded. A link on the clipboard is picked up by itself.
-- **download, then play** saves it under the player's `downloads` folder
-  first (up to 1440p, or 4K when ticked). YouTube only serves video and
-  audio apart, so the first download fetches ffmpeg once (170 MB) to join
-  them.
-- **open a video file** plays anything already on disk, whoever downloaded
-  it; **downloads folder** opens where downloads land.
-- **process a file** renders a clip through DLSS 5 offline - native size,
-  2x, or 4K (DLSS Super Resolution does the upscale) with a style choice -
-  into the player's `processed` folder, then opens it. The first run
-  fetches the small video2dlssnr tool; ffmpeg is shared with downloads.
-- **webcam**: pick a camera, press start, and it plays live through DLSS 5
-  (ffmpeg reads it over DirectShow and hands it to the player; about half
-  a second behind). Stop ends the stream.
-- **F6** switches neural rendering on and off while it plays; the
-  **neural rendering on/off** button does the same. The player's own Home
-  key (jump to start) is unbound so ReShade's overlay key does not restart
-  the video.
+- **File > Open File**, or paste a YouTube link into **link** and press
+  **play** (live via yt-dlp, nothing downloaded; a clipboard link is picked
+  up automatically).
+- **download, then play** saves it under `downloads` first (up to 1440p, 4K
+  when ticked) - first run fetches ffmpeg (170 MB) to join YouTube's separate
+  video/audio streams.
+- **process a file** renders a clip through DLSS 5 offline (native/2x/4K,
+  style choice) into `processed`, then opens it.
+- **webcam**: pick a camera, press start, plays live through DLSS 5 (~0.5s
+  behind). Stop ends it.
+- **F6** or the **neural rendering on/off** button toggles it while playing.
 
-Neural rendering re-draws everything in the window, menus included - use
-the player fullscreen. Text looks hand-drawn while it is on; that is the
-model, not a bug. A Chromium build was tried too and works technically,
-but the whole browser goes through the model and the picture smears; it
-is not offered.
+Neural rendering redraws the whole window, menus included - use fullscreen,
+and expect text to look hand-drawn (the model, not a bug). A Chromium build
+works technically but smears the whole browser through the model, so it
+isn't offered.
 
 ### RTX Remix: path tracing and DLSS 5 together
 
-An **RTX Remix** mod rebuilds an old game with path tracing. Those mods are
-whole remasters made by other people, several gigabytes of replaced assets,
-each with its own installer and instructions. **This tool does not install
-them and never will** - that is the mod author's project, and their download.
+An **RTX Remix** mod rebuilds an old game with path tracing - whole remasters
+made by other people, gigabytes of replaced assets, each with its own
+installer. **This tool does not install them and never will**; that's the
+mod author's project and their download.
 
 What it does is the last mile. Once the mod is in, its runtime sits in a
-`.trex` folder beside the game. Press **rescan**, and the game shows up with
-the **remix** route already chosen. INSTALL then does at most three things:
+`.trex` folder beside the game. Press **rescan**, the game shows up with
+**remix** already chosen, and INSTALL does at most three things: puts the
+matching `nvngx_dlssnr.dll` into `.trex`; if you tick **swap the Remix
+runtime**, replaces it with a DLSS 5 capable build (original backed up -
+experimental, can undo a mod's own fixes); writes one line into `rtx.conf`.
+Uninstall reverses exactly that, nothing else - the mod's assets and runtime
+are never touched.
 
-1. puts the `nvngx_dlssnr.dll` build that matches your card into `.trex`;
-2. only if you tick **swap the Remix runtime**, replaces the runtime with a
-   DLSS 5 capable build and adds `remix_nvngx.dll` beside it (the original is
-   backed up; this is experimental, and it can undo a mod's own fixes);
-3. writes one line into `rtx.conf` to switch neural rendering on.
+In game: **Alt+X → Developer Settings Menu → Post-Processing → Enable Neural
+Uplift (DLSS-NR)**, with sliders for style, intensity and structure.
+**did it work?** reads Remix's own log to confirm the feature was created.
 
-Uninstall reverses exactly those three and nothing else. The mod's assets,
-its `rtx-remix\mods` folder and its runtime are never touched.
-
-In game, press **Alt+X**, then **Developer Settings Menu**, then the
-**Post-Processing** tab: **Enable Neural Uplift (DLSS-NR)** with sliders for
-style, intensity and structure. **did it work?** reads Remix's own log and
-says whether the feature was created.
-
-**Which games?** Every project this tool knows about, checked to exist on
-2026-09-03 - the same list the **rtx remix** card on the first page shows,
-with the ones in your own library marked there. Roughly: Remix only reaches
-DirectX 8 and 9 games with a fixed function pipeline, about 2000 to 2005.
-There is no universal mod - each game needs its own, and "a mod exists" is
-not "it runs well". A page can move; the link is the authority, not this
-table.
+**Which games?** Every project this tool knows about (checked to exist on
+2026-09-03) - the same list the **rtx remix** card on the first page shows,
+with the ones in your library marked there. Remix only reaches roughly-2000
+to 2005 fixed-function DirectX 8/9 games, there's no universal mod, and "a
+mod exists" isn't "it runs well". If a page moves, the link is the
+authority, not this table.
 
 | Game | Mod | |
 |---|---|---|
@@ -287,21 +269,16 @@ anybody's mod, and it does not put a ReShade DLL in a Remix folder.
 
 ### Something crashed, or it does nothing?
 
-Nothing is sent anywhere by itself - there is no telemetry. What there is:
+Nothing is sent anywhere by itself - no telemetry. Instead:
 
-- **report a bug** (left rail) opens a GitHub issue **already filled in**:
-  version, card, driver, game, route, the last diagnosis, the last error and
-  the tail of the log. You see the text in your browser and decide whether
-  to post it, and you can edit it first.
-- When the tool hits an internal error it says so in the top bar with a
-  **report it** button that does the same.
-- After **did it work?** finds a problem, the diagnosis goes into the
-  report too.
-
+- **report a bug** (left rail), or the **report it** button after an
+  internal error, opens a GitHub issue already filled in: version, card,
+  driver, game, route, last diagnosis, last error, log tail. You see it in
+  your browser and decide whether to post it - edit it first if you like.
 - **suggest a feature** (left rail) opens an issue labelled *enhancement*.
 
-That is where fixes and the next features come from. A fix ships as a new release, and every
-copy out there offers to restart into it the next time it is opened.
+That's where fixes and features come from; every copy offers to restart into
+a new release the next time it's opened.
 
 ### Command line
 
@@ -318,51 +295,30 @@ dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  set up the video player and fee
 
 ## What makes it more than a copy script
 
-**It finds your games.** Steam, Epic, GOG, EA app, Ubisoft Connect,
-Battle.net, Rockstar, Amazon Games, itch, Heroic, Xbox/Game Pass folders,
-plain `D:\Games\*` folders, and eighteen emulators (DuckStation, PCSX2,
-Dolphin, PPSSPP, Xenia, Cemu, RPCS3, Ryujinx, yuzu/suyu/Eden, shadPS4,
-Azahar/Citra, melonDS, Flycast, xemu, Vita3K, RetroArch, mGBA, Snes9x,
-Play!). Anything else: **Choose folder…** and point at the folder the `.exe`
-is actually in.
-
-**The right executable.** Files must sit next to the executable that
-actually runs, and in Unreal and CryEngine games that is a subfolder
-(`TXR\Binaries\Win64\TXR-Win64-Shipping.exe`, `Bin\Win64…\KingdomCome.exe`)
-while the `.exe` in the root is only a launcher. The tool installs beside
-the real one even when the store's manifest names the launcher, and you keep
-starting the game from Steam or Epic as usual. When a folder has several
-candidates you can pick which one, and an install made earlier is found again
-even if the ranking changes.
-
-**Nothing is overwritten without a backup.** Every file the tool replaces -
-the game's own `nvngx_dlss.dll`, a tuned `OptiScaler.ini`, an existing
-`ReShade.ini` - is saved alongside and restored on uninstall.
-
-**Uninstall removes exactly what was installed.** Everything written is
-recorded in `dlss5-autopilot.json` in the game folder; the logs the
-components write later are known too. A file the game or its launcher is
-still holding is retried, reported by name, and kept in the record so the
-next uninstall finishes the job - it is never silently left behind.
-
-**Switching routes is clean.** Installing another route removes the previous
-one first, and no two routes' add-ons are ever left in one folder (ReShade
-loads every add-on it finds, and two of them fighting over NGX is the
-classic "game exits before the first frame").
-
-**Versions that go together.** The feeder's stable release conflicts with
-DLSS 5 add-on builds newer than 4.55 - the DLSS feature dies in
-`CreateFeature` - so the tool pins them together and says so in the log.
-
-**"Did it work?"** After you have played, press it. The tool reads the
-components' logs back and tells you in plain words what happened - whether
-the shader loaded, whether motion vectors are alive, whether the DLSS
-feature was created, and whether frames are actually being delivered. The
-usual failure is silent: the game simply looks unchanged.
-
-**It keeps working when GitHub rate-limits you.** GitHub allows 60 anonymous
-API calls an hour per address. Every API answer is cached on disk and reused
-when a live call fails, so an install still completes.
+- **Finds your games.** Steam, Epic, GOG, EA app, Ubisoft Connect,
+  Battle.net, Rockstar, Amazon Games, itch, Heroic, Xbox/Game Pass, plain
+  `D:\Games\*` folders, and 18 emulators (DuckStation, PCSX2, Dolphin,
+  PPSSPP, Xenia, Cemu, RPCS3, Ryujinx, yuzu/suyu/Eden, shadPS4, Azahar/Citra,
+  melonDS, Flycast, xemu, Vita3K, RetroArch, mGBA, Snes9x, Play!). Anything
+  else: **Choose folder…**.
+- **Finds the right executable.** Files go next to the exe that actually
+  runs - a subfolder in Unreal/CryEngine games, not the launcher in the
+  root - even when the store's manifest names the launcher; you keep
+  launching from Steam/Epic as usual.
+- **Nothing is overwritten without a backup**, restored on uninstall.
+- **Uninstall removes exactly what was installed** - recorded in
+  `dlss5-autopilot.json`; a locked file is retried, reported, and kept in
+  the record so the next uninstall finishes the job.
+- **Switching routes is clean** - the previous route is removed first, so no
+  two routes' add-ons ever fight over the same NGX calls.
+- **Versions that go together are pinned** - e.g. the feeder's stable
+  release needs DLSS 5 add-on ≤4.55 or `CreateFeature` dies; the tool holds
+  that pairing and says so in the log.
+- **"Did it work?"** reads the components' logs back in plain words after
+  you've played - shader loaded, motion vectors alive, DLSS feature created,
+  frames actually delivered. The usual failure is silent: nothing changes.
+- **Survives GitHub's rate limit** - every API answer is cached on disk and
+  reused when a live call fails.
 
 ---
 
@@ -466,30 +422,26 @@ codeload.github.com
 All download URLs live in a single file, [`core/sources.py`](core/sources.py).
 
 ---
-- `github.com/lunks/dxvk-remix-plus-dlssnr` - the DLSS 5 capable RTX Remix runtime, and only when you tick the swap option on the remix route.
 
 ## Is it safe? How to check for yourself
 
-Fair question to ask about any .exe from a Discord link. Do not take
-anyone's word for it - here is what you can check.
+Fair question for any .exe from a Discord link. Don't take anyone's word for
+it - here's what you can check.
 
 **Every release is built by GitHub, not uploaded by a person.** Pushing a
 version tag runs [`release.yml`](.github/workflows/release.yml) on GitHub's
-own Windows runner: it builds the .exe from the commit you can read, writes
-`SHA256SUMS.txt`, and attaches a **signed provenance attestation** that ties
-the file to that exact commit and build log. Both are on every release page,
-with the hashes at the top of the notes.
+own runner: it builds the .exe from the commit you can read, writes
+`SHA256SUMS.txt`, and attaches a signed provenance attestation tying the
+file to that exact commit and build log - both on every release page.
 
 ```
 certutil -hashfile dlss5-autopilot.exe SHA256
 gh attestation verify dlss5-autopilot.exe --repo Kizzuwatnaa/DLSS5-Autopilot
 ```
 
-If the hash differs from the release page, the file did not come from here.
-
-**The source is all here, and there is nothing else in it.** Plain Python,
-standard library and tkinter only; nothing from PyPI ends up in the build.
-Run it from source if you would rather not take the .exe at all:
+If the hash doesn't match the release page, the file didn't come from here.
+Or skip the .exe and run the source directly (plain Python, standard library
+and tkinter only - nothing from PyPI in the build):
 
 ```
 git clone https://github.com/Kizzuwatnaa/DLSS5-Autopilot
@@ -497,23 +449,17 @@ cd DLSS5-Autopilot
 python dlss5_autopilot.py
 ```
 
-**About antivirus warnings.** The build is packed with PyInstaller. Its
-stock bootloader is the same wrapper a lot of real malware uses, so heuristic
-scanners flag it - `Trojan.Generic`, `Wacatac.C!ml`, on *any* PyInstaller
-build. Since v1.3.0 the release workflow **compiles a fresh bootloader on the
-runner** rather than using the one every scanner has a signature for, which
-removes most of these. What it cannot remove is SmartScreen's
-*"Windows protected your PC"* on first run: that is about the missing
-publisher certificate, not the file. **More info → Run anyway**, once. A
-code-signing certificate costs money the project does not have.
+**About antivirus warnings.** PyInstaller's stock bootloader is a wrapper
+real malware also uses, so heuristics flag *any* PyInstaller build -
+`Trojan.Generic`, `Wacatac.C!ml`. Since v1.3.0 the release workflow compiles
+a fresh bootloader on the runner instead, which clears most of these.
+SmartScreen's *"Windows protected your PC"* is separate - it's about the
+missing paid publisher certificate, not the file: **More info → Run anyway**,
+once. Defender's **Block at First Sight** can also flag a brand-new release
+for a day, unrelated to the file itself; report a false positive at
+<https://www.microsoft.com/en-us/wdsi/filesubmission>.
 
-Windows Defender's **Block at First Sight** can also flag a brand-new
-release for a day and clear it after enough machines have seen it, without
-the file changing. Report a false positive at
-<https://www.microsoft.com/en-us/wdsi/filesubmission>; a confirmed one is
-corrected for everyone.
-
-**What it actually does to your machine**, all of which you can read:
+**What it actually does to your machine:**
 
 - writes only into the game folder you pick, and backs up anything it replaces
 - the one exception is Vulkan: ReShade's layer is a per-user registry value, the tool says so before writing it and removes it with the last Vulkan game
