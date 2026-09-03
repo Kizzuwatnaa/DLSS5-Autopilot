@@ -2608,6 +2608,41 @@ shutil.rmtree(_d, ignore_errors=True)
 check("the feeder's conflict lines say one neural add-on",
       any("exactly one neural add-on" in c for c in dlss.CONFLICTS[dlss.FEEDER]))
 
+
+# ------------------------------------------------- 26. webcam and aside rules
+section("26. webcam helpers, and a stranger's renodx add-on survives Chicken")
+_fake = ('[dshow @ 000001] "Brio 100" (video)\n[dshow @ 000001] "Microphone (Brio 100)" (audio)\n'
+         '[dshow @ 000001] "OBS Virtual Camera" (video)\n')
+import re as _re
+_cams = []
+for _line in _fake.splitlines():
+    _m = _re.search(r'"([^"]+)"\s+\(video\)', _line)
+    if _m and _m.group(1) not in _cams:
+        _cams.append(_m.group(1))
+check("camera names are parsed from ffmpeg's device list (video only)",
+      _cams == ["Brio 100", "OBS Virtual Camera"], str(_cams))
+check("stop_webcam without a stream is harmless", video.stop_webcam() is None)
+check("no ffmpeg -> no cameras, no exception",
+      video.list_cameras(Path(tempfile.mkdtemp(prefix="nocam_"))) == [])
+check("the webcam URL is local only", video.WEBCAM_URL.startswith("udp://@127.0.0.1:"))
+
+_c = Path(tempfile.mkdtemp(prefix="dfc2_"))
+for _n in installer.DFC_FILES:
+    (_c / _n).write_bytes(b"MZfake" if _n.endswith((".addon64", ".dll")) else b"enabled=1\r\n")
+_d = Path(tempfile.mkdtemp(prefix="dfc_aside_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / installer.RENODX).write_bytes(b"THEIRS")          # not from us
+_g = games.manual(_d)
+installer.install(_g, installer.Options(consumer="dfc", consumer_dir=_c), on_log=lambda t: None)
+check("a renodx add-on that is not ours is moved aside, not deleted",
+      not (_d / installer.RENODX).exists()
+      and (_d / (installer.RENODX + installer.ORPHAN_SUFFIX)).read_bytes() == b"THEIRS")
+installer.uninstall(_g, on_log=lambda t: None)
+check("uninstall leaves only the game (the aside copy is ours to remove)",
+      sorted(p.name for p in _d.iterdir()) == ["Game.exe"], str(sorted(p.name for p in _d.iterdir())))
+shutil.rmtree(_d, ignore_errors=True)
+shutil.rmtree(_c, ignore_errors=True)
+
 section("RESULT")
 if FAILS:
     print(f"{len(FAILS)} FAILED:")

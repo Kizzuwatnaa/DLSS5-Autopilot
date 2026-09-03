@@ -159,11 +159,25 @@ class App:
         r.title(APP)
         r.after(0, lambda: _dark_titlebar(r))
         # Our own icon in the title bar and the taskbar, not Python's feather.
+        # Two ways, because one is not enough on every machine: iconphoto
+        # (a PNG, fine for the taskbar) and iconbitmap (a real .ico with the
+        # 16/32 px sizes Windows wants for the title bar and alt-tab). The
+        # .ico has to be a file, so it goes into the settings folder.
         try:
             import base64
             from .icon_png import ICON_PNG_B64
             self._icon = tk.PhotoImage(data=base64.b64decode(ICON_PNG_B64))
             r.iconphoto(True, self._icon)
+        except Exception:
+            pass
+        try:
+            from .icon_png import ICON_ICO_B64
+            ico = prefs.FILE.parent / "dlss5-autopilot.ico"
+            data = base64.b64decode(ICON_ICO_B64)
+            if not ico.is_file() or ico.read_bytes() != data:
+                ico.parent.mkdir(parents=True, exist_ok=True)
+                ico.write_bytes(data)
+            r.iconbitmap(default=str(ico))
         except Exception:
             pass
         r.geometry("1060x830")

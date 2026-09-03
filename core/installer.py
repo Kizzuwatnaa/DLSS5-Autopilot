@@ -1885,15 +1885,29 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 raise InstallError(f"{label}: pick the folder holding its files first "
                                    f"({', '.join(DFC_FILES) if opt.consumer == CONSUMER_DFC else TOOLKIT_ADDON}).")
             # One neural consumer per folder: a renodx add-on beside it would
-            # make Chicken do nothing, silently.
+            # make Chicken do nothing, silently. Ours is deleted; one we did
+            # not record is moved aside (uninstall deletes the aside copy,
+            # the person's original is never destroyed by us).
             for n in (RENODX, RENODX_SF):
                 p_ = dlss_dir / n
-                if p_.is_file():
-                    try:
+                if not p_.is_file():
+                    continue
+                rel_p = str(p_.relative_to(root)).replace("\\", "/")
+                try:
+                    if rel_p in {x.replace("\\", "/") for x in rep.preinstalled}:
                         p_.unlink()
-                        log(f"      removed {n} - one neural add-on per folder")
-                    except OSError:
-                        pass
+                        log(f"      removed {n} (ours) - one neural add-on per folder")
+                    else:
+                        aside = p_.with_name(p_.name + ORPHAN_SUFFIX)
+                        if aside.exists():
+                            aside.unlink()
+                        p_.rename(aside)
+                        rep.written.append(str(aside.relative_to(root)))
+                        rep.notes.append(f"{n} was not ours: moved aside as "
+                                         f"{aside.name} - one neural add-on per folder")
+                        log(f"      {n} moved aside - one neural add-on per folder")
+                except OSError:
+                    pass
             for f in found:
                 _copy(f, dlss_dir / f.name, rep, root)
                 log(f"      {f.name} (your file)")
