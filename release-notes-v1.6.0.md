@@ -28,15 +28,22 @@ Both are refused now, before anything is written, with the reason said out
 loud. A test section proves a Remix install comes out of an install and an
 uninstall byte for byte identical.
 
-## RE Engine games (Capcom) are called out
+## RE Engine games (Capcom) no longer just crash and get blamed on setup
 
 Resident Evil 2/3/4, RE7, RE8/Village and Resident Evil Requiem share a
 documented problem: ReShade's add-on support - what every route here needs -
 can crash the engine outright, worst on Requiem, which also carries Denuvo.
-The tool now recognises the engine (`re_chunk_000.pak`) and says so plainly
-before you install, rather than letting it look like a setup mistake. A new
-**dinput8.dll** option under `reshade proxy` is the community's partial
-workaround - it loads earlier than the usual `dxgi.dll`.
+The tool recognises the engine (`re_chunk_000.pak`) and now installs
+**REFramework** first, automatically, on any route: a separate mod that
+loads before the game's own tamper checks and patches around them, the fix
+players report using with ReShade on Requiem itself. It fetches the current
+build from praydog/REFramework-nightly, which detects the running game on
+its own rather than shipping one file per title. Not guaranteed on every
+title or every game update, and never touches a Remix game.
+
+An earlier build of this offered **dinput8.dll** as a ReShade proxy name to
+try by hand - that was the wrong fix (it renamed ReShade, not REFramework)
+and has been removed; it would have collided with REFramework's own file.
 
 ## A D3D12 game no longer reads as D3D11
 

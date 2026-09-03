@@ -390,13 +390,13 @@ Resident Evil Requiem) is documented to reject ReShade's add-on support
 outright on several of its titles - worst on the ones that also carry
 Denuvo, Requiem in particular. This is the engine's own tamper protection,
 not a setup mistake, and it is unrelated to RTX Remix above. The tool
-detects it (`re_chunk_000.pak` in the folder) and says so in the detail
-card before you install.
-
-There is a partial community workaround: pick **dinput8.dll** under
-**reshade proxy** on the install page instead of the default `dxgi.dll` -
-it loads earlier, before some of the engine's checks run, which is why the
-community's REFramework mod uses the same trick. It is not guaranteed.
+detects it (`re_chunk_000.pak` in the folder) and, on any route, installs
+**REFramework** first - a separate, actively maintained mod that loads
+before the game's own checks and patches around them, the same fix players
+report using on Requiem itself. It fetches the current build from
+[praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly),
+which detects the running game itself, so it is not tied to a fixed game
+list. Not guaranteed on every title or every game update.
 
 ### Antivirus quarantined a file after install
 
@@ -486,6 +486,7 @@ its own licence:
 | LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
 | dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
+| REFramework, on RE Engine games only | [praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly) | MIT |
 | RTX Remix runtime with DLSS 5, only when you tick the swap option | [lunks/dxvk-remix-plus-dlssnr](https://github.com/lunks/dxvk-remix-plus-dlssnr) | see repository |
 | RenoDX DLSS 5 add-ons (Krish, ShortFuse), NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
 

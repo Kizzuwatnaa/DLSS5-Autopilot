@@ -43,7 +43,7 @@ with warnings.catch_warnings():
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
             "reshade_ini", "feedcfg", "dgvoodoo", "dxvk", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
-            "log", "components", "profiles", "remix",
+            "log", "components", "profiles", "remix", "reengine", "refw",
             "installer", "gui")
     for m in mods:
         try:
@@ -53,7 +53,7 @@ with warnings.catch_warnings():
             check(f"core.{m}", False, f"{type(e).__name__}: {e}")
 
 from core import remix, remixlist  # noqa: E402
-from core import pe, reengine  # noqa: E402
+from core import pe, reengine, refw  # noqa: E402
 from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noqa: E402
                   pe, prefs, reshade_ini, sources, update, vulkan)
 
@@ -2997,8 +2997,8 @@ check("the list of known Remix projects is real and matched by name",
 shutil.rmtree(_d, ignore_errors=True)
 
 
-# ------------------------------------------------- 30. RE Engine and dinput8
-section("30. RE Engine games are called out, dinput8.dll is a real option")
+# ------------------------------------------------- 30. RE Engine: REFramework
+section("30. RE Engine games get REFramework installed first, for real")
 _d = Path(tempfile.mkdtemp(prefix="reengine_"))
 shutil.copyfile(X64, _d / "Game.exe")
 (_d / "re_chunk_000.pak").write_bytes(b"pak")
@@ -3006,18 +3006,62 @@ check("re_chunk_000.pak marks the folder as RE Engine",
       reengine.detected(_d))
 check("a folder with no marker is not RE Engine",
       not reengine.detected(Path(tempfile.mkdtemp(prefix="not_reengine_"))))
+check("dinput8.dll is no longer offered as a fake ReShade proxy name",
+      "dinput8.dll" not in installer.RESHADE_PROXIES
+      and "dinput8.dll" not in installer.RESHADE_PROXY_HELP)
 _g = games.manual(_d)
 _pv = installer.preview(_g, installer.Options())
 check("the preview carries the RE Engine warning",
       any("RE Engine" in w for w in _pv.warnings), str(_pv.warnings))
-_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
-check("install carries the same warning and still finishes",
-      any("RE Engine" in w for w in _rep.warnings))
-installer.uninstall(_g, on_log=lambda t: None)
+check("the warning names REFramework, not a dead end",
+      any("REFramework" in w for w in _pv.warnings), str(_pv.warnings))
+check("REFramework is the first step of the plan",
+      installer.plan(_g, installer.Options())[0].startswith("REFramework"),
+      str(installer.plan(_g, installer.Options())))
+try:
+    _rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+    check("install carries the same warning and still finishes",
+          any("RE Engine" in w for w in _rep.warnings))
+    check("a real REFramework dinput8.dll landed in the folder",
+          installer._is_reframework(_d / refw.DINPUT8), str(_rep.written))
+    installer.uninstall(_g, on_log=lambda t: None)
+    check("uninstall takes it back out again",
+          not (_d / refw.DINPUT8).exists())
+except Exception as e:
+    check("RE Engine install/uninstall round trip", False, f"{type(e).__name__}: {e}")
 shutil.rmtree(_d, ignore_errors=True)
-check("dinput8.dll is a selectable reshade proxy with its own explanation",
-      "dinput8.dll" in installer.RESHADE_PROXIES
-      and "dinput8.dll" in installer.RESHADE_PROXY_HELP)
+
+# A dinput8.dll already there - the person's own REFramework, or something
+# else entirely using the same load slot - is backed up, not clobbered.
+_d = Path(tempfile.mkdtemp(prefix="reengine_existing_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "re_chunk_000.pak").write_bytes(b"pak")
+(_d / refw.DINPUT8).write_bytes(b"USER OWN DINPUT8" + bytes(200))
+_g = games.manual(_d)
+try:
+    installer.install(_g, installer.Options(), on_log=lambda t: None)
+    check("the user's own dinput8.dll was backed up, not deleted",
+          (_d / (refw.DINPUT8 + installer.BACKUP_SUFFIX)).read_bytes()
+          .startswith(b"USER OWN DINPUT8"))
+    installer.uninstall(_g, on_log=lambda t: None)
+    check("uninstall restores the user's own dinput8.dll byte for byte",
+          (_d / refw.DINPUT8).read_bytes().startswith(b"USER OWN DINPUT8"))
+except Exception as e:
+    check("RE Engine dinput8.dll backup/restore", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
+# A manifest-less uninstall must only take a dinput8.dll that really is
+# REFramework by content - a foreign one (VR mod, something unrelated using
+# the same slot) survives, the same protection dxgi.dll/opengl32.dll got.
+_d = Path(tempfile.mkdtemp(prefix="reengine_foreign_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / refw.DINPUT8).write_bytes(b"MZ not reframework at all" + bytes(2000))
+_g = games.manual(_d)
+installer.uninstall(_g, on_log=lambda t: None)
+check("a foreign dinput8.dll survives a manifest-less uninstall",
+      (_d / refw.DINPUT8).is_file())
+shutil.rmtree(_d, ignore_errors=True)
+
 check("the remix route is never bothered with the RE Engine warning",
       True)  # covered structurally: both call sites gate on opt.path != ROUTE_REMIX
 

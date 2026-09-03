@@ -44,7 +44,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
-               optiscaler, pe, prefs, reengine, remix, reshade_ini, sources, vulkan)
+               optiscaler, pe, prefs, reengine, refw, remix, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
@@ -370,6 +370,16 @@ def _is_reshade(path: Path) -> bool:
         return False
 
 
+def _is_reframework(path: Path) -> bool:
+    """refw.py's dinput8.dll carries the literal string "REFramework"."""
+    try:
+        if not path.is_file() or path.stat().st_size < (1 << 20):
+            return False
+        return b"REFramework" in path.read_bytes()
+    except OSError:
+        return False
+
+
 # The names ReShade can be installed under. It is the same DLL each time; the
 # name decides which system library it stands in for, and therefore when in
 # start-up the game loads it.
@@ -381,7 +391,7 @@ def _is_reshade(path: Path) -> bool:
 # it is good and ready. When a game will not start, changing the name it
 # comes in under is the first thing to try.
 RESHADE_PROXIES = ("dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d10.dll",
-                   "d3d9.dll", "opengl32.dll", "dinput8.dll")
+                   "d3d9.dll", "opengl32.dll")
 
 RESHADE_PROXY_HELP = {
     "dxgi.dll": "default for Direct3D 10/11/12",
@@ -390,9 +400,12 @@ RESHADE_PROXY_HELP = {
     "d3d10.dll": "D3D10 only",
     "d3d9.dll": "DirectX 9, after dgVoodoo2 translation",
     "opengl32.dll": "the only option for OpenGL",
-    "dinput8.dll": "loads earlier than a graphics proxy; the community fix "
-                   "for RE Engine (Capcom) games that crash on dxgi.dll",
 }
+# dinput8.dll is NOT offered here: it used to be, as a ReShade proxy name to
+# try on RE Engine games, but that was the wrong fix. The real one is
+# REFramework, a separate mod that installs itself under that exact name and
+# patches around RE Engine's own tamper checks - see refw.py. ReShade
+# claiming the same name would collide with it.
 
 
 def _proxy_name(api: str, chosen: str = "") -> str:
@@ -569,6 +582,8 @@ def plan(g: games.Game, opt: Options) -> list[str]:
             + [DLSSNR, remix.CONF]
 
     steps: list[str] = []
+    if reengine.detected(g.install_dir):
+        steps.append("REFramework (RE Engine - so ReShade survives)")
     if uses_dxvk(g, opt):
         steps.append(f"DXVK ({g.api} -> Vulkan)")
         g = via_dxvk(g, opt)
@@ -577,10 +592,13 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     if opt.path == OPTI:
         # OptiScaler replaces ReShade entirely - it is the proxy DLL itself.
         # A game with DLSS keeps its own nvngx_dlss.dll; one whose FSR/XeSS
-        # calls are being redirected has none, so one goes in.
-        return (["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll"]
-                + (["nvngx_dlss.dll"] if _opti_needs_dlss(opt) else [])
-                + ["OptiScaler configuration"])
+        # calls are being redirected has none, so one goes in. REFramework
+        # still has to go in first on an RE Engine game - OptiScaler is a
+        # proxy DLL too, and RE Engine's tamper checks do not care which one.
+        return (steps[:1] if steps[:1] and steps[0].startswith("REFramework") else []) \
+            + ["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll"] \
+            + (["nvngx_dlss.dll"] if _opti_needs_dlss(opt) else []) \
+            + ["OptiScaler configuration"]
     steps.append("ReShade (Vulkan layer)" if g.api == "Vulkan" else "ReShade")
 
     if opt.path == UPSTREAM:
@@ -879,7 +897,12 @@ def preview(g: games.Game, opt: Options) -> Preview:
         except OSError:
             pass
 
-    # 0) dgVoodoo2 / DXVK
+    # 0) REFramework (RE Engine games only - see reengine.py/refw.py)
+    if reengine.detected(root):
+        plain_backup(refw.DINPUT8)
+        write(refw.DINPUT8, keep=False)
+
+    # 0b) dgVoodoo2 / DXVK
     if g.api == "DX9" and not dxvk_from:
         plain_backup(dgvoodoo.D3D9)
         write(dgvoodoo.D3D9, keep=False)
@@ -1725,7 +1748,21 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # does, we still record the files already written - otherwise they would
     # be orphaned in the game folder with no way to clean them up.
     try:
-        # --- 0) DX9 needs dgVoodoo2 first (unless DXVK takes it to Vulkan) ---
+        # --- 0) REFramework first, on an RE Engine game (see reengine.py) ---
+        # Never on the remix route: Remix has already replaced the renderer
+        # by the time this runs, and RE Engine's own tamper checks do not
+        # apply to it - plan() already leaves this route out for the same
+        # reason.
+        if opt.path != ROUTE_REMIX and reengine.detected(root):
+            begin("REFramework (RE Engine - so ReShade survives)")
+            for f in refw.install(root, log):
+                rep.written.append(f)
+            rep.notes.append(
+                "REFramework installed: it loads before the game's own "
+                "tamper checks and patches around them, so ReShade (below) "
+                "does not get killed the way it would on its own.")
+
+        # --- 0b) DX9 needs dgVoodoo2 first (unless DXVK takes it to Vulkan) ---
         # Never on the remix route: Remix IS the D3D9 implementation there,
         # and dgVoodoo's D3D9.dll would land straight on top of the Remix
         # bridge client. Caught on the real GTA IV install; plan() already
@@ -2476,6 +2513,11 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         # the file really is ReShade, a game's own d3d11.dll stays.
         files += [n for n in RESHADE_PROXIES
                   if n not in files and _is_reshade(root / n)]
+        # REFramework's dinput8.dll, same reasoning: a real one the person
+        # put there themselves - or is still using for something else -
+        # stays untouched unless it is confirmed to be ours by content.
+        if refw.DINPUT8 not in files and _is_reframework(root / refw.DINPUT8):
+            files.append(refw.DINPUT8)
         log("No install record found; cleaning up by known filenames.")
 
     # Restore backups first, then delete the rest

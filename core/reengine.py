@@ -8,6 +8,10 @@ across RE2/RE3/RE4 remakes, RE7, RE8 (Village) and Requiem; older titles are
 sometimes fine, newer ones less so, and there is no reliable way to tell
 from here which side of that line a given release falls on.
 
+The fix, confirmed by players running ReShade with an add-on on Requiem
+itself: REFramework loaded first. This tool installs it automatically for
+any RE Engine game, before ReShade - see refw.py.
+
 Detection is by the engine's own marker file rather than a name list, so it
 covers a title nobody has told us about yet - the same reasoning as
 anticheat.py.
@@ -25,11 +29,12 @@ WARNING = (
     "ReShade's add-on support, which every route here needs, is documented "
     "to crash several RE Engine titles the moment it loads - Resident Evil "
     "Requiem worst of all, since it also carries Denuvo. This is the "
-    "engine's own tamper protection, not a mistake in the setup, and this "
-    "tool cannot work around it.\n\n"
-    "The community workaround (REFramework, not part of this tool) loads "
-    "ReShade as 'dinput8.dll' instead of the usual 'dxgi.dll' - it sits "
-    "under 'reshade proxy' on the install page if you want to try it."
+    "engine's own tamper protection, not a mistake in the setup.\n\n"
+    "This install puts REFramework in first: a separate, actively "
+    "maintained mod that loads before the game's own checks and patches "
+    "around them, after which ReShade survives. It is what players report "
+    "using on Requiem itself. Not guaranteed on every title or every game "
+    "update - REFramework's own build has to catch up first."
 )
 
 

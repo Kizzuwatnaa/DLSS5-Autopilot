@@ -1210,9 +1210,10 @@ class App:
         if sup.recommended != dlss.REMIX and reengine.detected(g.install_dir):
             lines.append("note   RE Engine (Capcom) game - ReShade's add-ons "
                          "are documented to crash titles like this, worst on "
-                         "Denuvo'd ones (Requiem); 'did it work?' after a try "
-                         "explains, and 'dinput8.dll' under reshade proxy is "
-                         "the community workaround")
+                         "Denuvo'd ones (Requiem); this install puts "
+                         "REFramework in first so ReShade survives, the way "
+                         "players report doing it on Requiem itself - "
+                         "'did it work?' after a try explains if it didn't")
         other = games._recorded_exe(g.install_dir)
         if other and g.exe and other.lower() != g.exe.name.lower():
             lines.append(f"shared this folder is already set up for {other}; both "
