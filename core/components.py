@@ -33,6 +33,7 @@ LABELS = {
     "standalone": "standalone-dlssnr (DLSS5-Reshade-AIO)",
     "feeder":     "DLSS5-Feeder",
     "optiscaler": "OptiScaler",
+    "remix_runtime": "RTX Remix runtime (dxvk-remix-plus-dlssnr)",
 }
 
 # Resolved once per process, not once per game: a library with thirty
@@ -56,6 +57,8 @@ def _latest(name: str) -> str:
         latest = sources.resolve_standalone()[0]
     elif name == "feeder":
         latest = sources.resolve_feeder()[0]
+    elif name == "remix_runtime":
+        latest = sources.resolve_remix_runtime()[0]
     elif name in ("renodx", "renodx_sf", "dlssnr", "dlss", "dlssg"):
         entries = sources.rhi_catalog().get(name) or []
         if entries:

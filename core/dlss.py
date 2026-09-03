@@ -49,6 +49,12 @@ directly and keeps its own Quality/Balanced/Performance modes.
              result in a topmost window of its own. Works with or without
              DLSS in the game. Experimental: the window trick is fragile.
 
+    REMIX    the game already has an RTX Remix mod. Remix replaces d3d9.dll
+             and path traces the frame in its own runtime (a `.trex` folder),
+             and the community forks of that runtime run DLSS-NR inside it,
+             after DLSS. No ReShade, no feeder, no add-on - a ReShade proxy
+             DLL in the folder crashes a Remix game before it draws.
+
 DirectX 10 is supported by none of them: the feeder dropped it and nothing
 else hooks D3D10.
 """
@@ -57,10 +63,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import remix
+
 NATIVE, BRIDGE, FEEDER, OPTI, RENODX = "native", "bridge", "feeder", "optiscaler", "renodx"
 UPSTREAM = "upstream"
 STANDALONE = "standalone"
-ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE)
+REMIX = "remix"
+ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE,
+              REMIX)
 
 # Streamline is NVIDIA's own plugin layer; if a game ships it, it ships DLSS.
 # These are never files this tool installs, so they are unambiguous.
@@ -267,6 +277,9 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
         if sm is not None and sm < 120:
             note += "; author tested RTX 50 only, works here on the community runtime"
         return True, note
+    if route == REMIX:
+        return True, ("runs inside the Remix runtime, after DLSS - no "
+                      "ReShade, no add-on")
     if route == NATIVE:
         return True, "most proven for D3D12 games with DLSS"
     if route == UPSTREAM:
@@ -292,6 +305,34 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
 
 
 def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
+    """The route list, then the Remix override.
+
+    A Remix game is a Remix game: the mod has already replaced the renderer,
+    DLSS 5 goes inside that runtime, and every ReShade route would be
+    injecting a proxy DLL into a process that dies on one. The other routes
+    are still listed - people want to see what exists - but none of them is
+    ever the recommendation here.
+    """
+    s = _detect_routes(install_dir, folder, api, bitness)
+    trex = remix.find_runtime(install_dir) or remix.find_runtime(folder)
+    if trex is None:
+        return s
+    s.options = [REMIX] + [o for o in s.options if o != REMIX]
+    s.recommended = REMIX
+    s.supported = True
+    s.why_not = ""
+    s.reason = (
+        "This game has an RTX Remix mod installed (found " + trex.name + "). "
+        "Remix path traces the frame in its own runtime, and DLSS 5 runs "
+        "INSIDE that runtime, after DLSS - no ReShade, no feeder, no add-on. "
+        "The other routes are listed for completeness only: they all install "
+        "a ReShade proxy DLL, and a ReShade proxy in a Remix game's folder "
+        "crashes it before it draws a frame.")
+    return s
+
+
+def _detect_routes(install_dir: Path, folder: Path, api: str,
+                   bitness: int) -> Support:
     s = Support()
 
     for d in {install_dir, folder}:
@@ -470,6 +511,7 @@ LABELS = {
     BRIDGE: "bridge - private D3D12 session",
     FEEDER: "feeder - synthetic DLAA contract",
     STANDALONE: "standalone-dlssnr - own feed, DLAA or DLSS SR, frame generation",
+    REMIX: "remix - DLSS 5 inside RTX Remix (path tracing)",
 }
 
 BLURB = {
@@ -509,6 +551,18 @@ BLURB = {
                  "result is shown through a topmost window of its own, which "
                  "is the fragile part: change resolution or display mode and "
                  "it needs a restart. F10 compares. Experimental."),
+    REMIX: ("This game already has an RTX Remix mod. Remix replaces the "
+            "renderer and path traces the frame in its own runtime, in the "
+            "'.trex' folder; the DLSS 5 neural pass runs there too, after "
+            "DLSS, so the game's own DLSS quality setting still applies. "
+            "Nothing is injected into the game: no ReShade, no feeder, no "
+            "add-on - and any ReShade proxy DLL left in the folder crashes "
+            "a Remix game before it draws. The tool puts nvngx_dlssnr.dll "
+            "into the .trex folder and switches the pass on in rtx.conf. "
+            "If the installed runtime has no neural pass at all (NVIDIA's "
+            "own has none), 'swap the Remix runtime' replaces it with a "
+            "community build that does - experimental, because it also "
+            "replaces the fixes a mod's own runtime may carry."),
 }
 
 # What must NOT sit in the folder or run beside each route, and what breaks
@@ -544,4 +598,10 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
                  "display-mode changes need a restart",
                  "not with the renodx add-on, OptiScaler or neural-upstream "
                  "in the folder"),
+    REMIX: ("no ReShade, no feeder, no add-ons in the folder - a ReShade "
+            "proxy DLL crashes a Remix game before it draws",
+            "the neural pass runs inside the Remix runtime, after DLSS, so "
+            "the game's own DLSS/RR settings still apply",
+            "toggle it in the Remix menu: Alt+X -> Developer Settings Menu "
+            "-> Post-Processing"),
 }

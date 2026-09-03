@@ -457,6 +457,31 @@ class App:
         vi.bind("<Configure>",
                 lambda e: self.videolbl.configure(wraplength=max(380, e.width - 10)))
 
+        # Old games rebuilt with path tracing: DLSS 5 goes inside the Remix
+        # runtime there, so it is a route of its own rather than an add-on.
+        rcard = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        rcard.pack(fill="x", pady=(8, 0))
+        ri = tk.Frame(rcard, bg=PANEL)
+        ri.pack(fill="x", padx=16, pady=12)
+        rtop = tk.Frame(ri, bg=PANEL)
+        rtop.pack(fill="x")
+        tk.Label(rtop, text="rtx remix", bg=PANEL, fg=TXT,
+                 font=font(10, "bold")).pack(side="left")
+        tk.Label(rtop, text="new", bg=PANEL, fg=AMBER, font=font(8))\
+            .pack(side="left", padx=10)
+        ttk.Button(rtop, text="which of my games have a remix mod?",
+                   command=self._show_remix).pack(side="right")
+        self.remixlbl = tk.Label(
+            ri, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
+            wraplength=660,
+            text="a remix mod rebuilds an old game with path tracing. install the "
+                 "mod yourself, then this tool finds its .trex runtime and puts "
+                 "dlss 5 inside it - no reshade, no feeder. tested on gta iv: "
+                 "path tracing + dlss 5 neural rendering together.")
+        self.remixlbl.pack(anchor="w", pady=(4, 0))
+        ri.bind("<Configure>",
+                lambda e: self.remixlbl.configure(wraplength=max(380, e.width - 10)))
+
         # What the publishers ship right now - the tool always fetches these.
         self.boardlbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8),
                                  anchor="w", justify="left", wraplength=680)
@@ -574,6 +599,15 @@ class App:
                 break
 
     # ------------------------------------------------------------- video
+    def _show_remix(self) -> None:
+        """The Remix window: what has a mod, and which of them you own."""
+        try:
+            from . import remixui       # imports gui's colours: not at top level
+            remixui.show(self.root, self.all_games)
+        except Exception as e:
+            log.exception("remix window")
+            messagebox.showerror(APP, f"could not open the list:\n{e}")
+
     def _video_setup(self) -> None:
         """Fetch a portable player into a folder, then treat it as a game."""
         if self.busy:

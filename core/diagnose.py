@@ -14,6 +14,9 @@ Which log matters depends on the route:
     standalone LOCALAPPDATA/RHI/Logs/standalone-dlssnr.log - outside the game
              folder, and ONE file for every game the add-on ever ran in, so
              only its last session is read
+    remix    rtx-remix/logs/remix-dxvk.log - the Remix runtime's own log. No
+             ReShade is involved at all on that route, so ReShade.log and the
+             feed log say nothing about it.
 
 A log older than the install is from a previous setup and is ignored rather
 than reported as if it described the current one.
@@ -277,6 +280,113 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     return rep
 
 
+def _analyse_remix(install_dir: Path, rep: "Report", since: float,
+                   man: dict) -> "Report":
+    """Read the Remix runtime's own log, which is the only one that applies.
+
+    Every phrase matched here was read out of this machine's runtime binary
+    and confirmed in a real log; they come from Kim2091's gta4-atmos-dlss5
+    fork (src/dxvk/rtx_render/rtx_neural_uplift.cpp and its NGX wrapper):
+
+        [DLSS-NR] Loaded .trex\\nvngx_dlssnr.dll
+        [DLSS-NR] Snippet initialized
+        [DLSS-NR] Created the Neural Uplift feature (id 18, preset 0) at 1920x1080
+
+    and, when it goes wrong, "nvngx_dlssnr.dll could not be loaded",
+    "nvngx_dlssnr.dll not found", "snippet failed to load" and the
+    caller-check line.
+    """
+    from . import remix as _remix
+
+    rx = man.get("remix") or {}
+    key = str(rx.get("key") or "")
+    conf = Path(rx.get("conf") or "")
+    if conf and not conf.is_absolute():
+        conf = install_dir / conf
+
+    # The two things that are true whether or not the game has been run.
+    trex = _remix.find_runtime(install_dir)
+    if trex is None:
+        rep.add(BAD, "The RTX Remix runtime is gone from this game.",
+                "There is no '.trex' folder any more. The mod was removed or "
+                "the game verified its files; nothing on this route can work "
+                "without it.")
+        rep.verdict = "No Remix runtime in the folder any more."
+        return rep
+    if not (trex / _remix.DLSSNR).is_file():
+        rep.add(BAD, f"nvngx_dlssnr.dll is missing from {trex.name}.",
+                "It was installed into the Remix runtime folder and is no "
+                "longer there - almost always antivirus quarantine. Restore "
+                "it, exclude the folder, and install again.")
+    if not _remix.runtime_flavour(trex):
+        rep.add(BAD, "This Remix runtime has no DLSS 5 neural pass.",
+                "NVIDIA's own runtime has none, and neither does this one, so "
+                "there is nothing to switch on. Install again with 'swap the "
+                "Remix runtime' ticked to replace it with a community build "
+                "that has the pass.")
+        rep.verdict = "The Remix runtime here has no neural pass - use the swap option."
+        return rep
+    if key and conf.is_file() and not _remix.option_set(conf, key):
+        rep.add(BAD, "Neural rendering is switched off in rtx.conf.",
+                f"'{key}' is not in {conf.name} any more. The Remix menu "
+                f"writes that file back when you save settings, so turning "
+                f"the pass off in game (Alt+X -> Developer Settings Menu -> "
+                f"Post-Processing) removes it. Turn it back on there, or "
+                f"install again.")
+
+    p = _remix.log_path(install_dir)
+    text = _tail(p, 300_000)
+    if not text:
+        rep.add(WARN, "The Remix runtime has not written a log yet.",
+                f"It writes {Path(_remix.LOG)} the moment it starts. Either "
+                f"the game has not been run since installing, or Remix is not "
+                f"loading at all - check the game's own d3d9.dll (the Remix "
+                f"bridge) is still beside the executable.")
+        rep.verdict = "Not run yet, or the Remix runtime never loaded."
+        return rep
+    rep.ran = True
+    try:
+        rep.log_time = datetime.fromtimestamp(p.stat().st_mtime)\
+            .strftime("%d %b %H:%M")
+    except OSError:
+        pass
+    if since and not _fresh(p, since):
+        rep.add(WARN, "The Remix log predates the current install.",
+                "Play once and check again.")
+
+    if _remix.LOADED in text and "nvngx_dlssnr.dll" in text:
+        rep.add(OK, "The runtime loaded nvngx_dlssnr.dll from the .trex folder.")
+    if _remix.INITIALISED in text:
+        rep.add(OK, "The DLSS-NR snippet initialised.")
+    bad = [(k, fix) for k, fix in _remix.FAILURES if k in text]
+    created = _remix.CREATED_RE.findall(text)
+    if created:
+        name, fid, preset, extent = created[-1]
+        rep.add(OK, f"DLSS 5 is running inside Remix (feature {fid}).",
+                f"{name.strip()} feature, preset {preset}"
+                + (f", at {extent}" if extent else "") + ".")
+        rep.verdict = "Working."
+        return rep
+    if bad:
+        k, fix = bad[-1]
+        rep.add(BAD, f"The neural pass did not start: {k}", fix)
+        rep.verdict = "Remix ran, but the DLSS 5 snippet never started."
+        return rep
+    if "[DLSS-NR]" in text:
+        rep.add(WARN, "Remix mentions DLSS-NR but never created the feature.",
+                text[text.rfind("[DLSS-NR]"):][:200].splitlines()[0])
+        rep.verdict = ("Inconclusive - open Alt+X -> Developer Settings Menu "
+                       "-> Post-Processing and read the Neural Uplift line.")
+        return rep
+    rep.add(WARN, "The Remix runtime ran but says nothing about DLSS-NR.",
+            f"With '{key or 'the enable key'}' set in rtx.conf the runtime "
+            f"logs a [DLSS-NR] line on every start. Nothing here means this "
+            f"runtime does not know the option - install again, or use the "
+            f"'swap the Remix runtime' option.")
+    rep.verdict = "Remix ran; the neural pass was never even attempted."
+    return rep
+
+
 def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                     stale_reshade: bool) -> Report:
     """No current log: read the folder instead and name the likeliest cause.
@@ -373,6 +483,8 @@ def analyse(install_dir: Path) -> Report:
     rep.route = man.get("path") or ""
     if rep.route == "optiscaler":
         return _analyse_optiscaler(install_dir, rep, since, man)
+    if rep.route == "remix":
+        return _analyse_remix(install_dir, rep, since, man)
 
     feed = install_dir / FEED_LOG
     host = install_dir / HOST_LOG
@@ -903,6 +1015,26 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     names += _addons(man)
     if route == "standalone":
         names.append("nvngx.dll")
+    if route == "remix":
+        # Nothing of ours sits beside the executable on this route; the files
+        # that decide whether it can work are all inside .trex.
+        from . import remix as _remix
+        trex = _remix.find_runtime(install_dir)
+        out = [f"- .trex: {'found at ' + str(trex) if trex else 'MISSING'}"]
+        if trex is not None:
+            for n in (_remix.RUNTIME_DLL, _remix.DLSSNR, _remix.REMIX_NVNGX):
+                state = "present" if (trex / n).is_file() else "MISSING"
+                out.append(f"- {trex.name}/{n}: {state}")
+            out.append(f"- runtime flavour: "
+                       f"{_remix.runtime_flavour(trex) or 'no DLSS 5 pass'}")
+        rx = man.get("remix") or {}
+        if rx.get("key"):
+            conf = Path(rx.get("conf") or "")
+            if not conf.is_absolute():
+                conf = install_dir / conf
+            out.append(f"- {rx['key']}: "
+                       f"{'set' if _remix.option_set(conf, rx['key']) else 'NOT SET'}")
+        return out
     if route != "optiscaler":
         names.append("ReShade.ini")
     names.append("nvngx_dlssnr.dll")
@@ -972,6 +1104,14 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     if route == "standalone":
         parts.append(_block("standalone-dlssnr.log",
                             _last_lines(_tail(STANDALONE_LOG, 100_000), 20), 900))
+    if route == "remix" and d is not None:
+        # Only the lines that say anything about the neural pass: the Remix
+        # log is enormous and the rest of it is path-tracing chatter.
+        from . import remix as _remix
+        rtx_log = _tail(_remix.log_path(d), 300_000)
+        parts.append(_block("remix-dxvk.log", _last_lines(
+            rtx_log, 20, lambda ln: "DLSS-NR" in ln or "dlssnr" in ln.lower()
+            or "Neural" in ln), 1200))
     if last_error:
         parts.append(f"\n**Last error**\n```\n{last_error[-900:]}\n```\n")
     parts.append(_block(

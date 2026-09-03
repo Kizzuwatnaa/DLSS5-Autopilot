@@ -24,6 +24,16 @@ needed. The game gets 32-bit ReShade + addon32; host64/ holds its own 64-bit
 ReShade and all the DLSS parts.
 
 DX9: dgVoodoo2 translates to D3D11 first, then the 32-bit path applies.
+
+REMIX: none of the above. The mod's own Remix runtime does the work, so the
+only things written are inside its `.trex` folder -
+
+    .trex/nvngx_dlssnr.dll      the neural-rendering snippet
+    .trex/d3d9.dll              only when swapping the runtime itself
+    .trex/remix_nvngx.dll       its caller-identity bridge, same swap
+
+- plus one line in the game's rtx.conf. No ReShade, no add-on, no proxy DLL:
+a ReShade proxy in a Remix game's folder crashes it before it draws.
 """
 from __future__ import annotations
 
@@ -34,12 +44,13 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
-               optiscaler, pe, prefs, reshade_ini, sources, vulkan)
+               optiscaler, pe, prefs, remix, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
 from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, STANDALONE, UPSTREAM
 from .dlss import RENODX as ROUTE_RENODX   # the route; RENODX below is a file name
+from .dlss import REMIX as ROUTE_REMIX
 
 MANIFEST = "dlss5-autopilot.json"
 
@@ -127,6 +138,12 @@ DLSSNR = "nvngx_dlssnr.dll"
 DLSS = "nvngx_dlss.dll"
 HOST_DIR = "host64"
 
+# The RTX Remix route. Nothing of ours goes beside the executable: the
+# runtime lives in the mod's .trex folder and everything we write goes in
+# there, plus one line in rtx.conf.
+REMIX_RUNTIME = remix.RUNTIME_DLL          # .trex/d3d9.dll - the runtime
+REMIX_NVNGX = remix.REMIX_NVNGX            # the caller-identity bridge
+
 SHADERS = Path("reshade-shaders") / "Shaders"
 INCLUDE = SHADERS / "include"
 VORT_INCLUDE = SHADERS / "Includes"    # VORT's own folder name, its .fx includes it
@@ -206,6 +223,11 @@ class Options:
     feeder_tag: str = ""                    # "" = stable or newest pre-release
     dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
+    # REMIX route: replace the mod's Remix runtime with a community build
+    # that HAS the neural pass. Off by default and deliberately opt-in - a
+    # mod's runtime is often a fork carrying game-specific fixes, and
+    # swapping it can break the mod itself.
+    remix_swap: bool = False
 
 
 @dataclass
@@ -222,6 +244,10 @@ class Report:
     preinstalled: set = field(default_factory=set)
     # Game files renamed out of the way (see SIDELINE), relative paths.
     sidelined: list[str] = field(default_factory=list)
+    # REMIX route: {"conf", "key", "trex", "flavour"}. rtx.conf is the user's
+    # file and is never listed in `written` (uninstall deletes those); the
+    # key is recorded here so uninstall can take exactly that line back out.
+    remix: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- reliability
@@ -231,13 +257,32 @@ class Report:
 STABLE, BETA, EXPERIMENTAL = "stable", "beta", "experimental"
 
 def reliability(g: games.Game, path: str = FEEDER,
-                upscaler: str = "") -> tuple[str, str]:
+                upscaler: str = "", remix_swap: bool = False) -> tuple[str, str]:
     """(level, explanation) - how likely this route is to actually work.
 
     `upscaler` is set on the OptiScaler route when the game has no DLSS and
     OptiScaler is redirecting its FSR/XeSS calls instead - one more hook
     that has to land, so it says so.
+
+    `remix_swap` is set on the REMIX route when the mod's own Remix runtime
+    is being replaced, which is a different risk from merely switching the
+    neural pass on in a runtime that already has one.
     """
+    if path == ROUTE_REMIX:
+        if remix_swap:
+            return EXPERIMENTAL, (
+                "The Remix runtime installed by this mod has no neural pass, "
+                "so it is being replaced with a community build that does. "
+                "That build is not the mod author's: a mod's runtime is often "
+                "a fork carrying fixes for this exact game, and swapping it "
+                "can break them. The old one is backed up and 'Uninstall' "
+                "puts it back.")
+        return BETA, (
+            "The Remix runtime already installed here has the DLSS 5 neural "
+            "pass built in; all this does is put nvngx_dlssnr.dll beside it "
+            "and switch the pass on in rtx.conf. Nothing is injected into "
+            "the game. New, and only a handful of Remix mods ship a runtime "
+            "with the pass at all.")
     if g.api == "DX10":
         return EXPERIMENTAL, ("DirectX 10 is not supported by any DLSS 5 "
                               "component.")
@@ -378,7 +423,8 @@ def uses_dxvk(g: games.Game, opt: "Options") -> bool:
     reaches Vulkan only with an extra boundary shader and a per-launch layer
     script; its D3D11 path is the tested one, so it stays on D3D11."""
     return (bool(opt.dxvk) and g.api in dxvk.APIS
-            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE))
+            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE,
+                                 ROUTE_REMIX))
 
 
 def via_dxvk(g: games.Game, opt: "Options") -> games.Game:
@@ -486,6 +532,24 @@ def _opti_needs_dlss(opt: Options) -> bool:
     return opt.path == OPTI and bool(opt.upscaler) and not opt.native_dlss
 
 
+def remix_runtime(g: games.Game) -> Path | None:
+    """The game's `.trex` folder, looked for beside the executable first."""
+    return remix.find_runtime(g.install_dir) or remix.find_runtime(g.folder)
+
+
+def remix_state(g: games.Game, opt: Options) -> tuple[Path | None, str, bool]:
+    """(.trex folder, fork flavour, are we replacing the runtime?).
+
+    The flavour is read out of the runtime binary, so this is the one place
+    that decides whether the route can work as-is or needs the swap.
+    """
+    trex = remix_runtime(g)
+    if trex is None:
+        return None, "", False
+    flavour = remix.runtime_flavour(trex)
+    return trex, flavour, bool(opt.remix_swap) and not flavour
+
+
 def plan(g: games.Game, opt: Options) -> list[str]:
     """The steps for this game on the selected path.
 
@@ -493,6 +557,15 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     synthetic contract out of ReShade shaders, so only it needs the shader
     headers, the .fx and a motion-vector provider.
     """
+    if opt.path == ROUTE_REMIX:
+        # Nothing goes beside the executable, and no ReShade at all: the
+        # runtime the mod already installed does the work, so the whole
+        # install is one runtime file, one config line - unless the runtime
+        # has no neural pass and the user opted into replacing it.
+        _trex, _flav, swap = remix_state(g, opt)
+        return (["RTX Remix runtime (DLSS 5 build)"] if swap else []) \
+            + [DLSSNR, remix.CONF]
+
     steps: list[str] = []
     if uses_dxvk(g, opt):
         steps.append(f"DXVK ({g.api} -> Vulkan)")
@@ -622,8 +695,11 @@ def preview(g: games.Game, opt: Options) -> Preview:
         pv.blockers.append(f"{g.exe.name} is running. Close the game first.")
 
     # Warnings, worded as install() records them.
+    trex, flavour, swap = remix_state(g, opt) if opt.path == ROUTE_REMIX \
+        else (None, "", False)
     level, why_rel = reliability(g, opt.path,
-                                 "" if opt.native_dlss else opt.upscaler)
+                                 "" if opt.native_dlss else opt.upscaler,
+                                 remix_swap=swap)
     if level != STABLE:
         pv.warnings.append(f"{level}: {why_rel}")
     hw = hook_warning(root, opt.path)
@@ -687,6 +763,59 @@ def preview(g: games.Game, opt: Options) -> Preview:
         if keep:
             backup(r)
         add(pv.writes, r)
+
+    # --- the RTX Remix route: everything goes inside the mod's .trex -------
+    if opt.path == ROUTE_REMIX:
+        if trex is None:
+            pv.blockers.append(
+                "No RTX Remix runtime (a '.trex' folder) was found in this "
+                "game. This route is only for a game that already has an RTX "
+                "Remix mod installed.")
+            return pv
+        try:
+            tdir = rel(trex.relative_to(root))
+        except ValueError:
+            tdir = rel(trex)
+        if not flavour and not swap:
+            pv.blockers.append(
+                "The RTX Remix runtime installed here has no DLSS 5 neural "
+                "pass (NVIDIA's own runtime has none). Tick 'swap the Remix "
+                "runtime' to replace it with a community build that does - "
+                "experimental: it also replaces any game-specific fixes the "
+                "mod's own runtime carries.")
+            return pv
+        # A ReShade proxy left in the folder kills the game outright: a
+        # 32-bit ReShade dxgi.dll took GTAIV.exe down with 0xc0000005 before
+        # the window appeared. Every one goes, whatever name it is under.
+        for name in RESHADE_PROXIES:
+            if not present(name) or not _is_reshade(root / name):
+                continue
+            if name in preinstalled:
+                add(pv.writes, name + ORPHAN_SUFFIX)
+                add(pv.removes, f"{name} (our ReShade - it crashes a Remix game)")
+            else:
+                backup(name)
+                add(pv.removes, f"{name} (a ReShade proxy - it crashes a "
+                                f"Remix game)")
+        if swap:
+            write(rel(tdir, REMIX_RUNTIME))
+            write(rel(tdir, REMIX_NVNGX))
+            pv.warnings.append(
+                "the mod's own Remix runtime is being replaced; it is backed "
+                "up and 'Uninstall' puts it back")
+        write(rel(tdir, DLSSNR))
+        try:
+            crel = rel(remix.conf_path(root, trex).relative_to(root))
+        except ValueError:
+            crel = rel(remix.conf_path(root, trex))
+        key = remix.enable_key(flavour or remix.NEURAL)
+        add(pv.writes, f"{crel} ({key} = True - this one line, nothing else "
+                       f"in the file is touched)")
+        for r in sorted(preinstalled):
+            if present(r):
+                add(pv.writes, r)
+        write(MANIFEST, keep=False)
+        return pv
 
     # Another injector already under the proxy name?
     if opt.path != OPTI and proxy != VULKAN_LAYER:
@@ -1109,7 +1238,7 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     # hook NGX, and two loaded together fight over the same entry points.
     # The standalone add-on runs the network itself; renodx-dlss5 beside it
     # would process the frame twice.
-    if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE):
+    if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX):
         out.append((NATIVE, RENODX))
     return out
 
@@ -1117,12 +1246,24 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
 def _clear_stale_reshade(root: Path, keep: str, rep: Report, log) -> None:
     """Move every ReShade proxy that is not the one being installed out of
     ReShade's reach. Ours go aside as orphans (uninstall deletes them); one we
-    did not record is backed up first, so uninstall puts it back."""
+    did not record is backed up first, so uninstall puts it back.
+
+    `keep` = "" takes ALL of them out, which is what the REMIX route needs:
+    a ReShade proxy of any name crashes a Remix game before it draws.
+
+    d3d9.dll is in RESHADE_PROXIES and, in a Remix game, d3d9.dll IS the
+    Remix runtime stub. _is_reshade() is consulted first for exactly that
+    reason and the stub fails it (no "ReShade" string, and under a megabyte),
+    so the runtime is never mistaken for a stale ReShade copy - but the check
+    is spelled out here too, because getting it wrong deletes the mod.
+    """
     for name in RESHADE_PROXIES:
         if name == keep:
             continue
         p = root / name
         if not _is_reshade(p):
+            continue
+        if name.lower() == "d3d9.dll" and remix.is_remix_game(root):
             continue
         try:
             if name in rep.preinstalled:
@@ -1230,6 +1371,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "components": rep.components,
             "kind": g.kind,
             "sidelined": rep.sidelined,
+            "remix": rep.remix,
         }, ensure_ascii=False, indent=2), encoding="utf8")
     except OSError:
         pass
@@ -1247,7 +1389,7 @@ def options_from_manifest(root: Path) -> Options | None:
         return None
     path = data.get("path") or FEEDER
     if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM,
-                    STANDALONE):
+                    STANDALONE, ROUTE_REMIX):
         return None
     upscaler = str(data.get("upscaler") or "")
     return Options(
@@ -1264,6 +1406,9 @@ def options_from_manifest(root: Path) -> Options | None:
         native_dlss=(path in (NATIVE, UPSTREAM) or (path == OPTI and not upscaler)
                      or bool(data.get("native_dlss", False))),
         opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
+        # A runtime we swapped last time must be swapped again on an update,
+        # or the update would put the mod's neural-pass-less runtime back.
+        remix_swap=bool((data.get("components") or {}).get("remix_runtime")),
     )
 
 
@@ -1384,6 +1529,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     ok, why = check_supported(g)
     if not ok:
         raise InstallError(why)
+    # Before a single byte is written: a Remix game takes the remix route and
+    # nothing else. A ReShade proxy crashes it before it draws (seen on GTA
+    # IV), and on DX9 dgVoodoo's D3D9.dll would land on top of the Remix
+    # runtime itself.
+    if opt.path != ROUTE_REMIX and remix.is_remix_game(g.install_dir):
+        raise InstallError(
+            "This game has an RTX Remix mod installed (its .trex runtime is "
+            "in the folder).\n\nOnly the remix route works here: it puts DLSS 5 "
+            "inside the Remix runtime. Every other route installs ReShade, "
+            "which crashes a Remix game before it draws a frame - and on "
+            "DirectX 9 it would write over the Remix runtime itself.\n\n"
+            "Choose the remix route, or uninstall the Remix mod first.")
     preflight(g)
 
     log = on_log or (lambda *_: None)
@@ -1400,9 +1557,17 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     g = via_dxvk(g, opt)
     proxy = _proxy_name(g.api, opt.reshade_proxy)
     host = root / HOST_DIR
+    trex, flavour, swap = remix_state(g, opt) if opt.path == ROUTE_REMIX \
+        else (None, "", False)
+    if opt.path == ROUTE_REMIX:
+        # Nothing of ours is a proxy DLL on this route, and d3d9.dll here
+        # belongs to Remix - recording it as "our proxy" would make the
+        # diagnosis and uninstall reach for the mod's own file.
+        proxy = ""
 
     level, why_rel = reliability(g, opt.path,
-                                 "" if opt.native_dlss else opt.upscaler)
+                                 "" if opt.native_dlss else opt.upscaler,
+                                 remix_swap=swap)
     if level != STABLE:
         rep.warnings.append(f"{level}: {why_rel}")
 
@@ -1448,8 +1613,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         log(f"      !! {ac.summary} detected - see the warning above")
 
     # Is another injector already in place?
-    existing = root / proxy
-    if opt.path != OPTI and existing.is_file() and not _is_reshade(existing):
+    existing = root / proxy if proxy else root
+    if opt.path not in (OPTI, ROUTE_REMIX) and existing.is_file() \
+            and not _is_reshade(existing):
         if optiscaler.is_optiscaler(existing):
             # A hand-installed OptiScaler (no record of ours) under the name
             # ReShade needs. Two injectors under one name cannot coexist, and
@@ -1483,7 +1649,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # that knew only the recorded name left the other one behind. Through
     # DXVK or on a Vulkan game there must be none at all.
     if opt.path != OPTI:
-        _clear_stale_reshade(root, proxy, rep, log)
+        # On the Remix route there is no proxy to keep: every ReShade in the
+        # folder has to go, whatever name it is under.
+        _clear_stale_reshade(root, "" if opt.path == ROUTE_REMIX else proxy,
+                             rep, log)
 
     # Switching routes must not leave the previous one behind. The routes put
     # very different things in the folder - the feeder alone drops 28 files,
@@ -1502,7 +1671,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # Belt and braces: whatever the manifest said, no add-on from another
     # route may be left in the folder. ReShade loads them all.
     _purge_foreign_addons(root, opt.path, rep, log)
-    if opt.path != OPTI:
+    if opt.path not in (OPTI, ROUTE_REMIX):
         _sideline(root, rep, log)
     # An emulator on the wrong render backend never gets a DXGI swap chain,
     # and ReShade then attaches to nothing. Switch it for them, say so, and
@@ -1555,6 +1724,127 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                              f"game renders on Vulkan and ReShade loads as a "
                              f"Vulkan layer, so nothing hooks the game itself. "
                              f"Use a borderless window, not exclusive fullscreen.")
+
+        # --- the RTX Remix route ---------------------------------------
+        if opt.path == ROUTE_REMIX:
+            if trex is None:
+                raise InstallError(
+                    "No RTX Remix runtime (a '.trex' folder) was found in "
+                    "this game. This route is only for a game that already "
+                    "has an RTX Remix mod installed.")
+            if not flavour and not swap:
+                raise InstallError(
+                    "The RTX Remix runtime installed here has no DLSS 5 "
+                    "neural pass - NVIDIA's own runtime has none, and only "
+                    "some community forks do.\n\nTick 'swap the Remix "
+                    "runtime' to replace it with a build that has the pass. "
+                    "That is experimental: a mod's runtime is often a fork "
+                    "carrying fixes for this exact game, and replacing it "
+                    "can break them. The old one is backed up either way.")
+            conf = remix.conf_path(root, trex)
+
+            def _rel(p: Path) -> str:
+                try:
+                    return str(p.relative_to(root))
+                except ValueError:
+                    return str(p)
+
+            if swap:
+                begin("RTX Remix runtime (DLSS 5 build)")
+                rtag, rurls = sources.resolve_remix_runtime()
+                for name in sources.REMIX_RUNTIME_ASSETS:
+                    f_ = dl(rurls[name], f"remix-runtime-{rtag}-{name}")
+                    _copy(f_, trex / name, rep, root)
+                    log(f"      {_rel(trex / name)}")
+                log(f"      dxvk-remix-plus-dlssnr {rtag}")
+                if rtag == "latest":
+                    log("      (GitHub's API was out of reach; took the "
+                        "newest release by its download redirect)")
+                rep.components["remix_runtime"] = rtag
+                rep.notes.append(f"remix runtime version: {rtag}")
+                rep.notes.append(
+                    "the mod's own Remix runtime was replaced with a "
+                    "community build that has the neural pass; the original "
+                    "is backed up beside it and 'Uninstall' puts it back. If "
+                    "the mod misbehaves after this, that swap is the reason.")
+                flavour = remix.runtime_flavour(trex) or remix.NEURAL
+
+            begin(DLSSNR)
+            card, sm = gpu.detect()
+            if card:
+                log(f"      graphics card: {card} ({gpu.label(sm)})")
+            catalog = sources.rhi_catalog()
+            if sources.last_fallback:
+                log(f"      {sources.last_fallback}")
+                if sources.last_fallback not in rep.warnings:
+                    rep.warnings.append(sources.last_fallback)
+            tried: list[str] = []
+            chosen = None
+            candidates = ([sources.pick(catalog["dlssnr"], opt.dlssnr)]
+                          if opt.dlssnr
+                          else gpu.order_dlssnr(catalog["dlssnr"], sm))
+            for e in candidates:
+                f_ = dl(e["url"], f"dlssnr-{e['label']}.zip")
+                _extract(f_, DLSSNR, trex / DLSSNR, rep, root)
+                compat, why_gpu = gpu.check(trex / DLSSNR, sm)
+                if compat is False and not opt.ignore_gpu_mismatch:
+                    if opt.dlssnr:
+                        raise InstallError(
+                            f"Build {e['label']} will not run on "
+                            f"{card or 'your card'}.\n\n{why_gpu}")
+                    tried.append(e["label"])
+                    log(f"      skipped {e['label']} - {why_gpu}")
+                    continue
+                chosen = (e, compat, why_gpu)
+                break
+            if chosen is None:
+                raise InstallError(
+                    f"No suitable nvngx_dlssnr build found for "
+                    f"{card or 'your card'}.\n\nTried: {', '.join(tried)}")
+            e, compat, why_gpu = chosen
+            rep.written.append(_rel(trex / DLSSNR))
+            log(f"      {_rel(trex / DLSSNR)}  (nvngx_dlssnr {e['label']})")
+            log(f"      GPU check: {why_gpu}")
+            rep.notes.append(f"dlssnr version: {e['label']}")
+            rep.components["dlssnr"] = e["label"]
+            tier = gpu.tier_note(sm, e["label"])
+            if tier:
+                log(f"      {tier}")
+                rep.notes.append(tier)
+            if compat is False:
+                rep.warnings.append(f"dlssnr {e['label']} does not match your "
+                                    f"card - installed anyway")
+
+            begin(remix.CONF)
+            key = remix.enable_key(flavour)
+            # Whether it ended with a newline decides what uninstall has to
+            # put back: set_option adds one when it is missing.
+            had_nl = remix.ends_with_newline(conf)
+            if not remix.set_option(conf, key, "True"):
+                raise InstallError(f"Could not write {conf}. Close the game "
+                                   f"and the Remix toolkit, then try again.")
+            rep.remix = {"conf": _rel(conf), "key": key,
+                         "trex": _rel(trex), "flavour": flavour,
+                         "conf_final_newline": had_nl}
+            log(f"      {_rel(conf)}: {key} = True")
+            log("      (that one line; every other setting in rtx.conf is "
+                "left exactly as it was)")
+            rep.notes.append(
+                f"{key} = True was set in {_rel(conf)}; 'Uninstall' takes "
+                f"that line back out and touches nothing else in the file")
+            rep.notes.append(
+                "In game: Alt+X opens the Remix menu -> Developer Settings "
+                "Menu -> Post-Processing, where the neural pass can be "
+                "toggled. It runs inside the Remix runtime, after DLSS, so "
+                "the game's own DLSS/RR settings still apply.")
+            rep.notes.append(
+                "No ReShade, no feeder and no add-on go into a Remix game. A "
+                "ReShade proxy DLL left in this folder crashes it before it "
+                "draws a frame.")
+            _write_manifest(root, g, opt, rep, proxy, level, complete=True)
+            prefs.add_install(root)
+            prog(100, "Done")
+            return rep
 
         if opt.path == OPTI:
             begin("OptiScaler (DLSS-NR build)")
@@ -2126,10 +2416,17 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
                  STANDALONE_ADDON, DLSSNR, DLSS, DLSSG,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
-                 "D3D9.dll", "dgVoodoo.conf", "dgVoodooCpl.exe",
+                 "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
                  str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),
                  str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE)]
+        # dgVoodoo's D3D9.dll shares its name with the Remix bridge client.
+        # With no manifest to tell them apart, the Remix install wins: a
+        # dgVoodoo file left behind is harmless, a deleted runtime is not.
+        if not remix.is_remix_game(root):
+            files.append("D3D9.dll")
+        else:
+            log("RTX Remix is installed here: d3d9.dll is its runtime, left alone.")
         # A plain nvngx.dll is the standalone add-on's bridge only when the
         # add-on is there too; on its own it could be somebody's OptiScaler.
         if (root / STANDALONE_ADDON).is_file():
@@ -2184,6 +2481,24 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                 log(f"restored: {orig.name} (the game's own file)")
         except OSError as e:
             log(f"could not restore: {orig.name} ({e})")
+
+    # The Remix route's one edit outside its own files: a single line in the
+    # user's rtx.conf. It is never in `files` - that list gets deleted, and
+    # deleting somebody's rtx.conf would take their whole mod configuration
+    # with it - so the key is removed by name instead.
+    rx = data.get("remix") or {}
+    if rx.get("conf") and rx.get("key"):
+        conf_p = Path(rx["conf"])
+        if not conf_p.is_absolute():
+            conf_p = root / rx["conf"]
+        try:
+            if remix.remove_option(conf_p, rx["key"],
+                                   bool(rx.get("conf_final_newline", True))):
+                removed.append(f"{rx['conf']} ({rx['key']})")
+                log(f"removed: {rx['key']} from {rx['conf']} "
+                    f"(nothing else in the file was touched)")
+        except OSError as e:
+            log(f"could not edit {rx['conf']}: {e}")
 
     if getattr(g, "emu", None) is not None and g.exe:
         try:

@@ -26,7 +26,7 @@ It is unofficial, it is early, and the components change daily.
 
 ---
 
-## Who does what: the seven routes
+## Who does what: the eight routes
 
 Every game gets one of these. The tool picks the best fit and says why; the
 dropdown shows every route the game allows, marks the recommended one, and
@@ -41,6 +41,7 @@ marks the ones your card cannot use. You can always pick another.
 | **bridge** | NIGos' `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session. | Vulkan games with DLSS (mirror). D3D11 fallback. Maintained; every release is tested on D3D11 and Vulkan. | The game's own DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract out of ReShade's depth buffer and shader motion vectors. | Games with **no** DLSS: D3D11, D3D12, Vulkan, OpenGL, and the only route for **32-bit** games (host64 helper) and DX9 (via dgVoodoo2). | `work_resolution` 50-100% (64-bit D3D11 only) |
 | **standalone-dlssnr** | kibblerz's add-on brings its own feed, DLAA or DLSS Super Resolution, and frame generation, presented through its own window on top. | 64-bit D3D11/D3D12, with or without DLSS. Experimental; turn the game's DLSS, frame generation and anti-aliasing off. | Run the game below native resolution and it upscales |
+| **remix** | The game already has an **RTX Remix** mod. DLSS 5 lives inside the Remix runtime, after its own upscaler. No ReShade, no feeder, no add-on. | Any game with a Remix mod installed (a `.trex` folder next to it). Chosen automatically when one is found. | The Remix menu's own Neural Uplift sliders |
 
 **How the recommendation is made:**
 
@@ -52,6 +53,7 @@ marks the ones your card cannot use. You can always pick another.
 - Vulkan with DLSS → **bridge**; Vulkan without → **feeder**.
 - OpenGL, 32-bit, DX9 (32-bit) → **feeder**.
 - 64-bit DX9 → **renodx-dlss** (nothing else reaches it).
+- **A game with an RTX Remix mod** -> **remix**, always. Every other route is refused there: ReShade crashes a Remix game before it draws, and on DirectX 9 it would write over the Remix runtime itself.
 - **DirectX 10 is not supported by anything.** The tool says so instead of installing.
 
 ### Support matrix
@@ -71,6 +73,7 @@ marks the ones your card cannot use. You can always pick another.
 | DirectX 9 (64-bit) | beta | renodx-dlss |
 | DirectX 10 | not supported | nothing hooks D3D10 |
 | 64-bit D3D11 / D3D12, own feed with upscaling and frame generation | experimental | standalone-dlssnr |
+| A game with an RTX Remix mod | beta | remix: DLSS 5 inside the Remix runtime |
 | Emulators | reliable* | D3D11/12 backend, set by the install; Vulkan is the beta path |
 
 \* set the emulator's renderer to Direct3D 11/12. Vulkan works through the
@@ -216,6 +219,43 @@ the player fullscreen. Text looks hand-drawn while it is on; that is the
 model, not a bug. A Chromium build was tried too and works technically,
 but the whole browser goes through the model and the picture smears; it
 is not offered.
+
+### RTX Remix: path tracing and DLSS 5 together
+
+An **RTX Remix** mod rebuilds an old game with path tracing. Those mods are
+whole remasters made by other people, several gigabytes of replaced assets,
+each with its own installer and instructions. **This tool does not install
+them and never will** - that is the mod author's project, and their download.
+
+What it does is the last mile. Once the mod is in, its runtime sits in a
+`.trex` folder beside the game. Press **rescan**, and the game shows up with
+the **remix** route already chosen. INSTALL then does at most three things:
+
+1. puts the `nvngx_dlssnr.dll` build that matches your card into `.trex`;
+2. only if you tick **swap the Remix runtime**, replaces the runtime with a
+   DLSS 5 capable build and adds `remix_nvngx.dll` beside it (the original is
+   backed up; this is experimental, and it can undo a mod's own fixes);
+3. writes one line into `rtx.conf` to switch neural rendering on.
+
+Uninstall reverses exactly those three and nothing else. The mod's assets,
+its `rtx-remix\mods` folder and its runtime are never touched.
+
+In game, press **Alt+X**, then **Developer Settings Menu**, then the
+**Post-Processing** tab: **Enable Neural Uplift (DLSS-NR)** with sliders for
+style, intensity and structure. **did it work?** reads Remix's own log and
+says whether the feature was created.
+
+**Which games?** The **rtx remix** card on the first page lists every project
+this tool knows about and marks the ones you own. Roughly: Remix only reaches
+DirectX 8 and 9 games with a fixed function pipeline, about 2000 to 2005.
+There is no universal mod - each game needs its own. Portal with RTX, Portal
+Prelude RTX and the Half-Life 2 RTX demo ship with Remix already inside and
+are free. Everything else comes from its own page; the list links to each one,
+and to [ModDB's Remix section](https://www.moddb.com/rtx) for the projects
+that have no repository.
+
+**Two things it will not do**, on purpose: it does not download or mirror
+anybody's mod, and it does not put a ReShade DLL in a Remix folder.
 
 ### Something crashed, or it does nothing?
 
@@ -383,6 +423,7 @@ codeload.github.com
 All download URLs live in a single file, [`core/sources.py`](core/sources.py).
 
 ---
+- `github.com/lunks/dxvk-remix-plus-dlssnr` - the DLSS 5 capable RTX Remix runtime, and only when you tick the swap option on the remix route.
 
 ## Is it safe? How to check for yourself
 
@@ -456,6 +497,7 @@ its own licence:
 | LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
 | dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
+| RTX Remix runtime with DLSS 5, only when you tick the swap option | [lunks/dxvk-remix-plus-dlssnr](https://github.com/lunks/dxvk-remix-plus-dlssnr) | see repository |
 | RenoDX DLSS 5 add-ons (Krish, ShortFuse), NVIDIA NGX runtimes | community-distributed | **proprietary, no public licence** |
 
 The DLSS 5 add-ons and the NVIDIA NGX runtimes are closed-source software
@@ -464,8 +506,13 @@ release archive, and not redistributed by this project.** The tool downloads
 them from a public community mirror, exactly as a person would by hand. If
 you are not comfortable with that, do not use this tool.
 
+**RTX Remix mods are not downloaded, mirrored or installed by this tool.**
+Each one is its author's own project with its own terms. The tool links to
+the page, and once you have installed it yourself, puts DLSS 5 into the
+runtime that is already there.
+
 Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX,
-OptiScaler or any of the projects above. Use at your own risk.
+OptiScaler, RTX Remix or any of the projects above. Use at your own risk.
 
 The installer's own source code is MIT licensed - see [LICENSE](LICENSE).
 

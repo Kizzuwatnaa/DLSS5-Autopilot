@@ -23,12 +23,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'Kizzuwatnaa'),
          StringStruct('FileDescription', 'DLSS 5 Autopilot - installs DLSS 5 neural rendering into your games'),
-         StringStruct('FileVersion', '1.5.0.0'),
+         StringStruct('FileVersion', '1.6.0.0'),
          StringStruct('InternalName', 'dlss5-autopilot'),
          StringStruct('LegalCopyright', 'MIT licensed. Not affiliated with NVIDIA.'),
          StringStruct('OriginalFilename', 'dlss5-autopilot.exe'),
          StringStruct('ProductName', 'DLSS 5 Autopilot'),
-         StringStruct('ProductVersion', '1.5.0.0'),
+         StringStruct('ProductVersion', '1.6.0.0'),
          StringStruct('Comments', 'https://github.com/Kizzuwatnaa/DLSS5-Autopilot')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

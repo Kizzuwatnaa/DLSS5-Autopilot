@@ -2,13 +2,18 @@ r"""DLSS 5 Autopilot - entry point.
 
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
-                                                    [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone]
-                                                    [--dxvk | --no-dxvk]
+                                                    [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|remix]
+                                                    [--dxvk | --no-dxvk] [--remix-swap]
                 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 
 --dxvk runs a D3D11 game on Vulkan through DXVK, with ReShade as a Vulkan
 layer instead of a DLL inside the game. Games known to need it (MGS V) get
 it by default; --no-dxvk turns that off.
+
+--remix-swap applies to --route remix only: when the game's RTX Remix mod
+ships a runtime with no DLSS 5 neural pass, replace it with a community
+build that has one. Experimental - it also replaces whatever game-specific
+fixes the mod's own runtime carried.
 """
 from __future__ import annotations
 
@@ -43,7 +48,7 @@ def _console() -> None:
 
 
 def cli(target: Path, remove: bool, check: bool, route: str = "",
-        dxvk: bool | None = None, game=None) -> int:
+        dxvk: bool | None = None, game=None, remix_swap: bool = False) -> int:
     g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
@@ -93,7 +98,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         if ok:
             popt = installer.Options(path=sup.recommended,
                                      native_dlss=sup.native_dlss, dxvk=use_dxvk,
-                                     upscaler=sup.upscaler)
+                                     upscaler=sup.upscaler,
+                                     remix_swap=remix_swap)
             print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
         return 0
     if not ok:
@@ -107,7 +113,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     try:
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
-                                 dxvk=use_dxvk, upscaler=sup.upscaler),
+                                 dxvk=use_dxvk, upscaler=sup.upscaler,
+                                 remix_swap=remix_swap),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
@@ -150,7 +157,8 @@ def main() -> int:
                    check="--check" in args,
                    route=route,
                    dxvk=(True if "--dxvk" in args
-                         else False if "--no-dxvk" in args else None))
+                         else False if "--no-dxvk" in args else None),
+                   remix_swap="--remix-swap" in args)
     if "--help" in args or "-h" in args:
         _console()
         print(__doc__)

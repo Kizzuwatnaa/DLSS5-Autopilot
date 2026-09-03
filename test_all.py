@@ -43,7 +43,7 @@ with warnings.catch_warnings():
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
             "reshade_ini", "feedcfg", "dgvoodoo", "dxvk", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
-            "log", "components", "profiles",
+            "log", "components", "profiles", "remix",
             "installer", "gui")
     for m in mods:
         try:
@@ -52,6 +52,7 @@ with warnings.catch_warnings():
         except Exception as e:
             check(f"core.{m}", False, f"{type(e).__name__}: {e}")
 
+from core import remix, remixlist  # noqa: E402
 from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noqa: E402
                   pe, prefs, reshade_ini, sources, update, vulkan)
 
@@ -72,12 +73,15 @@ for g in playable:
         check(f"route sane for {g.name}", False, f"{s.recommended} / {s.options}")
 check("every game got a sane route", not any(f.startswith("route sane") for f in FAILS))
 
-# a 32-bit game must never be offered the 64-bit-only bridge
+# A 32-bit game must never be offered the 64-bit-only bridge or add-ons. The
+# feeder is the only route that reaches one - plus remix, which injects
+# nothing into the game at all and so has no bitness of its own.
 for g in playable:
     if g.bitness == 32:
         s = dlss.detect(g.install_dir, g.folder, g.api, g.bitness)
-        check(f"32-bit {g.name[:22]} is feeder-only", s.options == [dlss.FEEDER],
-              str(s.options))
+        check(f"32-bit {g.name[:22]} is feeder-only",
+              set(s.options) <= {dlss.FEEDER, dlss.REMIX}
+              and dlss.FEEDER in s.options, str(s.options))
 
 # ---------------------------------------------------------------- 3. routes
 section("3. install and uninstall on every route")
@@ -546,7 +550,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.5.0", update.VERSION == "1.5.0", update.VERSION)
+check("version is 1.6.0", update.VERSION == "1.6.0", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -2572,6 +2576,335 @@ check("frames after the start time are counted, the old run is not",
       _frames == 7 and _mv, f"{_frames} {_mv}")
 check("nothing after a start time in the future", video.feed_frames_since(_d, _t0 + 600) == (0, False))
 check("a missing log is (0, False)", video.feed_frames_since(Path(tempfile.mkdtemp(prefix="nolog_")), _t0) == (0, False))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("28. the RTX Remix route")
+from core import remix as _remix  # noqa: E402
+
+# A FAKE Remix game: a .trex folder with a small runtime binary that carries
+# Kim2091's option prefix as a string, and an rtx.conf that does NOT end with
+# a newline - the exact shape that produced "...= 3rtx.neuralUplift = True"
+# when this was done by hand. The real GTA IV install is only ever read.
+_CONF_BODY = (b"rtx.fallbackLightMode = 2\r\n"
+              b"rtx.atmosphere.skyIndirectRadianceScale = 3")
+
+
+def _fake_remix(prefix: str, marker: bytes = b"rtx.neuralUplift") -> Path:
+    d = Path(tempfile.mkdtemp(prefix=prefix))
+    shutil.copyfile(X64, d / "Game.exe")
+    t = d / ".trex"
+    t.mkdir()
+    (t / "d3d9.dll").write_bytes(b"MZ" + b"\0" * 4096 + marker
+                                 + b"\0" * 512 + marker + b".bypassCallerCheck")
+    (d / "d3d9.dll").write_bytes(b"MZ" + b"\0" * 2048)   # the Remix bridge stub
+    (d / "rtx.conf").write_bytes(_CONF_BODY)
+    return d
+
+
+_d = _fake_remix("remix_")
+_trex = _remix.find_runtime(_d)
+check("the .trex runtime folder is found", _trex == _d / ".trex", str(_trex))
+check("a folder with a .trex is a Remix game", _remix.is_remix_game(_d))
+check("a folder without one is not",
+      not _remix.is_remix_game(Path(tempfile.mkdtemp(prefix="notremix_"))))
+check("the uplift fork is recognised from the binary",
+      _remix.runtime_flavour(_trex) == "uplift", _remix.runtime_flavour(_trex))
+check("the enable key comes from the fork, not a guess",
+      _remix.enable_key("uplift") == "rtx.neuralUplift.enable"
+      and _remix.enable_key("neural") == "rtx.neuralRendering.enable")
+_dn = _fake_remix("remixn_", marker=b"rtx.neuralRendering")
+check("the neuralRendering fork is recognised too",
+      _remix.runtime_flavour(_dn / ".trex") == "neural")
+shutil.rmtree(_dn, ignore_errors=True)
+_dp = _fake_remix("remixplain_", marker=b"rtx.someOtherOption")
+check("a runtime with neither marker has no flavour",
+      _remix.runtime_flavour(_dp / ".trex") == "")
+_gp = games.manual(_dp)
+check("a Remix runtime without the neural pass blocks the install",
+      any("swap" in b for b in installer.preview(
+          _gp, installer.Options(path=dlss.REMIX)).blockers),
+      str(installer.preview(_gp, installer.Options(path=dlss.REMIX)).blockers))
+check("the plan then has the runtime step when the swap is ticked",
+      installer.plan(_gp, installer.Options(path=dlss.REMIX, remix_swap=True))
+      == ["RTX Remix runtime (DLSS 5 build)", "nvngx_dlssnr.dll", "rtx.conf"],
+      str(installer.plan(_gp, installer.Options(path=dlss.REMIX, remix_swap=True))))
+check("swapping the runtime is experimental, keeping it is beta",
+      installer.reliability(_gp, dlss.REMIX, remix_swap=True)[0]
+      == installer.EXPERIMENTAL
+      and installer.reliability(_gp, dlss.REMIX)[0] == installer.BETA)
+shutil.rmtree(_dp, ignore_errors=True)
+
+# --- rtx.conf editing: the file is the user's, one line is ours ------------
+_conf = _d / "rtx.conf"
+check("set_option appends to a file with no trailing newline",
+      _remix.set_option(_conf, "rtx.neuralUplift.enable", "True")
+      and _conf.read_bytes() ==
+      _CONF_BODY + b"\r\nrtx.neuralUplift.enable = True\r\n",
+      repr(_conf.read_bytes()[-70:]))
+check("CRLF is preserved, LF is never introduced",
+      b"\n" not in _conf.read_bytes().replace(b"\r\n", b""))
+_remix.set_option(_conf, "rtx.neuralUplift.enable", "False")
+check("setting a key that is already there replaces it in place",
+      _conf.read_bytes().count(b"rtx.neuralUplift.enable") == 1
+      and b"= False" in _conf.read_bytes()
+      and b"rtx.fallbackLightMode = 2" in _conf.read_bytes(),
+      repr(_conf.read_bytes()))
+_remix.set_option(_conf, "rtx.neuralUplift.enable", "True")
+check("option_set sees the key, and not a key that is absent",
+      _remix.option_set(_conf, "rtx.neuralUplift.enable")
+      and not _remix.option_set(_conf, "rtx.neuralRendering.enable"))
+check("remove_option takes only that line out",
+      _remix.remove_option(_conf, "rtx.neuralUplift.enable")
+      and _conf.read_bytes() == _CONF_BODY + b"\r\n",
+      repr(_conf.read_bytes()))
+check("removing a key that is not there changes nothing",
+      not _remix.remove_option(_conf, "rtx.neuralUplift.enable")
+      and _conf.read_bytes() == _CONF_BODY + b"\r\n")
+_conf.write_bytes(_CONF_BODY)          # back to the awkward shape for install
+
+# --- detection and the route list -----------------------------------------
+_g = games.manual(_d)
+_sup = dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness or 0, 89)
+check("remix is the recommendation for a Remix game",
+      _sup.recommended == dlss.REMIX and _sup.options[0] == dlss.REMIX,
+      f"{_sup.recommended} {_sup.options}")
+check("the other routes are still listed", len(_sup.options) > 1, str(_sup.options))
+check("the reason says a ReShade proxy crashes a Remix game",
+      "ReShade" in _sup.reason and "crashes" in _sup.reason, _sup.reason[:80])
+check("remix has a label, a blurb and a conflicts entry",
+      dlss.REMIX in dlss.LABELS and dlss.REMIX in dlss.BLURB
+      and dlss.REMIX in dlss.CONFLICTS
+      and dlss.LABELS[dlss.REMIX] ==
+      "remix - DLSS 5 inside RTX Remix (path tracing)")
+check("every route still has a conflicts entry of 2-4 lines",
+      set(dlss.CONFLICTS) == set(dlss.ALL_ROUTES)
+      and all(2 <= len(v) <= 4 for v in dlss.CONFLICTS.values()),
+      str(sorted(dlss.CONFLICTS)))
+check("fit says remix is usable", dlss.fit(dlss.REMIX, _g.api, False, 89)[0])
+check("DXVK is never offered on this route",
+      not installer.uses_dxvk(_g, installer.Options(path=dlss.REMIX, dxvk=True)))
+
+_opt = installer.Options(path=dlss.REMIX)
+check("the plan is the runtime's own files and one config line",
+      installer.plan(_g, _opt) == ["nvngx_dlssnr.dll", "rtx.conf"],
+      str(installer.plan(_g, _opt)))
+_pv = installer.preview(_g, _opt)
+check("the preview writes into .trex and nowhere else",
+      any(w.endswith(".trex/nvngx_dlssnr.dll") for w in _pv.writes)
+      and not any(w.lower().endswith(("dxgi.dll", ".addon64", "reshade.ini"))
+                  for w in _pv.writes), str(_pv.writes))
+check("the preview names the one rtx.conf line it will add",
+      any("rtx.neuralUplift.enable = True" in w for w in _pv.writes),
+      str(_pv.writes))
+check("the preview has no blockers", not _pv.blockers, str(_pv.blockers))
+
+# --- a ReShade proxy in a Remix folder is a crash, so it goes -------------
+(_d / "dxgi.dll").write_bytes(b"MZ" + b"ReShade" + b"\0" * (1 << 21))
+_pv = installer.preview(_g, installer.Options(path=dlss.REMIX))
+check("a ReShade proxy is reported for removal",
+      any("dxgi.dll" in r for r in _pv.removes), str(_pv.removes))
+
+try:
+    _rep = installer.install(_g, _opt, on_log=lambda t: None)
+    check("nvngx_dlssnr.dll goes inside .trex, not beside the exe",
+          (_trex / "nvngx_dlssnr.dll").is_file()
+          and not (_d / "nvngx_dlssnr.dll").exists())
+    check("the enable key is set and rtx.conf is otherwise untouched",
+          _remix.option_set(_conf, "rtx.neuralUplift.enable")
+          and _conf.read_bytes().startswith(_CONF_BODY),
+          repr(_conf.read_bytes()[-60:]))
+    _names = sorted(p.name for p in _d.rglob("*") if p.is_file())
+    check("no ReShade, no feeder, no add-on and no shader went in",
+          not any(n.endswith((".addon64", ".addon32", ".fx", ".fxh"))
+                  or n.lower() in ("reshade.ini", "reshadepreset.ini",
+                                   "dlss5-feed.cfg")
+                  for n in _names), str(_names))
+    check("the ReShade proxy was moved out of the way",
+          not (_d / "dxgi.dll").exists()
+          and (_d / ("dxgi.dll" + installer.BACKUP_SUFFIX)).is_file(),
+          str(_names))
+    _man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+    check("the manifest records the route, the key and the conf",
+          _man.get("path") == "remix"
+          and _man["remix"]["key"] == "rtx.neuralUplift.enable"
+          and _man["remix"]["conf"] == "rtx.conf"
+          and _man["remix"]["flavour"] == "uplift", str(_man.get("remix")))
+    check("the manifest round-trips the route",
+          installer.options_from_manifest(_d).path == dlss.REMIX
+          and not installer.options_from_manifest(_d).remix_swap)
+    check("no runtime swap was recorded - this runtime already had the pass",
+          "remix_runtime" not in (_man.get("components") or {}),
+          str(_man.get("components")))
+
+    # the diagnosis, from the runtime's own log
+    _rl = _remix.log_path(_d)
+    _rl.parent.mkdir(parents=True, exist_ok=True)
+    _rl.write_text(
+        "[15:28:12.945] info:  [DLSS-NR] Loaded .trex\\nvngx_dlssnr.dll\n"
+        "[15:28:13.071] info:  [DLSS-NR] Snippet initialized\n"
+        "[15:28:13.739] info:  [DLSS-NR] Created the Neural Uplift feature "
+        "(id 18, preset 0) at 1920x1080\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("a real success log reads as working",
+          _r.verdict == "Working."
+          and any("feature 18" in f.title for f in _r.findings if f.level == "ok"),
+          _r.verdict + " / " + str(_levels(_r, "bad")))
+    _rl.write_text("[15:28:12.945] err:   nvngx_dlssnr.dll could not be loaded\n",
+                   encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("the fork's own failure phrase is matched and explained",
+          any("could not be loaded" in b for b in _levels(_r, "bad")),
+          str(_levels(_r, "bad")))
+    _remix.remove_option(_conf, "rtx.neuralUplift.enable")
+    _r = diagnose.analyse(_d)
+    check("the key missing from rtx.conf is reported",
+          any("switched off in rtx.conf" in b for b in _levels(_r, "bad")),
+          str(_levels(_r, "bad")))
+    check("the bug report carries the Remix log, not ReShade's",
+          "remix-dxvk.log" in diagnose.issue_body(
+              "1.5.0", "RTX 4060 Ti", 89, "581.15", _g, "remix", _r, "", "x",
+              _d))
+    _remix.set_option(_conf, "rtx.neuralUplift.enable", "True")
+    shutil.rmtree(_d / "rtx-remix", ignore_errors=True)
+
+    _runtime_before = (_trex / "d3d9.dll").read_bytes()
+    installer.uninstall(_g, on_log=lambda t: None)
+    check("uninstall takes the key back out and leaves the rest of rtx.conf",
+          not _remix.option_set(_conf, "rtx.neuralUplift.enable")
+          and _conf.read_bytes().startswith(_CONF_BODY),
+          repr(_conf.read_bytes()))
+    check("uninstall removes nvngx_dlssnr.dll from .trex",
+          not (_trex / "nvngx_dlssnr.dll").exists())
+    check("the mod's own runtime is still there, byte for byte",
+          (_trex / "d3d9.dll").read_bytes() == _runtime_before)
+    check("the ReShade proxy that was moved aside is put back",
+          (_d / "dxgi.dll").is_file()
+          and not (_d / ("dxgi.dll" + installer.BACKUP_SUFFIX)).exists())
+    _left = sorted(p.name for p in _d.rglob("*") if p.is_file())
+    check("nothing of ours is left behind",
+          _left == ["Game.exe", "d3d9.dll", "d3d9.dll", "dxgi.dll", "rtx.conf"],
+          str(_left))
+except Exception as e:
+    check("remix: installs", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
+# Read-only, against the owner's real GTA IV RTX install. Skipped anywhere
+# else: nothing here writes, and the guard keeps the suite portable.
+_GTA = Path(r"D:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV")
+if _remix.is_remix_game(_GTA):
+    _t = _remix.find_runtime(_GTA)
+    check("real GTA IV: the runtime is the neuralUplift fork",
+          _remix.runtime_flavour(_t) == "uplift", str(_t))
+    check("real GTA IV: the enable key is in its rtx.conf",
+          _remix.option_set(_remix.conf_path(_GTA, _t),
+                            _remix.enable_key("uplift")))
+    _gg = games.manual(_GTA)
+    check("real GTA IV: remix is the recommended route",
+          dlss.detect(_gg.install_dir, _gg.folder, _gg.api,
+                      _gg.bitness or 0, 89).recommended == dlss.REMIX)
+else:
+    print("   SKIP  the real GTA IV Remix install is not on this machine")
+
+
+# ------------------------------------------------- 29. a Remix mod is never damaged
+section("29. an RTX Remix install survives everything we do")
+
+
+def _fake_remix(prefix: str = "remix_safe_"):
+    """A game folder shaped like a real Remix install."""
+    d = Path(tempfile.mkdtemp(prefix=prefix))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / "d3d9.dll").write_bytes(b"MZ REMIX BRIDGE CLIENT" + b"\x00" * 200)
+    trex = d / ".trex"
+    trex.mkdir()
+    (trex / "d3d9.dll").write_bytes(b"MZ REMIX RUNTIME rtx.neuralUplift" + b"\x00" * 400)
+    (trex / "NvRemixBridge.exe").write_bytes(b"MZ")
+    (d / "rtx.conf").write_bytes(b"rtx.fallbackLightMode = 2\r\nrtx.skyBrightness = 1")
+    mods = d / "rtx-remix" / "mods" / "thegame"
+    mods.mkdir(parents=True)
+    (mods / "mod.usda").write_bytes(b"#usda 1.0\n")
+    return d
+
+
+_d = _fake_remix()
+_before = {p.relative_to(_d).as_posix(): p.read_bytes()
+           for p in _d.rglob("*") if p.is_file()}
+_g = games.manual(_d)
+check("a folder with .trex is recognised as a Remix game",
+      remix.is_remix_game(_d) and remix.find_runtime(_d) == (_d / ".trex"))
+check("the runtime's DLSS 5 flavour is read from the binary, not guessed",
+      remix.runtime_flavour(_d / ".trex") == "uplift",
+      remix.runtime_flavour(_d / ".trex"))
+
+# every other route must refuse before it writes anything
+for _route in (dlss.FEEDER, dlss.NATIVE, dlss.BRIDGE, dlss.STANDALONE, dlss.OPTI):
+    try:
+        installer.install(_g, installer.Options(path=_route), on_log=lambda t: None)
+        _refused = False
+    except installer.InstallError as e:
+        _refused = "Remix" in str(e)
+    except Exception:
+        _refused = False
+    check(f"the {_route} route refuses a Remix game", _refused)
+_after = {p.relative_to(_d).as_posix(): p.read_bytes()
+          for p in _d.rglob("*") if p.is_file()}
+check("and not one byte of the mod changed", _after == _before,
+      str(sorted(set(_after) ^ set(_before))))
+
+# uninstall with no manifest at all must not delete the runtime
+installer.uninstall(_g, on_log=lambda t: None)
+check("a manifest-less uninstall leaves the Remix runtime and its mods alone",
+      (_d / "d3d9.dll").read_bytes() == _before["d3d9.dll"]
+      and (_d / ".trex" / "d3d9.dll").is_file()
+      and (_d / "rtx-remix" / "mods" / "thegame" / "mod.usda").is_file())
+
+# the remix route itself: install, then put everything back
+_rep = installer.install(_g, installer.Options(path=dlss.REMIX), on_log=lambda t: None)
+check("the route puts nvngx_dlssnr.dll inside .trex",
+      (_d / ".trex" / "nvngx_dlssnr.dll").is_file())
+check("it writes no ReShade, no feeder and no add-on",
+      not (_d / "dxgi.dll").exists() and not (_d / installer.RENODX).exists()
+      and not (_d / installer.FEEDER_ADDON64).exists()
+      and not (_d / "ReShade.ini").exists(),
+      str(sorted(p.name for p in _d.iterdir())))
+check("the runtime is left exactly as it was without the swap option",
+      (_d / ".trex" / "d3d9.dll").read_bytes() == _before[".trex/d3d9.dll"]
+      and (_d / "d3d9.dll").read_bytes() == _before["d3d9.dll"])
+_conf = (_d / "rtx.conf").read_bytes()
+check("the enable key is added and the file's own lines are untouched",
+      b"rtx.fallbackLightMode = 2" in _conf and b"rtx.skyBrightness = 1" in _conf
+      and remix.enable_key("uplift").encode() in _conf, _conf)
+check("a conf with no trailing newline does not get two keys glued together",
+      b"1rtx." not in _conf and _conf.count(b"neuralUplift.enable") == 1, _conf)
+installer.uninstall(_g, on_log=lambda t: None)
+_end = {p.relative_to(_d).as_posix(): p.read_bytes()
+        for p in _d.rglob("*") if p.is_file()}
+check("uninstall returns the Remix install byte for byte", _end == _before,
+      str(sorted(set(_end) ^ set(_before))))
+shutil.rmtree(_d, ignore_errors=True)
+
+# the same, for a conf that DID end with a newline: it must keep it
+_d = _fake_remix("remix_nl_")
+(_d / "rtx.conf").write_bytes(b"rtx.fallbackLightMode = 2\r\n")
+_g = games.manual(_d)
+installer.install(_g, installer.Options(path=dlss.REMIX), on_log=lambda t: None)
+installer.uninstall(_g, on_log=lambda t: None)
+check("a conf that ended with a newline still does",
+      (_d / "rtx.conf").read_bytes() == b"rtx.fallbackLightMode = 2\r\n",
+      (_d / "rtx.conf").read_bytes())
+shutil.rmtree(_d, ignore_errors=True)
+
+# the runtime swap is opt-in, backs the original up, and comes back
+_d = _fake_remix("remix_swap_")
+_orig = (_d / ".trex" / "d3d9.dll").read_bytes()
+_g = games.manual(_d)
+_pv = installer.preview(_g, installer.Options(path=dlss.REMIX))
+check("the preview does not swap the runtime unless asked",
+      not any("d3d9" in w.lower() for w in _pv.writes), str(_pv.writes))
+check("the list of known Remix projects is real and matched by name",
+      remixlist.match("Grand Theft Auto IV") is not None
+      and remixlist.match("Some Game Nobody Modded") is None
+      and all(m.url.startswith("https://") for m in remixlist.MODS + remixlist.BUILT_IN))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

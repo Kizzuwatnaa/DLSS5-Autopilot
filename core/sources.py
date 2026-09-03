@@ -4,7 +4,7 @@ This tool never contacts a private server. It stays within these hosts:
     reshade.me
     raw.githubusercontent.com   (crosire/reshade-shaders)
     api.github.com / github.com (DLSS5-Feeder, rhi-repo, dgVoodoo2,
-                                 DLSS5-Reshade-AIO)
+                                 DLSS5-Reshade-AIO, dxvk-remix-plus-dlssnr)
     codeload.github.com         (LumeniteFX, vort_Shaders)
 """
 from __future__ import annotations
@@ -56,6 +56,19 @@ STANDALONE_LATEST = ("https://github.com/kibblerz/DLSS5-Reshade-AIO/releases/"
 # is not rate limited.
 VORT_ZIP = "https://codeload.github.com/vortigern11/vort_Shaders/zip/refs/heads/main"
 VORT_ZIP_NAME = "vort_Shaders-main.zip"
+
+# lunks/dxvk-remix-plus-dlssnr: an RTX Remix runtime with the DLSS-NR stage
+# built in, as a drop-in for any Remix game's .trex folder. NVIDIA's own
+# runtime has no neural pass at all, so a game whose mod ships the stock
+# runtime needs this before the route can do anything.
+REMIX_RUNTIME_API = ("https://api.github.com/repos/lunks/"
+                     "dxvk-remix-plus-dlssnr/releases/latest")
+# d3d9.dll is the runtime itself; remix_nvngx.dll is the caller-identity
+# bridge, and its name is load-bearing (the snippet checks the caller's
+# module path for "nvngx.dll").
+REMIX_RUNTIME_ASSETS = ("d3d9.dll", "remix_nvngx.dll")
+REMIX_RUNTIME_LATEST = ("https://github.com/lunks/dxvk-remix-plus-dlssnr/"
+                        "releases/latest/download/")
 
 # None = take the newest build from the mirror. On the feeder route the pick
 # is narrowed by renodx_for_feeder(): the feeder's stable release only works
@@ -262,6 +275,26 @@ def resolve_standalone() -> tuple[str, dict[str, str]]:
     for name in STANDALONE_ASSETS:
         urls[name] = assets[name]
     return rel.get("tag_name", "?"), urls
+
+
+def resolve_remix_runtime() -> tuple[str, dict[str, str]]:
+    """Latest dxvk-remix-plus-dlssnr release: (tag, {filename: url}).
+
+    Same fallback as neural-upstream and the standalone add-on: with the API
+    rate limited and nothing cached, GitHub's "latest" download redirect
+    still resolves each asset by name, so the route stays available.
+    """
+    try:
+        rel = _json(REMIX_RUNTIME_API)
+    except Exception:
+        return "latest", {n: REMIX_RUNTIME_LATEST + n
+                          for n in REMIX_RUNTIME_ASSETS}
+    assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
+    missing = [n for n in REMIX_RUNTIME_ASSETS if n not in assets]
+    if missing:
+        raise RuntimeError("The dxvk-remix-plus-dlssnr release is missing "
+                           f"{', '.join(missing)}.")
+    return rel.get("tag_name", "?"), {n: assets[n] for n in REMIX_RUNTIME_ASSETS}
 
 
 def _ver_key(tag: str, prefix: str) -> tuple:
