@@ -256,6 +256,35 @@ for route in (dlss.FEEDER, dlss.OPTI, dlss.BRIDGE, dlss.NATIVE):
               f"{type(e).__name__}: {e}")
     shutil.rmtree(d, ignore_errors=True)
 
+# A manifest-less uninstall (record deleted, corrupted, or a pre-manifest
+# v1.0/v1.1 install) used to delete dxgi.dll/opengl32.dll unconditionally -
+# unlike every other proxy name, which was only ever removed after
+# confirming the file really is ReShade. A real dxgi.dll from something else
+# entirely (SpecialK, an ENB, a separately installed ReShade) sitting in the
+# folder must survive.
+d = Path(tempfile.mkdtemp(prefix="uninstall_foreign_"))
+shutil.copyfile(X64, d / "Game.exe")
+(d / "dxgi.dll").write_bytes(b"MZ some other injector, not reshade" + bytes(2000))
+(d / "opengl32.dll").write_bytes(b"MZ also not reshade" + bytes(2000))
+g = games.manual(d)
+installer.uninstall(g, on_log=lambda t: None)
+check("a foreign dxgi.dll survives a manifest-less uninstall",
+      (d / "dxgi.dll").is_file())
+check("a foreign opengl32.dll survives a manifest-less uninstall",
+      (d / "opengl32.dll").is_file())
+shutil.rmtree(d, ignore_errors=True)
+
+# The same folder, but this time the dxgi.dll really is ours (ReShade) -
+# it must still be removed the way it always was.
+d = Path(tempfile.mkdtemp(prefix="uninstall_real_"))
+shutil.copyfile(X64, d / "Game.exe")
+(d / "dxgi.dll").write_bytes(b"ReShade" + bytes(1 << 20))
+g = games.manual(d)
+installer.uninstall(g, on_log=lambda t: None)
+check("a real ReShade dxgi.dll is still removed with no manifest",
+      not (d / "dxgi.dll").is_file())
+shutil.rmtree(d, ignore_errors=True)
+
 # ---------------------------------------------------------------- 6. vulkan
 section("6. vulkan layer handling")
 before = vulkan.existing_registration()
@@ -1744,6 +1773,26 @@ pv = installer.preview(g, installer.Options())
 check("an unsupported api is a blocker", any("DirectX 10" in b for b in pv.blockers))
 shutil.rmtree(d, ignore_errors=True)
 
+# A Remix-modded folder with some other route picked by hand: install()
+# refuses this outright, and until this was found in review the preview did
+# not know that - it happily described a dgVoodoo/ReShade plan for a route
+# that was never going to run.
+d = Path(tempfile.mkdtemp(prefix="pv_remix_block_"))
+shutil.copyfile(X64, d / "Game.exe")
+(d / ".trex").mkdir()
+(d / ".trex" / "d3d9.dll").write_bytes(b"MZ" + bytes(4096))
+g = games.manual(d)
+pv = installer.preview(g, installer.Options(path=dlss.NATIVE, native_dlss=True))
+check("preview refuses a non-remix route on a Remix folder",
+      any("Only the remix route works" in b for b in pv.blockers), str(pv.blockers))
+check("install refuses the same way",
+      _raises(lambda: installer.install(
+          g, installer.Options(path=dlss.NATIVE, native_dlss=True), on_log=lambda t: None)))
+pv = installer.preview(g, installer.Options(path=dlss.REMIX))
+check("the remix route itself is not blocked by this check",
+      not any("Only the remix route works" in b for b in pv.blockers), str(pv.blockers))
+shutil.rmtree(d, ignore_errors=True)
+
 # Switching routes: the previous install's files are announced as removals.
 d = Path(tempfile.mkdtemp(prefix="pv_switch_"))
 shutil.copyfile(X64, d / "Game.exe")
@@ -1922,6 +1971,26 @@ try:
         except OSError as e:
             _errs.append(f"{_fn.__name__}: {e}")
     check("xbox / folder / emulator scans survive it", not _errs, str(_errs))
+    # installer.preview()/preflight() used a bare root.is_dir() until this was
+    # found in review: a game on a drive that goes unready mid-session
+    # (unplugged, asleep, a dropped network share) crashed both with an
+    # uncaught OSError instead of the intended "does not exist" message.
+    _gq = games.Game(name="Unready", folder=_pl.Path("Q:/SomeGame"))
+    _pvq = None
+    try:
+        _pvq = installer.preview(_gq, installer.Options())
+    except OSError as e:
+        check("preview survives an unready drive", False, str(e))
+    if _pvq is not None:
+        check("preview reports it as a normal blocker, not a crash",
+              any("does not exist" in b for b in _pvq.blockers), str(_pvq.blockers))
+    try:
+        installer.preflight(_gq)
+        check("preflight survives an unready drive", False, "did not raise")
+    except installer.InstallError as e:
+        check("preflight turns it into a clean InstallError", "does not exist" in str(e), str(e))
+    except OSError as e:
+        check("preflight survives an unready drive", False, str(e))
 finally:
     _pl.Path.is_dir = _orig_is_dir
 
