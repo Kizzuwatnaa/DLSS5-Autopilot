@@ -149,9 +149,18 @@ left is clickable too.
   the picture flickers.
 - **V-sync at 60 Hz** can pin you to 30 fps once the pass costs a few
   milliseconds. Turn v-sync off or lower the dial.
-- **Feeder pre-release** (checkbox) - the feeder's stable release only works
-  with DLSS 5 add-on 4.55, and the tool pins it there. Its pre-releases
-  support the newer 4.6/4.7 add-on builds; tick the box to use them.
+- **Feeder build** (list) - stable, the newest pre-release, or any exact
+  release when the newest one breaks a game. Builds before 0.8 pair with
+  DLSS 5 add-on 4.55 (the tool pins it); 0.10 and later use 4.7.
+- **Profiles** - save the settings you liked under a name and pick it on any
+  other game; Quality / Balanced / Performance are built in.
+- **What will happen?** - lists what INSTALL would write, back up and clean
+  up, and whether anything leaves the game folder, without writing a thing.
+- **Before / after** - shows the last two ReShade screenshots side by side
+  (toggle with F6, shoot, toggle, shoot) and exports a combined PNG.
+- **Did it work?** - reads the game's own logs and says what happened, in
+  plain words: not started yet, ReShade's DLL gone, the feed crashed, another
+  DLSS hook in the folder, and so on.
 - **Do not use any of this in online games.** ReShade with add-ons and
   anti-cheat do not coexist. The tool detects BattlEye, EAC and Vanguard and
   marks those games blocked.
@@ -233,6 +242,7 @@ dlss5-autopilot.exe "D:\Games\Game"            install
 dlss5-autopilot.exe "D:\Games\Game" --check    detect only, write nothing
 dlss5-autopilot.exe "D:\Games\Game" --remove   uninstall
 dlss5-autopilot.exe "D:\Games\Game" --dxvk     run the game on Vulkan through DXVK (see below); --no-dxvk turns the automatic choice off
+dlss5-autopilot.exe "D:\Games\Game" --route feeder   pick a route: native, upstream, optiscaler, renodx, bridge, feeder, standalone
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  set up the video player and feed it
 ```
 
