@@ -3098,6 +3098,90 @@ shutil.rmtree(_d, ignore_errors=True)
 check("the remix route is never bothered with the RE Engine warning",
       True)  # covered structurally: both call sites gate on opt.path != ROUTE_REMIX
 
+# ------------------------------------------------- 32. fetching a Remix mod
+section("32. a Remix mod is fetched only when the release is a complete one")
+from core import remixdl  # noqa: E402
+
+# The real layouts of every published Remix release, read off the archives
+# themselves. Only an archive carrying the renderer (.trex/d3d9.dll) may be
+# installed; a bare proxy expects NVIDIA's runtime and a manual rename first,
+# and dropping it in alone leaves the game loading a d3d9.dll with nothing
+# behind it.
+_LAYOUTS = {
+    "GTA IV, renderer nested one level": (
+        ["GTAIV-Remix-CompatibilityMod/.trex/d3d9.dll",
+         "GTAIV-Remix-CompatibilityMod/d3d9.dll",
+         "GTAIV-Remix-CompatibilityMod/dxvk.conf",
+         "_installer_options/FusionFix_RTXRemixFork/plugins/x.asi"],
+        "GTAIV-Remix-CompatibilityMod"),
+    "NFSU2, renderer at the archive root": (
+        [".trex/d3d9.dll", ".trex/bridge.conf", "rtx.conf", "dxvk.conf"], ""),
+    "Thief Gold, proxy only": (
+        ["INSTALL.txt", "d3d9.dll", "remix-comp-proxy.ini", "rtx.conf"], None),
+    "AC II, a .trex with no renderer in it": (
+        [".trex/bridge.conf", "dinput8.dll", "plugins/remix-comp-base.asi"], None),
+    "Saints Row 3, configuration only": (
+        ["dxvk.conf", "rtx.conf", "INSTALL.md"], None),
+    "Garry's Mod, its own launcher": (
+        ["bin/x.dll", "garrysmod/y", "rtx.conf", "dxvk.conf"], None),
+    "Deus Ex, dev tools": (["IngestionHelper.exe", "omniversehelper/a"], None),
+}
+for _name, (_names, _want) in _LAYOUTS.items():
+    check(f"{_name} -> {'refused' if _want is None else repr(_want)}",
+          remixdl.remix_root(_names) == _want,
+          str(remixdl.remix_root(_names)))
+
+check("only the verified-complete projects are offered for fetching",
+      [m.game for m in remixlist.MODS if m.installable]
+      == ["Grand Theft Auto IV", "Need for Speed: Underground 2"],
+      str([m.game for m in remixlist.MODS if m.installable]))
+check("a github url gives its repo, anything else does not",
+      remixdl.repo_of("https://github.com/xoxor4d/gta4-rtx") == "xoxor4d/gta4-rtx"
+      and remixdl.repo_of("https://www.moddb.com/rtx") == "")
+
+# A complete archive, built here: install it, then take it back out and the
+# folder has to be exactly what it was.
+_d = Path(tempfile.mkdtemp(prefix="remixmod_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "own.cfg").write_bytes(b"THE PLAYER'S OWN FILE")
+_before = {p.name: p.read_bytes() for p in _d.iterdir() if p.is_file()}
+_zip = _d.parent / "fake-remix-mod.zip"
+import zipfile as _zf  # noqa: E402
+with _zf.ZipFile(_zip, "w") as _z:
+    _z.writestr("TheMod/.trex/d3d9.dll", b"MZ" + bytes(2048))
+    _z.writestr("TheMod/.trex/bridge.conf", b"x=1\n")
+    _z.writestr("TheMod/d3d9.dll", b"MZ" + bytes(512))
+    _z.writestr("TheMod/rtx.conf", b"rtx.fallbackLightMode = 2\n")
+    _z.writestr("TheMod/own.cfg", b"THE MOD'S VERSION")
+_root, _lands = remixdl.inspect(_zip)
+check("inspect finds the mod root and what it would write",
+      _root == "TheMod" and sorted(_lands) == [".trex", "d3d9.dll", "own.cfg", "rtx.conf"],
+      f"{_root} {_lands}")
+_bad = _d.parent / "not-a-mod.zip"
+with _zf.ZipFile(_bad, "w") as _z:
+    _z.writestr("d3d9.dll", b"MZ" + bytes(64))
+    _z.writestr("rtx.conf", b"x\n")
+check("an incomplete release is refused by inspect too",
+      _raises(lambda: remixdl.inspect(_bad)))
+shutil.rmtree(_d, ignore_errors=True)
+
+# The refusal that matters most: a folder that already has somebody's mod.
+_d = Path(tempfile.mkdtemp(prefix="remixmod_busy_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / ".trex").mkdir()
+(_d / ".trex" / "d3d9.dll").write_bytes(b"MZ" + bytes(4096))
+_refused = False
+try:
+    remixdl.install("https://github.com/xoxor4d/gta4-rtx", _d, log=lambda t: None)
+except remixdl.NotAModError as e:
+    _refused = "already installed" in str(e)
+except Exception:
+    _refused = False
+check("a folder that already has a Remix mod is never written over", _refused)
+check("...and nothing was downloaded or written",
+      sorted(p.name for p in _d.iterdir()) == [".trex", "Game.exe"])
+shutil.rmtree(_d, ignore_errors=True)
+
 # ------------------------------------------------- 31. a D3D12 game that only imports d3d11.dll
 section("31. a D3D12 Agility SDK game is not mistaken for D3D11")
 _d = Path(tempfile.mkdtemp(prefix="agility_"))

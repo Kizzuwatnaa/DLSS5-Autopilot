@@ -27,6 +27,13 @@ class RemixMod:
     mod: str                        # the project's name
     url: str                        # where it lives
     note: str = ""                  # one honest sentence
+    # True only where the project's own .zip release carries the whole thing,
+    # renderer included (".trex/d3d9.dll" inside the archive), so it can be
+    # fetched and dropped in with nothing left for the person to do. Checked
+    # by reading the published archives on 2026-09-03. Most Remix projects
+    # publish a small proxy instead and their own INSTALL file then asks for
+    # NVIDIA's runtime and a manual rename - those stay a link.
+    installable: bool = False
 
 
 # Community mods, all with a public repository. Checked 2026-09-03.
@@ -35,10 +42,12 @@ MODS: tuple = (
              "GTAIV RTX Remix Compatibility Mod (xoxor4d)",
              "https://github.com/xoxor4d/gta4-rtx",
              "the one this tool was tested against; its runtime already "
-             "carries DLSS 5, so only the runtime file is needed"),
+             "carries DLSS 5, so only the runtime file is needed",
+             installable=True),
     RemixMod("Need for Speed: Underground 2", ("underground 2", "nfsu2", "speed2"),
              "NFSU2-RTX-Remix (Ekozmaster)",
-             "https://github.com/Ekozmaster/NFSU2-RTX-Remix"),
+             "https://github.com/Ekozmaster/NFSU2-RTX-Remix",
+             installable=True),
     RemixMod("Garry's Mod", ("garry", "gmod"),
              "Garry's Mod RTX Remixed (Xenthio)",
              "https://github.com/Xenthio/garrys-mod-rtx-remixed",

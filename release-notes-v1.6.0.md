@@ -17,16 +17,21 @@ tool knows about, with the ones in your own library marked, and a link to
 each. Portal with RTX, Portal Prelude RTX and the Half-Life 2 RTX demo are
 free and ship with Remix already inside.
 
-## Two ways a Remix mod could have been damaged, closed off
+### Two of the mods install themselves
 
-- Uninstalling a game with no install record deleted files by name, and
-  `D3D9.dll` was on that list. In a Remix game that file is the runtime.
-- Any other route on a Remix game would have written dgVoodoo's `D3D9.dll`
-  over the runtime, plus a ReShade DLL that crashes a Remix game at start.
+Where a project publishes a *complete* install as a plain `.zip` on its own
+GitHub releases - the renderer included - the card offers **download &
+install** beside that game, with a percentage as it goes, into the folder
+the scan already found. That is **GTA IV** and **NFS Underground 2**. The
+file comes from the author's own release page, never a mirror, and a record
+is kept so it can be taken out again.
 
-Both are refused now, before anything is written, with the reason said out
-loud. A test section proves a Remix install comes out of an install and an
-uninstall byte for byte identical.
+Everything else stays a link, deliberately. Most Remix projects publish a
+small proxy whose own instructions then ask for NVIDIA's runtime and a
+manual rename; installing that alone would leave the game loading a
+`d3d9.dll` with nothing behind it. The tool reads the archive first and
+refuses rather than guess - and it never writes over a Remix mod that is
+already in the folder.
 
 ## RE Engine games (Capcom) no longer just crash and get blamed on setup
 
@@ -40,10 +45,6 @@ players report using with ReShade on Requiem itself. It fetches the current
 build from praydog/REFramework-nightly, which detects the running game on
 its own rather than shipping one file per title. Not guaranteed on every
 title or every game update, and never touches a Remix game.
-
-An earlier build of this offered **dinput8.dll** as a ReShade proxy name to
-try by hand - that was the wrong fix (it renamed ReShade, not REFramework)
-and has been removed; it would have collided with REFramework's own file.
 
 ## dgVoodoo2 is gone; DirectX 9 goes through DXVK
 
@@ -86,10 +87,10 @@ Two more things it learned from the same session:
   DXVK and native-Vulkan session tripped it, right beside "frames are being
   processed".
 
-The 32-bit instructions were wrong too: they sent people to the helper's own
-window. The DLSS 5 page in the game's own overlay drives the helper (F6
-toggles it), and alt-tabbing to the helper is the very thing that tears the
-feature down.
+The instructions after an install also never said where the DLSS 5 panel is
+on a 32-bit game. It is the page in the game's own ReShade overlay - F6
+toggles it - and the 64-bit helper's separate window is not somewhere to
+alt-tab to while playing: that is what tears the feature down.
 
 ## Uninstall no longer leaves the translation layer behind
 
@@ -108,27 +109,15 @@ Resident Evil Requiem, which this mislabelling was steering onto the
 `bridge` route instead of the better-fitting `optiscaler`/`native`. Detected
 now and labelled correctly.
 
-## Smaller fixes from testing against real games
+## Smaller fixes
 
-- The RTX Remix game list had one wrong Steam page (Portal: Prelude RTX was
-  pointing at the wrong game entirely). Every link in the list was checked.
-- The "which of my games have a Remix mod?" window used to grab the mouse
-  wheel for the whole app the moment it opened, and never let go - it broke
-  scrolling in the main window's own log, and once the Remix window was
-  closed, every further scroll anywhere in the app raised an error. Scoped
-  to the window it belongs to now.
-- The before/after screenshot window never got the dark title bar the rest
-  of the app has; it does now, and the title bar code retries once a window
-  actually finishes opening instead of only trying too early.
-- "What will happen?" could describe a normal install (dgVoodoo, ReShade...)
-  for a Remix game if a different route was picked by hand, even though
-  pressing install would have refused it - the preview now gives the same
-  refusal up front.
-- Uninstalling with no install record could delete a `dxgi.dll` or
-  `opengl32.dll` that belonged to something else entirely (SpecialK, an ENB,
-  a separately installed ReShade), the way `D3D9.dll` already was protected
-  against - both are now only removed after confirming the file really is
-  this tool's ReShade.
-- A folder on a drive that goes unready mid-session (unplugged, asleep, a
-  dropped network share) could crash "what will happen?" or install instead
-  of showing "does not exist" - fixed.
+- Uninstalling a game with no install record could delete a `dxgi.dll`,
+  `opengl32.dll` or `D3D9.dll` that belonged to something else entirely -
+  SpecialK, an ENB, a separately installed ReShade, or an RTX Remix runtime.
+  All three are now removed only after the file is confirmed to be ours.
+- A game on a drive that goes unready mid-session (unplugged, asleep, a
+  dropped network share) crashed "what will happen?" and install with a raw
+  Windows error instead of saying the folder is not there.
+- The before/after screenshot window never got the dark title bar the rest of
+  the app has, and the title bar was only ever set before a window had
+  finished opening - it retries now.

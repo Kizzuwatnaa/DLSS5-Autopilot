@@ -100,7 +100,7 @@ class RemixWindow:
         if owned:
             self._heading(f"in your library ({len(owned)})", AMBER)
             for g, m in remixlist.for_library(library or []):
-                self._row(m, mine=g.name)
+                self._row(m, mine=g.name, game=g)
         self._heading("already Remix, nothing to install", TXT)
         for m in remixlist.BUILT_IN:
             self._row(m)
@@ -109,6 +109,11 @@ class RemixWindow:
             if id(m) in owned:
                 continue
             self._row(m)
+
+        self.status = tk.Label(self.win, text="", bg=BG, fg=DIM, font=font(9),
+                               anchor="w", justify="left",
+                               wraplength=int(sw * 0.55))
+        self.status.pack(fill="x", padx=22, pady=(0, 4))
 
         foot = tk.Frame(self.win, bg=BG)
         foot.pack(fill="x", padx=22, pady=(0, 16))
@@ -126,7 +131,7 @@ class RemixWindow:
         tk.Label(self.body, text=text.upper(), bg=PANEL, fg=colour,
                  font=font(9, "bold")).pack(anchor="w", padx=14, pady=(14, 4))
 
-    def _row(self, m: "remixlist.RemixMod", mine: str = "") -> None:
+    def _row(self, m: "remixlist.RemixMod", mine: str = "", game=None) -> None:
         from .gui import AMBER, BODY, DIM, GREEN, LINE, PANEL, font
         row = tk.Frame(self.body, bg=PANEL)
         row.pack(fill="x", padx=14, pady=3)
@@ -146,7 +151,75 @@ class RemixWindow:
                       font=self.font(9), cursor="hand2")
         lk.pack(side="right", padx=(12, 4))
         lk.bind("<Button-1>", lambda e, u=m.url: webbrowser.open(u))
+        # Fetching is offered only where BOTH are true: the project publishes
+        # a complete install (renderer included), and the game was found by
+        # the scan so there is a folder to put it in without asking.
+        if m.installable and game is not None:
+            btn = tk.Label(row, text="[ download & install ]", bg=PANEL,
+                           fg=GREEN, font=self.font(9), cursor="hand2")
+            btn.pack(side="right", padx=(12, 0))
+            btn.bind("<Button-1>",
+                     lambda e, mm=m, gg=game, b=btn: self._fetch(mm, gg, b))
         tk.Frame(self.body, bg=LINE, height=1).pack(fill="x", padx=14)
+
+    # ------------------------------------------------------------ fetching
+
+    def _say(self, text: str, colour: str | None = None) -> None:
+        from .gui import DIM
+        try:
+            self.status.config(text=text, fg=colour or DIM)
+        except tk.TclError:
+            pass
+
+    def _fetch(self, mod, game, button) -> None:
+        """Download the mod and put it in, on a thread, reporting progress.
+
+        Everything the download does is somebody else's file going into
+        somebody's game, so the work happens in remixdl where it can refuse:
+        an incomplete release, a folder that already has a Remix mod, an
+        archive that tries to write outside the game folder.
+        """
+        import threading
+        from . import net, remixdl
+        if getattr(self, "_busy", False):
+            return
+        self._busy = True
+        try:
+            button.config(text="[ working... ]")
+        except tk.TclError:
+            pass
+
+        def ui(fn, *a):
+            try:
+                self.win.after(0, lambda: fn(*a))
+            except tk.TclError:
+                pass
+
+        def prog(done, total):
+            pct = int(done * 100 / total) if total else 0
+            ui(self._say, f"{mod.game}: {pct}%  "
+                          f"{net.human(done)} / {net.human(total)}")
+
+        def work():
+            from .gui import GREEN, RED
+            try:
+                written = remixdl.install(mod.url, game.install_dir,
+                                          log=lambda t: ui(self._say, t.strip()),
+                                          progress=prog)
+                ui(self._say, f"{mod.game}: installed, {len(written)} files. "
+                              f"Press rescan in the main window - the game "
+                              f"should come up on the remix route now.", GREEN)
+                ui(button.config, {"text": "[ installed ]"})
+            except remixdl.NotAModError as e:
+                ui(self._say, f"{mod.game}: {e}", RED)
+                ui(button.config, {"text": "[ open page ]"})
+            except Exception as e:
+                ui(self._say, f"{mod.game}: {type(e).__name__}: {e}", RED)
+                ui(button.config, {"text": "[ retry ]"})
+            finally:
+                self._busy = False
+
+        threading.Thread(target=work, daemon=True).start()
 
 
 def show(parent, library=None) -> RemixWindow:

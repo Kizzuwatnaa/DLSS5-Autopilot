@@ -211,10 +211,25 @@ isn't offered.
 
 An **RTX Remix** mod rebuilds an old game with path tracing - whole remasters
 made by other people, gigabytes of replaced assets, each with its own
-installer. **This tool does not install them and never will**; that's the
-mod author's project and their download.
+installer.
 
-What it does is the last mile. Once the mod is in, its runtime sits in a
+**Two of them the tool can fetch for you.** Where a project publishes a
+*complete* install as a plain `.zip` on its own GitHub releases - the
+renderer included, `.trex/d3d9.dll` inside the archive - the **rtx remix**
+card offers **download & install** next to that game, with a percentage as
+it goes, straight into the folder the scan already found. Today that is
+**GTA IV** and **NFS Underground 2**. Nothing is mirrored: the file comes
+from the author's own release page, and a record is kept so it can be taken
+back out again.
+
+Every other project stays a link, on purpose. Most publish a small proxy
+whose own instructions then ask you to download NVIDIA's Remix runtime
+separately and rename a DLL by hand; dropping that proxy in alone would
+leave the game loading a `d3d9.dll` with nothing behind it. The tool checks
+inside the archive and refuses rather than guess, and it never writes over a
+Remix mod that is already in the folder.
+
+The rest is the last mile. Once a mod is in, its runtime sits in a
 `.trex` folder beside the game. Press **rescan**, the game shows up with
 **remix** already chosen, and INSTALL does at most three things: puts the
 matching `nvngx_dlssnr.dll` into `.trex`; if you tick **swap the Remix
@@ -512,10 +527,12 @@ release archive, and not redistributed by this project.** The tool downloads
 them from a public community mirror, exactly as a person would by hand. If
 you are not comfortable with that, do not use this tool.
 
-**RTX Remix mods are not downloaded, mirrored or installed by this tool.**
-Each one is its author's own project with its own terms. The tool links to
-the page, and once you have installed it yourself, puts DLSS 5 into the
-runtime that is already there.
+**RTX Remix mods are never mirrored by this tool.** Each one is its author's
+own project under its own terms. For the two whose GitHub release is a
+complete install, the tool can fetch that file from the author's own release
+page and unpack it for you; for every other project it links to the page and
+you install it yourself. Either way, DLSS 5 then goes into the runtime that
+is there.
 
 Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX,
 OptiScaler, RTX Remix or any of the projects above. Use at your own risk.
