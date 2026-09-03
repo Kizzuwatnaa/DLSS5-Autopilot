@@ -546,7 +546,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.4.4", update.VERSION == "1.4.4", update.VERSION)
+check("version is 1.5.0", update.VERSION == "1.5.0", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -2294,6 +2294,38 @@ _d = _diag_dir("diag_optinative_", addons=False, path="optiscaler",
 _r = diagnose.analyse(_d)
 check("a native-DLSS OptiScaler install is not asked about FSR/XeSS inputs",
       not any("never saw" in t for t in _levels(_r, "warn") + _levels(_r, "bad")))
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# ------------------------------------------------- 24. only the provider shader
+section("24. only the selected motion-vector shader is installed")
+_d = Path(tempfile.mkdtemp(prefix="lum_min_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d)
+_rep = installer.install(_g, installer.Options(provider=3), on_log=lambda t: None)
+_fx = sorted(p.name for p in (_d / installer.SHADERS).glob("lumenite_*.fx"))
+check("provider 3 installs lumenite_Kernel.fx and nothing else from the pack",
+      _fx == ["lumenite_Kernel.fx"], str(_fx))
+check("its includes and texture are there",
+      (_d / installer.INCLUDE / "lumenite_Compute.fxh").is_file()
+      and (_d / installer.TEXTURES / "lumenite_bluenoise256.png").is_file())
+_pv = installer.preview(_g, installer.Options(provider=4))
+check("the preview lists only the provider it would write",
+      any("lumenite_QuantMotion.fx" in w for w in _pv.writes)
+      and not any("lumenite_RTAO" in w or "lumenite_TRAA" in w for w in _pv.writes),
+      str([w for w in _pv.writes if "lumenite" in w]))
+# an earlier full-pack install of ours is trimmed on reinstall
+(_d / installer.SHADERS / "lumenite_RTAO.fx").write_text("// old", encoding="utf8")
+_man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+_man["files"].append(str(installer.SHADERS / "lumenite_RTAO.fx"))
+(_d / installer.MANIFEST).write_text(json.dumps(_man), encoding="utf8")
+_rep = installer.install(_g, installer.Options(provider=3), on_log=lambda t: None)
+check("a leftover effect from an earlier install of ours is removed",
+      not (_d / installer.SHADERS / "lumenite_RTAO.fx").exists()
+      and any("removed lumenite_RTAO.fx" in n for n in _rep.notes), str(_rep.notes))
+installer.uninstall(_g, on_log=lambda t: None)
+check("uninstall leaves no lumenite files",
+      not list((_d / "reshade-shaders").rglob("lumenite_*")) if (_d / "reshade-shaders").is_dir() else True)
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

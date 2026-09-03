@@ -119,8 +119,12 @@ def extract_one(zpath: Path, member_suffix: str, dest: Path) -> None:
 
 
 def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
-                 only_ext: tuple[str, ...] | None = None) -> list[Path]:
-    """Flatten files under inner_dir into out_root/dest_dir."""
+                 only_ext: tuple[str, ...] | None = None,
+                 only_names: tuple[str, ...] | None = None) -> list[Path]:
+    """Flatten files under inner_dir into out_root/dest_dir.
+
+    `only_names` keeps just those file names (case-insensitive) - used to
+    take one shader out of a pack instead of the whole pack."""
     written: list[Path] = []
     key = inner_dir.strip("/").lower()
     with zipfile.ZipFile(zpath) as z:
@@ -137,6 +141,8 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
             if "/" in tail:            # only files at this level
                 continue
             if only_ext and not tail.lower().endswith(only_ext):
+                continue
+            if only_names and tail.lower() not in tuple(n.lower() for n in only_names):
                 continue
             target = out_root / dest_dir / tail
             target.parent.mkdir(parents=True, exist_ok=True)

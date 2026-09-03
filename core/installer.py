@@ -767,6 +767,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
                 tail = parts[-1].lower()
                 where = "/".join(parts[:-1]).lower()
                 if where == "shaders" and tail.endswith(".fx"):
+                    if tail != LUMENITE_PROVIDER_FX.get(opt.provider, "lumenite_kernel.fx").lower():
+                        continue
                     add(pv.writes, rel(SHADERS, parts[-1]))
                 elif where == "shaders/include" and tail.endswith(".fxh"):
                     add(pv.writes, rel(INCLUDE, parts[-1]))
@@ -776,7 +778,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
                     continue
                 listed = True
             if not listed:
-                add(pv.writes, rel(SHADERS, "lumenite_*.fx"))
+                add(pv.writes, rel(SHADERS, LUMENITE_PROVIDER_FX.get(opt.provider, "lumenite_Kernel.fx")))
                 add(pv.writes, rel(INCLUDE, "lumenite_*.fxh"))
                 add(pv.writes, rel(TEXTURES, "lumenite_*.png"))
 
@@ -898,19 +900,45 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
                 f"no duplicate")
             return
         z = dl(sources.LUMENITE_ZIP, "LumeniteFX-mainline.zip")
-        w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",))
+        want_fx = LUMENITE_PROVIDER_FX.get(opt.provider, "lumenite_Kernel.fx")
+        w = net.extract_tree(z, "Shaders", str(SHADERS), root, only_ext=(".fx",),
+                             only_names=(want_fx,))
         w += net.extract_tree(z, "Shaders/include", str(INCLUDE), root,
                               only_ext=(".fxh",))
         w += net.extract_tree(z, "Textures", str(TEXTURES), root,
                               only_ext=(".png",))
+        # Effects an earlier install of ours dropped in are taken back out:
+        # they were compiling for nothing.
+        for old in sorted((root / SHADERS).glob("lumenite_*.fx")):
+            rel_old = str(old.relative_to(root))
+            if old.name.lower() != want_fx.lower() and rel_old.replace("\\", "/") in {
+                    p.replace("\\", "/") for p in rep.preinstalled}:
+                try:
+                    old.unlink()
+                    rep.notes.append(f"removed {old.name} - an effect the feed does "
+                                     f"not use, left by an earlier install")
+                except OSError:
+                    pass
         for p_ in w:
             rep.written.append(str(p_.relative_to(root)))
-        log(f"      {len(w)} files (shaders + includes + texture)")
+        log(f"      {want_fx} + includes + texture ({len(w)} files) - only the "
+            f"provider the feed reads, not the whole pack")
 
 
 # ---------------------------------------------------------------- install
 
 LUMENITE_MARKER = "lumenite_Kernel.fx"
+
+# Only the motion-vector provider the feed will read, never the whole pack.
+# LumeniteFX ships eight heavy effects (RTAO, SSSR, TRAA, bloom...) that the
+# feed does not use; ReShade compiled them all at start-up, and on a 32-bit
+# game behind dgVoodoo the compile stall was long enough for the game to
+# crash on its own (Bayonetta, issue #2, confirmed from the dump by the
+# feeder's author). The provider's own includes are small and all needed.
+LUMENITE_PROVIDER_FX = {3: "lumenite_Kernel.fx", 4: "lumenite_QuantMotion.fx"}
+LUMENITE_INCLUDES = ("lumenite_Projections.fxh", "lumenite_Helpers.fxh",
+                     "lumenite_Compute.fxh", "lumenite_ColorManagement.fxh")
+LUMENITE_TEXTURES = ("lumenite_bluenoise256.png",)
 
 
 def foreign_lumenite(root: Path, preinstalled=()) -> Path | None:
