@@ -111,7 +111,7 @@ BUILT_IN: tuple = (
              "https://store.steampowered.com/app/2012840/"),
     RemixMod("Portal: Prelude RTX", ("prelude rtx",),
              "official, free",
-             "https://store.steampowered.com/app/2456740/"),
+             "https://store.steampowered.com/app/2410180/"),
     RemixMod("Half-Life 2 RTX", ("half-life 2 rtx", "hl2rtx"),
              "official demo, free",
              "https://store.steampowered.com/app/2477290/"),

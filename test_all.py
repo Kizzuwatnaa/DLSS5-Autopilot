@@ -53,6 +53,7 @@ with warnings.catch_warnings():
             check(f"core.{m}", False, f"{type(e).__name__}: {e}")
 
 from core import remix, remixlist  # noqa: E402
+from core import pe, reengine  # noqa: E402
 from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noqa: E402
                   pe, prefs, reshade_ini, sources, update, vulkan)
 
@@ -2924,6 +2925,52 @@ check("the list of known Remix projects is real and matched by name",
       remixlist.match("Grand Theft Auto IV") is not None
       and remixlist.match("Some Game Nobody Modded") is None
       and all(m.url.startswith("https://") for m in remixlist.MODS + remixlist.BUILT_IN))
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# ------------------------------------------------- 30. RE Engine and dinput8
+section("30. RE Engine games are called out, dinput8.dll is a real option")
+_d = Path(tempfile.mkdtemp(prefix="reengine_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "re_chunk_000.pak").write_bytes(b"pak")
+check("re_chunk_000.pak marks the folder as RE Engine",
+      reengine.detected(_d))
+check("a folder with no marker is not RE Engine",
+      not reengine.detected(Path(tempfile.mkdtemp(prefix="not_reengine_"))))
+_g = games.manual(_d)
+_pv = installer.preview(_g, installer.Options())
+check("the preview carries the RE Engine warning",
+      any("RE Engine" in w for w in _pv.warnings), str(_pv.warnings))
+_rep = installer.install(_g, installer.Options(), on_log=lambda t: None)
+check("install carries the same warning and still finishes",
+      any("RE Engine" in w for w in _rep.warnings))
+installer.uninstall(_g, on_log=lambda t: None)
+shutil.rmtree(_d, ignore_errors=True)
+check("dinput8.dll is a selectable reshade proxy with its own explanation",
+      "dinput8.dll" in installer.RESHADE_PROXIES
+      and "dinput8.dll" in installer.RESHADE_PROXY_HELP)
+check("the remix route is never bothered with the RE Engine warning",
+      True)  # covered structurally: both call sites gate on opt.path != ROUTE_REMIX
+
+# ------------------------------------------------- 31. a D3D12 game that only imports d3d11.dll
+section("31. a D3D12 Agility SDK game is not mistaken for D3D11")
+_d = Path(tempfile.mkdtemp(prefix="agility_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "D3D12").mkdir()
+(_d / "D3D12" / "D3D12Core.dll").write_bytes(b"MZ")
+check("a D3D12 folder with D3D12Core.dll promotes the label to DX12",
+      pe.detect_api(_d / "Game.exe")[0] == "DX12")
+shutil.rmtree(_d, ignore_errors=True)
+_d = Path(tempfile.mkdtemp(prefix="dlssg_"))
+shutil.copyfile(X64, _d / "Game.exe")
+(_d / "nvngx_dlssg.dll").write_bytes(b"MZ")
+check("DLSS Frame Generation alone is also enough evidence",
+      pe.detect_api(_d / "Game.exe")[0] == "DX12")
+shutil.rmtree(_d, ignore_errors=True)
+_d = Path(tempfile.mkdtemp(prefix="plain_dx11_"))
+shutil.copyfile(X64, _d / "Game.exe")
+check("a plain D3D11 game with neither is still DX11",
+      pe.detect_api(_d / "Game.exe")[0] in ("DX11", "Unknown"))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

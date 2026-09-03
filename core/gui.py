@@ -19,7 +19,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg,
+from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg, reengine,
                games, gpu, profiles, video,
                installer, log, optiscaler, prefs, reshade_ini, selfupdate,
                sources, update)
@@ -474,10 +474,15 @@ class App:
         self.remixlbl = tk.Label(
             ri, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
             wraplength=660,
-            text="a remix mod rebuilds an old game with path tracing. install the "
-                 "mod yourself, then this tool finds its .trex runtime and puts "
-                 "dlss 5 inside it - no reshade, no feeder. tested on gta iv: "
-                 "path tracing + dlss 5 neural rendering together.")
+            text="RTX Remix is a separate, free NVIDIA mod that rebuilds an old "
+                 "game (2000s-era, fixed-function DirectX - GTA IV, Portal, Deus "
+                 "Ex, Vampire Bloodlines...) with real-time ray tracing: a full "
+                 "graphics overhaul, not a filter. A handful of those mods now "
+                 "run DLSS 5 inside that new engine.\n\n"
+                 "install the mod yourself (see the list below), then rescan: "
+                 "this tool finds its .trex runtime and switches DLSS 5 on in "
+                 "it. no reshade, no feeder, nothing else changes. proven on "
+                 "GTA IV: path tracing and DLSS 5 running together.")
         self.remixlbl.pack(anchor="w", pady=(4, 0))
         ri.bind("<Configure>",
                 lambda e: self.remixlbl.configure(wraplength=max(380, e.width - 10)))
@@ -1202,6 +1207,12 @@ class App:
         if ac.present:
             lines.append(f"BLOCK  {ac.summary} is installed here - ReShade "
                          f"add-ons will be blocked or get you banned")
+        if sup.recommended != dlss.REMIX and reengine.detected(g.install_dir):
+            lines.append("note   RE Engine (Capcom) game - ReShade's add-ons "
+                         "are documented to crash titles like this, worst on "
+                         "Denuvo'd ones (Requiem); 'did it work?' after a try "
+                         "explains, and 'dinput8.dll' under reshade proxy is "
+                         "the community workaround")
         other = games._recorded_exe(g.install_dir)
         if other and g.exe and other.lower() != g.exe.name.lower():
             lines.append(f"shared this folder is already set up for {other}; both "
@@ -2509,6 +2520,11 @@ def _dark_titlebar(win) -> None:
         win.update_idletasks()
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
         if not hwnd:
+            # Not realised yet - a Toplevel opened before its first paint
+            # can still return 0 here even after update_idletasks(). Retry
+            # once the window manager actually maps it, instead of leaving
+            # the title bar white for good.
+            win.bind("<Map>", lambda _e: _dark_titlebar(win), add="+")
             return
         dwm = ctypes.windll.dwmapi
 

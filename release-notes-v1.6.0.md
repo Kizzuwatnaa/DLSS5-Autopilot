@@ -27,3 +27,35 @@ free and ship with Remix already inside.
 Both are refused now, before anything is written, with the reason said out
 loud. A test section proves a Remix install comes out of an install and an
 uninstall byte for byte identical.
+
+## RE Engine games (Capcom) are called out
+
+Resident Evil 2/3/4, RE7, RE8/Village and Resident Evil Requiem share a
+documented problem: ReShade's add-on support - what every route here needs -
+can crash the engine outright, worst on Requiem, which also carries Denuvo.
+The tool now recognises the engine (`re_chunk_000.pak`) and says so plainly
+before you install, rather than letting it look like a setup mistake. A new
+**dinput8.dll** option under `reshade proxy` is the community's partial
+workaround - it loads earlier than the usual `dxgi.dll`.
+
+## A D3D12 game no longer reads as D3D11
+
+Some D3D12 titles only statically import `d3d11.dll`, loading the real
+D3D12 runtime later through the Agility SDK (`D3D12\D3D12Core.dll`) or
+carrying DLSS Frame Generation/Ray Reconstruction, both DX12-only. Found on
+Resident Evil Requiem, which this mislabelling was steering onto the
+`bridge` route instead of the better-fitting `optiscaler`/`native`. Detected
+now and labelled correctly.
+
+## Smaller fixes from testing against real games
+
+- The RTX Remix game list had one wrong Steam page (Portal: Prelude RTX was
+  pointing at the wrong game entirely). Every link in the list was checked.
+- The "which of my games have a Remix mod?" window used to grab the mouse
+  wheel for the whole app the moment it opened, and never let go - it broke
+  scrolling in the main window's own log, and once the Remix window was
+  closed, every further scroll anywhere in the app raised an error. Scoped
+  to the window it belongs to now.
+- The before/after screenshot window never got the dark title bar the rest
+  of the app has; it does now, and the title bar code retries once a window
+  actually finishes opening instead of only trying too early.

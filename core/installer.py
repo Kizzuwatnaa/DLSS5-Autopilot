@@ -44,7 +44,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
-               optiscaler, pe, prefs, remix, reshade_ini, sources, vulkan)
+               optiscaler, pe, prefs, reengine, remix, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
@@ -381,7 +381,7 @@ def _is_reshade(path: Path) -> bool:
 # it is good and ready. When a game will not start, changing the name it
 # comes in under is the first thing to try.
 RESHADE_PROXIES = ("dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d10.dll",
-                   "d3d9.dll", "opengl32.dll")
+                   "d3d9.dll", "opengl32.dll", "dinput8.dll")
 
 RESHADE_PROXY_HELP = {
     "dxgi.dll": "default for Direct3D 10/11/12",
@@ -390,6 +390,8 @@ RESHADE_PROXY_HELP = {
     "d3d10.dll": "D3D10 only",
     "d3d9.dll": "DirectX 9, after dgVoodoo2 translation",
     "opengl32.dll": "the only option for OpenGL",
+    "dinput8.dll": "loads earlier than a graphics proxy; the community fix "
+                   "for RE Engine (Capcom) games that crash on dxgi.dll",
 }
 
 
@@ -711,6 +713,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
             f"{ac.summary} detected ({', '.join(ac.evidence)}). ReShade "
             f"add-ons and anti-cheat do not coexist: expect the game not to "
             f"start, or nothing to happen, or a ban. Do not use this online.")
+    if opt.path != ROUTE_REMIX and reengine.detected(root):
+        pv.warnings.append(reengine.message())
 
     preinstalled = _previously_ours(root)
 
@@ -1611,6 +1615,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             f"add-ons and anti-cheat do not coexist: expect the game not to "
             f"start, or nothing to happen, or a ban. Do not use this online.")
         log(f"      !! {ac.summary} detected - see the warning above")
+    if opt.path != ROUTE_REMIX and reengine.detected(root):
+        rep.warnings.append(reengine.message())
+        log("      !! RE Engine game detected - ReShade's add-on support is "
+            "documented to crash this engine; see the warning above")
 
     # Is another injector already in place?
     existing = root / proxy if proxy else root

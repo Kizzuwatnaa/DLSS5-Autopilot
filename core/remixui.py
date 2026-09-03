@@ -37,13 +37,21 @@ class RemixWindow:
                  font=font(15)).pack(anchor="w")
         tk.Label(head, bg=BG, fg=DIM, font=font(9), justify="left", anchor="w",
                  wraplength=int(sw * 0.55),
-                 text="A Remix mod rebuilds an old game with path tracing. DLSS 5 "
-                      "then runs inside the Remix runtime, after its own upscaler - "
-                      "no ReShade, no feeder, nothing of ours in the game folder "
-                      "except the runtime's neural library.\n\n"
-                      "Install the mod yourself from its page below. Once it is in, "
-                      "this tool sees the .trex folder and offers the remix route, "
-                      "which is what switches DLSS 5 on."
+                 text="What RTX Remix is: a free NVIDIA tool that replaces an old "
+                      "game's entire graphics pipeline with real-time ray tracing - "
+                      "not a filter or a mod menu, a different renderer. Someone "
+                      "builds one of these per game (below); it is a serious "
+                      "project, often gigabytes of rebuilt textures and geometry.\n\n"
+                      "How the two fit together: DLSS 5 is not injected into a "
+                      "Remix game the way it is everywhere else in this tool. A few "
+                      "Remix builds carry DLSS 5 inside their own renderer already - "
+                      "this tool just switches that on. Nothing of ours goes into "
+                      "the game folder except one small file and one line of text.\n\n"
+                      "1. Pick a game below and install ITS mod, from its own page - "
+                      "that part is not this tool's job.\n"
+                      "2. Press rescan here. The game shows up with the remix route "
+                      "chosen for you.\n"
+                      "3. Press INSTALL like any other game."
                  ).pack(anchor="w", pady=(6, 0))
         tk.Label(head, bg=BG, fg=FAINT, font=font(8), justify="left", anchor="w",
                  wraplength=int(sw * 0.55), text=remixlist.RULE_OF_THUMB)\
@@ -61,8 +69,31 @@ class RemixWindow:
         canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
         sb.pack(side="right", fill="y")
-        canvas.bind_all("<MouseWheel>",
-                        lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        # Mousewheel scroll for this canvas only. bind_all() is process-wide -
+        # it used to steal scrolling from the main window's own log and game
+        # list the moment this window opened, and kept doing it (against a
+        # destroyed canvas, raising an error on every scroll) after the
+        # window was closed, because nothing ever unbound it. Bind only
+        # while the pointer is actually over this window, and clean up when
+        # it leaves or the window closes.
+        def _wheel(e):
+            try:
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+            except tk.TclError:
+                pass
+
+        def _grab(_e=None):
+            self.win.bind_all("<MouseWheel>", _wheel)
+
+        def _release(_e=None):
+            try:
+                self.win.unbind_all("<MouseWheel>")
+            except tk.TclError:
+                pass
+
+        self.win.bind("<Enter>", _grab)
+        self.win.bind("<Leave>", _release)
+        self.win.bind("<Destroy>", _release)
         self._canvas = canvas
 
         owned = {id(m) for _g, m in remixlist.for_library(library or [])}

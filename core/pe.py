@@ -149,6 +149,21 @@ API_PROXY = {
 }
 
 
+def _has_d3d12_agility_sdk(folder: Path) -> bool:
+    """A `D3D12/D3D12Core.dll` beside the exe: the Agility SDK, loaded at
+    run time via SetD3D12SDKPath rather than a static import - so a game
+    that only statically links d3d11.dll can still be a D3D12 title. Seen
+    on Resident Evil Requiem, which ships DLSS Frame Generation and Ray
+    Reconstruction (DX12-only NGX features) as further evidence."""
+    try:
+        if (folder / "D3D12" / "D3D12Core.dll").is_file():
+            return True
+        names = {f.name.lower() for f in folder.iterdir() if f.is_file()}
+    except OSError:
+        return False
+    return "nvngx_dlssg.dll" in names or "nvngx_dlssd.dll" in names
+
+
 def detect_api(path: Path) -> tuple[str, str]:
     """Return (api_label, reason).
 
@@ -157,8 +172,11 @@ def detect_api(path: Path) -> tuple[str, str]:
     import dxgi.dll AND opengl32.dll). Checking OpenGL first would pick the
     wrong proxy DLL and break the game, so DXGI presence decides.
 
-    Confusing DX11 with DX12 is harmless: ReShade installs as the same
-    dxgi.dll proxy either way.
+    Confusing DX11 with DX12 does not change which proxy DLL ReShade goes
+    in as - dxgi.dll either way - but it does change which route gets
+    recommended (native/upstream/optiscaler need DX12), so a D3D12 Agility
+    SDK folder or DLSS Frame Generation/Ray Reconstruction promotes the
+    label even without a static d3d12.dll import.
     """
     imports = pe_imports(path)
     has = lambda d: any(d in i for i in imports)
@@ -166,6 +184,10 @@ def detect_api(path: Path) -> tuple[str, str]:
     if has("d3d12.dll"):
         return "DX12", "imports d3d12.dll statically"
     if has("d3d11.dll"):
+        if _has_d3d12_agility_sdk(path.parent):
+            return ("DX12", "imports d3d11.dll, but ships a D3D12 Agility SDK "
+                            "or DLSS Frame Generation/Ray Reconstruction - "
+                            "the real renderer is D3D12")
         return "DX11", "imports d3d11.dll statically"
     if has("d3d10.dll") or has("d3d10_1.dll") or has("d3d10core.dll"):
         # DX10 is DXGI-based, so ReShade still installs as dxgi.dll. Neither
@@ -182,6 +204,10 @@ def detect_api(path: Path) -> tuple[str, str]:
         return "OpenGL", "imports opengl32.dll, no DXGI"
     if has("d3d9.dll"):
         return "DX9", "imports d3d9.dll, no DXGI"
+    if _has_d3d12_agility_sdk(path.parent):
+        return ("DX12", "no graphics DLL imported statically, but ships a "
+                        "D3D12 Agility SDK or DLSS Frame Generation/Ray "
+                        "Reconstruction - the real renderer is D3D12")
     return "Unknown", "graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll"
 
 

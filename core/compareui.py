@@ -42,6 +42,11 @@ class CompareWindow:
         self.win.minsize(720, 420)
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{int(sw * 0.8)}x{int(sh * 0.7)}")
+        try:
+            from .gui import _dark_titlebar
+            self.win.after(0, lambda: _dark_titlebar(self.win))
+        except Exception:
+            pass
 
         self.files: list[Path] = []
         self.shots: list[Path] = []          # [left, right] when paired

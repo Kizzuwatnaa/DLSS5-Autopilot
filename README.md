@@ -245,14 +245,42 @@ In game, press **Alt+X**, then **Developer Settings Menu**, then the
 style, intensity and structure. **did it work?** reads Remix's own log and
 says whether the feature was created.
 
-**Which games?** The **rtx remix** card on the first page lists every project
-this tool knows about and marks the ones you own. Roughly: Remix only reaches
+**Which games?** Every project this tool knows about, checked to exist on
+2026-09-03 - the same list the **rtx remix** card on the first page shows,
+with the ones in your own library marked there. Roughly: Remix only reaches
 DirectX 8 and 9 games with a fixed function pipeline, about 2000 to 2005.
-There is no universal mod - each game needs its own. Portal with RTX, Portal
-Prelude RTX and the Half-Life 2 RTX demo ship with Remix already inside and
-are free. Everything else comes from its own page; the list links to each one,
-and to [ModDB's Remix section](https://www.moddb.com/rtx) for the projects
-that have no repository.
+There is no universal mod - each game needs its own, and "a mod exists" is
+not "it runs well". A page can move; the link is the authority, not this
+table.
+
+| Game | Mod | |
+|---|---|---|
+| **Portal with RTX** | already Remix, official, free for owners of Portal | [page](https://store.steampowered.com/app/2012840/) |
+| **Portal: Prelude RTX** | already Remix, official, free | [page](https://store.steampowered.com/app/2410180/) |
+| **Half-Life 2 RTX** | already Remix, official demo, free | [page](https://store.steampowered.com/app/2477290/) |
+| **Grand Theft Auto IV** | GTAIV RTX Remix Compatibility Mod (xoxor4d) - the one this tool was tested against; its runtime already carries DLSS 5, so only the runtime file is needed | [page](https://github.com/xoxor4d/gta4-rtx) |
+| **Need for Speed: Underground 2** | NFSU2-RTX-Remix (Ekozmaster) | [page](https://github.com/Ekozmaster/NFSU2-RTX-Remix) |
+| **Garry's Mod** | Garry's Mod RTX Remixed (Xenthio) - needs the game in a fixed-function mode; read its own guide | [page](https://github.com/Xenthio/garrys-mod-rtx-remixed) |
+| **Deus Ex** | Deus Ex Echelon Renderer (onnoj) - a renderer that gives the game a fixed-function pipeline first | [page](https://github.com/onnoj/DeusExEchelonRenderer) |
+| **Thief Gold** | thief-gold-rtx-remix (Night1099) - NewDark 1.27 | [page](https://github.com/Night1099/thief-gold-rtx-remix) |
+| **The Elder Scrolls III: Morrowind** | Morrowind RTX Remix (BrunchyChineapple) - there is a separate set of loose files for OpenMW | [page](https://github.com/BrunchyChineapple/Morrowind-RTX-Remix-source) |
+| **Vampire: The Masquerade - Bloodlines** | VTMB RTX Remix (CattoSalad) - a knowledge base rather than a one-click mod | [page](https://github.com/CattoSalad/VTMB-RTX-Remix) |
+| **Prince of Persia: The Sands of Time** | pop-sot-rtx (kaminoer) | [page](https://github.com/kaminoer/pop-sot-rtx) |
+| **Saints Row 2** | sr2-rtx-remix-proxy (BRAGme) | [page](https://github.com/BRAGme/sr2-rtx-remix-proxy) |
+| **Saints Row: The Third** | Saints Row The Third RTX Remix shim (PurrsianMilkman) - the 2011 DirectX 9 release only | [page](https://github.com/PurrsianMilkman/Saints-Row-The-Third-RTX-REMIX-compatibility-mod) |
+| **Red Faction** | RedFaction-RTX (BRAGme) - version 1.20 NA | [page](https://github.com/BRAGme/RedFaction-RTX) |
+| **Total Overdose** | TotalOverDoseRTXRemix (Utkar5hM) | [page](https://github.com/Utkar5hM/TotalOverDoseRTXRemix) |
+| **Assassin's Creed II** | ac2-rtx (Kamzik123) - later than the era Remix is built for; expect rough edges | [page](https://github.com/Kamzik123/ac2-rtx) |
+| **Populous: The Beginning** | Populous-3-RTX-Remix (xmarre) - an experiment, in its author's words | [page](https://github.com/xmarre/Populous-3-RTX-Remix) |
+| **Silent Storm** | silent-storm-rtx (WormSlayer) | [page](https://github.com/WormSlayer/silent-storm-rtx) |
+| **Dungeon Keeper 2** | dk2-dxwrapper with path tracing (mencelot) | [page](https://github.com/mencelot/dk2-dxwrapper-with-path-tracing-support) |
+| **Grand Theft Auto: Vice City** | GTA Vice City RTX Remix ASI (GmanRO) | [page](https://github.com/GmanRO/GTA-VICE-CITY-RTX-REMIX-.ASI-compiled-within-linux-) |
+| **Cry of Fear** | CryofFear_RTX-REMIX (michaelabilliot) | [page](https://github.com/michaelabilliot/CryofFear_RTX-REMIX) |
+| **Chess Titans** | Chess-Titans-RTX (Kamilkampfwagen-II) | [page](https://github.com/Kamilkampfwagen-II/Chess-Titans-RTX) |
+
+Many more live on [ModDB's Remix section](https://www.moddb.com/rtx) and in
+the Remix Showcase Discord, including projects with no public repository -
+not listed here for that reason, not because they do not exist.
 
 **Two things it will not do**, on purpose: it does not download or mirror
 anybody's mod, and it does not put a ReShade DLL in a Remix folder.
@@ -398,6 +426,21 @@ Not every launcher can be found from the registry, and an executable locked
 at the moment of the scan (antivirus, a running updater, OneDrive
 placeholders) cannot be read. The scan log (**open log file**) says what
 each store returned. **Choose folder…** always works.
+
+### A game crashes the instant ReShade loads, no window, no message
+
+Capcom's **RE Engine** (the Resident Evil 2/3/4 remakes, RE7, RE8/Village,
+Resident Evil Requiem) is documented to reject ReShade's add-on support
+outright on several of its titles - worst on the ones that also carry
+Denuvo, Requiem in particular. This is the engine's own tamper protection,
+not a setup mistake, and it is unrelated to RTX Remix above. The tool
+detects it (`re_chunk_000.pak` in the folder) and says so in the detail
+card before you install.
+
+There is a partial community workaround: pick **dinput8.dll** under
+**reshade proxy** on the install page instead of the default `dxgi.dll` -
+it loads earlier, before some of the engine's checks run, which is why the
+community's REFramework mod uses the same trick. It is not guaranteed.
 
 ### Antivirus quarantined a file after install
 
