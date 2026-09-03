@@ -672,6 +672,17 @@ def preview(g: games.Game, opt: Options) -> Preview:
     ok, why = check_supported(g)
     if not ok:
         pv.blockers.append(why)
+    # Same hard rule install() enforces: a Remix game only ever takes the
+    # remix route. Without this the preview would describe a plan (dgVoodoo,
+    # ReShade...) that install() actually refuses outright.
+    if opt.path != ROUTE_REMIX and remix.is_remix_game(root):
+        pv.blockers.append(
+            "This game has an RTX Remix mod installed (its .trex runtime is "
+            "in the folder). Only the remix route works here - every other "
+            "route installs ReShade, which crashes a Remix game before it "
+            "draws a frame, and on DirectX 9 it would write over the Remix "
+            "runtime itself. Choose the remix route, or uninstall the "
+            "Remix mod first.")
     pv.steps = plan(g, opt)
     x64 = g.bitness == 64
     dxvk_from = g.api if uses_dxvk(g, opt) else ""
@@ -687,7 +698,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
 
     # Blockers: the checks preflight() and install() make, minus the write
     # probe - os.access instead, because a preview must not create files.
-    if not root.is_dir():
+    if not games._isdir(root):
         pv.blockers.append(f"{root} does not exist.")
         return pv
     if not os.access(root, os.W_OK):
@@ -1437,7 +1448,7 @@ def preflight(g: games.Game) -> None:
     and the game holding its files open - are checked up front.
     """
     root = g.install_dir
-    if not root.is_dir():
+    if not games._isdir(root):
         raise InstallError(f"{root} does not exist.")
 
     probe = root / ".dlss5-autopilot-write-test"
@@ -2427,7 +2438,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     else:
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
                  STANDALONE_ADDON, DLSSNR, DLSS, DLSSG,
-                 BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
+                 BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME,
                  "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
                  str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),

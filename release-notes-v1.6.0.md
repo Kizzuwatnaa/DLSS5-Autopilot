@@ -59,3 +59,15 @@ now and labelled correctly.
 - The before/after screenshot window never got the dark title bar the rest
   of the app has; it does now, and the title bar code retries once a window
   actually finishes opening instead of only trying too early.
+- "What will happen?" could describe a normal install (dgVoodoo, ReShade...)
+  for a Remix game if a different route was picked by hand, even though
+  pressing install would have refused it - the preview now gives the same
+  refusal up front.
+- Uninstalling with no install record could delete a `dxgi.dll` or
+  `opengl32.dll` that belonged to something else entirely (SpecialK, an ENB,
+  a separately installed ReShade), the way `D3D9.dll` already was protected
+  against - both are now only removed after confirming the file really is
+  this tool's ReShade.
+- A folder on a drive that goes unready mid-session (unplugged, asleep, a
+  dropped network share) could crash "what will happen?" or install instead
+  of showing "does not exist" - fixed.
