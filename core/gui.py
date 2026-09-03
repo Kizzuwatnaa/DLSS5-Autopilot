@@ -56,6 +56,9 @@ FEEDER_CHOICES = ("stable - newest release",
 
 # Who does the neural work on the feeder route. Only the first is downloadable;
 # the other two are handed out on Discord, so the person points at their files.
+# Off until they have been tried with the real files (only fake ones so far):
+# the core install/uninstall path is in and tested, the row is not shown.
+CONSUMER_UI = False
 CONSUMERS = (("renodx", "renodx-dlss5 (downloaded for you)"),
              ("dfc", "Deep Fried Chicken (your files, 1-30 passes)"),
              ("toolkit", "Alex's Toolkit (your files, 2-pass cascade)"))
@@ -768,9 +771,25 @@ class App:
             if not cam or cam.startswith("("):
                 return
         try:
+            import time
+            t0 = time.time()
             video.start_webcam(self.game.install_dir, cam)
-            self._log(f"> webcam '{cam}' is playing through the feed - F6 toggles "
-                      f"neural rendering, 'stop' ends the stream", "ok")
+            self._log(f"> webcam '{cam}' started - the player opens the stream; "
+                      f"checking in 10 s whether the feed is processing it...")
+            folder = self.game.install_dir
+
+            def verify() -> None:
+                frames, mv = video.feed_frames_since(folder, t0)
+                if frames >= 3:
+                    self._log(f"> camera through DLSS 5: yes - {frames} frames "
+                              f"processed so far" + (", motion alive" if mv else "")
+                              + ". F6 toggles it, 'stop' ends the stream.", "ok")
+                else:
+                    self._log("!! the feed has not processed camera frames yet. "
+                              "if the player shows the picture, give it a few "
+                              "seconds and press 'did it work?'; if it shows "
+                              "nothing, another app may hold the camera.", "warn")
+            self.root.after(10000, verify)
         except Exception as e:
             messagebox.showerror(APP, str(e))
 
@@ -1702,11 +1721,12 @@ class App:
             self.lbl_feederver.grid(row=11, column=0, sticky="w", padx=(0, 14), pady=5)
             self.cb_feederver.grid(row=11, column=1, columnspan=2, sticky="ew", pady=5)
             self.feederhint.grid(row=12, column=0, columnspan=3, sticky="w")
-            self.lbl_consumer.grid(row=14, column=0, sticky="w", padx=(0, 14), pady=(10, 5))
-            self.cb_consumer.grid(row=14, column=1, sticky="ew", pady=(10, 5))
-            self.consumer_box.grid(row=14, column=2, sticky="w", padx=(10, 0), pady=(10, 5))
-            self.consumerhint.grid(row=15, column=0, columnspan=3, sticky="w")
-            self._on_consumer()
+            if CONSUMER_UI:
+                self.lbl_consumer.grid(row=14, column=0, sticky="w", padx=(0, 14), pady=(10, 5))
+                self.cb_consumer.grid(row=14, column=1, sticky="ew", pady=(10, 5))
+                self.consumer_box.grid(row=14, column=2, sticky="w", padx=(10, 0), pady=(10, 5))
+                self.consumerhint.grid(row=15, column=0, columnspan=3, sticky="w")
+                self._on_consumer()
         else:
             for w in (self.lbl_consumer, self.cb_consumer, self.consumer_box,
                       self.consumerhint):
@@ -1887,6 +1907,8 @@ class App:
         self.provider.set(list(reshade_ini.PROVIDERS.keys())[self.cb_prov.current()])
 
     def _consumer_key(self) -> str:
+        if not CONSUMER_UI:
+            return "renodx"
         i = self.cb_consumer.current()
         return CONSUMERS[i][0] if 0 <= i < len(CONSUMERS) else "renodx"
 

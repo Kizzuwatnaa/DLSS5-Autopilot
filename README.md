@@ -48,7 +48,6 @@ marks the ones your card cannot use. You can always pick another.
 - D3D11 game with DLSS → **bridge**; optiscaler (FSR underneath) and feeder as alternatives.
 - No DLSS in the game (D3D11/12) → **feeder**; bridge as the alternative.
 - No DLSS but **FSR 2/3 or XeSS** in the game → **optiscaler** is offered too: it takes the game's upscaler calls as input, runs DLSS instead, then neural rendering.
-- **Neural add-on on the feeder route:** renodx-dlss5 is downloaded for you. The feeder's author now recommends **Deep Fried Chicken** (1 to 30 passes; "two DLSS 5 stacked" is passes = 2) and there is **Alex's Toolkit** (2-pass cascade); both are Discord-only, so you point the install page at the folder you unpacked them into and set the passes. Exactly one neural add-on per game folder: with two, the second does nothing, silently. Command line: `--consumer dfc --consumer-dir "D:\dfc" --passes 2`.
 - Every route lists, under its description on the install page, what must not sit in the same folder and what to switch off. Two things hooking the same NGX calls means flicker or nothing; the tool names the other one when it sees it.
 - Vulkan with DLSS → **bridge**; Vulkan without → **feeder**.
 - OpenGL, 32-bit, DX9 (32-bit) → **feeder**.

@@ -2643,6 +2643,31 @@ check("uninstall leaves only the game (the aside copy is ours to remove)",
 shutil.rmtree(_d, ignore_errors=True)
 shutil.rmtree(_c, ignore_errors=True)
 
+
+# ------------------------------------------------- 27. the webcam self-check
+section("27. the webcam self-check reads the feed log by time")
+import datetime as _dt
+_d = Path(tempfile.mkdtemp(prefix="camlog_"))
+_now = _dt.datetime.now().replace(microsecond=0)
+_stamp = lambda secs: (_now + _dt.timedelta(seconds=secs)).strftime("%H:%M:%S.000")
+(_d / "dlss5-feed.log").write_text(
+    f"{_stamp(-120)}  [feed] frame 500 delivered (old run)\n"
+    f"{_stamp(5)}  [feed] frame 1 delivered (1280x720 at 100% -> 1280x720, reset=1)\n"
+    f"{_stamp(6)}  [feed] frame 7 delivered (1280x720 at 100% -> 1280x720, reset=0)\n"
+    f"{_stamp(8)}  [feed] MV probe (centre 64x64, frame 600): mean |mv| 0.4 px, max 0.6 px, 98% non-zero\n",
+    encoding="utf8")
+_t0 = _now.timestamp()
+_frames, _mv = video.feed_frames_since(_d, _t0)
+check("frames after the start time are counted, the old run is not",
+      _frames == 7 and _mv, f"{_frames} {_mv}")
+check("nothing after a start time in the future", video.feed_frames_since(_d, _t0 + 600) == (0, False))
+check("a missing log is (0, False)", video.feed_frames_since(Path(tempfile.mkdtemp(prefix="nolog_")), _t0) == (0, False))
+shutil.rmtree(_d, ignore_errors=True)
+from core import gui as _gui2  # noqa: E402
+check("the Discord neural add-ons are not offered in this release's UI", _gui2.CONSUMER_UI is False)
+_readme = (Path(__file__).parent / "README.md").read_text(encoding="utf8")
+check("the README does not advertise them either", "Deep Fried Chicken" not in _readme)
+
 section("RESULT")
 if FAILS:
     print(f"{len(FAILS)} FAILED:")

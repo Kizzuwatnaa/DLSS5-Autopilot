@@ -710,6 +710,39 @@ def start_webcam(folder: Path, camera: str, size: str = "1280x720", fps: int = 3
     return _webcam_proc
 
 
+def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
+    """(frames delivered, motion vectors alive) logged after wall time t0.
+
+    The feed log carries hh:mm:ss.mmm stamps only, so the day is taken from
+    t0; a stream started just before midnight is the one case this misreads.
+    """
+    import datetime
+    import re
+    p = Path(folder) / "dlss5-feed.log"
+    try:
+        text = p.read_text(encoding="utf8", errors="replace")
+    except OSError:
+        return 0, False
+    day = datetime.datetime.fromtimestamp(t0).date()
+    frames, mv = 0, False
+    for line in text.splitlines():
+        m = re.match(r"(\d\d):(\d\d):(\d\d)\.(\d+)\s+(.*)", line)
+        if not m:
+            continue
+        stamp = datetime.datetime.combine(day, datetime.time(
+            int(m.group(1)), int(m.group(2)), int(m.group(3)),
+            int(m.group(4)[:3].ljust(3, "0")) * 1000)).timestamp()
+        if stamp < t0 - 1:
+            continue
+        rest = m.group(5)
+        fm = re.search(r"frame (\d+) delivered", rest)
+        if fm:
+            frames = max(frames, int(fm.group(1)))
+        if "MV probe" in rest and "non-zero" in rest and "0% non-zero" not in rest:
+            mv = True
+    return frames, mv
+
+
 def stop_webcam() -> None:
     global _webcam_proc
     if _webcam_proc is not None:

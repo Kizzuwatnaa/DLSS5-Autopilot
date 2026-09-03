@@ -12,14 +12,6 @@
 - **FSR 2/3 and XeSS games** with no DLSS now get the OptiScaler route:
   their upscaler calls are redirected into DLSS, then neural rendering.
 
-- **Your own neural add-on on the feeder route.** The feeder's author now
-  recommends **Deep Fried Chicken** over the renodx add-on; it runs the
-  model 1 to 30 times per frame ("two DLSS 5 on top of each other" is
-  passes = 2). It and **Alex's Toolkit** (a 2-pass cascade) are handed out
-  on Discord only, so the install page takes the folder you unpacked them
-  into, sets the pass count, and makes sure exactly one neural add-on is
-  in the game folder - with two, the second one silently does nothing.
-
 Every route now lists, under its description, what it will not tolerate
 in the same folder and what to switch off - before you press INSTALL.
 
