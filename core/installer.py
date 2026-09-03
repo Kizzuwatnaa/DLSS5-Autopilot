@@ -1707,7 +1707,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # be orphaned in the game folder with no way to clean them up.
     try:
         # --- 0) DX9 needs dgVoodoo2 first (unless DXVK takes it to Vulkan) ---
-        if g.api == "DX9" and not dxvk_from:
+        # Never on the remix route: Remix IS the D3D9 implementation there,
+        # and dgVoodoo's D3D9.dll would land straight on top of the Remix
+        # bridge client. Caught on the real GTA IV install; plan() already
+        # returns early for this route, and now install() agrees with it.
+        if g.api == "DX9" and not dxvk_from and opt.path != ROUTE_REMIX:
             begin("dgVoodoo2 (DX9 -> D3D11)")
             for f in dgvoodoo.install(root, log):
                 rep.written.append(f)

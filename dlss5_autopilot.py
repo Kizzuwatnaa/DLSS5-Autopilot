@@ -123,8 +123,15 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     print(f"\n\nDone - {len(rep.written)} files written.")
     for w in rep.warnings:
         print(f"  ! {w}")
-    print("In game: press Home, then enable neural rendering in the DLSS 5 panel. "
-          "Turn the game's own MSAA/SSAA off.")
+    # The remix route has no ReShade overlay at all - its settings live in
+    # the Remix menu, so the usual advice would send people to a key that
+    # does nothing there.
+    if sup.recommended == dlss.REMIX or route == dlss.REMIX:
+        print("In game: press Alt+X, then 'Developer Settings Menu', then the "
+              "Post-Processing tab: 'Enable Neural Uplift (DLSS-NR)'.")
+    else:
+        print("In game: press Home, then enable neural rendering in the DLSS 5 "
+              "panel. Turn the game's own MSAA/SSAA off.")
     return 0
 
 

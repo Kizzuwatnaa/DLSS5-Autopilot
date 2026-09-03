@@ -2421,6 +2421,17 @@ class App:
             self._log("   2. neural rendering is enabled; the tab shows its status "
                       "and lets you tune intensity and style")
             self._log("   3. turn OFF the game's own MSAA/SSAA")
+        elif route == getattr(dlss, "REMIX", "remix"):
+            self._log("   !  there is no reshade here and Home does nothing - "
+                      "everything lives in the remix menu")
+            self._log("   1. press Alt+X in game, then 'Developer Settings Menu'")
+            self._log("   2. open the Post-Processing tab and tick "
+                      "'Enable Neural Uplift (DLSS-NR)'")
+            self._log("   3. style, intensity and the structure sliders are right "
+                      "under it; the status line says whether the feature was "
+                      "created")
+            self._log("   !  leave the game's own dlss and ray reconstruction as "
+                      "they are - the neural pass runs after them, not instead")
         elif route == getattr(dlss, "STANDALONE", "standalone"):
             self._log("   1. in the game turn OFF its own DLSS, frame generation "
                       "and anti-aliasing - this add-on brings all three")

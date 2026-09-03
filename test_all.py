@@ -2795,9 +2795,15 @@ if _remix.is_remix_game(_GTA):
     _t = _remix.find_runtime(_GTA)
     check("real GTA IV: the runtime is the neuralUplift fork",
           _remix.runtime_flavour(_t) == "uplift", str(_t))
-    check("real GTA IV: the enable key is in its rtx.conf",
-          _remix.option_set(_remix.conf_path(_GTA, _t),
-                            _remix.enable_key("uplift")))
+    # Not "the key is set" - that depends on whether the tool happens to be
+    # installed there right now. What must hold is that the real rtx.conf is
+    # found and readable, and that asking about the key gives an answer.
+    _real_conf = _remix.conf_path(_GTA, _t)
+    check("real GTA IV: its rtx.conf is found and readable",
+          _real_conf.is_file() and len(_real_conf.read_bytes()) > 100,
+          str(_real_conf))
+    check("real GTA IV: the enable key can be asked about either way",
+          _remix.option_set(_real_conf, _remix.enable_key("uplift")) in (True, False))
     _gg = games.manual(_GTA)
     check("real GTA IV: remix is the recommended route",
           dlss.detect(_gg.install_dir, _gg.folder, _gg.api,
@@ -2830,6 +2836,9 @@ _d = _fake_remix()
 _before = {p.relative_to(_d).as_posix(): p.read_bytes()
            for p in _d.rglob("*") if p.is_file()}
 _g = games.manual(_d)
+# A Remix game IS a DirectX 9 game - that is the whole point of Remix - so
+# the DX9 branch of the installer has to be exercised here, not skipped.
+_g.api = "DX9"
 check("a folder with .trex is recognised as a Remix game",
       remix.is_remix_game(_d) and remix.find_runtime(_d) == (_d / ".trex"))
 check("the runtime's DLSS 5 flavour is read from the binary, not guessed",
@@ -2867,6 +2876,15 @@ check("it writes no ReShade, no feeder and no add-on",
       and not (_d / installer.FEEDER_ADDON64).exists()
       and not (_d / "ReShade.ini").exists(),
       str(sorted(p.name for p in _d.iterdir())))
+# The one that got through on the real GTA IV: a Remix game is a DX9 game,
+# and the DX9 step wrote dgVoodoo's D3D9.dll over the Remix bridge client.
+check("and no dgVoodoo, whatever the game's API says",
+      not (_d / "dgVoodoo.conf").exists() and not (_d / "dgVoodooCpl.exe").exists()
+      and not (_d / ("D3D9.dll" + installer.BACKUP_SUFFIX)).exists(),
+      str(sorted(p.name for p in _d.iterdir())))
+check("the steps taken match the plan exactly",
+      len(installer.plan(_g, installer.Options(path=dlss.REMIX))) == 2,
+      str(installer.plan(_g, installer.Options(path=dlss.REMIX))))
 check("the runtime is left exactly as it was without the swap option",
       (_d / ".trex" / "d3d9.dll").read_bytes() == _before[".trex/d3d9.dll"]
       and (_d / "d3d9.dll").read_bytes() == _before["d3d9.dll"])
@@ -2898,6 +2916,7 @@ shutil.rmtree(_d, ignore_errors=True)
 _d = _fake_remix("remix_swap_")
 _orig = (_d / ".trex" / "d3d9.dll").read_bytes()
 _g = games.manual(_d)
+_g.api = "DX9"
 _pv = installer.preview(_g, installer.Options(path=dlss.REMIX))
 check("the preview does not swap the runtime unless asked",
       not any("d3d9" in w.lower() for w in _pv.writes), str(_pv.writes))
