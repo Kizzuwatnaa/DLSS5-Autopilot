@@ -54,15 +54,6 @@ def font(size: int = 10, weight: str = "normal") -> tuple:
 FEEDER_CHOICES = ("stable - newest release",
                   "newest pre-release")
 
-# Who does the neural work on the feeder route. Only the first is downloadable;
-# the other two are handed out on Discord, so the person points at their files.
-# Off until they have been tried with the real files (only fake ones so far):
-# the core install/uninstall path is in and tested, the row is not shown.
-CONSUMER_UI = False
-CONSUMERS = (("renodx", "renodx-dlss5 (downloaded for you)"),
-             ("dfc", "Deep Fried Chicken (your files, 1-30 passes)"),
-             ("toolkit", "Alex's Toolkit (your files, 2-pass cascade)"))
-
 STEPS = (("architecture", "what to install for"),
          ("game", "pick from your library"),
          ("install", "settings and go"))
@@ -751,33 +742,57 @@ class App:
         except Exception as e:
             messagebox.showerror(APP, f"could not start the player:\n{e}")
 
-    def _refresh_cameras(self) -> None:
+    def _refresh_cameras(self, then=None) -> None:
+        """Enumerate cameras in the background: DirectShow can stall for
+        seconds on a virtual camera driver, and the window must not freeze."""
         if not self.game or getattr(self.game, "kind", "") != "video":
             return
-        cams = video.list_cameras(self.game.install_dir)
+        folder = self.game.install_dir
+        self.cb_camera["values"] = ["(looking...)"]
+        self.cb_camera.current(0)
+
+        def work() -> None:
+            cams = video.list_cameras(folder)
+            self.q.put(("cameras", (cams, then)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _cameras_found(self, cams: list, then=None) -> None:
         self.cb_camera["values"] = cams or ["(no camera found - ffmpeg must be in "
                                             "tools/, run one download first)"]
         self.cb_camera.current(0)
         if cams:
             self._log(f"> cameras: {', '.join(cams)}")
+        if then and cams:
+            then()
 
     def _start_webcam(self) -> None:
         if not self.game or getattr(self.game, "kind", "") != "video":
             return
         cam = self.cb_camera.get()
         if not cam or cam.startswith("("):
-            self._refresh_cameras()
-            cam = self.cb_camera.get()
-            if not cam or cam.startswith("("):
-                return
-        try:
-            import time
-            t0 = time.time()
-            video.start_webcam(self.game.install_dir, cam)
-            self._log(f"> webcam '{cam}' started - the player opens the stream; "
-                      f"checking in 10 s whether the feed is processing it...")
-            folder = self.game.install_dir
+            # No list yet: enumerate first, then come back here.
+            self._refresh_cameras(then=self._start_webcam)
+            return
+        import time
+        t0 = time.time()
+        folder = self.game.install_dir
+        self._log(f"> webcam '{cam}': starting the stream...")
 
+        def work() -> None:
+            try:
+                video.start_webcam(folder, cam)
+                self.q.put(("webcam_started", (cam, t0)))
+            except Exception as e:
+                self.q.put(("webcam_failed", str(e)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _webcam_started(self, cam: str, t0: float) -> None:
+        self._log(f"> webcam '{cam}' started - the player opens the stream; "
+                  f"checking in 10 s whether the feed is processing it...")
+        folder = self.game.install_dir if self.game else None
+        if folder is None:
+            return
+        if True:
             def verify() -> None:
                 frames, mv = video.feed_frames_since(folder, t0)
                 if frames >= 3:
@@ -790,8 +805,6 @@ class App:
                               "seconds and press 'did it work?'; if it shows "
                               "nothing, another app may hold the camera.", "warn")
             self.root.after(10000, verify)
-        except Exception as e:
-            messagebox.showerror(APP, str(e))
 
     def _stop_webcam(self) -> None:
         video.stop_webcam()
@@ -1344,33 +1357,6 @@ class App:
                  "can freeze or crash the game.")
         self.reswarn.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(12, 0))
 
-        # The neural consumer (feeder route only). "Two DLSS 5 on top of each
-        # other" is Deep Fried Chicken with passes=2; the feeder's author now
-        # recommends it over the renodx add-on. Exactly one consumer per folder.
-        self.lbl_consumer = row(14, "neural add-on")
-        self.cb_consumer = ttk.Combobox(inner, state="readonly",
-                                        values=[t for _, t in CONSUMERS])
-        self.cb_consumer.current(0)
-        self.cb_consumer.bind("<<ComboboxSelected>>", self._on_consumer)
-        self.consumer_box = tk.Frame(inner, bg=PANEL)
-        self.btn_consumer = ttk.Button(self.consumer_box, text="pick its folder",
-                                       command=self._pick_consumer)
-        self.btn_consumer.pack(side="left")
-        tk.Label(self.consumer_box, text="passes", bg=PANEL, fg=DIM,
-                 font=font(9)).pack(side="left", padx=(12, 4))
-        self.passes = tk.IntVar(value=1)
-        self.sp_passes = tk.Spinbox(self.consumer_box, from_=1, to=30, width=3,
-                                    textvariable=self.passes, bg=FIELD, fg=TXT,
-                                    buttonbackground=FIELD, relief="flat",
-                                    font=font(10), insertbackground=AMBER)
-        self.sp_passes.pack(side="left")
-        self.consumer_dir: Path | None = None
-        self.consumerhint = tk.Label(
-            inner, bg=PANEL, fg=DIM, font=font(8), anchor="w", justify="left",
-            text="renodx-dlss5 is fetched for you. Deep Fried Chicken and Alex's "
-                 "Toolkit come from their Discords - pick the folder you unpacked "
-                 "them into. one neural add-on per game: the others are removed. "
-                 "passes above 1 run the model that many times per frame (heavy).")
         inner.bind("<Configure>",
                    lambda e: self.reswarn.configure(wraplength=max(360, e.width - 8)))
 
@@ -1721,16 +1707,7 @@ class App:
             self.lbl_feederver.grid(row=11, column=0, sticky="w", padx=(0, 14), pady=5)
             self.cb_feederver.grid(row=11, column=1, columnspan=2, sticky="ew", pady=5)
             self.feederhint.grid(row=12, column=0, columnspan=3, sticky="w")
-            if CONSUMER_UI:
-                self.lbl_consumer.grid(row=14, column=0, sticky="w", padx=(0, 14), pady=(10, 5))
-                self.cb_consumer.grid(row=14, column=1, sticky="ew", pady=(10, 5))
-                self.consumer_box.grid(row=14, column=2, sticky="w", padx=(10, 0), pady=(10, 5))
-                self.consumerhint.grid(row=15, column=0, columnspan=3, sticky="w")
-                self._on_consumer()
-        else:
-            for w in (self.lbl_consumer, self.cb_consumer, self.consumer_box,
-                      self.consumerhint):
-                w.grid_remove()
+
         # OptiScaler is loaded by the game under one of several names; the
         # feeder's motion-vector provider sits in the same place on screen.
         # Row 3 carries whichever of the three this route actually needs:
@@ -1905,49 +1882,6 @@ class App:
 
     def _on_prov(self, _e=None) -> None:
         self.provider.set(list(reshade_ini.PROVIDERS.keys())[self.cb_prov.current()])
-
-    def _consumer_key(self) -> str:
-        if not CONSUMER_UI:
-            return "renodx"
-        i = self.cb_consumer.current()
-        return CONSUMERS[i][0] if 0 <= i < len(CONSUMERS) else "renodx"
-
-    def _on_consumer(self, _e=None) -> None:
-        key = self._consumer_key()
-        own = key != "renodx"
-        self.btn_consumer.configure(state="normal" if own else "disabled")
-        self.sp_passes.configure(state="normal" if key == "dfc" else "disabled")
-        # The renodx dropdown is meaningless when another add-on does the work.
-        self.cb_renodx.configure(state="disabled" if own else "readonly")
-        if own and self.consumer_dir is None:
-            try:
-                d = prefs.consumer_dir(key)
-                if d and Path(d).is_dir():
-                    self.consumer_dir = Path(d)
-                    self._log(f"> {CONSUMERS[self.cb_consumer.current()][1].split(' (')[0]}: "
-                              f"using the folder you picked before: {d}")
-            except Exception:
-                pass
-        if own and self.consumer_dir is None:
-            self._log("> pick the folder with the add-on's files before INSTALL "
-                      "(the button next to the list)", "warn")
-
-    def _pick_consumer(self) -> None:
-        key = self._consumer_key()
-        d = filedialog.askdirectory(title="folder with the add-on's files")
-        if not d:
-            return
-        found = installer.find_consumer(Path(d), key)
-        if not found:
-            need = ", ".join(installer.DFC_FILES) if key == "dfc" else installer.TOOLKIT_ADDON
-            messagebox.showwarning(APP, f"that folder does not hold the files:\n{need}")
-            return
-        self.consumer_dir = Path(d)
-        try:
-            prefs.remember_consumer_dir(key, self.consumer_dir)
-        except Exception:
-            pass
-        self._log(f"> neural add-on files: {', '.join(f.name for f in found)}", "ok")
 
     def _pick_renodx(self) -> None:
         p = filedialog.askopenfilename(
@@ -2164,10 +2098,6 @@ class App:
             feed=feed,
             nr=nr,
             feeder_prerelease=self.cb_feederver.current() == 1,
-            consumer=self._consumer_key() if getattr(self, "route", None) == dlss.FEEDER else "renodx",
-            consumer_dir=(self.consumer_dir if getattr(self, "route", None) == dlss.FEEDER
-                          and self._consumer_key() != "renodx" else None),
-            passes=max(1, min(30, int(self.passes.get() or 1))),
             feeder_tag=(self.feeder_tags[self.cb_feederver.current() - 2]
                         if self.cb_feederver.current() >= 2 else ""),
             dxvk=self.dxvk.get(),
@@ -2183,12 +2113,6 @@ class App:
     # ---------------------------------------------------------------- actions
     def _install(self) -> None:
         if self.busy or not self.game:
-            return
-        if getattr(self, "route", None) == dlss.FEEDER and self._consumer_key() != "renodx" \
-                and not self.consumer_dir:
-            messagebox.showinfo(APP, "pick the folder with the neural add-on's files "
-                                     "first (Discord download), or switch the "
-                                     "neural add-on back to renodx-dlss5")
             return
         self.busy = True
         self.btn_next.config(state="disabled", text="installing")
@@ -2335,6 +2259,14 @@ class App:
                     self._show_components(payload)
                 elif kind == "done":
                     self._finish_ok(payload)
+                elif kind == "cameras":
+                    cams, then = payload
+                    self._cameras_found(cams, then)
+                elif kind == "webcam_started":
+                    self._webcam_started(*payload)
+                elif kind == "webcam_failed":
+                    self._log(f"!! webcam: {payload}", "err")
+                    messagebox.showerror(APP, payload)
                 elif kind == "processed":
                     self._idle()
                     self.pblbl.config(text="")
@@ -2493,28 +2425,7 @@ class App:
                           f"the feed")
             else:
                 self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
-            key = self._consumer_key()
-            if key == "dfc":
-                self._log("   3. neural rendering is Deep Fried Chicken's: its own tab "
-                          "in the overlay shows ARMED when it works (DISARMED / "
-                          "CONFLICT / FAILED mean it does not - 'did it work?' "
-                          "reads why)")
-                self._log("   !  its first run adds itself to ReShade's startup list "
-                          "and asks for ONE more restart - normal")
-                n = max(1, int(self.passes.get() or 1))
-                if n > 1:
-                    self._log(f"   !  passes={n}: the model runs {n} times per frame "
-                              f"- expect the frame-time cost to multiply; drop to 1 "
-                              f"if it stutters", "warn")
-                else:
-                    self._log("   !  1 pass is the starting point; more passes = "
-                              "the model again on its own output, at that much "
-                              "more cost")
-            elif key == "toolkit":
-                self._log("   3. neural rendering is Alex's Toolkit's: use its own "
-                          "overlay tab (2-pass cascade)")
-            else:
-                self._log("   3. turn on neural rendering in the DLSS 5 panel")
+            self._log("   3. turn on neural rendering in the DLSS 5 panel")
             self._log("   4. turn OFF the game's own MSAA/SSAA")
             self._log("   5. NVIDIA Smooth Motion and this feeder do not mix - "
                       "turn it off for this game if the picture flickers")

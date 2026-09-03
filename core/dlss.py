@@ -533,8 +533,7 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
              "an older dlss5-dx11-bridge.addon64 is removed - the two conflict"),
     FEEDER: ("always DLAA; the game's own DLSS is ignored",
              "NVIDIA Smooth Motion off",
-             "not with the bridge or renodx-dlss add-on in the same folder",
-             "exactly one neural add-on: renodx-dlss5, Deep Fried Chicken or Alex's Toolkit - with two of them loaded the second one does nothing, silently"),
+             "not with the bridge or renodx-dlss add-on in the same folder"),
     RENODX: ("not with the renodx-dlss5 add-on, the feeder or the bridge in "
              "the folder - both hook NGX",
              "reported not working in many games; nothing to tune if it does "

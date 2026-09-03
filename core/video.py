@@ -686,21 +686,23 @@ def start_webcam(folder: Path, camera: str, size: str = "1280x720", fps: int = 3
         raise RuntimeError("ffmpeg is not in the player's tools folder yet - "
                            "run one download first, or press 'set up the video "
                            "player' again")
-    args = [str(ff), "-hide_banner", "-loglevel", "error", "-f", "dshow",
-            "-rtbufsize", "64M", "-video_size", size, "-framerate", str(fps),
-            "-i", f"video={camera}",
-            "-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-            "-g", str(fps), "-pix_fmt", "yuv420p", "-f", "mpegts",
-            f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"]
-    _webcam_proc = subprocess.Popen(args, cwd=str(tools_dir(folder)),
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    def command(requested: bool) -> list[str]:
+        cam_opts = (["-video_size", size, "-framerate", str(fps)] if requested else [])
+        return ([str(ff), "-hide_banner", "-loglevel", "error", "-f", "dshow",
+                 "-rtbufsize", "64M"] + cam_opts +
+                ["-i", f"video={camera}",
+                 "-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                 "-g", str(fps), "-pix_fmt", "yuv420p", "-f", "mpegts",
+                 f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"])
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    _webcam_proc = subprocess.Popen(command(True), cwd=str(tools_dir(folder)),
+                                    creationflags=flags)
     import time
     time.sleep(2.0)
     if _webcam_proc.poll() is not None:
         # The size/rate was refused: try the camera's own default.
-        args = [a for a in args if a not in ("-video_size", size, "-framerate", str(fps))]
-        _webcam_proc = subprocess.Popen(args, cwd=str(tools_dir(folder)),
-                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        _webcam_proc = subprocess.Popen(command(False), cwd=str(tools_dir(folder)),
+                                        creationflags=flags)
         time.sleep(2.0)
         if _webcam_proc.poll() is not None:
             _webcam_proc = None
@@ -738,7 +740,8 @@ def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
         fm = re.search(r"frame (\d+) delivered", rest)
         if fm:
             frames = max(frames, int(fm.group(1)))
-        if "MV probe" in rest and "non-zero" in rest and "0% non-zero" not in rest:
+        pm = re.search(r"(\d+)% non-zero", rest)
+        if "MV probe" in rest and pm and int(pm.group(1)) > 0:
             mv = True
     return frames, mv
 

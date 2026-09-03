@@ -2536,81 +2536,8 @@ shutil.rmtree(_logd, ignore_errors=True)
 shutil.rmtree(_d, ignore_errors=True)
 
 
-# ------------------------------------------------- 25. a neural consumer of your own
-section("25. a neural consumer of your own (Deep Fried Chicken, Alex's Toolkit)")
-_c = Path(tempfile.mkdtemp(prefix="dfc_files_"))
-for _n in installer.DFC_FILES:
-    (_c / _n).write_bytes(b"MZfake" if _n.endswith((".addon64", ".dll"))
-                          else b"enabled=1\r\npasses=1\r\narm=1\r\nextra=keep\r\n")
-check("find_consumer accepts a complete folder and rejects an empty one",
-      len(installer.find_consumer(_c, "dfc") or []) == 3
-      and installer.find_consumer(Path(tempfile.mkdtemp(prefix="empty_")), "dfc") is None)
-_d = Path(tempfile.mkdtemp(prefix="dfc_game_"))
-shutil.copyfile(X64, _d / "Game.exe")
-_g = games.manual(_d)
-_opt = installer.Options(consumer="dfc", consumer_dir=_c, passes=2)
-check("the plan names the consumer instead of the renodx step",
-      any("Deep Fried Chicken" in st for st in installer.plan(_g, _opt))
-      and not any("renodx" in st for st in installer.plan(_g, _opt)))
-_pv = installer.preview(_g, _opt)
-check("the preview lists the three files and no renodx add-on",
-      all(n in _pv.writes for n in installer.DFC_FILES) and installer.RENODX not in _pv.writes,
-      str(_pv.writes))
-check("a preview without a folder is blocked, not guessed",
-      installer.preview(_g, installer.Options(consumer="dfc")).blockers)
-_rep = installer.install(_g, _opt, on_log=lambda t: None)
-_files = {p.name for p in _d.iterdir()}
-check("install copies the three files and skips renodx-dlss5",
-      all(n in _files for n in installer.DFC_FILES) and installer.RENODX not in _files,
-      str(sorted(_files)))
-check("passes=2 lands in the cfg and every other line is byte-identical",
-      (_d / "deep-fried-chicken.cfg").read_bytes()
-      == b"enabled=1\r\npasses=2\r\narm=1\r\nextra=keep\r\n")
-_man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
-check("the manifest records the consumer and the passes",
-      _man.get("consumer") == "dfc" and _man.get("passes") == 2
-      and installer.options_from_manifest(_d).passes == 2)
-check("our own consumer files are not foreign hooks",
-      not any("chicken" in h.lower() for h in installer.other_ngx_hooks(_d, "feeder")),
-      str(installer.other_ngx_hooks(_d, "feeder")))
-installer.install(_g, installer.Options(consumer="renodx"), on_log=lambda t: None)
-_files = {p.name for p in _d.iterdir()}
-check("switching back to renodx removes the Chicken files and installs the add-on",
-      not any(n in _files for n in installer.DFC_FILES) and installer.RENODX in _files,
-      str(sorted(_files)))
-installer.uninstall(_g, on_log=lambda t: None)
-check("uninstall leaves only the game", sorted(p.name for p in _d.iterdir()) == ["Game.exe"])
-# a cfg without a pass key is left alone
-(_c / "deep-fried-chicken.cfg").write_bytes(b"enabled=1\r\narm=1\r\n")
-_rep = installer.install(_g, _opt, on_log=lambda t: None)
-check("no pass key: the cfg is untouched and a note says so",
-      (_d / "deep-fried-chicken.cfg").read_bytes() == b"enabled=1\r\narm=1\r\n"
-      and any("pass count key not found" in n for n in _rep.notes), str(_rep.notes))
-installer.uninstall(_g, on_log=lambda t: None)
-shutil.rmtree(_d, ignore_errors=True)
-shutil.rmtree(_c, ignore_errors=True)
-
-# the feed log's Chicken states
-_d = _diag_dir("diag_dfc_", feed=_FEED_OK.replace(
-    "[feed] frame 1 delivered", "[feed] Deep Fried Chicken 1.4.8: CONFLICT (another neural add-on loaded)\n[feed] frame 1 delivered"),
-    consumer="dfc")
-_r = diagnose.analyse(_d)
-check("CONFLICT is a failure that names the cause",
-      any("CONFLICT" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
-shutil.rmtree(_d, ignore_errors=True)
-_d = _diag_dir("diag_dfc_ok_", feed=_FEED_OK.replace(
-    "[feed] frame 1 delivered", "[feed] Deep Fried Chicken 1.4.8: ARMED, 2 passes\n[feed] frame 1 delivered"),
-    consumer="dfc")
-_r = diagnose.analyse(_d)
-check("ARMED with the pass count is reported",
-      any("armed" in o.lower() and "2 passes" in o for o in _levels(_r, "ok")), str(_levels(_r, "ok")))
-shutil.rmtree(_d, ignore_errors=True)
-check("the feeder's conflict lines say one neural add-on",
-      any("exactly one neural add-on" in c for c in dlss.CONFLICTS[dlss.FEEDER]))
-
-
 # ------------------------------------------------- 26. webcam and aside rules
-section("26. webcam helpers, and a stranger's renodx add-on survives Chicken")
+section("26. webcam helpers")
 _fake = ('[dshow @ 000001] "Brio 100" (video)\n[dshow @ 000001] "Microphone (Brio 100)" (audio)\n'
          '[dshow @ 000001] "OBS Virtual Camera" (video)\n')
 import re as _re
@@ -2625,23 +2552,6 @@ check("stop_webcam without a stream is harmless", video.stop_webcam() is None)
 check("no ffmpeg -> no cameras, no exception",
       video.list_cameras(Path(tempfile.mkdtemp(prefix="nocam_"))) == [])
 check("the webcam URL is local only", video.WEBCAM_URL.startswith("udp://@127.0.0.1:"))
-
-_c = Path(tempfile.mkdtemp(prefix="dfc2_"))
-for _n in installer.DFC_FILES:
-    (_c / _n).write_bytes(b"MZfake" if _n.endswith((".addon64", ".dll")) else b"enabled=1\r\n")
-_d = Path(tempfile.mkdtemp(prefix="dfc_aside_"))
-shutil.copyfile(X64, _d / "Game.exe")
-(_d / installer.RENODX).write_bytes(b"THEIRS")          # not from us
-_g = games.manual(_d)
-installer.install(_g, installer.Options(consumer="dfc", consumer_dir=_c), on_log=lambda t: None)
-check("a renodx add-on that is not ours is moved aside, not deleted",
-      not (_d / installer.RENODX).exists()
-      and (_d / (installer.RENODX + installer.ORPHAN_SUFFIX)).read_bytes() == b"THEIRS")
-installer.uninstall(_g, on_log=lambda t: None)
-check("uninstall leaves only the game (the aside copy is ours to remove)",
-      sorted(p.name for p in _d.iterdir()) == ["Game.exe"], str(sorted(p.name for p in _d.iterdir())))
-shutil.rmtree(_d, ignore_errors=True)
-shutil.rmtree(_c, ignore_errors=True)
 
 
 # ------------------------------------------------- 27. the webcam self-check
@@ -2663,10 +2573,6 @@ check("frames after the start time are counted, the old run is not",
 check("nothing after a start time in the future", video.feed_frames_since(_d, _t0 + 600) == (0, False))
 check("a missing log is (0, False)", video.feed_frames_since(Path(tempfile.mkdtemp(prefix="nolog_")), _t0) == (0, False))
 shutil.rmtree(_d, ignore_errors=True)
-from core import gui as _gui2  # noqa: E402
-check("the Discord neural add-ons are not offered in this release's UI", _gui2.CONSUMER_UI is False)
-_readme = (Path(__file__).parent / "README.md").read_text(encoding="utf8")
-check("the README does not advertise them either", "Deep Fried Chicken" not in _readme)
 
 section("RESULT")
 if FAILS:

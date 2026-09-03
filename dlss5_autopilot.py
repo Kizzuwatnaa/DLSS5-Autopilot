@@ -43,8 +43,7 @@ def _console() -> None:
 
 
 def cli(target: Path, remove: bool, check: bool, route: str = "",
-        dxvk: bool | None = None, game=None, consumer: str = "renodx",
-        consumer_dir: Path | None = None, passes: int = 1) -> int:
+        dxvk: bool | None = None, game=None) -> int:
     g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
@@ -108,8 +107,7 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     try:
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
-                                 dxvk=use_dxvk, consumer=consumer,
-                                 consumer_dir=consumer_dir, passes=passes, upscaler=sup.upscaler),
+                                 dxvk=use_dxvk, upscaler=sup.upscaler),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
