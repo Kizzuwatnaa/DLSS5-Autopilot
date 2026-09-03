@@ -3,8 +3,9 @@
 This tool never contacts a private server. It stays within these hosts:
     reshade.me
     raw.githubusercontent.com   (crosire/reshade-shaders)
-    api.github.com / github.com (DLSS5-Feeder, rhi-repo, dgVoodoo2)
-    codeload.github.com         (LumeniteFX)
+    api.github.com / github.com (DLSS5-Feeder, rhi-repo, dgVoodoo2,
+                                 DLSS5-Reshade-AIO)
+    codeload.github.com         (LumeniteFX, vort_Shaders)
 """
 from __future__ import annotations
 
@@ -40,6 +41,21 @@ UPSTREAM_ASSET = "nvngx.dll.addon64"
 # works when the 60-an-hour allowance is spent and nothing is cached yet.
 UPSTREAM_LATEST = ("https://github.com/matiasLombo/neural-upstream/releases/"
                    "latest/download/" + UPSTREAM_ASSET)
+STANDALONE_API = ("https://api.github.com/repos/kibblerz/DLSS5-Reshade-AIO/"
+                  "releases/latest")
+# kibblerz's standalone add-on ships three loose assets. The plain nvngx.dll
+# is its caller-identity bridge: without it beside the add-on nothing
+# initialises ("required private runtime dependency missing" in its log).
+STANDALONE_ASSETS = ("standalone-dlssnr.addon64", "nvngx.dll", "DLSS5_AIO_Feed.fx")
+STANDALONE_LATEST = ("https://github.com/kibblerz/DLSS5-Reshade-AIO/releases/"
+                     "latest/download/")
+# Vortigern's VORT shaders (MIT). vort_Motion.fx is the optical-flow provider
+# the standalone add-on schedules for real motion vectors; without it the
+# add-on runs on zero-motion guides. The whole-repo zip, as with LumeniteFX:
+# the .fx needs a dozen .fxh includes and a texture beside it, and codeload
+# is not rate limited.
+VORT_ZIP = "https://codeload.github.com/vortigern11/vort_Shaders/zip/refs/heads/main"
+VORT_ZIP_NAME = "vort_Shaders-main.zip"
 
 # None = take the newest build from the mirror. On the feeder route the pick
 # is narrowed by renodx_for_feeder(): the feeder's stable release only works
@@ -224,6 +240,30 @@ def resolve_upstream() -> tuple[str, str]:
     raise RuntimeError(f"The neural-upstream release has no {UPSTREAM_ASSET} asset.")
 
 
+def resolve_standalone() -> tuple[str, dict[str, str]]:
+    """Latest DLSS5-Reshade-AIO release: (tag, {filename: url}).
+
+    The three release assets plus the VORT shader zip. Same fallback as
+    neural-upstream: with the API out of reach and nothing cached, GitHub's
+    "latest" download redirect still resolves each asset by name.
+    """
+    urls = {VORT_ZIP_NAME: VORT_ZIP}
+    try:
+        rel = _json(STANDALONE_API)
+    except Exception:
+        for name in STANDALONE_ASSETS:
+            urls[name] = STANDALONE_LATEST + name
+        return "latest", urls
+    assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
+    missing = [n for n in STANDALONE_ASSETS if n not in assets]
+    if missing:
+        raise RuntimeError("The DLSS5-Reshade-AIO release is missing "
+                           f"{', '.join(missing)}.")
+    for name in STANDALONE_ASSETS:
+        urls[name] = assets[name]
+    return rel.get("tag_name", "?"), urls
+
+
 def _ver_key(tag: str, prefix: str) -> tuple:
     """'dlss-310.8.0' -> (310, 8, 0), a sortable key."""
     raw = tag[len(prefix):].lstrip("-")
@@ -250,6 +290,7 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
         for prefix, fam in (("renodx-dlss5", "renodx"),
                             ("renodx-dlss-SF", "renodx_sf"),
                             ("dlssnr", "dlssnr"),
+                            ("dlssg", "dlssg"),
                             ("dlss-", "dlss")):
             if not tag.startswith(prefix):
                 continue

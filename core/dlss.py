@@ -1,6 +1,6 @@
 """Does this game ship its own DLSS, and which install path suits it?
 
-This decides between six ways of getting DLSS 5 neural rendering into a
+This decides between seven ways of getting DLSS 5 neural rendering into a
 game. Getting it right matters: the feeder path is always DLAA and needs
 motion-vector shaders, whereas a game with its own DLSS can be hooked
 directly and keeps its own Quality/Balanced/Performance modes.
@@ -41,6 +41,14 @@ directly and keeps its own Quality/Balanced/Performance modes.
              any DLSS in the game, on D3D11/D3D12/Vulkan/OpenGL, and is the
              only way in for 32-bit games (through its host64 helper).
 
+    STANDALONE kibblerz's standalone-dlssnr add-on (DLSS5-Reshade-AIO). Its
+             own feed and its own private NGX session - no feeder, no renodx
+             add-on. Copies the back buffer at Present, runs the network,
+             then DLAA at native resolution or DLSS Super Resolution when the
+             game renders below it, frame generation on top, and shows the
+             result in a topmost window of its own. Works with or without
+             DLSS in the game. Experimental: the window trick is fragile.
+
 DirectX 10 is supported by none of them: the feeder dropped it and nothing
 else hooks D3D10.
 """
@@ -51,7 +59,8 @@ from pathlib import Path
 
 NATIVE, BRIDGE, FEEDER, OPTI, RENODX = "native", "bridge", "feeder", "optiscaler", "renodx"
 UPSTREAM = "upstream"
-ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER)
+STANDALONE = "standalone"
+ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE)
 
 # Streamline is NVIDIA's own plugin layer; if a game ships it, it ships DLSS.
 # These are never files this tool installs, so they are unambiguous.
@@ -265,6 +274,10 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
             return False, "the game must already use DLSS"
         return True, ("runs the network before the game's DLSS, at render "
                       "resolution - cheaper; days old, two games tested")
+    if route == STANDALONE:
+        return True, ("own feed: DLAA at native resolution, DLSS SR below it, "
+                      "frame generation; experimental - presents through a "
+                      "window of its own")
     if route == RENODX:
         return True, "new and unproven - reported not working in many games; try the others first"
     if route == BRIDGE:
@@ -393,7 +406,7 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
     # 64-bit D3D11 / D3D12 / unknown-but-DXGI from here on.
     if s.native_dlss:
         if api == "DX11":
-            s.options = [BRIDGE, OPTI, FEEDER, RENODX]
+            s.options = [BRIDGE, OPTI, FEEDER, STANDALONE, RENODX]
             s.recommended = BRIDGE
             s.reason = ("This game has its own DLSS but renders with D3D11, "
                         "which the add-on cannot hook directly. The bridge "
@@ -403,7 +416,8 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
                         "D3D11. The renodx-dlss add-on is new and has not "
                         "proven itself in the field yet.")
         else:                              # DX12 or unknown -> assume DXGI/D3D12
-            s.options = [NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, RENODX]
+            s.options = [NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE,
+                         RENODX]
             s.recommended = NATIVE
             s.reason = ("This game ships its own DLSS and renders with D3D12, "
                         "so the DLSS 5 add-on hooks it directly. No synthetic "
@@ -422,7 +436,7 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
         # RTX 50 to OptiScaler); the bridge and renodx-dlss are unchanged.
         # Vulkan is not offered: this tool installs OptiScaler as a DXGI
         # proxy, which a Vulkan game never loads.
-        s.options = [FEEDER, OPTI, BRIDGE, RENODX]
+        s.options = [FEEDER, OPTI, BRIDGE, STANDALONE, RENODX]
         s.recommended = FEEDER
         s.reason = (f"No DLSS in this game, but it ships "
                     f"{UPSCALER_NAMES[s.upscaler]} "
@@ -436,13 +450,15 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
                     f"all. The bridge and the renodx-dlss add-on are the "
                     f"less proven alternatives.")
         return s
-    s.options = [FEEDER, BRIDGE, RENODX]
+    s.options = [FEEDER, BRIDGE, STANDALONE, RENODX]
     s.recommended = FEEDER
     s.reason = ("No DLSS in this game. The feeder builds a DLAA contract from "
                 "ReShade's depth and shader motion vectors - the most proven "
                 "way. The bridge can instead build one from the driver's "
-                "optical flow. The renodx-dlss add-on is the newest and least "
-                "proven of the three.")
+                "optical flow. standalone-dlssnr brings its own feed with "
+                "real DLSS upscaling and frame generation, but presents "
+                "through a window of its own - experimental. The renodx-dlss "
+                "add-on is the least proven of the four.")
     return s
 
 
@@ -453,6 +469,7 @@ LABELS = {
     OPTI: "optiscaler - replace the upscaler, model resolution dial",
     BRIDGE: "bridge - private D3D12 session",
     FEEDER: "feeder - synthetic DLAA contract",
+    STANDALONE: "standalone-dlssnr - own feed, DLAA or DLSS SR, frame generation",
 }
 
 BLURB = {
@@ -483,6 +500,15 @@ BLURB = {
     FEEDER: ("Builds a DLAA contract from ReShade's depth buffer and "
              "shader-estimated motion vectors. Always DLAA, never upscaling. "
              "The only route for 32-bit and OpenGL games."),
+    STANDALONE: ("kibblerz's standalone-dlssnr add-on does the whole pipeline "
+                 "itself: its own feed (VORT motion vectors, ReShade depth), "
+                 "the network, then DLAA when the game runs at the monitor's "
+                 "resolution or real DLSS Super Resolution when it runs "
+                 "below it, and frame generation on top - no feeder, no "
+                 "renodx add-on, and the game needs no DLSS of its own. The "
+                 "result is shown through a topmost window of its own, which "
+                 "is the fragile part: change resolution or display mode and "
+                 "it needs a restart. F10 compares. Experimental."),
 }
 
 # What must NOT sit in the folder or run beside each route, and what breaks
@@ -512,4 +538,10 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
              "the folder - both hook NGX",
              "reported not working in many games; nothing to tune if it does "
              "nothing, switch route"),
+    STANDALONE: ("the game's own DLSS, frame generation and anti-aliasing "
+                 "must be OFF - it brings its own",
+                 "presents through its own topmost window; resolution or "
+                 "display-mode changes need a restart",
+                 "not with the renodx add-on, OptiScaler or neural-upstream "
+                 "in the folder"),
 }

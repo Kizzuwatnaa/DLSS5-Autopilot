@@ -193,6 +193,23 @@ def write_addon_only_ini(dir_: Path) -> None:
     ini.save(p)
 
 
+def write_shader_paths(game_dir: Path) -> None:
+    r"""Search paths and add-on loading, but no technique in any preset.
+
+    For an add-on that schedules its own shaders (standalone-dlssnr renders
+    vort_MotionEffects and DLSS5_AIO_Feed inside its Present callback):
+    ReShade only has to be able to FIND them. Listing them in the preset as
+    well would run both a second time in the ordinary effect pass.
+    """
+    p = game_dir / "ReShade.ini"
+    ini = Ini.load(p)
+    ini.set_default("GENERAL", "EffectSearchPaths", r".\reshade-shaders\Shaders\**")
+    ini.set_default("GENERAL", "TextureSearchPaths", r".\reshade-shaders\Textures\**")
+    ini.set_default("GENERAL", "PresetPath", r".\ReShadePreset.ini")
+    ini.set_default("ADDON", "AddonPath", ".\\")
+    ini.save(p)
+
+
 def enable_renodx_dlss_nr(game_dir: Path) -> None:
     """Ask ShortFuse's renodx-dlss add-on for neural rendering up front.
 

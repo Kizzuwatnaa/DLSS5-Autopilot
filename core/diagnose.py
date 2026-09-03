@@ -11,6 +11,9 @@ Which log matters depends on the route:
     bridge   dlss5-bridge writes into ReShade.log
     native   nothing but ReShade.log - the add-on hooks the game's own calls
     upstream the same: neural-upstream shows its state in its overlay tab
+    standalone LOCALAPPDATA/RHI/Logs/standalone-dlssnr.log - outside the game
+             folder, and ONE file for every game the add-on ever ran in, so
+             only its last session is read
 
 A log older than the install is from a previous setup and is ignored rather
 than reported as if it described the current one.
@@ -23,6 +26,7 @@ bug report arrived carrying exactly that and nothing else.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -47,6 +51,25 @@ def _upstream_named(name: str) -> bool:
     low = name.strip().lower()
     return (low == UPSTREAM_ADDON_NAME.lower() or "pre-upscale" in low
             or "upstream" in low)
+
+
+# What kibblerz's standalone-dlssnr registers as. Its NAME export carries
+# the build ("Standalone DLSS-NR + SR 1.7.17-early-proxy", read from the
+# 1.7.17 binary), so the match is on the prefix. It logs outside the game
+# folder, one file for every game; a session starts with "... attached;".
+STANDALONE_ADDON_NAME = "Standalone DLSS-NR + SR"
+STANDALONE_PANEL = "'Standalone DLSS-NR + SR' add-on tab"
+STANDALONE_LOG = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
+                  / "RHI" / "Logs" / "standalone-dlssnr.log")
+_STANDALONE_SESSION = " attached; requested profile="
+# The add-on's own words for the runtime set it loads privately being
+# incomplete (README troubleshooting table, and the binary's strings).
+_STANDALONE_NO_RUNTIME = "required private runtime dependency missing"
+
+
+def _standalone_named(name: str) -> bool:
+    low = name.strip().lower()
+    return "standalone dlss-nr" in low or "standalone-dlssnr" in low
 
 # The shaders the feed actually runs. ReShade compiles every .fx in the
 # folder, and the lumenite pack ships a dozen the feed never uses; a compile
@@ -359,7 +382,8 @@ def analyse(install_dir: Path) -> Report:
     # not by timestamps: reinstalling bumps the manifest and would make every
     # existing log look stale, while a feeder log left behind after switching
     # to native would otherwise be reported as if it were current.
-    feeder_route = rep.route not in ("native", "bridge", "renodx", "upstream")
+    feeder_route = rep.route not in ("native", "bridge", "renodx", "upstream",
+                                     "standalone")
     if feeder_route:
         text = _tail(feed)
         htext = _tail(host, 150_000)
@@ -394,7 +418,8 @@ def analyse(install_dir: Path) -> Report:
     # Another NGX hook in the folder is a conflict whatever the logs say.
     try:
         from . import installer as _inst
-        hooks = _inst.other_ngx_hooks(install_dir) if rep.route != "optiscaler" \
+        hooks = _inst.other_ngx_hooks(install_dir, rep.route) \
+            if rep.route != "optiscaler" \
             else [n for n in _inst.other_ngx_hooks(install_dir)
                   if n.lower() not in ("optiscaler.ini", "nvngx.dll_dlssnr.dll")]
     except Exception:
@@ -450,10 +475,14 @@ def analyse(install_dir: Path) -> Report:
             want = "RenoDX DLSS"
         elif rep.route == "upstream":
             want = UPSTREAM_ADDON_NAME
+        elif rep.route == "standalone":
+            want = STANDALONE_ADDON_NAME
         else:
             want = NATIVE_ADDON_NAME
         if rep.route == "upstream":
             ours = [n for n in loaded if _upstream_named(n)]
+        elif rep.route == "standalone":
+            ours = [n for n in loaded if _standalone_named(n)]
         else:
             ours = [n for n in loaded if n.strip().lower() == want.lower()]
         # The feed log names the add-on it found; that counts as loaded too
@@ -490,6 +519,20 @@ def analyse(install_dir: Path) -> Report:
                     "nvngx.dll.addon64 belongs to the neural-upstream route. "
                     "Install this route again - it moves that add-on aside - "
                     "or switch to the neural-upstream route.")
+        elif rep.route == "standalone" and any(
+                n.strip().lower() == NATIVE_ADDON_NAME.lower() for n in others):
+            rep.add(BAD, "Two add-ons process the frame: standalone-dlssnr and "
+                         "the renodx-dlss5 add-on.",
+                    "standalone-dlssnr runs the network itself on its own NGX "
+                    "session; renodx-dlss5 runs it again on the game's. Install "
+                    "this route again - it removes renodx-dlss5.addon64 - or "
+                    "switch route.")
+        elif rep.route != "standalone" and any(_standalone_named(n) for n in others):
+            rep.add(BAD, "Two add-ons process the frame: the DLSS 5 add-on and "
+                         "standalone-dlssnr.",
+                    "standalone-dlssnr.addon64 (with its nvngx.dll) belongs to "
+                    "the standalone route. Install this route again - it moves "
+                    "them aside - or switch to the standalone route.")
         elif others:
             rep.add(WARN, "Other ReShade add-ons are loaded: " + ", ".join(others),
                     "They share the swap chain with the DLSS 5 add-on. If the "
@@ -611,6 +654,11 @@ def analyse(install_dir: Path) -> Report:
                     "Changing resolution while neural rendering is on forces a "
                     "rebuild and is a common cause of freezes.")
 
+    # The standalone add-on keeps a log of its own, outside the folder; it
+    # says more than ReShade.log ever can on this route.
+    if rep.route == "standalone":
+        return _analyse_standalone(rep, since, bool(rtext))
+
     # --- the decisive part, from whichever log has it --------------------
     joined = "\n".join(x for x in (text, htext, rtext) if x)
     # The feeder's own crash handler: "### CRASH RECORDED ###  exception
@@ -707,6 +755,118 @@ def analyse(install_dir: Path) -> Report:
     return rep
 
 
+def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
+    """Read the standalone add-on's own log and say what it got to.
+
+    Phrases are the add-on's (README troubleshooting table and the strings
+    in its 1.7.17 binary): "standalone contract ready" is the feature set
+    created, "on-present frame N" is a frame through the pipeline,
+    "standalone pipeline FAILED at <stage>" names the stage that died.
+    """
+    p = STANDALONE_LOG
+    text = _tail(p, 200_000) if p.is_file() else ""
+    if not text:
+        rep.add(WARN if reshade_ran else INFO,
+                "The add-on has not written its own log yet.",
+                f"standalone-dlssnr writes {p} the moment it attaches. ReShade "
+                f"loaded, so if the game ran and the file is not there, the "
+                f"add-on never initialised: check standalone-dlssnr.addon64 "
+                f"AND nvngx.dll are beside the executable (antivirus), then "
+                f"install again." if reshade_ran else
+                f"standalone-dlssnr writes {p} the moment it attaches; play "
+                f"once and check again.")
+        rep.verdict = ("Add-on loaded, but its own log has nothing yet - play "
+                       "once and check again.")
+        return rep
+    try:
+        rep.log_time = datetime.fromtimestamp(p.stat().st_mtime).strftime("%d %b %H:%M")
+    except OSError:
+        pass
+    if since and not _fresh(p, since):
+        rep.add(WARN, "The standalone-dlssnr log predates this install.",
+                "It is one file for every game the add-on ran in, and it was "
+                "last written before this install. Play once and check again.")
+        rep.verdict = "Installed after the last run - play once and check again."
+        return rep
+    # One log for every game: only the last session can describe this one.
+    cut = text.rfind(_STANDALONE_SESSION)
+    if cut >= 0:
+        text = text[text.rfind("\n", 0, cut) + 1:]
+
+    if _STANDALONE_NO_RUNTIME in text:
+        rep.add(BAD, "The add-on found no private runtime beside it.",
+                "Its log says 'required private runtime dependency missing': "
+                "nvngx.dll (the caller bridge) as well as the add-on, plus "
+                "nvngx_dlssnr.dll and nvngx_dlss.dll, must all sit beside the "
+                "executable. Installing again puts every one of them back; "
+                "antivirus quarantine is the usual reason one is gone.")
+        rep.verdict = "The add-on loaded but is missing a runtime file - reinstall."
+        return rep
+    if "NGX core: no _nvngx.dll found" in text:
+        rep.add(BAD, "The add-on found no NGX core in the NVIDIA driver.",
+                "It scans the driver store for _nvngx.dll and found none: "
+                "not an NVIDIA driver, or a very old one. Update the driver.")
+        rep.verdict = "No NGX core in the driver - update the NVIDIA driver."
+        return rep
+
+    if "same-frame VORT optical flow" in text:
+        rep.add(OK, "Motion vectors: VORT optical flow is feeding the network.")
+    elif "zero-motion" in text or "fallback guides" in text:
+        rep.add(WARN, "Running on zero-motion guides - expect ghosting.",
+                "The add-on did not get VORT and DLSS5_AIO_Feed.fx: check both "
+                "are under reshade-shaders\\Shaders (vort_Motion.fx with its "
+                "Includes folder) and that the ReShade overlay shows no "
+                "compile error for them. Installing again puts them back.")
+    if "DLSS-G runtime unavailable" in text:
+        rep.add(INFO, "Frame generation is off: no usable nvngx_dlssg.dll.",
+                "Neural rendering and DLAA/DLSS SR still run. The runtime "
+                "needs an RTX 40 or 50 card; installing again fetches it "
+                "when the mirror has one.")
+    elif "falling back to real frames" in text or "frame generation disabled" in text:
+        rep.add(WARN, "Frame generation failed and was switched off.",
+                text[text.rfind("DLSS-G"):][:160].splitlines()[0]
+                if "DLSS-G" in text else "")
+    if "native presentation" in text and "failed" in text:
+        rep.add(BAD, "The add-on's own output window could not be created.",
+                "It presents through a topmost window of its own; that "
+                "failed here. Try borderless instead of fullscreen, or the "
+                "'Early proxy initialization' option in its add-on tab for a "
+                "D3D12 game that hangs at start.")
+    if "waiting for a valid" in text and "shared frame" in text:
+        rep.add(WARN, "Vulkan: the add-on is waiting for a shared frame.",
+                "ReShade's Vulkan layer must be active, and at least one "
+                "effect loaded, for the frame handoff.")
+
+    failed = re.findall(r"standalone pipeline FAILED at ([^\n]+)", text)
+    contract = re.findall(r"standalone contract ready: ([^\n]+)", text)
+    frames = re.findall(r"on-present frame (\d+):", text)
+    if failed:
+        rep.add(BAD, f"The pipeline failed at {failed[-1].strip()[:160]}.",
+                "The add-on says which stage died; the usual ones are a "
+                "nvngx_dlssnr build that does not match the card and a "
+                "resolution change while it was running. Restart the game "
+                "with the resolution set before loading gameplay.")
+        rep.verdict = "The add-on's pipeline failed - see the stage it names."
+    elif frames:
+        rep.add(OK, f"Frames are going through the pipeline ({len(frames)} "
+                    f"logged, last was frame {frames[-1]}).")
+        if contract:
+            rep.add(INFO, "Active contract: " + contract[-1].strip()[:200])
+        rep.verdict = "Working."
+    elif contract:
+        rep.add(WARN, "The feature set was created but no frame was logged.",
+                "Contract: " + contract[-1].strip()[:200] + ". Play a little "
+                "longer, or press F10 to see whether the proxy window shows.")
+        rep.verdict = "Set up, no frame through yet."
+    else:
+        rep.add(WARN, "The add-on attached but never reached a contract.",
+                f"Open the {STANDALONE_PANEL} in the ReShade overlay: it "
+                f"reports the stage it is at and why. The tail of its log "
+                f"is in the bug report.")
+        rep.verdict = "Inconclusive - the add-on attached but built nothing."
+    return rep
+
+
 # ---------------------------------------------------------------------------
 # the bug report body
 # ---------------------------------------------------------------------------
@@ -741,6 +901,8 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     if proxy:
         names.append(proxy)
     names += _addons(man)
+    if route == "standalone":
+        names.append("nvngx.dll")
     if route != "optiscaler":
         names.append("ReShade.ini")
     names.append("nvngx_dlssnr.dll")
@@ -807,6 +969,9 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     parts.append(_block("dlss5-feed.log", _last_lines(feed, 20), 1400))
     if route == "optiscaler":
         parts.append(_block("OptiScaler.log", _last_lines(opti, 20), 900))
+    if route == "standalone":
+        parts.append(_block("standalone-dlssnr.log",
+                            _last_lines(_tail(STANDALONE_LOG, 100_000), 20), 900))
     if last_error:
         parts.append(f"\n**Last error**\n```\n{last_error[-900:]}\n```\n")
     parts.append(_block(

@@ -6,12 +6,18 @@ r"""Install engine: 64-bit, 32-bit and DX9 paths.
     renodx-dlss5.addon64        (feeder / native / bridge routes)
     renodx-dlss.addon64         (renodx route - ShortFuse's SF build)
     nvngx.dll.addon64           (upstream route - neural-upstream, no renodx add-on)
+    standalone-dlssnr.addon64   (standalone route - kibblerz's own feed, no renodx add-on)
+    nvngx.dll                   (standalone route - the add-on's caller-identity bridge)
     nvngx_dlssnr.dll
     nvngx_dlss.dll
+    nvngx_dlssg.dll             (standalone route - frame generation)
     ReShade.ini / ReShadePreset.ini / dlss5-feed.cfg
     reshade-shaders/Shaders/{headers, DLSS5_Feed.fx, lumenite_*.fx}
+    reshade-shaders/Shaders/{DLSS5_AIO_Feed.fx, vort_Motion.fx}   (standalone)
     reshade-shaders/Shaders/include/lumenite_*.fxh
+    reshade-shaders/Shaders/Includes/vort_*.fxh                    (standalone)
     reshade-shaders/Textures/lumenite_bluenoise256.png
+    reshade-shaders/Textures/vort_BlueNoise.png                    (standalone)
 
 32-bit: a 32-bit process cannot load 64-bit NGX, so a helper process is
 needed. The game gets 32-bit ReShade + addon32; host64/ holds its own 64-bit
@@ -32,7 +38,7 @@ from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, 
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
-from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, UPSTREAM
+from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, STANDALONE, UPSTREAM
 from .dlss import RENODX as ROUTE_RENODX   # the route; RENODX below is a file name
 
 MANIFEST = "dlss5-autopilot.json"
@@ -48,6 +54,21 @@ RENODX_SF = "renodx-dlss.addon64"
 # snippet only creates the feature for a caller whose path contains
 # "nvngx.dll", and under any other name it returns 0xBAD00002.
 UPSTREAM_ADDON = "nvngx.dll.addon64"
+# kibblerz's DLSS5-Reshade-AIO. The add-on runs the whole pipeline on a
+# private NGX session; the plain nvngx.dll beside it is its caller-identity
+# bridge - the same "the caller's path must contain nvngx.dll" rule that
+# neural-upstream satisfies with its file name. Without it the add-on logs
+# "required private runtime dependency missing" and does nothing. Three
+# files with nvngx.dll in the name, three routes: nvngx.dll.addon64
+# (upstream), nvngx.dll (standalone), nvngx.dll_dlssnr.dll (OptiScaler).
+STANDALONE_ADDON = "standalone-dlssnr.addon64"
+STANDALONE_BRIDGE = "nvngx.dll"
+STANDALONE_FX = "DLSS5_AIO_Feed.fx"
+DLSSG = "nvngx_dlssg.dll"
+# Vortigern's optical-flow shader the standalone add-on schedules for real
+# motion vectors; without it the add-on runs on zero-motion guides.
+VORT_FX = "vort_Motion.fx"
+VORT_TEXTURE = "vort_BlueNoise.png"
 
 # Other hooks on the same NGX entry points. A game with one of these plus
 # our add-on gets two things rewriting the same calls: flicker, frame-gen
@@ -56,17 +77,27 @@ UPSTREAM_ADDON = "nvngx.dll.addon64"
 OTHER_NGX_HOOKS = ("OptiScaler.ini", "nvngx.ini", "fakenvapi.ini",
                    "dlss-enabler.dll", "dlss-enabler-upscaler.dll",
                    "nvngx-wrapper.dll", "dlssg_to_fsr3_amd_is_better.dll",
-                   "dlssg_to_fsr3.ini", "nvngx.dll_dlssnr.dll")
+                   "dlssg_to_fsr3.ini", "nvngx.dll_dlssnr.dll",
+                   # NGX loads a plain nvngx.dll from the game folder before
+                   # the driver's: an OptiScaler installed by hand under its
+                   # old name, or the standalone route's caller bridge.
+                   STANDALONE_BRIDGE)
 
 
-def other_ngx_hooks(root: Path) -> list[str]:
-    """Files in the folder that belong to another DLSS/NGX hook."""
+def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
+    """Files in the folder that belong to another DLSS/NGX hook.
+
+    `path` is the route being looked at: the standalone route's own nvngx.dll
+    is part of that route, and a foreign hook on every other.
+    """
     found: list[str] = []
     try:
         names = {f.name.lower(): f.name for f in root.iterdir() if f.is_file()}
     except OSError:
         return found
     for n in OTHER_NGX_HOOKS:
+        if path == STANDALONE and n.lower() == STANDALONE_BRIDGE.lower():
+            continue
         if n.lower() in names:
             found.append(names[n.lower()])
     # A ReShade add-on we did not write - another RenoDX build, say - is
@@ -74,7 +105,8 @@ def other_ngx_hooks(root: Path) -> list[str]:
     for low, orig in names.items():
         if low.endswith(".addon64") and low not in (
                 "dlss5-feed.addon64", "dlss5-bridge.addon64",
-                RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower()):
+                RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
+                STANDALONE_ADDON.lower()):
             found.append(orig)
     return found
 
@@ -85,7 +117,7 @@ def hook_warning(root: Path, path: str) -> str:
         found = [n for n in other_ngx_hooks(root) if n.lower() != "optiscaler.ini"
                  and n.lower() != "nvngx.dll_dlssnr.dll"]
     else:
-        found = other_ngx_hooks(root)
+        found = other_ngx_hooks(root, path)
     if not found:
         return ""
     return (f"another DLSS hook is already in this folder ({', '.join(found[:5])}"
@@ -99,6 +131,7 @@ HOST_DIR = "host64"
 
 SHADERS = Path("reshade-shaders") / "Shaders"
 INCLUDE = SHADERS / "include"
+VORT_INCLUDE = SHADERS / "Includes"    # VORT's own folder name, its .fx includes it
 TEXTURES = Path("reshade-shaders") / "Textures"
 
 BRIDGE_ADDON = "dlss5-bridge.addon64"
@@ -219,6 +252,14 @@ def reliability(g: games.Game, path: str = FEEDER,
                       "before the game's own DLSS. Days old, tested on two "
                       "games by its author (GTA V Enhanced, Bright Memory "
                       "Infinite).")
+    if path == STANDALONE:
+        return EXPERIMENTAL, ("standalone-dlssnr does everything itself - own "
+                              "feed, DLAA or DLSS Super Resolution, frame "
+                              "generation - and shows the result through a "
+                              "topmost window of its own. That window trick "
+                              "is the fragile part: resolution or display-mode "
+                              "changes need a restart, and some games hang at "
+                              "start. Days old, few games tested.")
     if path == ROUTE_RENODX:
         if g.api == "DX9":
             return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
@@ -335,9 +376,11 @@ def wants_dxvk(g: games.Game) -> str | None:
 def uses_dxvk(g: games.Game, opt: "Options") -> bool:
     """Is this install going through DXVK? D3D11 or D3D9, on the ReShade
     routes only - OptiScaler is itself the dxgi.dll DXVK would need to be,
-    and ShortFuse's renodx-dlss hooks D3D9 in-process."""
+    and ShortFuse's renodx-dlss hooks D3D9 in-process. The standalone add-on
+    reaches Vulkan only with an extra boundary shader and a per-launch layer
+    script; its D3D11 path is the tested one, so it stays on D3D11."""
     return (bool(opt.dxvk) and g.api in dxvk.APIS
-            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM))
+            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE))
 
 
 def via_dxvk(g: games.Game, opt: "Options") -> games.Game:
@@ -472,6 +515,16 @@ def plan(g: games.Game, opt: Options) -> list[str]:
         # add-on beside it (two NGX hooks), and the game's nvngx_dlss.dll is
         # never replaced: its DLSS is what the network feeds.
         return steps + ["neural-upstream", "nvngx_dlssnr.dll",
+                        "ReShade configuration"]
+
+    if opt.path == STANDALONE:
+        # The add-on brings its own feed and runs the network itself: no
+        # renodx add-on (it would process the frame twice), but the shader
+        # headers, its companion shader with VORT for motion vectors, and
+        # the three NVIDIA runtimes it loads privately.
+        return steps + ["ReShade shader headers", "standalone-dlssnr",
+                        "VORT Motion (motion vectors)", "nvngx_dlssnr.dll",
+                        "nvngx_dlss.dll", "nvngx_dlssg.dll",
                         "ReShade configuration"]
 
     if opt.path == FEEDER:
@@ -786,12 +839,36 @@ def preview(g: games.Game, opt: Options) -> Preview:
     dlss_dir = "" if (x64 or opt.path != FEEDER) else host
     if opt.path == UPSTREAM:
         write(UPSTREAM_ADDON)
+    elif opt.path == STANDALONE:
+        for h in sources.RESHADE_HEADERS:
+            write(rel(SHADERS, h))
+        write(STANDALONE_ADDON)
+        write(STANDALONE_BRIDGE)
+        write(rel(SHADERS, STANDALONE_FX))
+        if foreign_lumenite(root, preinstalled, marker=VORT_FX):
+            pv.warnings.append("VORT is already installed here - your copy "
+                               "is used, nothing duplicated")
+        else:
+            write(rel(SHADERS, VORT_FX))
+            listed = False
+            for m in _cached_zip_members(sources.VORT_ZIP_NAME) or []:
+                parts = m.split("/")[1:]        # drop the archive root
+                if (len(parts) == 3 and parts[0].lower() == "shaders"
+                        and parts[1].lower() == "includes"
+                        and parts[2].lower().endswith(".fxh")):
+                    add(pv.writes, rel(VORT_INCLUDE, parts[2]))
+                    listed = True
+            if not listed:
+                add(pv.writes, rel(VORT_INCLUDE, "vort_*.fxh"))
+            write(rel(TEXTURES, VORT_TEXTURE))
     else:
         write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
     write(rel(dlss_dir, DLSSNR))
     game_has = present(DLSS)
     if opt.path != UPSTREAM and not (x64 and game_has and opt.keep_game_dlss):
         write(rel(dlss_dir, DLSS))
+    if opt.path == STANDALONE and not (present(DLSSG) and opt.keep_game_dlss):
+        write(DLSSG)
 
     # 8/9/10) host64, ReShade configuration, the cfg
     if not x64 and opt.path == FEEDER:
@@ -941,13 +1018,18 @@ LUMENITE_INCLUDES = ("lumenite_Projections.fxh", "lumenite_Helpers.fxh",
 LUMENITE_TEXTURES = ("lumenite_bluenoise256.png",)
 
 
-def foreign_lumenite(root: Path, preinstalled=()) -> Path | None:
+def foreign_lumenite(root: Path, preinstalled=(),
+                     marker: str = LUMENITE_MARKER) -> Path | None:
     """A LumeniteFX the person installed themselves, anywhere under
     reshade-shaders - or None. A copy an earlier install of OURS wrote (in
-    the manifest) does not count: that one is overwritten as usual."""
+    the manifest) does not count: that one is overwritten as usual.
+
+    `marker` makes the same question askable of VORT (vort_Motion.fx): the
+    standalone route ships it, and a second copy beside the person's own is
+    two techniques of the same name and a red error in the overlay."""
     base = root / "reshade-shaders"
     try:
-        hits = sorted(base.rglob(LUMENITE_MARKER))
+        hits = sorted(base.rglob(marker))
     except OSError:
         return None
     ours = {str(Path(p)).replace("\\", "/").lower() for p in preinstalled}
@@ -1010,11 +1092,14 @@ def _previously_ours(root: Path) -> set:
 # means two of them try to establish a DLSS contract in the same process.
 # Only the add-ons themselves: a stray .cfg conflicts with nothing, and
 # removing one would be taking away a file that may well be the user's.
+# The standalone route's nvngx.dll is not an add-on, but NGX loads it from
+# the game folder ahead of the driver's own - as much a hook as any of these.
 ROUTE_ADDONS = {
     FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32),
     BRIDGE: (BRIDGE_ADDON,),
     ROUTE_RENODX: (RENODX_SF,),
     UPSTREAM: (UPSTREAM_ADDON,),
+    STANDALONE: (STANDALONE_ADDON, STANDALONE_BRIDGE),
 }
 
 
@@ -1024,7 +1109,9 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     # renodx-dlss5 is shared by the native, bridge and feeder routes, so it is
     # not in the table - but it, ShortFuse's build and neural-upstream all
     # hook NGX, and two loaded together fight over the same entry points.
-    if keep in (ROUTE_RENODX, UPSTREAM):
+    # The standalone add-on runs the network itself; renodx-dlss5 beside it
+    # would process the frame twice.
+    if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE):
         out.append((NATIVE, RENODX))
     return out
 
@@ -1161,7 +1248,8 @@ def options_from_manifest(root: Path) -> Options | None:
     if not data:
         return None
     path = data.get("path") or FEEDER
-    if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM):
+    if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM,
+                    STANDALONE):
         return None
     upscaler = str(data.get("upscaler") or "")
     return Options(
@@ -1648,6 +1736,58 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             rep.notes.append("neural-upstream runs the network itself, before "
                              "the game's DLSS: no renodx-dlss5 add-on on this "
                              "route, and the game's nvngx_dlss.dll is left alone")
+        elif opt.path == STANDALONE:
+            # VORT and the companion shader include ReShade.fxh, so the
+            # headers go in exactly as on the feeder route.
+            begin("ReShade shader headers")
+            for h in sources.RESHADE_HEADERS:
+                dest = root / SHADERS / h
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                _backup(dest, rep, root)
+                dest.write_bytes(net.fetch_text(sources.RESHADE_HEADERS_BASE + h))
+                rep.written.append(str(Path(SHADERS) / h))
+            log(f"      {', '.join(sources.RESHADE_HEADERS)}")
+
+            begin("standalone-dlssnr")
+            stag, surls = sources.resolve_standalone()
+            for name in sources.STANDALONE_ASSETS:
+                f = dl(surls[name], f"standalone-{stag}-{name}")
+                dest = (root / SHADERS / name) if name.endswith(".fx") else root / name
+                _copy(f, dest, rep, root)
+                log(f"      {dest.relative_to(root)}")
+            log(f"      standalone-dlssnr {stag}")
+            if stag == "latest":
+                log("      (GitHub's API was out of reach; took the newest "
+                    "release by its download redirect)")
+            rep.notes.append(f"standalone version: {stag}")
+            rep.components["standalone"] = stag
+            rep.notes.append("standalone-dlssnr runs its own feed and the network "
+                             "itself: no renodx add-on on this route. The "
+                             "nvngx.dll beside it is the add-on's caller bridge, "
+                             "not a driver file - uninstall removes it")
+
+            begin("VORT Motion (motion vectors)")
+            theirs = foreign_lumenite(root, rep.preinstalled, marker=VORT_FX)
+            if theirs:
+                rel_t = theirs.relative_to(root)
+                rep.notes.append(f"VORT is already installed at {rel_t.parent} "
+                                 f"- your copy is used, nothing duplicated")
+                rep.skipped.append("VORT (already installed)")
+                log(f"      already installed at {rel_t.parent} - using your "
+                    f"copy, no duplicate")
+            else:
+                z = dl(sources.VORT_ZIP, sources.VORT_ZIP_NAME)
+                _extract(z, "Shaders/" + VORT_FX, root / SHADERS / VORT_FX, rep, root)
+                rep.written.append(str(SHADERS / VORT_FX))
+                w = net.extract_tree(z, "Shaders/Includes", str(VORT_INCLUDE),
+                                     root, only_ext=(".fxh",))
+                for p_ in w:
+                    rep.written.append(str(p_.relative_to(root)))
+                _extract(z, "Textures/" + VORT_TEXTURE,
+                         root / TEXTURES / VORT_TEXTURE, rep, root)
+                rep.written.append(str(TEXTURES / VORT_TEXTURE))
+                log(f"      {VORT_FX} + {len(w)} includes + {VORT_TEXTURE} "
+                    f"(Vortigern, MIT)")
         else:
             sf = opt.path == ROUTE_RENODX
             addon_name = RENODX_SF if sf else RENODX
@@ -1780,6 +1920,36 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.notes.append(f"dlss version: {e['label']}")
                 rep.components["dlss"] = e["label"]
 
+        if opt.path == STANDALONE:
+            # Frame generation is optional to the add-on: with no
+            # nvngx_dlssg.dll it says so in its log and runs NR + DLAA/SR.
+            begin("nvngx_dlssg.dll")
+            fam = catalog.get("dlssg") or []
+            game_has_g = (root / DLSSG).is_file() and DLSSG not in rep.written
+            if game_has_g and opt.keep_game_dlss:
+                log("      a nvngx_dlssg.dll is already here, left untouched")
+                rep.skipped.append(DLSSG)
+            elif not fam:
+                log("      the mirror lists no nvngx_dlssg build - frame "
+                    "generation stays off")
+                rep.notes.append("frame generation needs nvngx_dlssg.dll, not "
+                                 "fetched (the mirror lists none); neural "
+                                 "rendering and DLAA/DLSS SR still run")
+                rep.skipped.append(DLSSG)
+            else:
+                e = sources.pick(fam, None)
+                f = dl(e["url"], f"dlssg-{e['label']}.zip")
+                _extract(f, DLSSG, root / DLSSG, rep, root)
+                rep.written.append(DLSSG)
+                log(f"      nvngx_dlssg {e['label']} (frame generation)")
+                rep.notes.append(f"dlssg version: {e['label']}")
+                rep.components["dlssg"] = e["label"]
+                if sm is not None and sm < 89:
+                    fg = ("frame generation needs an RTX 40 or 50 card; on "
+                          "this one the add-on falls back to real frames")
+                    log(f"      {fg}")
+                    rep.notes.append(fg)
+
         # --- 8) host64 --------------------------------------------------------
         if not x64 and opt.path == FEEDER:
             begin("host64 helper process")
@@ -1824,10 +1994,26 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "DLSS Frame Generation on, set its cadence to "
                                  "Quality (every frame) or expect stutter.")
             rep.written.append("ReShade.ini")
-            log("      add-on loading enabled (no shaders needed on this path)")
-            rep.notes.append("ReShade's overlay will report 'no .fx files found' "
-                             "on this route - normal, no shaders are used; the "
-                             "add-on tab is what matters")
+            if opt.path == STANDALONE:
+                # Search paths so ReShade can compile the two shaders; no
+                # technique in any preset - the add-on schedules them itself
+                # inside its Present callback, in the order it needs.
+                reshade_ini.write_shader_paths(root)
+                log("      shader search paths set, no technique enabled - the "
+                    "add-on runs DLSS5_AIO_Feed and VORT itself")
+                rep.notes.append("standalone-dlssnr: turn the game's own DLSS, "
+                                 "frame generation and anti-aliasing OFF. Game "
+                                 "resolution = the monitor's gives DLAA, a lower "
+                                 "one gives DLSS Super Resolution. F10 compares, "
+                                 "Home opens ReShade; leave DLSS5_AIO_Feed and "
+                                 "vort_MotionEffects unticked, the add-on runs "
+                                 "them. Its log is outside the game folder: "
+                                 "%LOCALAPPDATA%\\RHI\\Logs\\standalone-dlssnr.log")
+            else:
+                log("      add-on loading enabled (no shaders needed on this path)")
+                rep.notes.append("ReShade's overlay will report 'no .fx files found' "
+                                 "on this route - normal, no shaders are used; the "
+                                 "add-on tab is what matters")
 
         # --- 10) dlss5-feed.cfg ----------------------------------------------
         if opt.path == FEEDER:
@@ -1940,11 +2126,21 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             data = {}
     else:
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
-                 DLSSNR, DLSS,
+                 STANDALONE_ADDON, DLSSNR, DLSS, DLSSG,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME, "dxgi.dll", "opengl32.dll",
                  "D3D9.dll", "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
-                 str(SHADERS / FEEDER_FX)]
+                 str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),
+                 str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE)]
+        # A plain nvngx.dll is the standalone add-on's bridge only when the
+        # add-on is there too; on its own it could be somebody's OptiScaler.
+        if (root / STANDALONE_ADDON).is_file():
+            files.append(STANDALONE_BRIDGE)
+        try:
+            files += [str(VORT_INCLUDE / f.name)
+                      for f in (root / VORT_INCLUDE).glob("vort_*.fxh")]
+        except OSError:
+            pass
         files += [str(SHADERS / h) for h in sources.RESHADE_HEADERS]
         # LumeniteFX shaders/includes/texture we may have dropped in
         for d_ in (SHADERS, INCLUDE):
@@ -2094,8 +2290,8 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     # OptiScaler's zip alone brings D3D12_Optiscaler, DlssOverrides and
     # Licenses; deleting the files and leaving the folders looked like an
     # uninstall that "does not remove everything".
-    dirs: set[Path] = {root / INCLUDE, root / SHADERS, root / TEXTURES,
-                       root / "reshade-shaders"}
+    dirs: set[Path] = {root / INCLUDE, root / VORT_INCLUDE, root / SHADERS,
+                       root / TEXTURES, root / "reshade-shaders"}
     for rel in files + removed:
         p = root / rel
         for parent in p.parents:

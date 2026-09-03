@@ -2281,6 +2281,17 @@ class App:
             self._log("   2. neural rendering is enabled; the tab shows its status "
                       "and lets you tune intensity and style")
             self._log("   3. turn OFF the game's own MSAA/SSAA")
+        elif route == getattr(dlss, "STANDALONE", "standalone"):
+            self._log("   1. in the game turn OFF its own DLSS, frame generation "
+                      "and anti-aliasing - this add-on brings all three")
+            self._log("   2. it shows the result in its own window on top; set "
+                      "resolution and display mode BEFORE starting, changes "
+                      "need a restart")
+            self._log("   3. press Home for reshade, then the 'Standalone DLSS-NR + SR' "
+                      "tab: neural rendering and frame generation toggle there")
+            self._log("   4. F10 flips between the processed and the original picture")
+            self._log("   !  a lower in-game resolution than your monitor = DLSS "
+                      "super resolution up to native; same resolution = DLAA")
         elif route == getattr(dlss, "UPSTREAM", "upstream"):
             self._log("   !  reshade's overlay will say 'no .fx files found' - "
                       "normal on this route, it uses no shaders")

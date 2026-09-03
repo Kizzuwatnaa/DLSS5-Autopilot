@@ -27,8 +27,10 @@ LABELS = {
     "renodx_sf":  "DLSS 5 add-on (renodx-dlss SF)",
     "dlssnr":     "nvngx_dlssnr",
     "dlss":       "nvngx_dlss",
+    "dlssg":      "nvngx_dlssg",
     "bridge":     "dlss5-bridge",
     "upstream":   "neural-upstream",
+    "standalone": "standalone-dlssnr (DLSS5-Reshade-AIO)",
     "feeder":     "DLSS5-Feeder",
     "optiscaler": "OptiScaler",
 }
@@ -50,9 +52,11 @@ def _latest(name: str) -> str:
         latest = sources.resolve_bridge()[0]
     elif name == "upstream":
         latest = sources.resolve_upstream()[0]
+    elif name == "standalone":
+        latest = sources.resolve_standalone()[0]
     elif name == "feeder":
         latest = sources.resolve_feeder()[0]
-    elif name in ("renodx", "renodx_sf", "dlssnr", "dlss"):
+    elif name in ("renodx", "renodx_sf", "dlssnr", "dlss", "dlssg"):
         entries = sources.rhi_catalog().get(name) or []
         if entries:
             latest = entries[0]["label"]

@@ -2328,6 +2328,213 @@ check("uninstall leaves no lumenite files",
       not list((_d / "reshade-shaders").rglob("lumenite_*")) if (_d / "reshade-shaders").is_dir() else True)
 shutil.rmtree(_d, ignore_errors=True)
 
+section("23. the standalone-dlssnr route")
+# A 64-bit D3D12 game WITHOUT DLSS: the add-on brings its own feed, so it is
+# offered anyway - experimental, after the feeder and the bridge, and never
+# the recommendation.
+_d = Path(tempfile.mkdtemp(prefix="standalone_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d)
+_g.api = "DX12"
+_sup = dlss.detect(_g.install_dir, _g.folder, _g.api, _g.bitness)
+check("standalone is offered on a DX12 game without DLSS, after feeder and bridge",
+      dlss.STANDALONE in _sup.options
+      and _sup.options.index(dlss.STANDALONE) > _sup.options.index(dlss.FEEDER)
+      and _sup.options.index(dlss.STANDALONE) > _sup.options.index(dlss.BRIDGE),
+      str(_sup.options))
+check("standalone is never the recommendation", _sup.recommended != dlss.STANDALONE)
+_gd = _fake_game("standalone_dlss_")
+check("standalone is offered on DX12 and DX11 games with DLSS too",
+      dlss.STANDALONE in dlss.detect(_gd.install_dir, _gd.folder, "DX12", 64).options
+      and dlss.STANDALONE in dlss.detect(_gd.install_dir, _gd.folder, "DX11", 64).options
+      and dlss.detect(_gd.install_dir, _gd.folder, "DX12", 64, 120).recommended
+      != dlss.STANDALONE)
+shutil.rmtree(_gd.folder, ignore_errors=True)
+check("32-bit, Vulkan and OpenGL games are not offered standalone",
+      all(dlss.STANDALONE not in dlss.detect(_g.install_dir, _g.folder, api, bits).options
+          for api, bits in (("DX12", 32), ("DX11", 32), ("Vulkan", 64), ("OpenGL", 64))))
+_ok, _note = dlss.fit(dlss.STANDALONE, "DX12", False, None)
+check("fit says standalone is usable without DLSS in the game",
+      _ok and "DLAA" in _note, _note)
+check("standalone has a label, a blurb and a conflicts entry that says OFF",
+      dlss.STANDALONE in dlss.LABELS and dlss.STANDALONE in dlss.BLURB
+      and dlss.STANDALONE in dlss.CONFLICTS
+      and any("OFF" in c for c in dlss.CONFLICTS[dlss.STANDALONE])
+      and any("window" in c for c in dlss.CONFLICTS[dlss.STANDALONE]))
+check("the release lists the three assets and VORT",
+      set(sources.STANDALONE_ASSETS) == {installer.STANDALONE_ADDON,
+                                         installer.STANDALONE_BRIDGE,
+                                         installer.STANDALONE_FX}
+      and sources.VORT_ZIP_NAME.endswith(".zip"))
+
+_opt = installer.Options(path=dlss.STANDALONE)
+_steps = installer.plan(_g, _opt)
+check("the plan has no renodx step and lists the add-on, VORT and the three runtimes",
+      not any("renodx" in s for s in _steps) and "standalone-dlssnr" in _steps
+      and any("VORT" in s for s in _steps) and "nvngx_dlssnr.dll" in _steps
+      and "nvngx_dlss.dll" in _steps and "nvngx_dlssg.dll" in _steps, str(_steps))
+_pv = installer.preview(_g, _opt)
+check("the preview lists the add-on, nvngx.dll, the shader and no renodx add-on",
+      installer.STANDALONE_ADDON in _pv.writes
+      and installer.STANDALONE_BRIDGE in _pv.writes
+      and "reshade-shaders/Shaders/DLSS5_AIO_Feed.fx" in _pv.writes
+      and "reshade-shaders/Shaders/vort_Motion.fx" in _pv.writes
+      and installer.DLSSG in _pv.writes
+      and installer.RENODX not in _pv.writes and installer.RENODX_SF not in _pv.writes,
+      str(_pv.writes))
+_lvl, _why = installer.reliability(_g, dlss.STANDALONE)
+check("reliability is experimental and names the window trick",
+      _lvl == installer.EXPERIMENTAL and "window" in _why, _why)
+check("standalone does not go through DXVK",
+      not installer.uses_dxvk(_g, installer.Options(path=dlss.STANDALONE, dxvk=True)))
+try:
+    _rep = installer.install(_g, _opt, on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("install writes the add-on, nvngx.dll, nvngx_dlssnr and nvngx_dlss",
+          installer.STANDALONE_ADDON in _files and installer.STANDALONE_BRIDGE in _files
+          and installer.DLSSNR in _files and installer.DLSS in _files,
+          str(sorted(_files)))
+    check("install writes no renodx add-on",
+          installer.RENODX not in _files and installer.RENODX_SF not in _files
+          and installer.UPSTREAM_ADDON not in _files)
+    check("nvngx_dlssg.dll came from the mirror's dlssg family",
+          installer.DLSSG in _files
+          and bool((_rep.components or {}).get("dlssg")), str(_rep.components))
+    check("the companion shader, VORT and its includes are under reshade-shaders",
+          (_d / installer.SHADERS / installer.STANDALONE_FX).is_file()
+          and (_d / installer.SHADERS / installer.VORT_FX).is_file()
+          and (_d / installer.VORT_INCLUDE / "vort_Defs.fxh").is_file()
+          and (_d / installer.TEXTURES / installer.VORT_TEXTURE).is_file()
+          and (_d / installer.SHADERS / "ReShade.fxh").is_file())
+    check("the plan and the steps taken agree",
+          len(_steps) == len(installer.plan(_g, _opt))
+          and any("standalone version" in n for n in _rep.notes), str(_rep.notes))
+    _ini = (_d / "ReShade.ini").read_text(encoding="utf8")
+    check("ReShade.ini has the shader paths and no technique is enabled",
+          "EffectSearchPaths" in _ini and "AddonPath" in _ini
+          and "Techniques" not in _ini
+          and not (_d / "ReShadePreset.ini").exists(), _ini)
+    _man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+    check("the manifest records path standalone, its version and nvngx.dll",
+          _man.get("path") == "standalone"
+          and bool((_man.get("components") or {}).get("standalone"))
+          and installer.STANDALONE_BRIDGE in _man.get("files", [])
+          and installer.DLSSG in _man.get("files", []),
+          str(_man.get("components")))
+    check("the manifest round-trips the route",
+          installer.options_from_manifest(_d).path == dlss.STANDALONE)
+    check("our own nvngx.dll is not a foreign hook on this route",
+          installer.STANDALONE_BRIDGE not in installer.other_ngx_hooks(_d, dlss.STANDALONE)
+          and installer.STANDALONE_ADDON not in installer.other_ngx_hooks(_d, dlss.STANDALONE)
+          and installer.hook_warning(_d, dlss.STANDALONE) == "",
+          str(installer.other_ngx_hooks(_d, dlss.STANDALONE)))
+    check("but it IS one on the native route",
+          installer.STANDALONE_BRIDGE in installer.other_ngx_hooks(_d, dlss.NATIVE)
+          and installer.STANDALONE_BRIDGE in installer.other_ngx_hooks(_d)
+          and "nvngx.dll" in installer.hook_warning(_d, dlss.NATIVE),
+          str(installer.other_ngx_hooks(_d, dlss.NATIVE)))
+    check("the preview of a feeder install says it removes the standalone files",
+          any(installer.STANDALONE_BRIDGE in r for r in
+              installer.preview(_g, installer.Options(path=dlss.FEEDER)).removes))
+    installer.install(_g, installer.Options(path=dlss.FEEDER), on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("switching to feeder removes the add-on and nvngx.dll",
+          installer.STANDALONE_ADDON not in _files
+          and installer.STANDALONE_BRIDGE not in _files
+          and installer.FEEDER_ADDON64 in _files and installer.RENODX in _files,
+          str(sorted(_files)))
+    check("the feeder's own DLSS5_Feed.fx and the AIO shader do not both remain",
+          not (_d / installer.SHADERS / installer.STANDALONE_FX).exists())
+    installer.install(_g, _opt, on_log=lambda t: None)
+    _files = {p.name for p in _d.iterdir() if p.is_file()}
+    check("switching back removes the feeder and renodx-dlss5.addon64",
+          installer.FEEDER_ADDON64 not in _files and installer.RENODX not in _files
+          and installer.STANDALONE_ADDON in _files
+          and installer.STANDALONE_BRIDGE in _files, str(sorted(_files)))
+    installer.uninstall(_g, on_log=lambda t: None)
+    _left = sorted(p.name for p in _d.rglob("*") if p.is_file())
+    check("uninstall leaves only the game", _left == ["Game.exe"], str(_left))
+    check("uninstall removed the empty shader folders",
+          not (_d / "reshade-shaders").exists())
+except Exception as e:
+    check("standalone: installs", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
+# The diagnosis: the add-on's own log lives outside the game folder and is
+# shared by every game, so the test points diagnose at a synthetic one.
+_REG = ('INFO | Registered add-on "Standalone DLSS-NR + SR 1.7.17-early-proxy" '
+        'v1.7.17.0\n'
+        "INFO | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(...)\n")
+_ATTACH = ("Standalone DLSS-NR + SR 1.7.17-early-proxy attached; requested "
+           "profile=Auto model=1 NR=on early_proxy=disabled\n")
+_d = _diag_dir("diag_standalone_", addons=False, reshade=_REG, path="standalone",
+               files=["dxgi.dll", "standalone-dlssnr.addon64", "nvngx.dll"])
+(_d / "standalone-dlssnr.addon64").write_bytes(b"MZ")
+(_d / "nvngx.dll").write_bytes(b"MZ")
+_saved_log = diagnose.STANDALONE_LOG
+_logd = Path(tempfile.mkdtemp(prefix="diag_salog_"))
+diagnose.STANDALONE_LOG = _logd / "standalone-dlssnr.log"
+try:
+    _r = diagnose.analyse(_d)
+    check("no standalone log yet is not a failure",
+          not _levels(_r, "bad") and "play once" in _r.verdict, _r.verdict)
+    diagnose.STANDALONE_LOG.write_text(
+        _ATTACH + "runtime dependency: nvngx_dlssnr.dll (109425288 bytes)\n"
+        "required private runtime dependency missing\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("'required private runtime dependency missing' is BAD and names nvngx.dll",
+          any("runtime" in b for b in _levels(_r, "bad"))
+          and any("nvngx.dll" in f_.detail for f_ in _r.findings if f_.level == "bad")
+          and "reinstall" in _r.verdict, str(_levels(_r, "bad")) + " / " + _r.verdict)
+    check("the folder's own nvngx.dll and add-on are not called a foreign hook",
+          not any("Another DLSS hook" in w for w in _levels(_r, "warn")),
+          str(_levels(_r, "warn")))
+    diagnose.STANDALONE_LOG.write_text(
+        "old session line from another game\n" + _ATTACH
+        + "standalone contract ready: NR=on at 1920x1080, DLSS SR -> 3840x2160, "
+          "DLSS-G=on, model=1, profile=sRGB\n"
+        + "same-frame VORT optical flow + DLSS5_AIO_Feed submitted before NGX: frame=1\n"
+        + "on-present frame 120: NR=on, DLSS SR=Success, model=1, NR-reset=0, "
+          "NR-guides=same-frame VORT optical flow, SR-history=on, DLSS history "
+          "mask=on, input=1920x1080, output=3840x2160\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("a contract and frames in the log is Working",
+          _r.verdict == "Working." and not _levels(_r, "bad")
+          and any("VORT" in t for t in _levels(_r, "ok")), str(_r.findings))
+    diagnose.STANDALONE_LOG.write_text(
+        _ATTACH + "standalone contract ready: NR=on at 1920x1080\n"
+        "active on present: per-frame reset / zero motion + fallback guides\n"
+        "standalone pipeline FAILED at DLSS SR feature creation: 0xBAD00010\n",
+        encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("a pipeline failure names the stage, zero motion is a warning",
+          any("DLSS SR feature creation" in b for b in _levels(_r, "bad"))
+          and any("zero-motion" in w for w in _levels(_r, "warn")),
+          str(_levels(_r, "bad")) + " / " + str(_levels(_r, "warn")))
+    (_d / "ReShade.log").write_text(
+        _REG + 'INFO | Registered add-on "DLSS 5 Neural Rendering" v4.7.0.0\n',
+        encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("renodx-dlss5 beside standalone is two add-ons processing the frame",
+          any("Two add-ons" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+    (_d / "ReShade.log").write_text(
+        'INFO | Registered add-on "Some HDR mod" v1.0.0.0\n', encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("the add-on missing from the registered list is BAD",
+          any("did not load" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+    (_d / "ReShade.log").write_text(_REG, encoding="utf8")
+    (_d / "dlss5-autopilot.json").write_text(json.dumps(
+        {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+         "api": "DX12", "proxy": "dxgi.dll", "path": "native",
+         "files": ["dxgi.dll", "renodx-dlss5.addon64"]}), encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("on the native route a loaded standalone add-on is two add-ons",
+          any("standalone" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+finally:
+    diagnose.STANDALONE_LOG = _saved_log
+shutil.rmtree(_logd, ignore_errors=True)
+shutil.rmtree(_d, ignore_errors=True)
+
 section("RESULT")
 if FAILS:
     print(f"{len(FAILS)} FAILED:")
