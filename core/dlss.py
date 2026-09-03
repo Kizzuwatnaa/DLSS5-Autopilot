@@ -392,20 +392,20 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
     if bitness != 64:
         # Every add-on that hooks the game directly is 64-bit only, and a
         # 32-bit process cannot load one. The feeder's host64 helper is the
-        # only way in - DX9 games get dgVoodoo2 in front of it.
+        # only way in - DX9 games get DXVK in front of it.
         s.options = [FEEDER]
         s.recommended = FEEDER
         s.reason = ("32-bit games can only use the feeder path: every other "
                     "add-on is 64-bit and a 32-bit process cannot load it, so "
                     "the feeder's host64 helper process is the only way in."
-                    + (" DirectX 9 is translated to D3D11 by dgVoodoo2 first."
+                    + (" DirectX 9 is translated to Vulkan by DXVK first."
                        if api == "DX9" else ""))
         return s
 
     if api == "DX9":
         # 64-bit D3D9 is rare, and only ShortFuse's add-on reaches it: it
         # switches device creation to D3D9Ex and evaluates the presentation
-        # backbuffer. The feeder's D3D9 support is the 32-bit dgVoodoo path.
+        # backbuffer. The feeder's D3D9 support is the 32-bit DXVK path.
         s.options = [RENODX]
         s.recommended = RENODX
         s.reason = ("64-bit DirectX 9: only the renodx-dlss add-on hooks this "

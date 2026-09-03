@@ -38,7 +38,7 @@ marks the ones your card cannot use. You can always pick another.
 | **renodx-dlss** | ShortFuse's `renodx-dlss` add-on (the "SF" build) hooks D3D9, D3D11 and D3D12 in-process. No bridge, no shaders. | 64-bit D3D9 / D3D11 / D3D12. Days old and **reported not working in many games**; offered last, never recommended except for 64-bit DX9 where nothing else exists. | The game's own DLSS mode where it has one |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's own DLSS upscales. No renodx add-on beside it. | 64-bit D3D12 games with DLSS. Beta: days old, two games tested by its author. | Cadence (every frame, or one in two or three); the game's DLSS mode still applies |
 | **bridge** | NIGos' `dlss5-bridge` reproduces the DLSS contract on a private D3D12 session. | Vulkan games with DLSS (mirror). D3D11 fallback. Maintained; every release is tested on D3D11 and Vulkan. | The game's own DLSS mode |
-| **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract out of ReShade's depth buffer and shader motion vectors. | Games with **no** DLSS: D3D11, D3D12, Vulkan, OpenGL, and the only route for **32-bit** games (host64 helper) and DX9 (via dgVoodoo2). | `work_resolution` 50-100% (64-bit D3D11 only) |
+| **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract out of ReShade's depth buffer and shader motion vectors. | Games with **no** DLSS: D3D11, D3D12, Vulkan, OpenGL, and the only route for **32-bit** games (host64 helper) and DX9 (via DXVK). | `work_resolution` 50-100% (64-bit D3D11 only) |
 | **standalone-dlssnr** | kibblerz's add-on brings its own feed, DLAA or DLSS Super Resolution, and frame generation, presented through its own window on top. | 64-bit D3D11/D3D12, with or without DLSS. Experimental; turn the game's DLSS, frame generation and anti-aliasing off. | Run the game below native resolution and it upscales |
 | **remix** | The game already has an **RTX Remix** mod. DLSS 5 lives inside the Remix runtime, after its own upscaler. No ReShade, no feeder, no add-on. | Any game with a Remix mod installed (a `.trex` folder next to it). Chosen automatically when one is found. | The Remix menu's own Neural Uplift sliders |
 
@@ -68,10 +68,9 @@ marks the ones your card cannot use. You can always pick another.
 | 64-bit D3D11 / D3D12 without DLSS | reliable | feeder (ReShade + shaders) |
 | Vulkan (64-bit) | beta | ReShade as a Vulkan layer + bridge or feeder |
 | 64-bit D3D11 that quits when ReShade loads (MGS V) | beta | DXVK (D3D11 → Vulkan) + the Vulkan path above |
-| DirectX 9 through DXVK (opt-in) | experimental | DXVK `d3d9.dll` → Vulkan → feeder; 32-bit games get the 32-bit layer + `host64\` helper |
 | OpenGL | often fails | feeder, ReShade as `opengl32.dll` |
 | 32-bit D3D11 / D3D12 | often fails | feeder + `host64\` helper process |
-| DirectX 9 (32-bit) | often fails | dgVoodoo2 → D3D11 → feeder |
+| DirectX 9 (32-bit) | experimental | DXVK `d3d9.dll` → Vulkan → feeder, plus the 32-bit Vulkan layer and the `host64\` helper |
 | DirectX 9 (64-bit) | beta | renodx-dlss |
 | DirectX 10 | not supported | nothing hooks D3D10 |
 | 64-bit D3D11 / D3D12, own feed with upscaling and frame generation | experimental | standalone-dlssnr |
@@ -353,9 +352,10 @@ these games and runs them through **DXVK**: `dxgi.dll` + `d3d11.dll` become
 a Vulkan translation layer, ReShade loads as a Vulkan layer outside the
 game, and the feeder's Vulkan transport does the rest. Verified on MGS V.
 Any D3D11 game can be sent down this path with the checkbox on the install
-page or `--dxvk`. DX9 games can take it too (DXVK translates D3D9 as well)
-as an alternative to dgVoodoo2 - experimental, opt-in, and for a 32-bit game
-the tool registers ReShade's 32-bit Vulkan layer next to the 64-bit one.
+page or `--dxvk`. **DirectX 9 always takes it**, ticked or not: the feed
+needs a D3D11/D3D12 device to build its contract on and ReShade on a raw
+D3D9 device cannot give it one. For a 32-bit game the tool registers
+ReShade's 32-bit Vulkan layer next to the 64-bit one.
 
 Two things to know on this path:
 
@@ -484,7 +484,6 @@ its own licence:
 | dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | LumeniteFX | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) | AGNYA |
-| dgVoodoo2 | [dege-diosg/dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) | freely redistributed by its author |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
 | REFramework, on RE Engine games only | [praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly) | MIT |
 | RTX Remix runtime with DLSS 5, only when you tick the swap option | [lunks/dxvk-remix-plus-dlssnr](https://github.com/lunks/dxvk-remix-plus-dlssnr) | see repository |
@@ -547,8 +546,7 @@ core/reshade_ini.py   ReShade.ini / preset writing and technique ordering
 core/feedcfg.py       dlss5-feed.cfg and dlss5-bridge.cfg
 core/optiscaler.py    the OptiScaler route and its [DlssNr] dials
 core/vulkan.py        ReShade as a Vulkan implicit layer
-core/dgvoodoo.py      DX9 to D3D11 via dgVoodoo2
-core/dxvk.py          D3D11 to Vulkan via DXVK, for games that quit on ReShade
+core/dxvk.py          D3D11/D3D9 to Vulkan via DXVK
 core/anticheat.py     BattlEye / EAC / Vanguard detection
 core/installer.py     install engine, route switching, uninstall
 core/components.py    are the installed parts still current?

@@ -41,7 +41,7 @@ section("1. every module imports cleanly, with warnings as errors")
 with warnings.catch_warnings():
     warnings.simplefilter("error")
     mods = ("pe", "games", "emulators", "gpu", "sources", "net", "prefs",
-            "reshade_ini", "feedcfg", "dgvoodoo", "dxvk", "dlss", "vulkan",
+            "reshade_ini", "feedcfg", "dxvk", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update",
             "log", "components", "profiles", "remix", "reengine", "refw",
             "installer", "gui")
@@ -804,11 +804,20 @@ check("dxvk names its logs after the exe",
       dxvk.logs_for(Path("mgsvtpp.exe"))[0] == "mgsvtpp_dxgi.log")
 g9 = games.Game(name="gta", folder=d, exe=d / "GTAIV.exe", bitness=32, api="DX9")
 s9 = installer.plan(g9, installer.Options(path=dlss.FEEDER, dxvk=True))
-check("dx9 through dxvk: no dgvoodoo, dxvk first, vulkan layer, host64 helper",
-      s9[0] == "DXVK (DX9 -> Vulkan)" and "dgVoodoo2 (DX9 -> D3D11)" not in s9
+check("dx9 through dxvk: dxvk first, vulkan layer, host64 helper",
+      s9[0] == "DXVK (DX9 -> Vulkan)"
       and s9[1] == "ReShade (Vulkan layer)" and "host64 helper process" in s9, str(s9))
-check("dx9 without dxvk still goes through dgvoodoo",
-      installer.plan(g9, installer.Options(path=dlss.FEEDER))[0].startswith("dgVoodoo2"))
+# dgVoodoo2 was dropped in 1.6.0, so DXVK is the only DirectX 9 translation
+# left: a DX9 game takes it whether or not the box is ticked, and nothing
+# may ever put a dgVoodoo step back into the plan.
+sp9 = installer.plan(g9, installer.Options(path=dlss.FEEDER))
+check("dx9 takes dxvk even with the box unticked - it is the only way left",
+      sp9[0] == "DXVK (DX9 -> Vulkan)"
+      and installer.uses_dxvk(g9, installer.Options(path=dlss.FEEDER)), str(sp9))
+check("no plan on any route mentions dgVoodoo any more",
+      not any("dgvoodoo" in step.lower()
+              for r in (dlss.FEEDER, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX)
+              for step in installer.plan(g9, installer.Options(path=r))))
 check("dxvk puts d3d9.dll for dx9 and dxgi+d3d11 for dx11",
       dxvk.files_for("DX9") == ("d3d9.dll",) and "d3d11.dll" in dxvk.files_for("DX11"))
 check("the renodx-dlss route never goes through dxvk (it hooks in-process)",
@@ -2947,10 +2956,12 @@ check("it writes no ReShade, no feeder and no add-on",
       and not (_d / "ReShade.ini").exists(),
       str(sorted(p.name for p in _d.iterdir())))
 # The one that got through on the real GTA IV: a Remix game is a DX9 game,
-# and the DX9 step wrote dgVoodoo's D3D9.dll over the Remix bridge client.
-check("and no dgVoodoo, whatever the game's API says",
+# and the DX9 translation step wrote its own d3d9.dll over the Remix bridge
+# client. No DX9 translation may run on this route, DXVK or anything else.
+check("and no DX9 translation layer, whatever the game's API says",
       not (_d / "dgVoodoo.conf").exists() and not (_d / "dgVoodooCpl.exe").exists()
-      and not (_d / ("D3D9.dll" + installer.BACKUP_SUFFIX)).exists(),
+      and not (_d / ("D3D9.dll" + installer.BACKUP_SUFFIX)).exists()
+      and not (_d / ("d3d9.dll" + installer.BACKUP_SUFFIX)).exists(),
       str(sorted(p.name for p in _d.iterdir())))
 check("the steps taken match the plan exactly",
       len(installer.plan(_g, installer.Options(path=dlss.REMIX))) == 2,
@@ -3023,7 +3034,7 @@ try:
     check("install carries the same warning and still finishes",
           any("RE Engine" in w for w in _rep.warnings))
     check("a real REFramework dinput8.dll landed in the folder",
-          installer._is_reframework(_d / refw.DINPUT8), str(_rep.written))
+          refw.is_reframework(_d / refw.DINPUT8), str(_rep.written))
     installer.uninstall(_g, on_log=lambda t: None)
     check("uninstall takes it back out again",
           not (_d / refw.DINPUT8).exists())
@@ -3060,6 +3071,28 @@ _g = games.manual(_d)
 installer.uninstall(_g, on_log=lambda t: None)
 check("a foreign dinput8.dll survives a manifest-less uninstall",
       (_d / refw.DINPUT8).is_file())
+shutil.rmtree(_d, ignore_errors=True)
+
+# Installing twice must not turn our own file into "the game's own file".
+# It did: the second install backed up the first install's copy, uninstall
+# restored that backup, and the layer stayed in the folder for good - the
+# game left rendering through DXVK with nothing on disk admitting it.
+check("a DXVK d3d9.dll is recognised as ours, a foreign one is not",
+      dxvk.is_dxvk(Path(tempfile.mkdtemp(prefix="notdxvk_")) / "nothing.dll") is False)
+_d = Path(tempfile.mkdtemp(prefix="twice_dxvk_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.Game(name="twice", folder=_d, exe=_d / "Game.exe", bitness=64, api="DX11")
+try:
+    for _round in (1, 2):
+        installer.install(_g, installer.Options(path=dlss.FEEDER, dxvk=True),
+                          on_log=lambda t: None)
+    _baks = sorted(p.name for p in _d.glob("*" + installer.BACKUP_SUFFIX))
+    check("a second install does not back up our own DXVK", not _baks, str(_baks))
+    installer.uninstall(_g, on_log=lambda t: None)
+    _left = sorted(p.name for p in _d.iterdir() if p.is_file())
+    check("after uninstall no DXVK is left behind", _left == ["Game.exe"], str(_left))
+except Exception as e:
+    check("install twice / uninstall clean", False, f"{type(e).__name__}: {e}")
 shutil.rmtree(_d, ignore_errors=True)
 
 check("the remix route is never bothered with the RE Engine warning",

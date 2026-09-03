@@ -145,7 +145,7 @@ API_PROXY = {
     "DX12": "dxgi.dll",
     "OpenGL": "opengl32.dll",
     "Vulkan": None,   # needs a system-wide layer registration
-    "DX9": None,      # needs dgVoodoo2 first
+    "DX9": None,      # needs DXVK first
 }
 
 

@@ -669,8 +669,14 @@ def analyse(install_dir: Path) -> Report:
 
         # The game exiting before a swapchain exists means it never got to
         # rendering at all - nothing downstream of this is worth reading.
+        # "CreateSwapChain"/"Presenting" are the DXGI spellings. On Vulkan -
+        # a native Vulkan game, or any game sent through DXVK - ReShade logs
+        # vkCreateSwapchainKHR instead, so looking only for the DXGI ones
+        # called every Vulkan session a game that never drew a frame, right
+        # next to "frames are being processed". Seen on Bayonetta via DXVK.
         if "Registered add-on" in rtext and "Exiting" in rtext \
                 and "CreateSwapChain" not in rtext and "Presenting" not in rtext \
+                and "vkCreateSwapchainKHR" not in rtext \
                 and not d3d9_only:
             rep.add(BAD, "The game closed before it drew a single frame.",
                     "ReShade attached and the device was created, but no swap "
@@ -755,14 +761,37 @@ def analyse(install_dir: Path) -> Report:
                 rep.add(OK, "The game and the helper are talking.")
             else:
                 rep.add(BAD, "The helper started but never connected.")
-            rep.add(INFO, "On 32-bit the DLSS 5 panel is in the separate "
-                          "\"32-bit DLSS 5 Feeder\" window, not the game's "
-                          "ReShade overlay.")
+            rep.add(INFO, "On 32-bit the DLSS 5 page in the game's overlay "
+                          "drives the 64-bit helper; the helper's own window "
+                          "is there too, but do not alt-tab to it while "
+                          "playing - that minimizes the game and tears the "
+                          "feature down.")
 
-        builds = re.findall(r"building: (\d+x\d+)", text)
-        if len(set(builds)) > 1:
-            rep.add(WARN, f"Rebuilt at {len(set(builds))} different resolutions "
-                          f"({', '.join(sorted(set(builds)))}).",
+        # A minimized window has a 160x28 client area on Windows, so the swap
+        # chain comes back that size and every DLSS create against it fails
+        # with InvalidParameter until the window is restored. Found on
+        # Bayonetta: the game is exclusive fullscreen, the 32-bit panel is a
+        # separate window, so alt-tabbing to reach the panel minimized the
+        # game - the act of opening the panel was tearing the feature down.
+        # Worth separating from a real resolution change: the advice differs.
+        builds = re.findall(r"building: (\d+)x(\d+)", text)
+        sizes = {f"{w}x{h}" for w, h in builds}
+        tiny = sorted(s for s in sizes
+                      if int(s.split("x")[0]) < 640 or int(s.split("x")[1]) < 360)
+        rest = sorted(sizes.difference(tiny))
+        if tiny:
+            rep.add(WARN, f"The game window was minimized while the feed was "
+                          f"running (rebuilt at {', '.join(tiny)}).",
+                    "DLSS cannot be created that small, so every attempt fails "
+                    "until the window comes back. Alt-tabbing out of an "
+                    "exclusive-fullscreen game minimizes it - and on 32-bit "
+                    "the DLSS 5 panel is a separate window, so opening it does "
+                    "exactly that. The panel's settings are saved, so set them "
+                    "once, then restart and play without alt-tabbing - or run "
+                    "the game windowed / borderless.")
+        if len(rest) > 1:
+            rep.add(WARN, f"Rebuilt at {len(rest)} different resolutions "
+                          f"({', '.join(rest)}).",
                     "Changing resolution while neural rendering is on forces a "
                     "rebuild and is a common cause of freezes.")
 

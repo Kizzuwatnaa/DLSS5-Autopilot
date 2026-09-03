@@ -1196,7 +1196,7 @@ class App:
             need = installer.wants_dxvk(g)
             lines.append(f"path   reshade as {installer.VULKAN_LAYER if need else proxy}"
                          + ("  +  host64/ helper" if g.bitness == 32 else "")
-                         + ("  +  dgvoodoo2" if g.api == "DX9" else "")
+                         + ("  +  dxvk (vulkan)" if g.api == "DX9" else "")
                          + ("  +  dxvk (this game quits when reshade hooks it)"
                             if need else ""))
             if level != installer.STABLE:
@@ -1387,9 +1387,9 @@ class App:
         # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
         # DXVK they render on Vulkan and ReShade loads as a layer instead.
         self.ck_dxvk = tk.Checkbutton(
-            inner, text="run the game through DXVK (D3D11/D3D9 -> Vulkan): for "
-                        "games that close when ReShade loads inside them (MGS V); "
-                        "on DX9 an experimental alternative to dgVoodoo2",
+            inner, text="run the game through DXVK (D3D11 -> Vulkan): for "
+                        "games that close when ReShade loads inside them (MGS V). "
+                        "DirectX 9 always goes through DXVK, ticked or not",
             variable=self.dxvk, bg=PANEL, fg=DIM, selectcolor=FIELD,
             activebackground=PANEL, activeforeground=TXT, font=font(8),
             borderwidth=0, command=lambda: self._set_pathlbl(self.game))
@@ -1947,10 +1947,8 @@ class App:
         if g is None:
             return
         extra = "  +  host64/ helper" if g.bitness == 32 else ""
-        if self.dxvk.get() and g.api in dxvk.APIS:
+        if (self.dxvk.get() or g.api == "DX9") and g.api in dxvk.APIS:
             extra += "  +  dxvk (vulkan)"
-        elif g.api == "DX9":
-            extra += "  +  dgvoodoo2"
         # Long install paths ran off the right edge; show the path relative to
         # the game folder instead, the full one is in the log.
         try:
@@ -2483,15 +2481,20 @@ class App:
             else:
                 self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
             if self.game and self.game.bitness == 32:
-                # A 32-bit process cannot load the 64-bit DLSS 5 add-on, so
-                # the panel is not in this ReShade overlay at all - it is in
-                # the host64 helper's OWN window, a separate process. Saying
-                # "in the DLSS 5 panel" here with no further hint reads like
-                # it is right there under Home, and it is not.
-                self._log("   3. turn on neural rendering in the separate "
-                          "'32-bit DLSS 5 Feeder' window - it is its own "
-                          "window (the host64 helper), not inside this "
-                          "reshade overlay; alt-tab if you do not see it")
+                # The 64-bit add-on runs in the host64 helper, and that helper
+                # has its own window - but the feed's own DLSS 5 page IS in
+                # this game's overlay and drives the helper from there
+                # ("settings reloaded from the overlay page" in its log). Say
+                # so, because alt-tabbing to the helper window is actively
+                # harmful: it minimizes an exclusive-fullscreen game, the swap
+                # chain comes back 160x28 and DLSS is torn down every time.
+                self._log("   3. turn on neural rendering in the DLSS 5 page "
+                          "of this overlay - it drives the 64-bit helper for "
+                          "you")
+                self._log("   !  the helper has a window of its own; do NOT "
+                          "alt-tab to it while playing. Alt-tab minimizes the "
+                          "game, the swap chain comes back tiny and DLSS is "
+                          "rebuilt from scratch every time")
             else:
                 self._log("   3. turn on neural rendering in the DLSS 5 panel")
             self._log("   4. turn OFF the game's own MSAA/SSAA")

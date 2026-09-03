@@ -3,7 +3,7 @@
 This tool never contacts a private server. It stays within these hosts:
     reshade.me
     raw.githubusercontent.com   (crosire/reshade-shaders)
-    api.github.com / github.com (DLSS5-Feeder, rhi-repo, dgVoodoo2,
+    api.github.com / github.com (DLSS5-Feeder, rhi-repo, DXVK,
                                  DLSS5-Reshade-AIO, dxvk-remix-plus-dlssnr,
                                  REFramework-nightly)
     codeload.github.com         (LumeniteFX, vort_Shaders)

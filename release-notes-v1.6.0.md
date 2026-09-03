@@ -45,6 +45,43 @@ An earlier build of this offered **dinput8.dll** as a ReShade proxy name to
 try by hand - that was the wrong fix (it renamed ReShade, not REFramework)
 and has been removed; it would have collided with REFramework's own file.
 
+## dgVoodoo2 is gone; DirectX 9 goes through DXVK
+
+DirectX 9 used to be translated to D3D11 by dgVoodoo2. That path carried a
+long tail of per-game tuning - VRAM, the captured mouse cursor, a fullscreen
+mode that had to agree with the game's own - and it was the least reliable
+thing here. It has been removed entirely.
+
+DirectX 9 now takes **DXVK** (D3D9 to Vulkan), the same translation the
+D3D11 games that quit on ReShade already used, and it is no longer optional:
+the feed needs a D3D11/D3D12 device to build its contract on, and ReShade on
+a raw D3D9 device cannot give it one. Proven on Bayonetta - 32-bit, DirectX
+9 - where DLSS 5 built at 1920x1080 and delivered frames through the Vulkan
+transport.
+
+An install made by an older release still uninstalls completely: dgVoodoo's
+files stay on the cleanup list.
+
+## The 32-bit DLSS 5 panel is a separate window, and the tool now says so
+
+On a 32-bit game the DLSS 5 panel cannot live in the game's own ReShade
+overlay - a 32-bit process cannot load the 64-bit add-on, so the panel is in
+the `host64` helper's own window. The instructions after an install said
+"press Home, then enable neural rendering in the DLSS 5 panel", which reads
+like it is right there under Home. It is not, and people never found it.
+
+Alongside that, **"did it work?" now recognises a minimized game**: alt-tab
+out of an exclusive-fullscreen game and Windows reports a 160x28 client
+area, so the swap chain comes back that size and every DLSS create against
+it fails until the window is restored. On 32-bit that is a trap, because
+reaching the panel *means* alt-tabbing. The report now says exactly that,
+and points out the panel's settings are saved - set them once, restart, play
+without alt-tabbing, or run the game windowed.
+
+It also no longer claims a Vulkan game "closed before it drew a single
+frame": that check only knew the DXGI spelling of a swap chain, so every
+DXVK and native-Vulkan session tripped it.
+
 ## A D3D12 game no longer reads as D3D11
 
 Some D3D12 titles only statically import `d3d11.dll`, loading the real

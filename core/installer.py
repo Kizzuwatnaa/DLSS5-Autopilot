@@ -23,7 +23,7 @@ r"""Install engine: 64-bit, 32-bit and DX9 paths.
 needed. The game gets 32-bit ReShade + addon32; host64/ holds its own 64-bit
 ReShade and all the DLSS parts.
 
-DX9: dgVoodoo2 translates to D3D11 first, then the 32-bit path applies.
+DX9: DXVK translates to Vulkan first, then the 32-bit path applies.
 
 REMIX: none of the above. The mod's own Remix runtime does the work, so the
 only things written are inside its `.trex` folder -
@@ -43,7 +43,7 @@ import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import (emulators, anticheat, dgvoodoo, dlss, dxvk, feedcfg, games, gpu, net,
+from . import (emulators, anticheat, dlss, dxvk, feedcfg, games, gpu, net,
                optiscaler, pe, prefs, reengine, refw, remix, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
@@ -336,7 +336,7 @@ def reliability(g: games.Game, path: str = FEEDER,
     if g.api == "DX9":
         return EXPERIMENTAL, (
             "DirectX 9 is the least reliable path. The game runs through "
-            "dgVoodoo2 translation and then the 32-bit helper process; the "
+            "DXVK translation and then the 32-bit helper process; the "
             "DLSS feature frequently fails to create on top of that. Expect "
             "it not to work.")
     if g.api == "Vulkan":
@@ -370,16 +370,6 @@ def _is_reshade(path: Path) -> bool:
         return False
 
 
-def _is_reframework(path: Path) -> bool:
-    """refw.py's dinput8.dll carries the literal string "REFramework"."""
-    try:
-        if not path.is_file() or path.stat().st_size < (1 << 20):
-            return False
-        return b"REFramework" in path.read_bytes()
-    except OSError:
-        return False
-
-
 # The names ReShade can be installed under. It is the same DLL each time; the
 # name decides which system library it stands in for, and therefore when in
 # start-up the game loads it.
@@ -398,7 +388,7 @@ RESHADE_PROXY_HELP = {
     "d3d11.dll": "try this if a D3D11 game will not start with dxgi",
     "d3d12.dll": "D3D12 alternative to dxgi",
     "d3d10.dll": "D3D10 only",
-    "d3d9.dll": "DirectX 9, after dgVoodoo2 translation",
+    "d3d9.dll": "DirectX 9 (rarely useful - DX9 goes through DXVK)",
     "opengl32.dll": "the only option for OpenGL",
 }
 # dinput8.dll is NOT offered here: it used to be, as a ReShade proxy name to
@@ -436,10 +426,19 @@ def uses_dxvk(g: games.Game, opt: "Options") -> bool:
     routes only - OptiScaler is itself the dxgi.dll DXVK would need to be,
     and ShortFuse's renodx-dlss hooks D3D9 in-process. The standalone add-on
     reaches Vulkan only with an extra boundary shader and a per-launch layer
-    script; its D3D11 path is the tested one, so it stays on D3D11."""
-    return (bool(opt.dxvk) and g.api in dxvk.APIS
-            and opt.path not in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE,
-                                 ROUTE_REMIX))
+    script; its D3D11 path is the tested one, so it stays on D3D11.
+
+    On D3D11 this is a choice. On DirectX 9 it is not: the feed needs a
+    D3D11/D3D12 device to build its contract on, ReShade on a raw D3D9
+    device cannot give it one, and DXVK is the only translation left since
+    dgVoodoo2 was dropped. So a DX9 game takes it whether or not the box is
+    ticked - the routes that handle D3D9 themselves are excluded above.
+    """
+    if g.api not in dxvk.APIS:
+        return False
+    if opt.path in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX):
+        return False
+    return bool(opt.dxvk) or g.api == "DX9"
 
 
 def via_dxvk(g: games.Game, opt: "Options") -> games.Game:
@@ -587,8 +586,6 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     if uses_dxvk(g, opt):
         steps.append(f"DXVK ({g.api} -> Vulkan)")
         g = via_dxvk(g, opt)
-    elif g.api == "DX9":
-        steps.append("dgVoodoo2 (DX9 -> D3D11)")
     if opt.path == OPTI:
         # OptiScaler replaces ReShade entirely - it is the proxy DLL itself.
         # A game with DLSS keeps its own nvngx_dlss.dll; one whose FSR/XeSS
@@ -691,7 +688,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
     if not ok:
         pv.blockers.append(why)
     # Same hard rule install() enforces: a Remix game only ever takes the
-    # remix route. Without this the preview would describe a plan (dgVoodoo,
+    # remix route. Without this the preview would describe a plan (DXVK,
     # ReShade...) that install() actually refuses outright.
     if opt.path != ROUTE_REMIX and remix.is_remix_game(root):
         pv.blockers.append(
@@ -788,7 +785,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
             add(pv.backups, r)
 
     def plain_backup(r: str) -> None:
-        """dgvoodoo/dxvk keep a copy whenever no backup exists yet."""
+        """dxvk keeps a copy whenever no backup exists yet."""
         if present(r) and not (root / (r + BACKUP_SUFFIX)).exists():
             add(pv.backups, r)
 
@@ -902,12 +899,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
         plain_backup(refw.DINPUT8)
         write(refw.DINPUT8, keep=False)
 
-    # 0b) dgVoodoo2 / DXVK
-    if g.api == "DX9" and not dxvk_from:
-        plain_backup(dgvoodoo.D3D9)
-        write(dgvoodoo.D3D9, keep=False)
-        write(dgvoodoo.CONF, keep=False)
-        write(dgvoodoo.CPL, keep=False)
+    # 0b) DXVK
     if dxvk_from:
         for name in dxvk.files_for(dxvk_from) or dxvk.FILES:
             plain_backup(name)
@@ -1174,7 +1166,7 @@ LUMENITE_MARKER = "lumenite_Kernel.fx"
 # Only the motion-vector provider the feed will read, never the whole pack.
 # LumeniteFX ships eight heavy effects (RTAO, SSSR, TRAA, bloom...) that the
 # feed does not use; ReShade compiled them all at start-up, and on a 32-bit
-# game behind dgVoodoo the compile stall was long enough for the game to
+# game behind a translation layer the compile stall was long enough for the game to
 # crash on its own (Bayonetta, issue #2, confirmed from the dump by the
 # feeder's author). The provider's own includes are small and all needed.
 LUMENITE_PROVIDER_FX = {3: "lumenite_Kernel.fx", 4: "lumenite_QuantMotion.fx"}
@@ -1569,7 +1561,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         raise InstallError(why)
     # Before a single byte is written: a Remix game takes the remix route and
     # nothing else. A ReShade proxy crashes it before it draws (seen on GTA
-    # IV), and on DX9 dgVoodoo's D3D9.dll would land on top of the Remix
+    # IV), and on DX9 our own d3d9.dll would land on top of the Remix
     # runtime itself.
     if opt.path != ROUTE_REMIX and remix.is_remix_game(g.install_dir):
         raise InstallError(
@@ -1762,19 +1754,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 "tamper checks and patches around them, so ReShade (below) "
                 "does not get killed the way it would on its own.")
 
-        # --- 0b) DX9 needs dgVoodoo2 first (unless DXVK takes it to Vulkan) ---
-        # Never on the remix route: Remix IS the D3D9 implementation there,
-        # and dgVoodoo's D3D9.dll would land straight on top of the Remix
-        # bridge client. Caught on the real GTA IV install; plan() already
-        # returns early for this route, and now install() agrees with it.
-        if g.api == "DX9" and not dxvk_from and opt.path != ROUTE_REMIX:
-            begin("dgVoodoo2 (DX9 -> D3D11)")
-            for f in dgvoodoo.install(root, log):
-                rep.written.append(f)
-            rep.notes.append("dgVoodoo2 installed (DX9 -> D3D11). If the game will "
-                             "not start, raise VRAM with dgVoodooCpl.exe.")
-
         # --- 0b) DXVK: the game renders on Vulkan, ReShade stays outside -----
+        # DirectX 9 arrives here too, and never on the remix route: Remix IS
+        # the D3D9 implementation there, so a d3d9.dll of ours would land
+        # straight on top of the Remix bridge client. Caught on the real
+        # GTA IV install; uses_dxvk() excludes that route for the same reason.
         if dxvk_from:
             begin(f"DXVK ({dxvk_from} -> Vulkan)")
             ver, files = dxvk.install(root, x64, log, api=dxvk_from)
@@ -2476,13 +2460,18 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
                  STANDALONE_ADDON, DLSSNR, DLSS, DLSSG,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME,
+                 # dgVoodoo2 was the DX9 translation until 1.6.0. Its files
+                 # stay on this list so an install made by an older release
+                 # still cleans up completely.
                  "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
                  str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),
                  str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE)]
-        # dgVoodoo's D3D9.dll shares its name with the Remix bridge client.
-        # With no manifest to tell them apart, the Remix install wins: a
-        # dgVoodoo file left behind is harmless, a deleted runtime is not.
+        # A d3d9.dll here is ours (DXVK, or dgVoodoo2 from an older release)
+        # UNLESS the folder is a Remix game, where that name belongs to the
+        # Remix bridge client. With no manifest to tell them apart the Remix
+        # install wins: a file left behind is harmless, a deleted runtime is
+        # not.
         if not remix.is_remix_game(root):
             files.append("D3D9.dll")
         else:
@@ -2516,7 +2505,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         # REFramework's dinput8.dll, same reasoning: a real one the person
         # put there themselves - or is still using for something else -
         # stays untouched unless it is confirmed to be ours by content.
-        if refw.DINPUT8 not in files and _is_reframework(root / refw.DINPUT8):
+        if refw.DINPUT8 not in files and refw.is_reframework(root / refw.DINPUT8):
             files.append(refw.DINPUT8)
         log("No install record found; cleaning up by known filenames.")
 

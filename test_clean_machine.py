@@ -108,13 +108,12 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
                       (h / "dxgi.dll").is_file() and pe.exe_bitness(h / "dxgi.dll") == 64)
         good &= check("host64/ReShade.ini", (h / "ReShade.ini").is_file())
     if g.api == "DX9":
-        good &= check("D3D9.dll (dgVoodoo2)", (idir / "D3D9.dll").is_file())
-        good &= check("D3D9.dll 32-bit", pe.exe_bitness(idir / "D3D9.dll") == 32)
-        conf = (idir / "dgVoodoo.conf")
-        good &= check("dgVoodoo.conf", conf.is_file())
-        if conf.is_file():
-            txt = conf.read_text(encoding="utf8", errors="replace")
-            good &= check("  OutputAPI=d3d11_fl11_0", "d3d11_fl11_0" in txt)
+        # dgVoodoo2 is gone since 1.6.0 - DirectX 9 is DXVK now, always.
+        good &= check("d3d9.dll (DXVK)", (idir / "d3d9.dll").is_file())
+        good &= check("d3d9.dll 32-bit", pe.exe_bitness(idir / "d3d9.dll") == 32)
+        good &= check("no dgVoodoo left behind",
+                      not (idir / "dgVoodoo.conf").is_file()
+                      and not (idir / "dgVoodooCpl.exe").is_file())
 
     # 7) ayar dosyalari
     ini = reshade_ini.Ini.load(idir / "ReShade.ini")
@@ -147,7 +146,7 @@ if __name__ == "__main__":
     results.append(("64-bit DX11/DX12", run("64-bit game", x64, "Oyun64.exe", True)))
     results.append(("32-bit", run("32-bit game", x86, "Oyun32.exe", False)))
     if dx9.is_file():
-        results.append(("DX9 (dgVoodoo2)", run("DX9 game", dx9, "OyunDX9.exe", False)))
+        results.append(("DX9 (DXVK)", run("DX9 game", dx9, "OyunDX9.exe", False)))
 
     print("=" * 76)
     print(f"total downloaded: {net.cache_size()/1048576:.0f} MB  (from an empty cache)")

@@ -130,13 +130,14 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         print("In game: press Alt+X, then 'Developer Settings Menu', then the "
               "Post-Processing tab: 'Enable Neural Uplift (DLSS-NR)'.")
     elif sup.recommended == dlss.FEEDER and g.bitness == 32:
-        # See the matching note in gui.py: a 32-bit game cannot load the
-        # 64-bit DLSS 5 add-on, so the panel lives in the host64 helper's
-        # own separate window, not in this game's ReShade overlay.
+        # See the matching note in gui.py: the DLSS 5 page is in the game's
+        # own overlay and drives the 64-bit helper; the helper's separate
+        # window must NOT be alt-tabbed to while playing.
         print("In game: press Home, then turn on neural rendering in the "
-              "separate '32-bit DLSS 5 Feeder' window (the host64 helper, "
-              "its own process) - alt-tab if you do not see it. Turn the "
-              "game's own MSAA/SSAA off.")
+              "DLSS 5 page - it drives the 64-bit helper for you. Do NOT "
+              "alt-tab to the helper's own window while playing: that "
+              "minimizes the game and DLSS is torn down every time. Turn "
+              "the game's own MSAA/SSAA off.")
     else:
         print("In game: press Home, then enable neural rendering in the DLSS 5 "
               "panel. Turn the game's own MSAA/SSAA off.")

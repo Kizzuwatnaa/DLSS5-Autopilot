@@ -40,12 +40,24 @@ def resolve() -> tuple[str, str]:
     raise RuntimeError("Could not find REFramework.zip in the latest nightly.")
 
 
+def is_reframework(path: Path) -> bool:
+    """Is this file REFramework? Its dinput8.dll carries the literal string."""
+    try:
+        if not path.is_file() or path.stat().st_size < (1 << 20):
+            return False
+        return b"REFramework" in path.read_bytes()
+    except OSError:
+        return False
+
+
 def install(exe_dir: Path, log=None) -> list[str]:
     """Drop REFramework's dinput8.dll beside the game. Returns files written.
 
-    A dinput8.dll already there - an earlier REFramework copy the person put
-    in by hand, most likely - is backed up once, the same way dgVoodoo2
-    treats a D3D9.dll that was already there.
+    A dinput8.dll already there is backed up once so uninstall can put it
+    back - unless it is REFramework itself, ours or the person's own copy.
+    Backing that up would hand it to uninstall as "the game's own file" and
+    leave REFramework in the folder after removal, the same trap DXVK's
+    d3d9.dll fell into.
     """
     log = log or (lambda *_: None)
     tag, url = resolve()
@@ -55,7 +67,7 @@ def install(exe_dir: Path, log=None) -> list[str]:
     written: list[str] = []
     existing = exe_dir / DINPUT8
     bak = existing.with_name(DINPUT8 + BACKUP_SUFFIX)
-    if existing.is_file() and not bak.exists():
+    if existing.is_file() and not bak.exists() and not is_reframework(existing):
         import shutil
         try:
             shutil.copy2(existing, bak)

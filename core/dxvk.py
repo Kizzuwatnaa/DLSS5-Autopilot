@@ -32,8 +32,9 @@ from . import net
 API = "https://api.github.com/repos/doitsujin/dxvk/releases/latest"
 
 # What DXVK drops beside the game, per API. DXVK translates D3D9 as well,
-# which makes it an alternative to dgVoodoo2 for DX9 games (GTA IV and the
-# like): experimental here, nothing ran it on this machine yet.
+# and since 1.6.0 that is the ONLY DirectX 9 translation here - dgVoodoo2
+# was dropped. Verified on Bayonetta (32-bit DX9): DLSS 5 built at
+# 1920x1080 and delivered frames through the Vulkan transport.
 FILES_BY_API = {
     "DX11": ("dxgi.dll", "d3d11.dll"),
     "DX9": ("d3d9.dll",),
@@ -108,11 +109,30 @@ def _extract(tgz: Path, member_suffix: str, dest: Path) -> None:
             shutil.copyfileobj(src, out, 1 << 20)
 
 
+def is_dxvk(path: Path) -> bool:
+    """Is this file DXVK? Its DLLs carry the literal string "DXVK".
+
+    Needed because "back up whatever is already there" must not fire on a
+    DXVK we put there ourselves on an earlier install. It did: the backup
+    then looked like the game's own file, uninstall dutifully restored it,
+    and the game was left rendering through DXVK forever - with nothing on
+    disk saying so. Seen on Bayonetta after a reinstall.
+    """
+    try:
+        if not path.is_file() or path.stat().st_size < (1 << 20):
+            return False
+        return b"DXVK" in path.read_bytes()
+    except OSError:
+        return False
+
+
 def install(exe_dir: Path, x64: bool, log=None, api: str = "DX11") -> tuple[str, list[str]]:
     """Put DXVK beside the game. Returns (version, files written).
 
-    Anything already sitting under one of DXVK's names - another DXVK, an
-    ENB, a game's own wrapper - is kept as a backup so uninstall puts it back.
+    Anything already sitting under one of DXVK's names - an ENB, a game's own
+    wrapper - is kept as a backup so uninstall puts it back. An earlier DXVK
+    of ours is not: backing that up would hand it to uninstall as "the game's
+    own file" and leave the game on DXVK after removal.
     """
     log = log or (lambda *_: None)
     ver, url = resolve()
@@ -124,7 +144,7 @@ def install(exe_dir: Path, x64: bool, log=None, api: str = "DX11") -> tuple[str,
     for name in names:
         dest = exe_dir / name
         bak = dest.with_name(name + BACKUP_SUFFIX)
-        if dest.is_file() and not bak.exists():
+        if dest.is_file() and not bak.exists() and not is_dxvk(dest):
             try:
                 shutil.copy2(dest, bak)
                 written.append(bak.name)
