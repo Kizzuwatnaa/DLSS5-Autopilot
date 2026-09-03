@@ -147,6 +147,15 @@ def remember_renodx(path: Path | None) -> None:
     set_("renodx_local", str(path) if path else None)
 
 
+def remember_consumer_dir(consumer: str, path: Path | None) -> None:
+    """Where the person keeps a Discord-only neural add-on's files."""
+    set_(f"consumer_dir_{consumer}", str(path) if path else None)
+
+
+def consumer_dir(consumer: str):
+    return get(f"consumer_dir_{consumer}")
+
+
 # --- Vulkan installs ----------------------------------------------------
 # The Vulkan layer is registered once for the whole user, not per game, so it
 # must only be removed when the LAST Vulkan game that needs it is uninstalled.

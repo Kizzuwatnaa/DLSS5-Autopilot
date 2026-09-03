@@ -2048,9 +2048,9 @@ check("a game without DLSS is not offered upstream",
       dlss.UPSTREAM not in dlss.detect(_gb.install_dir, _gb.folder, _gb.api,
                                        _gb.bitness).options)
 shutil.rmtree(_bare, ignore_errors=True)
-check("every route has a conflicts entry of 2-3 lines",
+check("every route has a conflicts entry of 2-4 lines",
       set(dlss.CONFLICTS) == set(dlss.ALL_ROUTES)
-      and all(2 <= len(v) <= 3 for v in dlss.CONFLICTS.values()),
+      and all(2 <= len(v) <= 4 for v in dlss.CONFLICTS.values()),
       str(sorted(dlss.CONFLICTS)))
 check("upstream has a label and a blurb",
       dlss.UPSTREAM in dlss.LABELS and dlss.UPSTREAM in dlss.BLURB)
@@ -2534,6 +2534,79 @@ finally:
     diagnose.STANDALONE_LOG = _saved_log
 shutil.rmtree(_logd, ignore_errors=True)
 shutil.rmtree(_d, ignore_errors=True)
+
+
+# ------------------------------------------------- 25. a neural consumer of your own
+section("25. a neural consumer of your own (Deep Fried Chicken, Alex's Toolkit)")
+_c = Path(tempfile.mkdtemp(prefix="dfc_files_"))
+for _n in installer.DFC_FILES:
+    (_c / _n).write_bytes(b"MZfake" if _n.endswith((".addon64", ".dll"))
+                          else b"enabled=1\r\npasses=1\r\narm=1\r\nextra=keep\r\n")
+check("find_consumer accepts a complete folder and rejects an empty one",
+      len(installer.find_consumer(_c, "dfc") or []) == 3
+      and installer.find_consumer(Path(tempfile.mkdtemp(prefix="empty_")), "dfc") is None)
+_d = Path(tempfile.mkdtemp(prefix="dfc_game_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d)
+_opt = installer.Options(consumer="dfc", consumer_dir=_c, passes=2)
+check("the plan names the consumer instead of the renodx step",
+      any("Deep Fried Chicken" in st for st in installer.plan(_g, _opt))
+      and not any("renodx" in st for st in installer.plan(_g, _opt)))
+_pv = installer.preview(_g, _opt)
+check("the preview lists the three files and no renodx add-on",
+      all(n in _pv.writes for n in installer.DFC_FILES) and installer.RENODX not in _pv.writes,
+      str(_pv.writes))
+check("a preview without a folder is blocked, not guessed",
+      installer.preview(_g, installer.Options(consumer="dfc")).blockers)
+_rep = installer.install(_g, _opt, on_log=lambda t: None)
+_files = {p.name for p in _d.iterdir()}
+check("install copies the three files and skips renodx-dlss5",
+      all(n in _files for n in installer.DFC_FILES) and installer.RENODX not in _files,
+      str(sorted(_files)))
+check("passes=2 lands in the cfg and every other line is byte-identical",
+      (_d / "deep-fried-chicken.cfg").read_bytes()
+      == b"enabled=1\r\npasses=2\r\narm=1\r\nextra=keep\r\n")
+_man = json.loads((_d / installer.MANIFEST).read_text(encoding="utf8"))
+check("the manifest records the consumer and the passes",
+      _man.get("consumer") == "dfc" and _man.get("passes") == 2
+      and installer.options_from_manifest(_d).passes == 2)
+check("our own consumer files are not foreign hooks",
+      not any("chicken" in h.lower() for h in installer.other_ngx_hooks(_d, "feeder")),
+      str(installer.other_ngx_hooks(_d, "feeder")))
+installer.install(_g, installer.Options(consumer="renodx"), on_log=lambda t: None)
+_files = {p.name for p in _d.iterdir()}
+check("switching back to renodx removes the Chicken files and installs the add-on",
+      not any(n in _files for n in installer.DFC_FILES) and installer.RENODX in _files,
+      str(sorted(_files)))
+installer.uninstall(_g, on_log=lambda t: None)
+check("uninstall leaves only the game", sorted(p.name for p in _d.iterdir()) == ["Game.exe"])
+# a cfg without a pass key is left alone
+(_c / "deep-fried-chicken.cfg").write_bytes(b"enabled=1\r\narm=1\r\n")
+_rep = installer.install(_g, _opt, on_log=lambda t: None)
+check("no pass key: the cfg is untouched and a note says so",
+      (_d / "deep-fried-chicken.cfg").read_bytes() == b"enabled=1\r\narm=1\r\n"
+      and any("pass count key not found" in n for n in _rep.notes), str(_rep.notes))
+installer.uninstall(_g, on_log=lambda t: None)
+shutil.rmtree(_d, ignore_errors=True)
+shutil.rmtree(_c, ignore_errors=True)
+
+# the feed log's Chicken states
+_d = _diag_dir("diag_dfc_", feed=_FEED_OK.replace(
+    "[feed] frame 1 delivered", "[feed] Deep Fried Chicken 1.4.8: CONFLICT (another neural add-on loaded)\n[feed] frame 1 delivered"),
+    consumer="dfc")
+_r = diagnose.analyse(_d)
+check("CONFLICT is a failure that names the cause",
+      any("CONFLICT" in b for b in _levels(_r, "bad")), str(_levels(_r, "bad")))
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_dfc_ok_", feed=_FEED_OK.replace(
+    "[feed] frame 1 delivered", "[feed] Deep Fried Chicken 1.4.8: ARMED, 2 passes\n[feed] frame 1 delivered"),
+    consumer="dfc")
+_r = diagnose.analyse(_d)
+check("ARMED with the pass count is reported",
+      any("armed" in o.lower() and "2 passes" in o for o in _levels(_r, "ok")), str(_levels(_r, "ok")))
+shutil.rmtree(_d, ignore_errors=True)
+check("the feeder's conflict lines say one neural add-on",
+      any("exactly one neural add-on" in c for c in dlss.CONFLICTS[dlss.FEEDER]))
 
 section("RESULT")
 if FAILS:

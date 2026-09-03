@@ -637,6 +637,28 @@ def analyse(install_dir: Path) -> Report:
                 rep.add(WARN, "ReShade is not giving the feed a depth buffer.",
                         "The sampled depth is flat. " + _DEPTH_HINT)
 
+        # Deep Fried Chicken states, as the feed log reports them.
+        dfc = re.findall(r"Deep Fried Chicken[^\n]*?\b(ARMED|DISARMED|CONFLICT|FAILED)\b", text)
+        if dfc:
+            state = dfc[-1]
+            npass = re.findall(r"(\d+)\s*pass", text)
+            if state == "ARMED":
+                rep.add(OK, "Deep Fried Chicken is armed"
+                            + (f" ({npass[-1]} passes)." if npass else "."))
+            elif state == "CONFLICT":
+                rep.add(BAD, "Deep Fried Chicken reports CONFLICT: another neural "
+                             "add-on is loaded beside it.",
+                        "Remove renodx-dlss5.addon64 / renodx-dlss.addon64 / "
+                        "alexs-toolkit.addon64 from the folder (host64 on 32-bit) "
+                        "and start again - with two, Chicken does nothing.")
+            else:
+                rep.add(BAD, f"Deep Fried Chicken reports {state}.",
+                        "deep-fried-chicken.log next to it says why; quote it "
+                        "with dlss5-feed.log when reporting.")
+        elif man.get("consumer") == "dfc" and "Deep Fried Chicken: not present" in text:
+            rep.add(BAD, "Deep Fried Chicken's files are not where the feed looks.",
+                    "For a 32-bit game its three files belong in host64\\, "
+                    "beside the helper; reinstall puts them there.")
         if "host spawned" in text:
             rep.add(OK, "The 32-bit helper process started.")
             if "host connected" in text:

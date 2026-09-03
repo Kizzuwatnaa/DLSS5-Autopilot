@@ -50,6 +50,60 @@ FEEDER_FX = "DLSS5_Feed.fx"
 RENODX = "renodx-dlss5.addon64"
 # ShortFuse's add-on - the "SF" build - which hooks D3D9/D3D11/D3D12 itself.
 RENODX_SF = "renodx-dlss.addon64"
+
+# The feeder's "neural consumer": the add-on that runs the network on what
+# the feeder feeds it. renodx-dlss5 is downloadable; Deep Fried Chicken (up
+# to 30 passes - "two DLSS 5 on top of each other" is passes=2) and Alex's
+# Toolkit (a 2-pass cascade) are handed out on Discord only, so the person
+# points at the folder they unpacked. Exactly one consumer per folder: with
+# a second one loaded, Chicken silently does nothing (feeder README).
+CONSUMER_RENODX, CONSUMER_DFC, CONSUMER_TOOLKIT = "renodx", "dfc", "toolkit"
+DFC_FILES = ("deep-fried-chicken.addon64", "deep-fried-chicken-nvngx.dll",
+             "deep-fried-chicken.cfg")
+DFC_ADDON = DFC_FILES[0]
+TOOLKIT_ADDON = "alexs-toolkit.addon64"
+
+
+def find_consumer(folder, consumer: str) -> list[Path] | None:
+    """The user's consumer files in `folder`, or None when any is missing."""
+    folder = Path(folder)
+    try:
+        names = {f.name.lower(): f for f in folder.iterdir() if f.is_file()}
+    except OSError:
+        return None
+    if consumer == CONSUMER_DFC:
+        got = [names.get(n.lower()) for n in DFC_FILES]
+        return got if all(got) else None
+    if consumer == CONSUMER_TOOLKIT:
+        if TOOLKIT_ADDON.lower() not in names:
+            return None
+        return [f for n, f in sorted(names.items()) if n.startswith("alexs-toolkit")]
+    return None
+
+
+def set_dfc_passes(cfg: Path, passes: int) -> bool:
+    """Set the pass count in deep-fried-chicken.cfg, touching nothing else.
+
+    The key's name is not documented, so any key containing "pass" counts.
+    Returns False when no such key exists (the file is left alone)."""
+    try:
+        raw = cfg.read_bytes()
+    except OSError:
+        return False
+    text = raw.decode("utf8", "replace")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    out = []
+    hit = False
+    for line in text.split(nl):
+        key = line.split("=", 1)[0].strip().lower()
+        if "=" in line and "pass" in key and not line.lstrip().startswith(("#", ";")):
+            line = line.split("=", 1)[0] + "=" + str(int(passes))
+            hit = True
+        out.append(line)
+    if hit:
+        cfg.write_bytes(nl.join(out).encode("utf8"))
+    return hit
+
 # matiasLombo's neural-upstream. The name is not ours to choose: the NGX
 # snippet only creates the feature for a caller whose path contains
 # "nvngx.dll", and under any other name it returns 0xBAD00002.
@@ -102,11 +156,15 @@ def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
             found.append(names[n.lower()])
     # A ReShade add-on we did not write - another RenoDX build, say - is
     # loaded by ReShade regardless and hooks the same swap chain.
+    ours = {"dlss5-feed.addon64", "dlss5-bridge.addon64",
+            RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
+            STANDALONE_ADDON.lower()}
+    if path == FEEDER:
+        # The feeder's Discord consumers belong to that route; its install
+        # step keeps exactly one of them, so they are not "another hook".
+        ours |= {DFC_ADDON.lower(), TOOLKIT_ADDON.lower()}
     for low, orig in names.items():
-        if low.endswith(".addon64") and low not in (
-                "dlss5-feed.addon64", "dlss5-bridge.addon64",
-                RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
-                STANDALONE_ADDON.lower()):
+        if low.endswith(".addon64") and low not in ours:
             found.append(orig)
     return found
 
@@ -206,6 +264,10 @@ class Options:
     # generations lives; the stable release only accepts renodx-dlss5 4.55.
     feeder_prerelease: bool = False
     feeder_tag: str = ""                    # "" = stable or newest pre-release
+    # Feeder route: who runs the network. See CONSUMER_* and find_consumer.
+    consumer: str = "renodx"
+    consumer_dir: Path | None = None
+    passes: int = 1
     dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
 
@@ -535,9 +597,14 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     elif opt.path == BRIDGE:
         steps.append("dlss5-bridge")
 
-    steps += ["DLSS 5 add-on (renodx-dlss SF)" if opt.path == ROUTE_RENODX
-              else "DLSS 5 add-on (renodx)",
-              "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
+    if opt.path == FEEDER and opt.consumer == CONSUMER_DFC:
+        steps.append("neural consumer: Deep Fried Chicken (your files)")
+    elif opt.path == FEEDER and opt.consumer == CONSUMER_TOOLKIT:
+        steps.append("neural consumer: Alex's Toolkit (your files)")
+    else:
+        steps.append("DLSS 5 add-on (renodx-dlss SF)" if opt.path == ROUTE_RENODX
+                     else "DLSS 5 add-on (renodx)")
+    steps += ["nvngx_dlssnr.dll", "nvngx_dlss.dll"]
     if opt.path == FEEDER and g.bitness == 32:
         steps.append("host64 helper process")
     steps.append("ReShade configuration")
@@ -861,6 +928,17 @@ def preview(g: games.Game, opt: Options) -> Preview:
             if not listed:
                 add(pv.writes, rel(VORT_INCLUDE, "vort_*.fxh"))
             write(rel(TEXTURES, VORT_TEXTURE))
+    elif opt.path == FEEDER and opt.consumer in (CONSUMER_DFC, CONSUMER_TOOLKIT):
+        found = find_consumer(opt.consumer_dir, opt.consumer) if opt.consumer_dir else None
+        if not found:
+            pv.blockers.append("the neural add-on's folder is not set or is missing "
+                               "files - pick it on the install page")
+        else:
+            for f in found:
+                write(rel(dlss_dir, f.name))
+        for n in (RENODX, RENODX_SF):
+            if present(n):
+                pv.removes.append(n + " (a second neural add-on: it would silence the first)")
     else:
         write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
     write(rel(dlss_dir, DLSSNR))
@@ -1113,6 +1191,11 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     # would process the frame twice.
     if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE):
         out.append((NATIVE, RENODX))
+    # The Discord consumers are only ever right on the feeder route, and the
+    # install step there removes whichever the person did not pick.
+    if keep != FEEDER:
+        out.append((FEEDER, DFC_ADDON))
+        out.append((FEEDER, TOOLKIT_ADDON))
     return out
 
 
@@ -1228,6 +1311,9 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "keep_game_dlss": opt.keep_game_dlss,
             "feeder_prerelease": opt.feeder_prerelease,
             "feeder_tag": opt.feeder_tag,
+            "consumer": opt.consumer,
+            "consumer_dir": str(opt.consumer_dir) if opt.consumer_dir else None,
+            "passes": opt.passes,
             "dxvk": rep.components.get("dxvk"),
             "components": rep.components,
             "kind": g.kind,
@@ -1261,6 +1347,9 @@ def options_from_manifest(root: Path) -> Options | None:
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
         feeder_tag=str(data.get("feeder_tag") or ""),
+        consumer=str(data.get("consumer") or "renodx"),
+        consumer_dir=Path(data["consumer_dir"]) if data.get("consumer_dir") else None,
+        passes=int(data.get("passes") or 1),
         # OptiScaler used to imply the game's own DLSS; with an upscaler
         # recorded it is OptiScaler's DLSS in place of the game's FSR/XeSS.
         native_dlss=(path in (NATIVE, UPSTREAM) or (path == OPTI and not upscaler)
@@ -1788,10 +1877,61 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.written.append(str(TEXTURES / VORT_TEXTURE))
                 log(f"      {VORT_FX} + {len(w)} includes + {VORT_TEXTURE} "
                     f"(Vortigern, MIT)")
+        elif opt.path == FEEDER and opt.consumer in (CONSUMER_DFC, CONSUMER_TOOLKIT):
+            label = "Deep Fried Chicken" if opt.consumer == CONSUMER_DFC else "Alex's Toolkit"
+            begin(f"neural consumer: {label} (your files)")
+            found = find_consumer(opt.consumer_dir, opt.consumer) if opt.consumer_dir else None
+            if not found:
+                raise InstallError(f"{label}: pick the folder holding its files first "
+                                   f"({', '.join(DFC_FILES) if opt.consumer == CONSUMER_DFC else TOOLKIT_ADDON}).")
+            # One neural consumer per folder: a renodx add-on beside it would
+            # make Chicken do nothing, silently.
+            for n in (RENODX, RENODX_SF):
+                p_ = dlss_dir / n
+                if p_.is_file():
+                    try:
+                        p_.unlink()
+                        log(f"      removed {n} - one neural add-on per folder")
+                    except OSError:
+                        pass
+            for f in found:
+                _copy(f, dlss_dir / f.name, rep, root)
+                log(f"      {f.name} (your file)")
+            rep.components[opt.consumer] = "local"
+            if opt.consumer == CONSUMER_DFC and opt.passes != 1:
+                if set_dfc_passes(dlss_dir / DFC_FILES[2], opt.passes):
+                    log(f"      {DFC_FILES[2]}: passes={opt.passes} - the model runs "
+                        f"{opt.passes} times per frame")
+                    rep.notes.append(f"Deep Fried Chicken passes={opt.passes}")
+                else:
+                    rep.notes.append("pass count key not found in "
+                                     "deep-fried-chicken.cfg - set passes in its "
+                                     "overlay tab")
+            rep.notes.append(f"neural consumer: {label} from {opt.consumer_dir}")
         else:
             sf = opt.path == ROUTE_RENODX
             addon_name = RENODX_SF if sf else RENODX
             begin("DLSS 5 add-on (renodx-dlss SF)" if sf else "DLSS 5 add-on (renodx)")
+            # A Discord consumer left from an earlier install would silence
+            # this add-on. Ours goes; one we did not record is moved aside.
+            for n in list(DFC_FILES) + [f.name for f in dlss_dir.glob("alexs-toolkit*")]:
+                p_ = dlss_dir / n
+                if not p_.is_file():
+                    continue
+                rel_p = str(p_.relative_to(root)).replace("\\", "/")
+                try:
+                    if rel_p in {x.replace("\\", "/") for x in rep.preinstalled}:
+                        p_.unlink()
+                    else:
+                        aside = p_.with_name(p_.name + ORPHAN_SUFFIX)
+                        if aside.exists():
+                            p_.unlink()
+                        else:
+                            p_.rename(aside)
+                            rep.written.append(str(aside.relative_to(root)))
+                    log(f"      {n} taken out - one neural add-on per folder")
+                except OSError:
+                    pass
             # Even without an explicit choice, prefer a local build if one exists:
             # Discord releases are not on the mirror. Only a build of the right
             # family, though - the two add-ons are not interchangeable.

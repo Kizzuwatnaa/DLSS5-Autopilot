@@ -43,7 +43,8 @@ def _console() -> None:
 
 
 def cli(target: Path, remove: bool, check: bool, route: str = "",
-        dxvk: bool | None = None, game=None) -> int:
+        dxvk: bool | None = None, game=None, consumer: str = "renodx",
+        consumer_dir: Path | None = None, passes: int = 1) -> int:
     g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
@@ -107,7 +108,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     try:
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
-                                 dxvk=use_dxvk, upscaler=sup.upscaler),
+                                 dxvk=use_dxvk, consumer=consumer,
+                                 consumer_dir=consumer_dir, passes=passes, upscaler=sup.upscaler),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
@@ -127,6 +129,17 @@ def main() -> int:
     if "--route" in args and args.index("--route") + 1 < len(args):
         route = args[args.index("--route") + 1]
         args.remove(route)
+    consumer, consumer_dir, passes = "renodx", None, 1
+    for flag in ("--consumer", "--consumer-dir", "--passes"):
+        if flag in args and args.index(flag) + 1 < len(args):
+            val = args[args.index(flag) + 1]
+            args.remove(val)
+            if flag == "--consumer":
+                consumer = val
+            elif flag == "--consumer-dir":
+                consumer_dir = Path(val)
+            else:
+                passes = int(val)
     positional = [a for a in args if not a.startswith("-")]
     if "--video" in args:
         _console()
@@ -148,7 +161,8 @@ def main() -> int:
         return cli(Path(positional[0]),
                    remove="--remove" in args,
                    check="--check" in args,
-                   route=route,
+                   route=route, consumer=consumer, consumer_dir=consumer_dir,
+                   passes=passes,
                    dxvk=(True if "--dxvk" in args
                          else False if "--no-dxvk" in args else None))
     if "--help" in args or "-h" in args:
