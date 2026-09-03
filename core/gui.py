@@ -2457,7 +2457,28 @@ class App:
                           f"the feed")
             else:
                 self._log("   2. put your provider's technique ABOVE DLSS 5 Feed")
-            self._log("   3. turn on neural rendering in the DLSS 5 panel")
+            key = self._consumer_key()
+            if key == "dfc":
+                self._log("   3. neural rendering is Deep Fried Chicken's: its own tab "
+                          "in the overlay shows ARMED when it works (DISARMED / "
+                          "CONFLICT / FAILED mean it does not - 'did it work?' "
+                          "reads why)")
+                self._log("   !  its first run adds itself to ReShade's startup list "
+                          "and asks for ONE more restart - normal")
+                n = max(1, int(self.passes.get() or 1))
+                if n > 1:
+                    self._log(f"   !  passes={n}: the model runs {n} times per frame "
+                              f"- expect the frame-time cost to multiply; drop to 1 "
+                              f"if it stutters", "warn")
+                else:
+                    self._log("   !  1 pass is the starting point; more passes = "
+                              "the model again on its own output, at that much "
+                              "more cost")
+            elif key == "toolkit":
+                self._log("   3. neural rendering is Alex's Toolkit's: use its own "
+                          "overlay tab (2-pass cascade)")
+            else:
+                self._log("   3. turn on neural rendering in the DLSS 5 panel")
             self._log("   4. turn OFF the game's own MSAA/SSAA")
             self._log("   5. NVIDIA Smooth Motion and this feeder do not mix - "
                       "turn it off for this game if the picture flickers")
