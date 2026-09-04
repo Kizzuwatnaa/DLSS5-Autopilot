@@ -413,6 +413,62 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
     return rep
 
 
+# What installer.VULKAN_LAYER writes into the manifest where a proxy DLL name
+# would go. Spelled out here so diagnose does not import the installer.
+VULKAN_LAYER = "(vulkan layer)"
+
+
+def _layer_state(man: dict) -> tuple[bool, bool]:
+    """(any ReShade layer active, one this game's architecture can load)."""
+    try:
+        from . import vulkan
+    except ImportError:                       # not Windows
+        return True, True
+    x64 = man.get("bitness") != 32
+    return (vulkan.existing_registration() is not None,
+            vulkan.registered_for(x64) is not None)
+
+
+def _layer_gone(man: dict) -> tuple[str, str, str] | None:
+    """(title, detail, verdict) when the Vulkan layer cannot reach this game."""
+    any_layer, mine = _layer_state(man)
+    if mine:
+        return None
+    bits = 32 if man.get("bitness") == 32 else 64
+    if any_layer:
+        return ("A ReShade Vulkan layer is registered, but not the "
+                f"{bits}-bit one this game needs.",
+                f"A {bits}-bit game can only load the {bits}-bit ReShade "
+                f"layer. Install again with this tool - it registers the "
+                f"missing one beside the other.",
+                f"The {bits}-bit ReShade Vulkan layer is not registered - "
+                f"install again.")
+    return ("ReShade's Vulkan layer is not registered any more.",
+            "This game reaches ReShade as a Vulkan layer - a registry entry, "
+            "not a file in the folder. Something removed or disabled it: "
+            "ReShade's own installer with Vulkan unticked, a cleanup tool, or "
+            "another user account. Install again with this tool.",
+            "ReShade's Vulkan layer is not registered - install again.")
+
+
+def _dxvk_files(man: dict) -> list[str]:
+    """The DXVK DLLs this install wrote. Taken from the recorded file list,
+    not from the manifest's api: by the time the manifest is written the
+    game has been re-labelled Vulkan, which says nothing about whether DXVK
+    came in as d3d9.dll or as dxgi.dll + d3d11.dll."""
+    if not man.get("dxvk"):
+        return []
+    from . import dxvk as _dxvk
+    written = {str(f).replace("\\", "/").lower()
+               for f in man.get("files") or [] if isinstance(f, str)}
+    return [n for n in _dxvk.ALL_FILES if n in written]
+
+
+def _dxvk_gone(install_dir: Path, man: dict) -> list[str]:
+    """DXVK files the install recorded that are no longer in the folder."""
+    return [n for n in _dxvk_files(man) if not (install_dir / n).is_file()]
+
+
 def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                     stale_reshade: bool) -> Report:
     """No current log: read the folder instead and name the likeliest cause.
@@ -429,13 +485,34 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
     app = "app" if man.get("kind") == "video" else "game"
     missing = _missing_addons(install_dir, man)
 
-    if proxy and not (install_dir / proxy).is_file():
+    if proxy == VULKAN_LAYER:
+        # Never a file. Until 1.6.1 this went through the "gone from the
+        # folder" branch below and every Vulkan-layer install - which since
+        # 1.6.0 is every DirectX 9 game, through DXVK - was told antivirus
+        # had eaten a file that never existed.
+        gone = _layer_gone(man)
+        if gone is not None:
+            rep.add(BAD, gone[0], gone[1])
+            rep.verdict = gone[2]
+            return rep
+    elif proxy and not (install_dir / proxy).is_file():
         rep.add(BAD, f"ReShade's {proxy} is gone from the folder.",
                 "The install wrote it and it is no longer there: antivirus "
                 "quarantined it, or the game verified its files and removed "
                 "it. Restore it from quarantine (and exclude the folder), "
                 "then install again.")
         rep.verdict = f"ReShade's {proxy} is missing from the folder - reinstall."
+        return rep
+
+    dxvk_gone = _dxvk_gone(install_dir, man)
+    if dxvk_gone:
+        rep.add(BAD, f"DXVK is gone from the folder: {', '.join(dxvk_gone)}.",
+                "The install put DXVK there so the game renders on Vulkan and "
+                "ReShade can reach it as a layer. Without it the game is back "
+                "on DirectX and nothing loads. Antivirus quarantine or the "
+                "game verifying its files removes it - restore it (and "
+                "exclude the folder), then install again.")
+        rep.verdict = "DXVK is missing from the folder - reinstall."
         return rep
 
     if missing:
@@ -1080,8 +1157,20 @@ def _block(title: str, lines: list[str], budget: int) -> str:
 def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     """One line per file that decides whether anything can load at all."""
     names: list[str] = []
+    extra: list[str] = []
     proxy = man.get("proxy")
-    if proxy:
+    if proxy == VULKAN_LAYER:
+        # Not a file, so it cannot be looked for in the folder. It used to be
+        # reported as "MISSING" here, which sent people hunting through their
+        # antivirus quarantine for a file that never existed.
+        any_layer, mine = _layer_state(man)
+        bits = 32 if man.get("bitness") == 32 else 64
+        extra.append(f"- ReShade {bits}-bit Vulkan layer: "
+                     + ("registered" if mine else
+                        "NOT REGISTERED"
+                        + (" (another ReShade layer is, for the other "
+                           "architecture)" if any_layer else "")))
+    elif proxy:
         names.append(proxy)
     names += _addons(man)
     if route == "standalone":
@@ -1108,11 +1197,19 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
         return out
     if route != "optiscaler":
         names.append("ReShade.ini")
-    names.append("nvngx_dlssnr.dll")
+    names += _dxvk_files(man)
+    # On the 32-bit feeder route the DLSS runtimes live in host64/ beside the
+    # helper, not next to the game - looking for them in the folder reported
+    # "nvngx_dlssnr.dll: MISSING" on installs that were perfectly fine.
+    if man.get("bitness") == 32 and route == "feeder":
+        names.append("host64/nvngx_dlssnr.dll")
+    else:
+        names.append("nvngx_dlssnr.dll")
     out = []
     for n in dict.fromkeys(names):
         state = "present" if (install_dir / n).is_file() else "MISSING"
         out.append(f"- {n}: {state}")
+    out += extra
     # The game's own compiler beside the exe is the cause of the silent
     # "frames flow, nothing happens" case; worth a line whenever it is there.
     if (install_dir / "d3dcompiler_47.dll").is_file():

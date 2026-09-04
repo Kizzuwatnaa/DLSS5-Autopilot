@@ -45,28 +45,75 @@ def _hives():
             (winreg.HKEY_LOCAL_MACHINE, LAYER_KEY))
 
 
-def existing_registration() -> Path | None:
-    """A ReShade Vulkan layer already registered by anything, if there is one."""
+def registrations() -> list[tuple[Path, int]]:
+    """Every registered ReShade layer manifest, with its registry value.
+
+    The value is what the Vulkan loader reads: 0 means the implicit layer is
+    active, anything else means it is registered but DISABLED. Reusing a
+    disabled registration is how an install could finish, report success and
+    still leave the game without ReShade.
+    """
+    out: list[tuple[Path, int]] = []
     try:
         import winreg
     except ImportError:
-        return None
+        return out
     for hive, key in _hives():
         try:
             with winreg.OpenKey(hive, key) as k:
                 i = 0
                 while True:
                     try:
-                        name, _val, _type = winreg.EnumValue(k, i)
+                        name, val, _type = winreg.EnumValue(k, i)
                     except OSError:
                         break
                     i += 1
                     if "reshade" in name.lower() and name.lower().endswith(".json"):
                         p = Path(name)
                         if p.is_file():
-                            return p
+                            out.append((p, val if isinstance(val, int) else 1))
         except OSError:
             continue
+    return out
+
+
+def existing_registration() -> Path | None:
+    """An ACTIVE ReShade Vulkan layer registered by anything, if there is one."""
+    for path, val in registrations():
+        if val == 0:
+            return path
+    return None
+
+
+def manifest_x64(path: Path) -> bool | None:
+    """True for a 64-bit layer manifest, False for 32-bit, None if unclear.
+
+    A 64-bit game cannot load ReShade32.dll and a 32-bit game cannot load
+    ReShade64.dll, so "a ReShade layer is registered" is not the question -
+    "is one registered for THIS game's architecture" is.
+    """
+    lib = ""
+    try:
+        data = json.loads(path.read_text(encoding="utf8"))
+        lib = str(data.get("layer", {}).get("library_path", ""))
+    except (OSError, ValueError, AttributeError, TypeError):
+        lib = ""
+    name = (lib.replace("/", "\\").rsplit("\\", 1)[-1] or path.name).lower()
+    if "32" in name:
+        return False
+    if "64" in name:
+        return True
+    return None
+
+
+def registered_for(x64: bool) -> Path | None:
+    """An active layer this game's architecture can actually load."""
+    for path, val in registrations():
+        if val != 0:
+            continue
+        arch = manifest_x64(path)
+        if arch is None or arch is x64:
+            return path
     return None
 
 
@@ -108,11 +155,20 @@ def install_layer(setup_exe: Path, log=None, also32: bool = False) -> tuple[Path
     """
     log = log or (lambda *_: None)
 
-    found = existing_registration()
+    # A 32-bit game needs a 32-bit layer; a registration that only covers the
+    # other architecture is no use to it. Reported twice on 32-bit DX9 games
+    # (Bayonetta, GTA IV) after 1.6.0 sent DirectX 9 through DXVK: the install
+    # said "reusing the Vulkan layer that is already registered", the game ran
+    # on Vulkan, and ReShade was never in it.
+    found = registered_for(x64=not also32)
     if found is not None and not is_ours(found):
         log(f"      ReShade's Vulkan layer is already registered "
             f"({found}); reusing it")
         return found, False
+
+    if found is None and existing_registration() is not None:
+        log("      a ReShade Vulkan layer is registered, but not one this "
+            "game's architecture can load - adding ours")
 
     d = layer_dir()
     d.mkdir(parents=True, exist_ok=True)

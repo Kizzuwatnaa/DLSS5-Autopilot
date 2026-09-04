@@ -85,17 +85,6 @@ def resolve() -> tuple[str, str]:
     raise RuntimeError("Could not find a DXVK release archive.")
 
 
-def is_dxvk(path: Path) -> bool:
-    """A DXVK DLL carries its own name in its strings and is well over 1 MB."""
-    try:
-        if not path.is_file() or path.stat().st_size < (1 << 20):
-            return False
-        data = path.read_bytes()
-        return b"DXVK" in data and b"ReShade" not in data
-    except OSError:
-        return False
-
-
 def _extract(tgz: Path, member_suffix: str, dest: Path) -> None:
     with tarfile.open(tgz, "r:gz") as t:
         hit = next((m for m in t.getmembers()

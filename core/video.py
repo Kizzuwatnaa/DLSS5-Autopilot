@@ -716,7 +716,9 @@ def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
     """(frames delivered, motion vectors alive) logged after wall time t0.
 
     The feed log carries hh:mm:ss.mmm stamps only, so the day is taken from
-    t0; a stream started just before midnight is the one case this misreads.
+    t0, and a stamp more than half a day away from t0 is moved to the
+    neighbouring day - a stream started just before midnight otherwise read
+    every line as tomorrow's.
     """
     import datetime
     import re
@@ -734,6 +736,10 @@ def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
         stamp = datetime.datetime.combine(day, datetime.time(
             int(m.group(1)), int(m.group(2)), int(m.group(3)),
             int(m.group(4)[:3].ljust(3, "0")) * 1000)).timestamp()
+        if stamp - t0 > 43200:
+            stamp -= 86400
+        elif t0 - stamp > 43200:
+            stamp += 86400
         if stamp < t0 - 1:
             continue
         rest = m.group(5)

@@ -8,7 +8,10 @@ from __future__ import annotations
 import os
 import re
 import struct
+import time
 from pathlib import Path
+
+from . import log
 
 PE_X64 = 0x8664
 PE_X86 = 0x014C
@@ -164,6 +167,39 @@ def _has_d3d12_agility_sdk(folder: Path) -> bool:
     return "nvngx_dlssg.dll" in names or "nvngx_dlssd.dll" in names
 
 
+def _ships_dlss(folder: Path) -> str:
+    """The name of a DLSS runtime the GAME shipped, or "".
+
+    Evidence that a title is not what its imports say: NGX runs on D3D11,
+    D3D12 and Vulkan and never on DirectX 9. Files our own install put there
+    (nvngx_dlssnr.dll always; nvngx_dlss.dll on a 64-bit game, per the
+    manifest) are excluded, or every DX9 game would be re-labelled the
+    moment it was set up once.
+    """
+    try:
+        names = {f.name.lower() for f in folder.iterdir() if f.is_file()}
+    except OSError:
+        return ""
+    # Every ReShade route places nvngx_dlss.dll beside a 64-bit game too, so
+    # what our own install manifest lists as written is not the game's.
+    ours: set[str] = set()
+    if "dlss5-autopilot.json" in names:
+        try:
+            import json
+            man = json.loads((folder / "dlss5-autopilot.json")
+                             .read_text(encoding="utf8"))
+            ours = {str(f).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                    for f in man.get("files") or [] if isinstance(f, str)}
+        except (OSError, ValueError, AttributeError):
+            ours = set()
+    for n in ("nvngx_dlss.dll", "nvngx_dlssg.dll", "nvngx_dlssd.dll"):
+        if n in names and n not in ours:
+            return n
+    if (folder / "D3D12" / "D3D12Core.dll").is_file():
+        return "a D3D12 Agility SDK"
+    return ""
+
+
 def detect_api(path: Path) -> tuple[str, str]:
     """Return (api_label, reason).
 
@@ -203,6 +239,16 @@ def detect_api(path: Path) -> tuple[str, str]:
     if has("opengl32.dll"):
         return "OpenGL", "imports opengl32.dll, no DXGI"
     if has("d3d9.dll"):
+        # A real DirectX 9 game does not ship DLSS. Red Dead Redemption 2
+        # imports d3d9.dll and no DXGI at all, yet renders through D3D12 (or
+        # Vulkan) - taking the legacy import at face value put it on the DX9
+        # route, where nothing it needs is offered (issue #12).
+        modern = _ships_dlss(path.parent)
+        if modern:
+            return ("DX12", f"imports d3d9.dll, but ships {modern} - the "
+                            f"renderer is D3D12 or Vulkan, not DirectX 9. "
+                            f"If the game is set to Vulkan, pick that in "
+                            f"the settings before installing")
         return "DX9", "imports d3d9.dll, no DXGI"
     if _has_d3d12_agility_sdk(path.parent):
         return ("DX12", "no graphics DLL imported statically, but ships a "
@@ -229,10 +275,21 @@ _PRUNE_DIRS = {
 _MAX_DEPTH = 5
 
 
+# A scan must finish. The depth and the 400-executable cap below are not
+# enough on their own: a tree can hold hundreds of thousands of directories
+# with no .exe in any of them, and then neither limit ever fires. Reported on
+# C:\XboxGames (an empty GameSave folder, and the Minecraft Launcher's
+# runtime tree) where the scan stopped for minutes and eventually died.
+_WALK_DIRS = 6000
+_WALK_SECONDS = 6.0
+
+
 def _walk_exes(folder: Path, max_depth: int = _MAX_DEPTH) -> list[Path]:
     """Walk the folder to a bounded depth collecting .exe files."""
     found: list[Path] = []
     base_depth = len(folder.parts)
+    seen = 0
+    deadline = time.monotonic() + _WALK_SECONDS
     for root, dirs, files in os.walk(folder, topdown=True):
         rp = Path(root)
         depth = len(rp.parts) - base_depth
@@ -244,7 +301,13 @@ def _walk_exes(folder: Path, max_depth: int = _MAX_DEPTH) -> list[Path]:
         for f in files:
             if f.lower().endswith(".exe"):
                 found.append(rp / f)
+        seen += 1
         if len(found) > 400:      # don't get stuck in pathological trees
+            break
+        if seen >= _WALK_DIRS or (seen % 64 == 0
+                                  and time.monotonic() > deadline):
+            log.write(f"stopped looking for executables under {folder} after "
+                      f"{seen} folders - too big to search", "warn")
             break
     return found
 
@@ -298,9 +361,10 @@ def find_game_exes(folder: Path) -> list[Path]:
     cands = _walk_exes(folder)
     if not cands:
         return []
-    scored = sorted(cands, key=lambda p: _score(p, folder), reverse=True)
+    score = {p: _score(p, folder) for p in cands}
+    scored = sorted(cands, key=lambda p: score[p], reverse=True)
     # Drop obvious helpers, but never return nothing if that is all there is.
-    good = [p for p in scored if _score(p, folder) > -500]
+    good = [p for p in scored if score[p] > -500]
     return good or scored
 
 

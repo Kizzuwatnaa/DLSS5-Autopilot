@@ -391,6 +391,12 @@ def scan_battlenet() -> list[Game]:
     return out
 
 
+# Folders the Xbox app keeps beside the games. GameSave holds cloud saves in
+# empty container directories and Minecraft Launcher is a launcher with a
+# large runtime tree: both are unscannable, neither is a game (issue #8).
+XBOX_NOT_GAMES = {"gamesave", "minecraft launcher"}
+
+
 def scan_xbox() -> list[Game]:
     r"""Xbox / Game Pass.
 
@@ -415,6 +421,8 @@ def scan_xbox() -> list[Game]:
         try:
             for f in root.iterdir():
                 if not f.is_dir():
+                    continue
+                if f.name.lower() in XBOX_NOT_GAMES:
                     continue
                 # XboxGames puts the real files one level down, in Content.
                 inner = f / "Content"

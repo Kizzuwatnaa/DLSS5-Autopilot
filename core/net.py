@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 import shutil
+import ssl
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -37,7 +39,7 @@ def clear_cache() -> None:
 
 
 def download(url: str, name: str, progress=None, force: bool = False,
-             attempts: int = 3) -> Path:
+             attempts: int = 4) -> Path:
     """Download to the cache and return the path. progress(done, total).
 
     Retries on failure and resumes from a partial file with an HTTP Range
@@ -85,11 +87,28 @@ def download(url: str, name: str, progress=None, force: bool = False,
         except urllib.error.HTTPError:
             tmp.unlink(missing_ok=True)          # 4xx/5xx: resuming won't help
             raise
+        except ssl.SSLError as e:
+            # "decryption failed or bad record mac" is not a hiccup: it is
+            # almost always an antivirus or a VPN sitting in the middle of the
+            # TLS connection. Retrying instantly three times just reproduces
+            # it, so back off - and if it survives that, say what it means
+            # instead of showing a raw ssl.c traceback (issue #7).
+            last = e
+            if attempt == attempts - 1:
+                tmp.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"{name}: the secure connection kept breaking ({e}). "
+                    f"Something is sitting between this PC and GitHub - an "
+                    f"antivirus with HTTPS/SSL scanning, a VPN or a proxy. "
+                    f"Turn that off (or exclude this tool) and try again; the "
+                    f"download resumes where it stopped.") from e
+            time.sleep(1.5 * (attempt + 1))
         except Exception as e:                   # network hiccup - retry
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)
                 raise
+            time.sleep(1.0 * (attempt + 1))
     raise last if last else RuntimeError(f"{name}: download failed")
 
 

@@ -3,11 +3,13 @@ uninstalls cleanly, and the guard rails actually fire.
 
 Run this before cutting a release.
 """
+import inspect
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
 from pathlib import Path
 
@@ -580,7 +582,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.6.0", update.VERSION == "1.6.0", update.VERSION)
+check("version is 1.6.1", update.VERSION == "1.6.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -3201,6 +3203,114 @@ _d = Path(tempfile.mkdtemp(prefix="plain_dx11_"))
 shutil.copyfile(X64, _d / "Game.exe")
 check("a plain D3D11 game with neither is still DX11",
       pe.detect_api(_d / "Game.exe")[0] in ("DX11", "Unknown"))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("33. a Vulkan-layer install is diagnosed by the registry, not the folder")
+# Since 1.6.0 every DirectX 9 game goes through DXVK, so its manifest says
+# "(vulkan layer)" where a proxy name would be. 1.6.0 looked for a file by
+# that name and told everyone it had been quarantined (issues #10, #2).
+from core import vulkan as _vk
+_saved = (_vk.registrations, )
+_vk.registrations = lambda: [(Path("C:/ProgramData/ReShade/ReShade64.json"), 0)]
+check("registered_for(64-bit) sees ReShade's own 64-bit registration",
+      _vk.registered_for(True) is not None)
+check("registered_for(32-bit) does not accept a 64-bit manifest",
+      _vk.registered_for(False) is None)
+_vk.registrations = lambda: [(Path("C:/x/ReShade32.json"), 0),
+                             (Path("C:/x/ReShade64.json"), 1)]
+check("a DISABLED registration (value 1) counts for nothing",
+      _vk.registered_for(True) is None and _vk.existing_registration() is not None)
+check("manifest_x64 reads the architecture from the file name when the JSON is unreadable",
+      _vk.manifest_x64(Path("C:/nowhere/ReShade32.json")) is False
+      and _vk.manifest_x64(Path("C:/nowhere/ReShade64.json")) is True)
+
+_vk.registrations = lambda: [(Path("C:/ProgramData/ReShade/ReShade64.json"), 0)]
+# The manifest says api "Vulkan" once DXVK is in - the DXVK file set has to
+# come from the recorded file list (d3d9.dll here), not from that label.
+_d = _diag_dir("diag_vk32_", proxy=False, bitness=32, api="Vulkan", dxvk="v3.1")
+(_d / "d3d9.dll").write_bytes(b"MZ")
+_m = json.loads((_d / "dlss5-autopilot.json").read_text(encoding="utf8"))
+_m["proxy"] = "(vulkan layer)"
+_m["files"] = [f for f in _m["files"] if f != "dxgi.dll"] + ["d3d9.dll"]
+(_d / "dlss5-autopilot.json").write_text(json.dumps(_m), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("a 32-bit game with only the 64-bit layer registered is told exactly that",
+      not _r.ran and "32-bit ReShade Vulkan layer is not registered" in _r.verdict
+      and not any("gone from the folder" in t for t in _levels(_r, "bad")), _r.verdict)
+_body = diagnose.issue_body("9.9", "x", None, "?", None, "feeder", _r, "",
+                            Path("C:/x/autopilot.log"), _d)
+check("the report shows the layer state and looks for the runtime in host64",
+      "ReShade 32-bit Vulkan layer: NOT REGISTERED" in _body
+      and "(vulkan layer): MISSING" not in _body
+      and "- host64/nvngx_dlssnr.dll: MISSING" in _body
+      and "- d3d9.dll: present" in _body, _body[_body.find("**Files"):][:400])
+
+_vk.registrations = lambda: [(Path("C:/x/ReShade32.json"), 0),
+                             (Path("C:/x/ReShade64.json"), 0)]
+_r = diagnose.analyse(_d)
+check("with both layers registered the verdict moves on to 'not started yet'",
+      not _r.ran and "Not started" in _r.verdict, _r.verdict)
+check("DXVK's d3d9.dll is NOT reported missing just because the api label is Vulkan",
+      "dxgi.dll" not in " ".join(_levels(_r, "bad")), str(_levels(_r, "bad")))
+(_d / "d3d9.dll").unlink()
+_r = diagnose.analyse(_d)
+check("DXVK missing from the folder is its own finding",
+      "DXVK is missing" in _r.verdict, _r.verdict)
+_vk.registrations = _saved[0]
+shutil.rmtree(_d, ignore_errors=True)
+
+# install_layer: a foreign 64-bit registration must not satisfy a 32-bit game
+_calls = []
+_saved = (_vk.registrations, _vk._place, _vk._register, _vk.layer_dir)
+_vk.registrations = lambda: [(Path("C:/ProgramData/ReShade/ReShade64.json"), 0)]
+_vk._place = lambda setup, d, dll, manifest: (_calls.append(("place", dll)) or d / manifest)
+_vk._register = lambda m: _calls.append(("register", m.name))
+_tmp = Path(tempfile.mkdtemp(prefix="vk_layer_"))
+_vk.layer_dir = lambda: _tmp
+_m, _fresh = _vk.install_layer(Path("C:/x/setup.exe"), also32=False)
+check("a 64-bit game reuses ReShade's own 64-bit layer", not _fresh and not _calls)
+_m, _fresh = _vk.install_layer(Path("C:/x/setup.exe"), also32=True)
+check("a 32-bit game gets our 32-bit layer registered despite the foreign 64-bit one",
+      _fresh and ("register", "ReShade32.json") in _calls, str(_calls))
+_vk.registrations, _vk._place, _vk._register, _vk.layer_dir = _saved
+shutil.rmtree(_tmp, ignore_errors=True)
+
+section("34. a d3d9.dll import is not DirectX 9 when the game ships DLSS")
+# No fixture here imports d3d9.dll, so the evidence function is tested on
+# its own; detect_api consults it only on the d3d9-without-DXGI branch.
+_d = Path(tempfile.mkdtemp(prefix="rdr2_"))
+check("an empty folder is no evidence", pe._ships_dlss(_d) == "")
+(_d / "nvngx_dlss.dll").write_bytes(b"MZ")
+check("the game's own nvngx_dlss.dll is evidence of a modern renderer",
+      pe._ships_dlss(_d) == "nvngx_dlss.dll")
+(_d / "dlss5-autopilot.json").write_text(json.dumps({"files": ["nvngx_dlss.dll"]}), encoding="utf8")
+check("an nvngx_dlss.dll our own manifest lists as written is NOT evidence (64-bit DX9 game after one install)",
+      pe._ships_dlss(_d) == "")
+(_d / "dlss5-autopilot.json").unlink()
+(_d / "nvngx_dlss.dll").unlink()
+(_d / "nvngx_dlssnr.dll").write_bytes(b"MZ")
+check("our own nvngx_dlssnr.dll is NOT evidence (it would re-label every DX9 game after one install)",
+      pe._ships_dlss(_d) == "")
+check("the d3d9 branch of detect_api consults it",
+      "_ships_dlss(path.parent)" in inspect.getsource(pe.detect_api))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("35. a scan cannot get stuck in a folder with no executables")
+_d = Path(tempfile.mkdtemp(prefix="deep_"))
+_p = _d
+for i in range(4):
+    _p = _p / f"lvl{i}"
+    _p.mkdir()
+    for j in range(60):
+        (_p / f"box{j}").mkdir()
+_old = pe._WALK_DIRS
+pe._WALK_DIRS = 50
+_t0 = time.monotonic()
+_found = pe._walk_exes(_d)
+pe._WALK_DIRS = _old
+check("the walk stops at the directory budget", _found == [] and time.monotonic() - _t0 < 5)
+check("Xbox's GameSave and Minecraft Launcher folders are not games",
+      "gamesave" in games.XBOX_NOT_GAMES and "minecraft launcher" in games.XBOX_NOT_GAMES)
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

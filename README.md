@@ -438,6 +438,16 @@ for. The install reports success and then the game does nothing. The tool
 notices the missing file and tells you; restore it from quarantine and add
 the game folder to your exclusions.
 
+### "ReShade Vulkan layer is not registered" (DirectX 9 and Vulkan games)
+
+DirectX 9 games render through DXVK, so ReShade reaches them as a Vulkan
+*layer* - a registry entry under your user account, not a file in the game
+folder. A 32-bit game needs the 32-bit layer; ReShade's own installer only
+registers the 64-bit one, and versions before 1.6.1 took that as "already
+done". Install again with the tool: it adds the missing one and says so in
+the log. Cleanup tools and ReShade's installer with Vulkan unticked remove
+the registration; the same reinstall puts it back.
+
 ---
 
 ## Network access
