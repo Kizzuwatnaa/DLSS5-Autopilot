@@ -226,9 +226,9 @@ def detect_api(path: Path) -> tuple[str, str]:
                             "the real renderer is D3D12")
         return "DX11", "imports d3d11.dll statically"
     if has("d3d10.dll") or has("d3d10_1.dll") or has("d3d10core.dll"):
-        # DX10 is DXGI-based, so ReShade still installs as dxgi.dll. Neither
-        # the add-on nor the bridge hooks D3D10 itself, so only the feeder's
-        # synthetic contract can reach these - and they are rare.
+        # DX10 is DXGI-based, so ReShade still installs as dxgi.dll. Only
+        # the feeder reaches D3D10 (0.13.1+, through a private D3D11 relay
+        # device) - and these games are rare.
         return "DX10", "imports d3d10.dll statically"
     # DXGI without d3d11/d3d12: API chosen at runtime, proxy is dxgi.dll anyway
     if has("dxgi.dll"):

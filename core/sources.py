@@ -81,6 +81,27 @@ RENODX_DEFAULT = None
 # Support for 4.6 arrived in 0.8.0-beta.3 and for 4.7 in 0.9.0-beta.1.
 FEEDER_RENODX_PIN = "4.55"
 
+# The last renodx-dlss5 build that works on OpenGL. 4.70's fenced workset
+# pool never recycles under GL - "NR workset pool exhausted; preserving game
+# output" after four frames - on every OpenGL game perseval-BLR verified
+# (OpenMW, ioquake3, Serious Sam, Jedi Academy, Riddick, DOOM 3 BFG).
+OPENGL_RENODX_PIN = "4.60"
+
+# NVIDIA driver 616.64 (32.0.16.1664) and 616.86 route NGX feature 18 into
+# nvngx_dlssnr.dll itself, and with renodx-dlss5 4.6/4.7 every evaluate
+# then faults inside D3D12Core.dll - the game renders on, no neural frame
+# ever arrives. Measured by the feeder's author on an RTX 5090 (DLSS5-Feeder
+# #54, 0.14.0-beta.1 notes): 4.55 passes 300/300 on the same driver, 4.7
+# passes 0/300. dlss5-bridge 1.4.9 closes that route in memory; the
+# renodx-dlss5 add-on cannot, so on these drivers it is pinned to 4.55.
+DRIVER_FAULT_MIN = "616.64"
+DRIVER_FAULT_RENODX_PIN = "4.55"
+
+# The first DLSS5-Feeder that reaches Direct3D 10 (a private D3D11 relay
+# device inside the game; nothing extra to install). Older builds refuse
+# D3D10 games outright.
+FEEDER_DX10_MIN = "v0.13.1-beta.1"
+
 
 class RateLimited(RuntimeError):
     """GitHub's anonymous API allows 60 requests an hour per IP."""

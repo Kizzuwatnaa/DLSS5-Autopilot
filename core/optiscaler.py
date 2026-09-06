@@ -308,6 +308,49 @@ def enable_nr(exe_dir: Path, log=None, settings: dict | None = None) -> None:
         log("      could not write OptiScaler.ini")
 
 
+# Frame generation, on any card. OptiScaler's zip ships AMD's FSR 3.1 frame
+# generation libraries (amd_fidelityfx_loader_dx12.dll +
+# amd_fidelityfx_framegeneration_dx12.dll, in OptiScaler/), so three keys
+# turn it on with nothing else to download: the upscaler OptiScaler already
+# runs is the input, FSR FG is the output. That is one generated frame per
+# rendered one (2x) and it works on RTX 20/30/40 as well as 50; NVIDIA's
+# multi-frame generation (3x/4x) is RTX 50 hardware and is not this.
+# HUDFix is what the ini itself asks for with the upscaler as input: without
+# it the HUD is generated along with the frame and text ghosts.
+FG_SECTION = "FrameGen"
+FG_VALUES = {"Enabled": "true", "FGInput": "upscaler", "FGOutput": "fsrfg"}
+FG_HUD = {"HUDFix": "true"}
+FG_LIBS = ("OptiScaler/amd_fidelityfx_loader_dx12.dll",
+           "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll")
+
+
+def enable_fg(exe_dir: Path, log=None) -> bool:
+    """Turn FSR 3.1 frame generation on in OptiScaler.ini (D3D12 only).
+
+    Returns False, and writes nothing, when the frame-generation libraries
+    are not beside OptiScaler - an older or trimmed build.
+    """
+    log = log or (lambda *_: None)
+    missing = [n for n in FG_LIBS if not (exe_dir / n).is_file()]
+    if missing:
+        log(f"      frame generation skipped: OptiScaler build without "
+            f"{missing[0].split('/')[-1]}")
+        return False
+    p = exe_dir / INI
+    try:
+        text = p.read_text(encoding="utf8", errors="replace") if p.is_file() else ""
+        text = _ini_set(text, FG_SECTION, FG_VALUES)
+        text = _ini_set(text, "OptiFG", FG_HUD)
+        p.write_text(text, encoding="utf8")
+        log(f"      OptiScaler.ini: [{FG_SECTION}] Enabled=true, "
+            f"FGInput=upscaler, FGOutput=fsrfg; [OptiFG] HUDFix=true - "
+            f"FSR 3.1 frame generation, 2x, any RTX card")
+        return True
+    except OSError:
+        log("      could not write OptiScaler.ini")
+        return False
+
+
 def set_dx11_bridged_upscaler(exe_dir: Path, log=None) -> None:
     """On D3D11 the model only runs on OptiScaler's D3D12 bridge.
 

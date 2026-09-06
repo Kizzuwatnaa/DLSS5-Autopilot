@@ -1,0 +1,269 @@
+r"""Multi-frame generation on RTX 40: dashdogy's RTX40MFG-Unlock.
+
+NVIDIA sells DLSS Multi Frame Generation (3x/4x, up to 6x) as an RTX 50
+feature; RTX 40 gets plain 2x frame generation. dashdogy's unlock hooks the
+Streamline and NGX calls inside the game before the frame-generation
+feature is created, validates the adapter and the wrapper, and asks for the
+higher multiplier with the Ada temporal correction applied. Nothing on disk
+is changed - NVIDIA's own files are left alone, the change lives in memory.
+
+It needs three things, all of which this module handles:
+
+  - the game already has working DLSS Frame Generation (Streamline). The
+    unlock adds multipliers to a feature the game has; it does not add
+    frame generation to a game without it.
+  - Ultimate ASI Loader (ThirteenAG) under a proxy name the game imports
+    early, so RTX40MFG.asi runs before the first frame-generation pipeline
+    exists. ReShade holds dxgi.dll, so the loader goes in as dinput8.dll
+    or version.dll - whichever the executable imports. An executable that
+    imports none of the loader's names cannot take it, and the tool says
+    so instead of guessing.
+  - a ReShade with add-on support, for the DLSS MFG tab where the
+    multiplier is chosen. Every ReShade route here has that.
+
+Research software, in its author's words: higher multipliers and Vulkan may
+give artifacts, a frozen picture or a crash. Off by default, RTX 40 only,
+and only offered when the game itself ships a DLSS Frame Generation runtime.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+from . import net, pe
+
+API = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases/latest"
+LOADER_API = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest"
+LOADER_ASSET = "Ultimate-ASI-Loader_x64.zip"
+# What the release zip carries and where it goes: beside the executable.
+FILES = ("RTX40MFGCore.dll", "RTX40MFG.asi", "RTX40MFG-UI.addon64")
+# The loader's own file inside its zip, and the names it can be loaded as.
+# dinput8.dll first (the author's example); version.dll for games that do
+# not import DirectInput, and for RE Engine games where dinput8.dll is
+# already REFramework.
+LOADER_DLL = "dinput8.dll"
+LOADER_NAMES = ("dinput8.dll", "version.dll", "winmm.dll")
+# The values the release's global.ini asks for, merged into the loader's
+# own <proxy>.ini rather than overwriting it.
+GLOBAL_SETS = {
+    "LoadPlugins": "1",
+    "LoadFromScriptsOnly": "1",
+    "LoadExtraPlugins": "RTX40MFG.asi",
+    "DontLoadFromDllMain": "0",
+    "ForceEntryPointHook": "0",
+}
+BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+MANIFEST = "dlss5-autopilot.json"
+ADA = 89                      # sm_89, the RTX 40 architecture
+
+# Files a game ships when it has DLSS Frame Generation: the NGX runtime and
+# Streamline's frame-generation plugin. Either one is enough evidence.
+DLSSG_FILES = ("nvngx_dlssg.dll", "sl.dlss_g.dll")
+
+
+def _ours(install_dir: Path) -> set[str]:
+    """File names our own manifest in this folder says an install wrote.
+
+    The standalone route puts an nvngx_dlssg.dll beside a game that never
+    had frame generation; counting that as the game's own would offer an
+    unlock with nothing to unlock.
+    """
+    try:
+        man = json.loads((install_dir / MANIFEST).read_text(encoding="utf8"))
+        return {str(f).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                for f in man.get("files") or [] if isinstance(f, str)}
+    except (OSError, ValueError, AttributeError):
+        return set()
+
+
+def has_dlssg(game_dir: Path, install_dir: Path | None = None) -> str:
+    """The frame-generation file the GAME ships, relative to game_dir, or "".
+
+    Searched the way the DLSS files are (dlss.find_dlss_files): Unreal keeps
+    them under Engine/Plugins/Runtime/Nvidia/DLSS/..., nine levels down from
+    the game folder and nowhere near the executable.
+    """
+    from . import dlss
+    ours = _ours(install_dir) if install_dir is not None else set()
+    try:
+        hits = dlss.find_dlss_files(Path(game_dir), names=DLSSG_FILES)
+    except Exception:
+        hits = []
+    for rel in hits:
+        if rel.replace("\\", "/").rsplit("/", 1)[-1].lower() not in ours:
+            return rel
+    return ""
+
+
+def applies(sm: int | None, api: str, install_dir: Path,
+            game_dir: Path | None = None) -> tuple[bool, str]:
+    """(offer it?, why not) for this card, API and game."""
+    if sm != ADA:
+        return False, "RTX 40 only - RTX 50 has multi-frame generation natively"
+    if api not in ("DX12", "Vulkan"):
+        return False, "D3D12 and Vulkan games only"
+    if not has_dlssg(game_dir or install_dir, install_dir):
+        return False, "the game has no DLSS Frame Generation to unlock"
+    return True, ""
+
+
+def loader_name(exe: Path | None, taken: set[str] = frozenset()) -> str | None:
+    """The proxy name the loader goes in as: one the executable really
+    imports and nothing else in the folder already uses - or None when the
+    import table names none of them (a guessed name would never load)."""
+    imports: set[str] = set()
+    if exe is not None:
+        try:
+            imports = {i.lower() for i in pe.pe_imports(exe)}
+        except Exception:
+            imports = set()
+    for n in LOADER_NAMES:
+        if n in imports and n not in taken:
+            return n
+    return None
+
+
+def resolve() -> tuple[str, str]:
+    """(tag, download url) of the newest universal release zip."""
+    r = net.json_get(API)
+    tag = r.get("tag_name", "?")
+    for a in r.get("assets", []):
+        n = a.get("name", "").lower()
+        if n.endswith(".zip") and "universal" in n:
+            return tag, a["browser_download_url"]
+    for a in r.get("assets", []):
+        if a.get("name", "").lower().endswith(".zip"):
+            return tag, a["browser_download_url"]
+    raise RuntimeError("Could not find the RTX40MFG-Unlock release zip.")
+
+
+def resolve_loader() -> tuple[str, str]:
+    """(tag, download url) of Ultimate ASI Loader's 64-bit zip."""
+    r = net.json_get(LOADER_API)
+    tag = r.get("tag_name", "?")
+    for a in r.get("assets", []):
+        if a.get("name", "") == LOADER_ASSET:
+            return tag, a["browser_download_url"]
+    raise RuntimeError(f"Could not find {LOADER_ASSET} in Ultimate ASI Loader's release.")
+
+
+def is_loader(path: Path) -> bool:
+    """Is this file Ultimate ASI Loader? It carries its own name."""
+    try:
+        if not path.is_file() or path.stat().st_size < (1 << 18):
+            return False
+        return b"Ultimate ASI Loader" in path.read_bytes()
+    except OSError:
+        return False
+
+
+def _merge_ini(path: Path) -> None:
+    """Put GLOBAL_SETS into [GlobalSets] of the loader's ini, keeping the rest."""
+    from .optiscaler import _ini_set
+    text = path.read_text(encoding="utf8", errors="replace") if path.is_file() else ""
+    path.write_text(_ini_set(text, "GlobalSets", GLOBAL_SETS), encoding="utf8")
+
+
+class NoLoaderName(RuntimeError):
+    """The executable imports none of the names the loader can take."""
+
+
+def install(exe_dir: Path, exe: Path | None, log=None,
+            taken: set[str] = frozenset(),
+            preinstalled=()) -> tuple[str, list[str]]:
+    """Put the unlock and its loader beside the game. Returns (tag, files).
+
+    A file already under the loader's name is backed up once so uninstall
+    puts it back - unless an earlier install of OURS wrote it (it is in
+    `preinstalled`, the previous manifest's file list). A loader the person
+    installed by hand for other .asi mods is theirs and is backed up like
+    any other file, whatever it contains.
+    """
+    log = log or (lambda *_: None)
+    name = loader_name(exe, taken)
+    if name is None:
+        raise NoLoaderName(
+            f"{exe.name if exe else 'the executable'} imports none of "
+            f"{', '.join(LOADER_NAMES)}, so Ultimate ASI Loader has no name "
+            f"it would be loaded under - the unlock cannot be placed here")
+    tag, url = resolve()
+    log(f"      RTX40MFG-Unlock {tag}")
+    z = net.download(url, f"RTX40MFG-Unlock-{tag}.zip")
+    ltag, lurl = resolve_loader()
+    lz = net.download(lurl, f"Ultimate-ASI-Loader-{ltag}_x64.zip")
+
+    ours = {str(p).replace("\\", "/").lower() for p in preinstalled}
+    written: list[str] = []
+    for n in FILES:
+        net.extract_one(z, n, exe_dir / n)
+        written.append(n)
+    log(f"      {', '.join(FILES)}")
+
+    dest = exe_dir / name
+    bak = dest.with_name(name + BACKUP_SUFFIX)
+    if dest.is_file() and not bak.exists() and name.lower() not in ours:
+        try:
+            shutil.copy2(dest, bak)
+            written.append(bak.name)
+            log(f"      kept your existing {name} as {bak.name}")
+        except OSError:
+            log(f"      WARNING: could not back up the existing {name}")
+    net.extract_one(lz, LOADER_DLL, dest)
+    written.append(name)
+    ini = dest.with_suffix(".ini")
+    existed = ini.is_file() and ini.name.lower() not in ours
+    _merge_ini(ini)
+    if not existed:
+        written.append(ini.name)
+    log(f"      Ultimate ASI Loader {ltag} as {name} + {ini.name} "
+        f"([GlobalSets] LoadExtraPlugins=RTX40MFG.asi)")
+    log("      in game: ReShade overlay -> DLSS MFG tab -> Follow game, a "
+        "fixed multiplier, or Dynamic")
+    return tag, written
+
+
+def remove_leftovers(exe_dir: Path, preinstalled, log=None) -> list[str]:
+    """Take out an earlier install's unlock when this one does not want it.
+
+    A reinstall on the same route skips the full uninstall, so without this
+    the three files and the loader stayed - hooking Streamline while the new
+    manifest said the option was off. Returns the relative names removed
+    (the caller drops them from `preinstalled`).
+    """
+    log = log or (lambda *_: None)
+    ours = {str(p).replace("\\", "/") for p in preinstalled}
+    lowers = {p.lower() for p in ours}
+    if not any(f.lower() in lowers for f in FILES):
+        return []
+    gone: list[str] = []
+    for n in FILES:
+        p = exe_dir / n
+        if n.lower() in lowers and p.is_file():
+            try:
+                p.unlink()
+                gone.append(n)
+            except OSError:
+                log(f"      WARNING: could not remove {n}")
+    for n in LOADER_NAMES:
+        if n.lower() not in lowers:
+            continue
+        p = exe_dir / n
+        bak = p.with_name(n + BACKUP_SUFFIX)
+        try:
+            if p.is_file():
+                p.unlink()
+                gone.append(n)
+            if bak.is_file():
+                bak.replace(p)
+                gone.append(bak.name)
+                log(f"      put your own {n} back")
+            ini = p.with_suffix(".ini")
+            if ini.name.lower() in lowers and ini.is_file():
+                ini.unlink()
+                gone.append(ini.name)
+        except OSError:
+            log(f"      WARNING: could not remove {n}")
+    if gone:
+        log(f"      multi-frame generation off: removed {', '.join(gone)}")
+    return gone

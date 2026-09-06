@@ -752,6 +752,103 @@ def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
     return frames, mv
 
 
+# Screen and window capture: anything on the desktop through DLSS 5 - a
+# browser playing a video, a stream, an emulator, a game nothing should be
+# injected into. Same pipe as the webcam: ffmpeg captures, encodes, and hands
+# the player a local MPEG-TS stream over UDP. A screen goes through the
+# Desktop Duplication API (ddagrab, on the GPU) and NVENC, so a 4K desktop at
+# 60 fps costs almost nothing; a single window goes through GDI, which is
+# the only capture that can follow one window, and libx264. Half a second
+# behind either way - for watching, not for playing.
+SCREEN_PREFIX = "screen "
+WINDOW_PREFIX = "window: "
+
+
+def list_screens() -> list[str]:
+    """Every monitor, then every visible window big enough to matter."""
+    out: list[str] = []
+    try:
+        import ctypes
+        import ctypes.wintypes as w
+        u = ctypes.windll.user32
+        n = int(u.GetSystemMetrics(80)) or 1          # SM_CMONITORS
+        out += [f"{SCREEN_PREFIX}{i + 1}" for i in range(n)]
+        titles: list[str] = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
+        def cb(h, _l):
+            if u.IsWindowVisible(h):
+                ln = u.GetWindowTextLengthW(h)
+                if ln:
+                    b = ctypes.create_unicode_buffer(ln + 1)
+                    u.GetWindowTextW(h, b, ln + 1)
+                    r = w.RECT()
+                    u.GetWindowRect(h, ctypes.byref(r))
+                    if r.right - r.left >= 320 and r.bottom - r.top >= 200 \
+                            and b.value not in titles:
+                        titles.append(b.value)
+            return True
+        u.EnumWindows(cb, 0)
+        out += [WINDOW_PREFIX + t for t in titles
+                if not t.startswith("DLSS 5 Autopilot")]
+    except Exception:
+        pass
+    return out or [SCREEN_PREFIX + "1"]
+
+
+def capture_command(ff: Path, target: str, fps: int = 60, gpu: bool = True) -> list[str]:
+    """The ffmpeg command line that captures `target` into the player's UDP pipe.
+
+    `gpu` False is the fallback when NVENC or Desktop Duplication refuses:
+    GDI capture of the whole desktop and libx264 - slower, always works.
+    """
+    base = [str(ff), "-hide_banner", "-loglevel", "error"]
+    out = ["-g", str(fps), "-f", "mpegts", f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"]
+    x264 = ["-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p"]
+    if target.startswith(WINDOW_PREFIX):
+        title = target[len(WINDOW_PREFIX):]
+        return base + ["-f", "gdigrab", "-framerate", str(min(fps, 30)),
+                       "-i", f"title={title}"] + x264 + out
+    idx = 0
+    try:
+        idx = max(0, int(target[len(SCREEN_PREFIX):]) - 1)
+    except ValueError:
+        idx = 0
+    if gpu:
+        return base + ["-init_hw_device", "d3d11va", "-filter_complex",
+                       f"ddagrab=output_idx={idx}:framerate={fps}",
+                       "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
+                       "-zerolatency", "1"] + out
+    return base + ["-f", "gdigrab", "-framerate", str(min(fps, 30)),
+                   "-i", "desktop"] + x264 + out
+
+
+def start_screen(folder: Path, target: str, fps: int = 60):
+    """Start capturing a screen or a window and the player on it."""
+    import subprocess
+    import time
+    global _webcam_proc
+    stop_webcam()
+    ff = tools_dir(folder) / FFMPEG
+    if not ff.is_file():
+        raise RuntimeError("ffmpeg is not in the player's tools folder yet - "
+                           "run one download first, or press 'set up the video "
+                           "player' again")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    tries = [True, False] if target.startswith(SCREEN_PREFIX) else [False]
+    for gpu in tries:
+        _webcam_proc = subprocess.Popen(capture_command(ff, target, fps, gpu),
+                                        cwd=str(tools_dir(folder)), creationflags=flags)
+        time.sleep(2.0)
+        if _webcam_proc.poll() is None:
+            launch(folder, WEBCAM_URL)
+            return _webcam_proc
+    _webcam_proc = None
+    raise RuntimeError(f"ffmpeg could not capture '{target}' - a window has to be "
+                       f"open and not minimised; a screen number has to exist")
+
+
 def stop_webcam() -> None:
     global _webcam_proc
     if _webcam_proc is not None:

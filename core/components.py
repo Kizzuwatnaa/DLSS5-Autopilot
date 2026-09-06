@@ -135,6 +135,21 @@ def check(root: Path) -> list[Item]:
         # either.
         if name == "dlssnr":
             outdated = False
+        elif name == "renodx":
+            # The add-on is pinned on purpose in two cases, and the pin is
+            # the newest build that works there - nagging "1 newer" would
+            # send people back to the faulting one: 4.55 on driver 616.64+
+            # (every evaluate faults with 4.6/4.7), 4.60 on OpenGL (4.70
+            # stalls). See sources.py.
+            from . import gpu, sources
+            cap = None
+            if gpu.driver_at_least(sources.DRIVER_FAULT_MIN):
+                cap = sources.DRIVER_FAULT_RENODX_PIN
+            elif (man.get("api") or "") == "OpenGL":
+                cap = sources.OPENGL_RENODX_PIN
+            if cap and _key(latest) > _key(cap):
+                latest = cap
+            outdated = (latest != installed and _key(latest) > _key(installed))
         else:
             outdated = (latest != installed and _key(latest) > _key(installed))
         out.append(Item(LABELS.get(name, name), installed, latest, outdated))

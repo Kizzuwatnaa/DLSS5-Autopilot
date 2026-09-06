@@ -62,16 +62,27 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
     idir = g.install_dir
     x64 = g.bitness == 64
     dl_dir = idir if x64 else idir / installer.HOST_DIR
-    proxy = installer._proxy_name(g.api)
+    proxy = installer._proxy_name(installer.via_dxvk(g, opt).api)
     print()
     print("  --- completeness check ---")
     good = True
 
-    # 1) ReShade
-    good &= check("ReShade proxy", (idir / proxy).is_file() and
-                  installer._is_reshade(idir / proxy), proxy)
-    good &= check("proxy bitness matches the game",
-                  pe.exe_bitness(idir / proxy) == g.bitness)
+    # 1) ReShade - a proxy DLL, or (DirectX 9 through DXVK since 1.6.0) the
+    #    Vulkan layer: DXVK's d3d9.dll beside the game and a registered layer
+    #    the game's architecture can load.
+    if proxy == installer.VULKAN_LAYER:
+        from core import dxvk, vulkan
+        good &= check("DXVK d3d9.dll beside the game",
+                      (idir / "d3d9.dll").is_file() and dxvk.is_dxvk(idir / "d3d9.dll"))
+        good &= check("DXVK bitness matches the game",
+                      pe.exe_bitness(idir / "d3d9.dll") == g.bitness)
+        good &= check(f"ReShade {g.bitness}-bit Vulkan layer registered",
+                      vulkan.registered_for(x64) is not None)
+    else:
+        good &= check("ReShade proxy", (idir / proxy).is_file() and
+                      installer._is_reshade(idir / proxy), proxy)
+        good &= check("proxy bitness matches the game",
+                      pe.exe_bitness(idir / proxy) == g.bitness)
 
     # 2) shader basliklari
     sh = idir / installer.SHADERS
@@ -132,6 +143,12 @@ def run(label: str, src: Path, exename: str, nested: bool) -> bool:
     good &= check("install manifest", (idir / installer.MANIFEST).is_file())
     good &= check("tool reports it as installed", g.installed)
 
+    # Leave the machine as it was: the install registered our Vulkan layer
+    # and listed this temp folder as a Vulkan game; deleting the folder
+    # alone left both behind, and test_all then saw our layer as active.
+    removed = installer.uninstall(g, on_log=lambda t: None)
+    good &= check("uninstall took its files back out", len(removed) > 0,
+                  f"{len(removed)} items")
     shutil.rmtree(root, ignore_errors=True)
     print(f"\n  RESULT: {'COMPLETE' if good else 'SOMETHING MISSING'}\n")
     return good

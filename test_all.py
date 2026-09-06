@@ -291,8 +291,13 @@ shutil.rmtree(d, ignore_errors=True)
 section("6. vulkan layer handling")
 before = vulkan.existing_registration()
 check("existing ReShade registration is detected or absent", True, str(before))
-check("our layer dir is not the existing one",
-      before is None or not vulkan.is_ours(before))
+# Ours can legitimately be the active one on this PC (a Vulkan-layer game of
+# ours is installed here); what must hold is that it points at our folder
+# and the manifest is really there.
+check("an active registration is a real manifest; ours lives in our layer dir",
+      before is None or (before.is_file() and (not vulkan.is_ours(before)
+                                                 or before.parent == vulkan.layer_dir())),
+      str(before))
 
 # ---------------------------------------------------------------- 7. misc
 section("6b. optiscaler proxy names")
@@ -582,7 +587,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.6.1", update.VERSION == "1.6.1", update.VERSION)
+check("version is 1.7.0", update.VERSION == "1.7.0", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -607,7 +612,13 @@ check("component versions are read from the manifest",
 (_d / installer.MANIFEST).write_text(json.dumps(
     {"notes": ["renodx version: 4.55", "backed up the game's own x.dll"]}),
     encoding="utf8")
+# On this PC's driver the renodx pin may cap "latest" at 4.55 (section 44);
+# this check is about reading the old note format, so the driver is taken
+# out of the equation.
+_saved_drv = gpu.driver_at_least
+gpu.driver_at_least = lambda want: False
 _old = _comp.check(_d)
+gpu.driver_at_least = _saved_drv
 check("versions recorded by an older release are still read",
       len(_old) == 1 and _old[0].installed == "4.55"
       and _old[0].outdated, str([(i.installed, i.latest, i.outdated) for i in _old]))
@@ -625,15 +636,24 @@ check("diagnosis reads a real log", bool(r.verdict), r.verdict[:52])
 # ---------------------------------------------------------- 8. v1.3.0 rules
 section("8. route rules, version pins and the OptiScaler dials")
 
-# DirectX 10: nothing reaches it, and the tool must say so rather than install.
+# DirectX 10: reachable since feeder 0.13.1 (private D3D11 relay), feeder only.
 d = Path(tempfile.mkdtemp(prefix="dx10_"))
 shutil.copyfile(X64, d / "Game.exe")
 g = games.manual(d)
 g.api = "DX10"
 ok, why = installer.check_supported(g)
-check("dx10 is refused with a reason", not ok and "DirectX 10" in why, why)
+check("dx10 is supported now", ok, why)
 s10 = dlss.detect(d, d, "DX10", 64)
-check("dx10 route report says unsupported", not s10.supported)
+check("dx10 goes to the feeder only, and says which build",
+      s10.supported and s10.options == [dlss.FEEDER] and "0.13.1" in s10.reason,
+      s10.reason)
+check("dx10 reliability is beta with the relay named",
+      installer.reliability(g, dlss.FEEDER)[0] == installer.BETA
+      and "relay" in installer.reliability(g, dlss.FEEDER)[1])
+check("the feeder build gate compares versions the feeder's way",
+      sources.feeder_key("v0.13.1-beta.1") >= sources.feeder_key(sources.FEEDER_DX10_MIN)
+      and sources.feeder_key("v0.12.1-beta.2") < sources.feeder_key(sources.FEEDER_DX10_MIN)
+      and sources.feeder_key("v0.14.0") > sources.feeder_key(sources.FEEDER_DX10_MIN))
 shutil.rmtree(d, ignore_errors=True)
 
 # 64-bit D3D9 is reachable now, through ShortFuse's add-on only.
@@ -1131,7 +1151,7 @@ _r = diagnose.analyse(_d)
 _body = diagnose.issue_body("9.9", "RTX 4060 Ti", 89, "581.0", None, "feeder", _r,
                             "scan steam: 3 found\nscan epic: 0 found\nreal line\n",
                             Path("C:/x/autopilot.log"), _d, last_error="Traceback: boom")
-_order = ["**What happened**", "**What I expected**", "- version: 9.9",
+_order = ["**Did the game start?**", "**What happened**", "**What I expected**", "- version: 9.9",
           "**Diagnosis**", "**Files in the folder**", "**ReShade.log**",
           "**dlss5-feed.log**", "**Last error**", "autopilot.log"]
 _pos = [_body.find(k) for k in _order]
@@ -1781,7 +1801,8 @@ check("the folder is still untouched", sorted(p.name for p in d.iterdir())
       == ["Game.exe", "dxgi.dll"], str(sorted(p.name for p in d.iterdir())))
 g.api = "DX10"
 pv = installer.preview(g, installer.Options())
-check("an unsupported api is a blocker", any("DirectX 10" in b for b in pv.blockers))
+check("dx10 is no longer a preview blocker", not any("DirectX 10" in b for b in pv.blockers),
+      str(pv.blockers))
 shutil.rmtree(d, ignore_errors=True)
 
 # A Remix-modded folder with some other route picked by hand: install()
@@ -3311,6 +3332,379 @@ pe._WALK_DIRS = _old
 check("the walk stops at the directory budget", _found == [] and time.monotonic() - _t0 < 5)
 check("Xbox's GameSave and Minecraft Launcher folders are not games",
       "gamesave" in games.XBOX_NOT_GAMES and "minecraft launcher" in games.XBOX_NOT_GAMES)
+shutil.rmtree(_d, ignore_errors=True)
+
+section("36. 1.7.0: OpenGL pin, quirks, route texts")
+check("OpenGL pins renodx-dlss5 to 4.60 (4.70 stalls on GL)",
+      sources.OPENGL_RENODX_PIN == "4.60"
+      and "OPENGL_RENODX_PIN" in inspect.getsource(installer.install))
+check("quirks are keyed by executable name, case-insensitively",
+      dlss.quirks(Path("D:/Q3/Quake3.exe")) and "ioquake3" in dlss.quirks(Path("quake3.exe"))[0]
+      and dlss.quirks(Path("Game.exe")) == () and dlss.quirks(None) == ())
+check("every route has a one-line label and a blurb, and the bridge is no longer 'stopped'",
+      set(dlss.LABELS) == set(dlss.ALL_ROUTES) == set(dlss.BLURB)
+      and all("\n" not in v and len(v) < 80 for v in dlss.LABELS.values())
+      and "stopped" not in dlss.BLURB[dlss.BRIDGE])
+check("the feeder blurb lists Direct3D 10", "D3D10" in dlss.BLURB[dlss.FEEDER])
+_d = _diag_dir("diag_fx_", provider=4)
+_body = diagnose.issue_body("9.9", "x", None, "?", None, "feeder", diagnose.analyse(_d), "",
+                            Path("C:/x/autopilot.log"), _d)
+check("the feeder report lists the feed shader and the chosen provider's file (issue #13)",
+      "- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING" in _body
+      and "- reshade-shaders/Shaders/lumenite_QuantMotion.fx: MISSING" in _body,
+      _body[_body.find("**Files"):][:500])
+shutil.rmtree(_d, ignore_errors=True)
+
+# frame generation on the OptiScaler route: three ini keys, libraries checked
+_d = Path(tempfile.mkdtemp(prefix="fg_"))
+(_d / "OptiScaler.ini").write_text("[DlssNr]\nEnabled=true\n", encoding="utf8")
+check("no FG libraries beside OptiScaler -> nothing written, False",
+      optiscaler.enable_fg(_d) is False
+      and "FrameGen" not in (_d / "OptiScaler.ini").read_text(encoding="utf8"))
+(_d / "OptiScaler").mkdir()
+for _n in optiscaler.FG_LIBS:
+    (_d / _n).write_bytes(b"MZ")
+check("with the libraries the three keys and HUDFix are written",
+      optiscaler.enable_fg(_d) is True)
+_ini = (_d / "OptiScaler.ini").read_text(encoding="utf8")
+check("FrameGen section: Enabled=true, FGInput=upscaler, FGOutput=fsrfg",
+      "[FrameGen]" in _ini and "FGInput=upscaler" in _ini and "FGOutput=fsrfg" in _ini
+      and "HUDFix=true" in _ini and "[DlssNr]" in _ini, _ini)
+shutil.rmtree(_d, ignore_errors=True)
+check("Options carries fg and the manifest round-trips it",
+      hasattr(installer.Options(), "fg") and installer.Options().fg is False
+      and '"fg": opt.fg' in inspect.getsource(installer)
+      and 'fg=bool(data.get("fg"' in inspect.getsource(installer.options_from_manifest))
+
+section("37. RTX 40 multi-frame generation (mfg.py) - files, loader name, ini merge")
+from core import mfg as _m  # noqa: E402
+_d = Path(tempfile.mkdtemp(prefix="mfg_"))
+check("not offered on RTX 50 / RTX 30", not _m.applies(120, "DX12", _d)[0]
+      and not _m.applies(86, "DX12", _d)[0])
+check("not offered without a DLSS Frame Generation file", not _m.applies(89, "DX12", _d)[0]
+      and "no DLSS Frame Generation" in _m.applies(89, "DX12", _d)[1])
+(_d / "nvngx_dlssg.dll").write_bytes(b"MZ")
+check("RTX 40 + D3D12 + nvngx_dlssg.dll -> offered", _m.applies(89, "DX12", _d) == (True, ""))
+check("RTX 40 + Vulkan -> offered, D3D11 -> not",
+      _m.applies(89, "Vulkan", _d)[0] and not _m.applies(89, "DX11", _d)[0])
+(_d / "dlss5-autopilot.json").write_text(json.dumps({"files": ["nvngx_dlssg.dll"]}), encoding="utf8")
+check("an nvngx_dlssg.dll our own manifest wrote (standalone route) is NOT evidence",
+      not _m.applies(89, "DX12", _d)[0])
+(_d / "dlss5-autopilot.json").unlink()
+(_d / "nvngx_dlssg.dll").unlink()
+_deep = _d / "Engine" / "Plugins" / "Runtime" / "Nvidia" / "DLSS" / "Binaries" / "ThirdParty" / "Win64"
+_deep.mkdir(parents=True)
+(_deep / "sl.dlss_g.dll").write_bytes(b"MZ")
+check("Streamline's sl.dlss_g.dll nine levels down (Unreal) counts",
+      _m.has_dlssg(_d).replace("\\", "/").endswith("Win64/sl.dlss_g.dll"), _m.has_dlssg(_d))
+_exe_dir = _d / "Proj" / "Binaries" / "Win64"; _exe_dir.mkdir(parents=True)
+check("applies() searches from the game folder, not the executable's folder",
+      _m.applies(89, "DX12", _exe_dir, _d)[0] and not _m.applies(89, "DX12", _exe_dir)[0])
+check("loader name comes from the import table only - no name imported means None",
+      _m.loader_name(None) is None and _m.loader_name(Path("C:/nowhere.exe")) is None)
+_imp = X64
+_names = {i.lower() for i in pe.pe_imports(_imp)}
+_first = next((n for n in _m.LOADER_NAMES if n in _names), None)
+check("a real executable gets a name it imports; a taken name moves to the next imported one",
+      _first is not None and _m.loader_name(_imp) == _first
+      and _m.loader_name(_imp, {_first}) in (set(_m.LOADER_NAMES) & _names) - {_first} | {None})
+# install() against fake release zips: three files, the loader, its ini
+import zipfile as _zf
+_rz = _d / "mfg.zip"
+with _zf.ZipFile(_rz, "w") as z:
+    for n in _m.FILES:
+        z.writestr(n, b"MZ" + n.encode())
+    z.writestr("global.ini", "[GlobalSets]\nLoadPlugins=1\n")
+_lz = _d / "ual.zip"
+with _zf.ZipFile(_lz, "w") as z:
+    z.writestr("dinput8.dll", b"MZ" + b"Ultimate ASI Loader" + b"\0" * (1 << 18))
+_game = _d / "game"; _game.mkdir()
+shutil.copyfile(X64, _game / "Game.exe")
+# The loader takes a name the executable really imports (version.dll on
+# this fixture, which has no DirectInput), so the test follows that choice.
+_lname = _m.loader_name(_game / "Game.exe")
+_lini = _lname[:-4] + ".ini"
+check("the loader name comes from the executable's import table",
+      _lname in _m.LOADER_NAMES and _lname in {i.lower() for i in pe.pe_imports(_game / "Game.exe")}, _lname)
+(_game / _lname).write_bytes(b"MZ-the-games-own")
+(_game / _lini).write_text("[GlobalSets]\nLoadPlugins=1\nUseCrashHandler=0\n\n[Other]\nKeep=1\n", encoding="utf8")
+_saved = (_m.resolve, _m.resolve_loader, net.download)
+_m.resolve = lambda: ("v9.9", "mfg")
+_m.resolve_loader = lambda: ("v1", "ual")
+net.download = lambda url, name, **k: _rz if url == "mfg" else _lz
+try:
+    _tag, _files = _m.install(_game, _game / "Game.exe")
+    # a second install of ours: the loader now in place is OURS (in the
+    # previous manifest), so it must not be backed up over the real backup
+    _bak_before = (_game / (_lname + _m.BACKUP_SUFFIX)).read_bytes()
+    _tag2, _files2 = _m.install(_game, _game / "Game.exe", preinstalled=set(_files))
+    check("a reinstall keeps the ORIGINAL backup (the loader in place was ours)",
+          (_game / (_lname + _m.BACKUP_SUFFIX)).read_bytes() == _bak_before
+          and (_lname + _m.BACKUP_SUFFIX) not in _files2, str(_files2))
+    # the person's own Ultimate ASI Loader is theirs: backed up like anything else
+    _g2 = _d / "game2"; _g2.mkdir(); shutil.copyfile(X64, _g2 / "Game.exe")
+    (_g2 / _lname).write_bytes(b"MZ" + b"Ultimate ASI Loader" + b"\0" * (1 << 18))
+    _t3, _f3 = _m.install(_g2, _g2 / "Game.exe")
+    check("a loader the person installed by hand is backed up, not treated as ours",
+          (_g2 / (_lname + _m.BACKUP_SUFFIX)).is_file() and (_lname + _m.BACKUP_SUFFIX) in _f3, str(_f3))
+    _gone = _m.remove_leftovers(_g2, set(_f3))
+    check("remove_leftovers takes the unlock out and puts the person's loader back",
+          all(not (_g2 / n).is_file() for n in _m.FILES)
+          and (_g2 / _lname).read_bytes().startswith(b"MZ" + b"Ultimate ASI Loader")
+          and not (_g2 / (_lname + _m.BACKUP_SUFFIX)).exists(), str(_gone))
+    check("remove_leftovers does nothing when the previous install had no unlock",
+          _m.remove_leftovers(_g2, {"dxgi.dll"}) == [])
+finally:
+    _m.resolve, _m.resolve_loader, net.download = _saved
+check("the three unlock files land beside the exe",
+      all((_game / n).is_file() for n in _m.FILES) and _tag == "v9.9")
+check("the game's own file under that name is backed up and the loader takes the name",
+      (_game / (_lname + _m.BACKUP_SUFFIX)).read_bytes() == b"MZ-the-games-own"
+      and _m.is_loader(_game / _lname), str(_files))
+_ini = (_game / _lini).read_text(encoding="utf8")
+check("the loader's ini is merged, not replaced",
+      "LoadExtraPlugins=RTX40MFG.asi" in _ini and "UseCrashHandler=0" in _ini
+      and "[Other]" in _ini and "Keep=1" in _ini and _ini.count("[GlobalSets]") == 1, _ini)
+check("an ini that existed before is not listed as ours; the backup and the loader are",
+      _lini not in _files and _lname in _files
+      and (_lname + _m.BACKUP_SUFFIX) in _files, str(_files))
+check("Options carries mfg and the manifest round-trips it",
+      installer.Options().mfg is False and '"mfg": opt.mfg' in inspect.getsource(installer)
+      and 'mfg=bool(data.get("mfg"' in inspect.getsource(installer.options_from_manifest))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("38. screen and window capture through the player (video.py)")
+_ff = Path("C:/t/ffmpeg.exe")
+_c = video.capture_command(_ff, "screen 2", 60, gpu=True)
+check("a screen goes through Desktop Duplication on the GPU and NVENC",
+      "ddagrab=output_idx=1:framerate=60" in _c and "h264_nvenc" in _c
+      and _c[-1].startswith("udp://127.0.0.1:") and "-zerolatency" in _c, str(_c))
+_c = video.capture_command(_ff, "screen 1", 60, gpu=False)
+check("the fallback is GDI of the desktop with libx264, capped at 30 fps",
+      "gdigrab" in _c and "desktop" in _c and "libx264" in _c
+      and _c[_c.index("-framerate") + 1] == "30", str(_c))
+_c = video.capture_command(_ff, "window: Firefox - YouTube", 60)
+check("a window is captured by title through GDI",
+      "gdigrab" in _c and "title=Firefox - YouTube" in _c and "ddagrab" not in " ".join(_c), str(_c))
+_ls = video.list_screens()
+check("the list starts with the monitors and never lists this tool's own window",
+      _ls and _ls[0] == "screen 1" and not any("DLSS 5 Autopilot" in s for s in _ls), str(_ls[:4]))
+
+section("39. OpenGL games get VORT motion vectors, installed by the tool")
+check("VORT is a provider the tool installs, with its technique above the feed",
+      reshade_ini.PROVIDERS[2][1] == "vort_MotionEffects@vort_Motion.fx"
+      and reshade_ini.PROVIDERS[2][2] is True)
+_d = Path(tempfile.mkdtemp(prefix="glpreset_"))
+reshade_ini.write_preset(_d, 2)
+_t = (_d / "ReShadePreset.ini").read_text(encoding="utf8")
+check("the preset puts vort_MotionEffects first and DLSS5_MV_PROVIDER=2",
+      _t.index("vort_MotionEffects@vort_Motion.fx") < _t.index("DLSS5_Feed@DLSS5_Feed.fx")
+      and "DLSS5_MV_PROVIDER=2" in _t, _t[:300])
+shutil.rmtree(_d, ignore_errors=True)
+_d = Path(tempfile.mkdtemp(prefix="vortkeep_"))
+(_d / "ReShadePreset.ini").write_text(
+    "Techniques=vort_MotionEffects@vort_Motion.fx,DLSS5_Feed@DLSS5_Feed.fx,Lumenite_Kernel@lumenite_Kernel.fx,Clarity@Clarity.fx\n",
+    encoding="utf8")
+reshade_ini.remove_our_techniques(_d, 3)
+_t = (_d / "ReShadePreset.ini").read_text(encoding="utf8")
+check("uninstall of a LumeniteFX install leaves the person's VORT technique alone",
+      "vort_MotionEffects" in _t and "Lumenite_Kernel" not in _t and "DLSS5_Feed" not in _t and "Clarity" in _t, _t)
+(_d / "ReShadePreset.ini").write_text(
+    "Techniques=vort_MotionEffects@vort_Motion.fx,DLSS5_Feed@DLSS5_Feed.fx,Clarity@Clarity.fx\n", encoding="utf8")
+reshade_ini.remove_our_techniques(_d, 2)
+_t = (_d / "ReShadePreset.ini").read_text(encoding="utf8")
+check("uninstall of a VORT install removes it", "vort_MotionEffects" not in _t and "Clarity" in _t, _t)
+shutil.rmtree(_d, ignore_errors=True)
+check("the feeder route installs VORT for provider 2 through the shared step",
+      "elif opt.provider == 2:" in inspect.getsource(installer._install_feeder_parts)
+      and "_install_vort" in inspect.getsource(installer._install_feeder_parts)
+      and "_install_vort" in inspect.getsource(installer.install))
+check("an OpenGL install with a Lumenite provider is switched to VORT before planning",
+      'g.api == "OpenGL" and opt.provider in (3, 4)' in inspect.getsource(installer.install))
+_d = Path(tempfile.mkdtemp(prefix="glprev_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d); _g.api = "OpenGL"; _g.bitness = 64
+_pv = installer.preview(_g, installer.Options(path=dlss.FEEDER, provider=3))
+check("the preview of an OpenGL feeder install lists VORT's files, not LumeniteFX's",
+      any("vort_Motion.fx" in w for w in _pv.writes)
+      and not any("lumenite_Kernel.fx" in w for w in _pv.writes), str(_pv.writes[:12]))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("40. the updater understands a one-folder release before one exists")
+import zipfile as _zf2
+import hashlib
+from core import selfupdate  # noqa: E402
+_d = Path(tempfile.mkdtemp(prefix="upd_"))
+_pe = X64.read_bytes()
+_one = _d / "one.zip"
+with _zf2.ZipFile(_one, "w") as z:
+    z.writestr("dlss5-autopilot.exe", _pe); z.writestr("README.md", "x")
+_dir = _d / "dir.zip"
+with _zf2.ZipFile(_dir, "w") as z:
+    z.writestr("dlss5-autopilot/dlss5-autopilot.exe", _pe)
+    z.writestr("dlss5-autopilot/_internal/python313.dll", b"MZ" + b"\0" * 8000)
+    z.writestr("dlss5-autopilot/_internal/core/gui.pyc", b"pyc")
+    z.writestr("dlss5-autopilot/README.md", "x")
+_saved = (net.json_get, net.download, net.fetch_text, selfupdate.MIN_BYTES)
+selfupdate.MIN_BYTES = 70000         # the fixture exe (65 KB) alone is below this; exe + _internal is above
+_sha = hashlib.sha256(_pe).hexdigest()
+net.fetch_text = lambda url: f"{_sha}  dist/dlss5-autopilot.exe\n".encode()
+net.json_get = lambda url: {"tag_name": "v9.9", "assets": [
+    {"name": "DLSS5-Autopilot-v9.9-win64.zip", "browser_download_url": "zip"},
+    {"name": "SHA256SUMS.txt", "browser_download_url": "sums"}]}
+try:
+    net.download = lambda url, name, **k: _one
+    _raised = False
+    try:
+        selfupdate.fetch()
+    except selfupdate.UpdateError:
+        _raised = True
+    check("the size floor applies to the exe alone for a one-file release", _raised)
+    selfupdate.MIN_BYTES = 1024
+    _exe1 = selfupdate.fetch()
+    selfupdate.MIN_BYTES = 70000
+    check("a one-file release yields the exe alone",
+          _exe1.name == "dlss5-autopilot.exe" and not (_exe1.parent / "_internal").exists())
+    net.download = lambda url, name, **k: _dir
+    _exe2 = selfupdate.fetch()
+    check("...but for a one-folder release the whole download is measured (exe alone would fail)",
+          _exe2.stat().st_size < 70000)
+    check("a one-folder release yields the exe WITH its _internal folder beside it",
+          _exe2.name == "dlss5-autopilot.exe"
+          and (_exe2.parent / "_internal" / "python313.dll").is_file()
+          and (_exe2.parent / "_internal" / "core" / "gui.pyc").is_file())
+finally:
+    net.json_get, net.download, net.fetch_text, selfupdate.MIN_BYTES = _saved
+_cur = _d / "app" / "dlss5-autopilot.exe"
+_s1 = selfupdate.swap_script(_cur, _exe1)
+_s2 = selfupdate.swap_script(_cur, _exe2)
+check("the swap script for a one-file build touches only the exe",
+      "_internal" not in _s1 and 'copy /y "%SOURCE%" "%TARGET%"' in _s1)
+check("the swap script for a one-folder build copies _internal (drives may differ), keeps the old one and can roll back",
+      f'move /y "{_d / "app" / "_internal"}" "{_d / "app" / "_internal.old"}"' in _s2
+      and f'xcopy "{_exe2.parent / "_internal"}" "{_d / "app" / "_internal"}\\"' in _s2
+      and ":rollback" in _s2 and 'copy /y "%SOURCE%" "%TARGET%"' in _s2
+      and _s2.index("_internal.old") < _s2.index('copy /y "%SOURCE%"'), _s2)
+shutil.rmtree(_d, ignore_errors=True)
+
+section("41. the day-two reports: duplicate add-on lines, layer wording, USB drives, 'bin'")
+_d = _diag_dir("diag_dupe_", reshade=(
+    'Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.\n'
+    'Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.\n'
+    'Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.\n'), path="upstream")
+_r = diagnose.analyse(_d)
+check("one 'loaded add-on' line per add-on, however many sessions the log holds (#22)",
+      sum("loaded add-on" in t for t in _levels(_r, "ok")) == 1, str(_levels(_r, "ok")))
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_vklayer_", proxy=False, api="Vulkan")
+_m = json.loads((_d / "dlss5-autopilot.json").read_text(encoding="utf8"))
+_m["proxy"] = "(vulkan layer)"
+(_d / "dlss5-autopilot.json").write_text(json.dumps(_m), encoding="utf8")
+_saved = _vk.registrations
+_vk.registrations = lambda: [(Path("C:/x/ReShade64.json"), 0)]
+_r = diagnose.analyse(_d)
+_vk.registrations = _saved
+check("a not-started Vulkan-layer install is told to check the renderer, not a proxy name (#16/#19)",
+      any("not running on Vulkan" in t for t in _levels(_r, "info"))
+      and not any("ignores (vulkan layer)" in t for t in _levels(_r, "info")), str(_levels(_r, "info")))
+shutil.rmtree(_d, ignore_errors=True)
+check("generic folder names give way to the game's own (#17)",
+      games.display_name(Path("D:/Games/World War Z/bin")) == "World War Z"
+      and games.display_name(Path("D:/Games/Ghostwire/Snowfall/Binaries/Win64")) == "Snowfall"
+      and games.display_name(Path("D:/Games/Bayonetta")) == "Bayonetta"
+      and games.display_name(Path("D:/SteamLibrary/steamapps/common/Game")) == "Game"
+      and games.display_name(Path("D:/Games/Deus Ex/System")) == "Deus Ex")
+check("scan_folders skips removable drives (#18)",
+      "is_removable(base)" in inspect.getsource(games.scan_folders)
+      and games.is_removable(Path("C:/")) is False)
+
+section("42. the plan counts the new steps, so the progress bar cannot run past its end")
+_d = Path(tempfile.mkdtemp(prefix="plan_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d); _g.bitness = 64
+_g.api = "OpenGL"
+check("an OpenGL feeder plan lists VORT, not LumeniteFX",
+      "VORT Motion (motion vectors)" in installer.plan(_g, installer.Options(path=dlss.FEEDER, provider=3))
+      and "LumeniteFX (motion vectors)" not in installer.plan(_g, installer.Options(path=dlss.FEEDER, provider=3)))
+_g.api = "DX11"
+check("a D3D11 feeder plan with VORT chosen by hand lists VORT",
+      "VORT Motion (motion vectors)" in installer.plan(_g, installer.Options(path=dlss.FEEDER, provider=2)))
+_g.api = "DX12"
+(_d / "nvngx_dlssg.dll").write_bytes(b"MZ")
+_saved = gpu.detect
+gpu.detect = lambda: ("RTX 4070", 89)
+try:
+    _p = installer.plan(_g, installer.Options(path=dlss.NATIVE, native_dlss=True, mfg=True))
+    check("an RTX 40 native plan with MFG ticked counts the MFG step",
+          "RTX 40 multi-frame generation" in _p, str(_p))
+    gpu.detect = lambda: ("RTX 5080", 120)
+    check("...and not on an RTX 50",
+          "RTX 40 multi-frame generation" not in installer.plan(_g, installer.Options(path=dlss.NATIVE, native_dlss=True, mfg=True)))
+finally:
+    gpu.detect = _saved
+shutil.rmtree(_d, ignore_errors=True)
+
+section("43. review fixes: DX10 refused before a write, MFG off removes leftovers, quirks per API")
+_d = Path(tempfile.mkdtemp(prefix="dx10early_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_g = games.manual(_d); _g.api = "DX10"; _g.bitness = 64
+_saved = sources.resolve_feeder
+sources.resolve_feeder = lambda prerelease=False, tag="": ("v0.12.1-beta.2", {})
+try:
+    _raised = ""
+    try:
+        installer.install(_g, installer.Options(path=dlss.FEEDER), on_log=lambda t: None)
+    except installer.InstallError as e:
+        _raised = str(e)
+    check("an old feeder on DX10 is refused before the folder is touched",
+          "refuses Direct3D 10" in _raised
+          and sorted(p.name for p in _d.iterdir()) == ["Game.exe"], str(sorted(p.name for p in _d.iterdir())))
+finally:
+    sources.resolve_feeder = _saved
+_pv = installer.preview(_g, installer.Options(path=dlss.FEEDER, feeder_tag="v0.12.1-beta.2"))
+check("the preview shows the pinned old feeder as a blocker, offline",
+      any("refuses Direct3D 10" in b for b in _pv.blockers), str(_pv.blockers))
+shutil.rmtree(_d, ignore_errors=True)
+check("quirks(api='OpenGL') explains the provider switch; other APIs get nothing generic",
+      any("VORT" in q for q in dlss.quirks(Path("Game.exe"), "OpenGL"))
+      and dlss.quirks(Path("Game.exe"), "DX12") == ())
+check("our MFG overlay add-on is not reported as a foreign NGX hook",
+      "rtx40mfg-ui.addon64" in inspect.getsource(installer.other_ngx_hooks))
+
+section("44. driver 616.64+: renodx-dlss5 is pinned to 4.55, and the fault is named")
+check("the pin constants exist", sources.DRIVER_FAULT_MIN == "616.64" and sources.DRIVER_FAULT_RENODX_PIN == "4.55")
+check("install() consults the driver before the OpenGL and feeder pins",
+      inspect.getsource(installer.install).index("DRIVER_FAULT_MIN")
+      < inspect.getsource(installer.install).index("OPENGL_RENODX_PIN"))
+_d = _diag_dir("diag_drv_", feed=_FEED_OK, reshade=(
+    'INFO | Registered add-on "DLSS 5 Feed" v0.14\n'
+    "INFO | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(...)\n"), bitness=32)
+(_d / "host64").mkdir()
+(_d / "host64" / "dlss5-feed-host.log").write_text(
+    "12:00:00.000  [host] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) in D3D12Core.dll (caught; nothing submitted)\n"
+    "12:00:00.001  [host] evaluate fault stack, by module (innermost first):\n"
+    "              D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed-host64.exe\n",
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("the host log's fault chain is read as the 616.64 driver fault, not 'Working'",
+      "616.64" in _r.verdict and any("NGX runtime" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# the stale check must not nag toward the build the pin avoids
+from core import components as _cmp  # noqa: E402
+_d = Path(tempfile.mkdtemp(prefix="stale_"))
+(_d / "dlss5-autopilot.json").write_text(json.dumps({"api": "DX12", "components": {"renodx": "4.55"}}), encoding="utf8")
+_saved = (_cmp._latest, gpu.driver_at_least)
+_cmp._latest = lambda name: "4.70"
+gpu.driver_at_least = lambda want: True
+try:
+    _items = _cmp.check(_d)
+    check("on driver 616.64+ a pinned 4.55 is not reported as outdated", _items and not _items[0].outdated, str(_items))
+    gpu.driver_at_least = lambda want: False
+    _items = _cmp.check(_d)
+    check("on an older driver the same install IS outdated (4.70 works there)", _items and _items[0].outdated, str(_items))
+finally:
+    _cmp._latest, gpu.driver_at_least = _saved
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

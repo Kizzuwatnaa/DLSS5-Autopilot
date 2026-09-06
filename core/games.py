@@ -526,6 +526,34 @@ def scan_heroic() -> list[Game]:
     return out
 
 
+def is_removable(root: Path) -> bool:
+    """A USB stick or external drive? Those hold backups and transfers, not
+    the copy the person plays - an install landed on one (issue #18)."""
+    try:
+        import ctypes
+        DRIVE_REMOVABLE = 2
+        return ctypes.windll.kernel32.GetDriveTypeW(str(root)) == DRIVE_REMOVABLE
+    except Exception:
+        return False
+
+
+# Folder names that say nothing about the game: "bin" was the name a report
+# came in under (issue #17, World War Z lives in <game>\bin).
+# Only names that are unmistakably a binaries folder: "Game", "Content" or
+# "Engine" can be a real game's own folder, and walking past them would
+# have named a Steam title "common".
+GENERIC_DIRS = {"bin", "bin64", "binaries", "win64", "win32", "x64", "x86",
+                "retail", "shipping", "release", "system", "exe", "executable"}
+
+
+def display_name(folder: Path) -> str:
+    """The nearest folder name up the path that is not a generic one."""
+    for p in (folder, *folder.parents):
+        if p.name and p.name.lower() not in GENERIC_DIRS:
+            return p.name
+    return folder.name
+
+
 def scan_folders() -> list[Game]:
     r"""Plain game folders people keep outside any launcher: D:\Games\X.
 
@@ -538,7 +566,7 @@ def scan_folders() -> list[Game]:
              "My Games", "PC Games", "Installed Games")
     for drive in "CDEFGHIJ":
         base = Path(f"{drive}:/")
-        if not _isdir(base):
+        if not _isdir(base) or is_removable(base):
             continue
         for n in names:
             d = base / n
@@ -745,7 +773,8 @@ def manual(path: Path) -> Game:
     """Build a Game from a user-selected folder or executable."""
     path = Path(path)
     if path.is_file():
-        g = Game(name=path.parent.name, folder=path.parent, exe=path, source="Manual")
+        g = Game(name=display_name(path.parent), folder=path.parent, exe=path,
+                 source="Manual")
     else:
-        g = Game(name=path.name, folder=path, source="Manual")
+        g = Game(name=display_name(path), folder=path, source="Manual")
     return enrich(g)

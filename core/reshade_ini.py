@@ -21,7 +21,11 @@ PROVIDERS = {
     4: ("LumeniteFX QuantMotion", "Lumenite_QuantMotion@lumenite_QuantMotion.fx", True),
     0: ("Generic texMotionVectors (qUINT etc. - install it yourself)", None, False),
     1: ("iMMERSE Launchpad (install it yourself)", None, False),
-    2: ("VORT (install it yourself)", None, False),
+    # VORT Motion (Vortigern, MIT): optical-flow motion vectors from the
+    # colour buffer alone. The default on OpenGL, where LumeniteFX reads 0%
+    # motion (perseval-BLR, six GL games); works on the other APIs too.
+    2: ("VORT Motion (optical flow - the OpenGL default)",
+        "vort_MotionEffects@vort_Motion.fx", True),
 }
 
 FEED_TECHNIQUE = "DLSS5_Feed@DLSS5_Feed.fx"
@@ -240,18 +244,27 @@ def write_preset(game_dir: Path, provider: int = 3) -> None:
     ini.save(p)
 
 
-def remove_our_techniques(game_dir: Path) -> None:
+def remove_our_techniques(game_dir: Path, provider: int | None = None) -> None:
     """Take our techniques out of the preset, leaving the user's alone.
 
     Only rewrites the file when one of ours is actually in it. Parsing and
     re-dumping an untouched preset would reformat somebody's own file for no
     reason - and on the native, bridge and OptiScaler routes we never put
     anything in it to begin with.
+
+    `provider` is the one the install recorded: only that provider's
+    technique is ours. VORT in particular is a shader people run for their
+    own effects; stripping it from a preset the tool never put it in broke
+    those (review, 1.7.0). With no record (an old manifest) the LumeniteFX
+    techniques are assumed, as every release before 1.7.0 did.
     """
     p = game_dir / "ReShadePreset.ini"
     if not p.is_file():
         return
-    ours = {FEED_TECHNIQUE} | {v[1] for v in PROVIDERS.values() if v[1]}
+    if provider in PROVIDERS and PROVIDERS[provider][1]:
+        ours = {FEED_TECHNIQUE, PROVIDERS[provider][1]}
+    else:
+        ours = {FEED_TECHNIQUE} | {v[1] for k, v in PROVIDERS.items() if v[1] and k in (3, 4)}
     ini = Ini.load(p)
     changed = False
     for key in ("Techniques", "TechniqueSorting"):

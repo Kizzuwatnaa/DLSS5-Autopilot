@@ -10,6 +10,14 @@ Deliberately conservative:
     anything is replaced;
   - the swap only happens after the user asks for it, never on its own;
   - nothing is deleted, only renamed.
+
+Two release layouts are understood. Today's is one self-contained .exe.
+A release may instead ship the .exe with an `_internal` folder beside it
+(PyInstaller's one-folder build, which antivirus heuristics take far less
+exception to than a self-extracting single file); then the whole folder is
+fetched and the swap replaces the folder as well as the .exe. This updater
+has to know both BEFORE such a release exists: the copy already on
+someone's PC is the one that will install it.
 """
 from __future__ import annotations
 
@@ -24,7 +32,9 @@ from pathlib import Path
 
 from . import net, update
 
-MIN_BYTES = 4 * 1024 * 1024          # a real build is ~11 MB
+MIN_BYTES = 4 * 1024 * 1024          # a real one-file build is ~11 MB
+# PyInstaller's one-folder layout keeps the runtime beside the .exe here.
+INTERNAL = "_internal"
 
 
 class UpdateError(RuntimeError):
@@ -73,9 +83,22 @@ def fetch(progress=None) -> Path:
                            if n.lower().endswith(".exe")), None)
             if not member:
                 raise UpdateError("The release archive contains no executable.")
-            out = workdir / Path(member).name
-            with arc.open(member) as src, open(out, "wb") as dst:
-                dst.write(src.read())
+            base = member.rsplit("/", 1)[0] + "/" if "/" in member else ""
+            folder = [n for n in arc.namelist()
+                      if n.startswith(base + INTERNAL + "/") and not n.endswith("/")]
+            if folder:
+                # One-folder build: the .exe and everything under _internal,
+                # kept together - the .exe alone cannot start.
+                for n in folder + [member]:
+                    dest = workdir / Path(n[len(base):])
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    with arc.open(n) as src, open(dest, "wb") as dst:
+                        dst.write(src.read())
+                out = workdir / Path(member).name
+            else:
+                out = workdir / Path(member).name
+                with arc.open(member) as src, open(out, "wb") as dst:
+                    dst.write(src.read())
     elif exe_url:
         got = net.download(exe_url, f"update-{tag}.exe", progress=progress)
         out = workdir / got.name
@@ -83,8 +106,14 @@ def fetch(progress=None) -> Path:
     else:
         raise UpdateError("The release has no downloadable build.")
 
-    if out.stat().st_size < MIN_BYTES:
-        raise UpdateError(f"The downloaded build is only {out.stat().st_size} "
+    # A one-folder build keeps its bulk in _internal; the exe alone is the
+    # bootloader plus the app, a couple of MB. Judge the whole download.
+    got = out.stat().st_size
+    if (out.parent / INTERNAL).is_dir():
+        got += sum(p.stat().st_size for p in (out.parent / INTERNAL).rglob("*")
+                   if p.is_file())
+    if got < MIN_BYTES:
+        raise UpdateError(f"The downloaded build is only {got} "
                           f"bytes - refusing to install it.")
     if not _is_win64_pe(out):
         raise UpdateError("The downloaded file is not a 64-bit Windows "
@@ -128,6 +157,74 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
+def swap_script(current: Path, new_exe: Path) -> str:
+    """The batch file that replaces `current` with `new_exe` once we exit.
+
+    ping is the portable way to wait a moment in a .bat; the loop retries
+    while the old process still holds the file handle. When the new build
+    brings an _internal folder, the folder is swapped the same way - the old
+    one kept as _internal.old beside the .old.exe, so the pair can be put
+    back by hand.
+    """
+    old = current.with_suffix(".old.exe")
+    new_int = new_exe.parent / INTERNAL
+    cur_int = current.parent / INTERNAL
+    old_int = current.parent / (INTERNAL + ".old")
+    lines = [
+        "@echo off",
+        "setlocal",
+        f'set "TARGET={current}"',
+        f'set "SOURCE={new_exe}"',
+        f'set "BACKUP={old}"',
+        "for /L %%i in (1,1,30) do (",
+        "  ping -n 2 127.0.0.1 >nul",
+        '  if exist "%BACKUP%" del /q "%BACKUP%" >nul 2>&1',
+        '  move /y "%TARGET%" "%BACKUP%" >nul 2>&1 && goto swap',
+        ")",
+        "echo Could not replace the executable; it is still running.",
+        "pause",
+        "exit /b 1",
+        ":swap",
+    ]
+    if new_int.is_dir():
+        # The download is staged under %TEMP%, which may be another drive
+        # than the install: cmd's `move` cannot move a directory across
+        # drives (and reports success anyway), so the folder is copied with
+        # xcopy and the copy is checked before anything is committed. The
+        # exe is copied too, for the same reason; the old pair stays as
+        # .old.exe + _internal.old until the next update.
+        lines += [
+            f'if exist "{old_int}" rmdir /s /q "{old_int}" >nul 2>&1',
+            f'if exist "{cur_int}" move /y "{cur_int}" "{old_int}" >nul 2>&1',
+            f'xcopy "{new_int}" "{cur_int}\\" /E /I /Q /Y /H >nul 2>&1',
+            f'if errorlevel 1 goto rollback',
+            f'if not exist "{cur_int}\\*" goto rollback',
+            'copy /y "%SOURCE%" "%TARGET%" >nul 2>&1',
+            'if errorlevel 1 goto rollback',
+            f'rmdir /s /q "{new_int}" >nul 2>&1',
+            'del /q "%SOURCE%" >nul 2>&1',
+            'goto done',
+            ':rollback',
+            f'if exist "{cur_int}" rmdir /s /q "{cur_int}" >nul 2>&1',
+            f'if exist "{old_int}" move /y "{old_int}" "{cur_int}" >nul 2>&1',
+            'if exist "%TARGET%" del /q "%TARGET%" >nul 2>&1',
+            'move /y "%BACKUP%" "%TARGET%" >nul 2>&1',
+            'echo The update could not be applied; the previous build was restored.',
+            ':done',
+        ]
+    else:
+        lines += [
+            'copy /y "%SOURCE%" "%TARGET%" >nul 2>&1',
+            'if not exist "%TARGET%" move /y "%BACKUP%" "%TARGET%" >nul 2>&1',
+            'del /q "%SOURCE%" >nul 2>&1',
+        ]
+    lines += [
+        'start "" "%TARGET%"',
+        'del /q "%~f0" >nul 2>&1',
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
 def apply_and_restart(new_exe: Path) -> None:
     """Hand the swap to a helper batch file and quit so it can run."""
     current = running_exe()
@@ -136,29 +233,7 @@ def apply_and_restart(new_exe: Path) -> None:
                           "nothing to replace.")
 
     bat = Path(tempfile.gettempdir()) / "dlss5-autopilot-update.bat"
-    old = current.with_suffix(".old.exe")
-    # ping is the portable way to wait a moment in a .bat; the loop retries
-    # while the old process still holds the file handle.
-    bat.write_text(
-        "@echo off\r\n"
-        "setlocal\r\n"
-        f'set "TARGET={current}"\r\n'
-        f'set "SOURCE={new_exe}"\r\n'
-        f'set "BACKUP={old}"\r\n'
-        "for /L %%i in (1,1,30) do (\r\n"
-        "  ping -n 2 127.0.0.1 >nul\r\n"
-        '  if exist "%BACKUP%" del /q "%BACKUP%" >nul 2>&1\r\n'
-        '  move /y "%TARGET%" "%BACKUP%" >nul 2>&1 && goto swap\r\n'
-        ")\r\n"
-        "echo Could not replace the executable; it is still running.\r\n"
-        "pause\r\n"
-        "exit /b 1\r\n"
-        ":swap\r\n"
-        'move /y "%SOURCE%" "%TARGET%" >nul 2>&1\r\n'
-        'if not exist "%TARGET%" move /y "%BACKUP%" "%TARGET%" >nul 2>&1\r\n'
-        'start "" "%TARGET%"\r\n'
-        'del /q "%~f0" >nul 2>&1\r\n',
-        encoding="utf8")
+    bat.write_text(swap_script(current, new_exe), encoding="utf8")
 
     creation = 0x00000008 | 0x08000000        # DETACHED_PROCESS | NO_WINDOW
     subprocess.Popen(["cmd", "/c", str(bat)], creationflags=creation,

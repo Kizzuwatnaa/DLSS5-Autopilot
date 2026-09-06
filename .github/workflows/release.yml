@@ -11,8 +11,21 @@
 # the same wrapper. Building PyInstaller from source compiles a fresh
 # bootloader on this runner - byte-for-byte different from the one every
 # scanner has a signature for - which removes most of the false positives.
-# It cannot remove SmartScreen's "unknown publisher" prompt: that needs a
-# code-signing certificate, which costs money the project does not have.
+# It cannot remove SmartScreen's "unknown publisher" prompt, and it cannot
+# stop Defender's cloud heuristics from deleting a brand-new, never-seen
+# file in its first hours (issue #5): only a code-signing certificate does
+# that, because reputation then follows the certificate across releases.
+# The SignPath Foundation signs open-source builds for free; the signing
+# step below runs as soon as the repository carries the SignPath variables
+# (SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
+# SIGNPATH_SIGNING_POLICY_SLUG) and the SIGNPATH_API_TOKEN secret, and is
+# skipped - build unchanged - until then. SignPath itself verifies that the
+# file came out of this workflow on a GitHub-hosted runner before signing.
+#
+# Layout: --onefile today. A one-folder build (exe + _internal) is what the
+# heuristics react to least, and the updater understands it since 1.7.0 -
+# but every copy older than 1.7.0 fetches only the exe out of the release
+# zip, so the switch waits until those copies have moved on.
 name: release
 
 on:
@@ -81,6 +94,38 @@ jobs:
             --noconfirm `
             dlss5_autopilot.py
 
+      # ---- code signing (SignPath Foundation), when the repository is set up
+      - name: Upload the unsigned executable for signing
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-executable
+          path: dist/dlss5-autopilot.exe
+          if-no-files-found: error
+
+      - name: Sign the executable
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Use the signed executable
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        shell: bash
+        run: |
+          SIGNED="$(find signed -name 'dlss5-autopilot.exe' | head -1)"
+          test -n "$SIGNED" || { echo "::error::signed executable not returned"; exit 1; }
+          cp "$SIGNED" dist/dlss5-autopilot.exe
+          echo "SIGNED=SignPath Foundation certificate" >> "$GITHUB_ENV"
+          echo "signed: $SIGNED"
+
       - name: Package
         shell: bash
         run: |
@@ -106,6 +151,7 @@ jobs:
             cat SHA256SUMS.txt
             echo '```'
             echo "bootloader: $BOOTLOADER"
+            echo "signature: ${SIGNED:-none (SignPath not configured)}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Ties the binary to this commit and this workflow run, verifiable with

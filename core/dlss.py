@@ -377,16 +377,18 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
 
     # --- pick a path ----------------------------------------------------
     if api == "DX10":
-        # DXGI-based, so ReShade attaches, but no DLSS 5 component reaches
-        # D3D10: the feeder lists it as unsupported, the add-ons hook
-        # D3D9/D3D11/D3D12 and the bridge D3D11/Vulkan. Saying so beats
-        # installing something that can never work.
+        # DXGI-based, so ReShade attaches as dxgi.dll like any D3D11 game.
+        # Only the feeder reaches D3D10, and only from 0.13.1: it creates a
+        # private D3D11 relay device inside the game, because a D3D10 device
+        # has no shared NT handles, no fences and no UAVs to hand a frame to
+        # the helper with. The add-ons hook D3D9/11/12, the bridge D3D11 and
+        # Vulkan - none of them will ever see a D3D10 device.
         s.options = [FEEDER]
         s.recommended = FEEDER
-        s.supported = False
-        s.why_not = ("DirectX 10 is not supported by any DLSS 5 component: "
-                     "the feeder dropped it, and nothing else hooks D3D10.")
-        s.reason = s.why_not
+        s.reason = ("Direct3D 10: only the feeder reaches it, from build "
+                    "0.13.1 on (it relays the frame through a private D3D11 "
+                    "device inside the game). Older feeder builds refuse "
+                    "D3D10, so the install checks the build it picked.")
         return s
 
     if bitness != 64:
@@ -504,66 +506,95 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
 
 
 LABELS = {
-    RENODX: "renodx-dlss - new in-process add-on (D3D9/11/12), unproven",
-    NATIVE: "native - hook the game's own DLSS",
-    UPSTREAM: "neural-upstream - the network before the upscaler, cheaper",
-    OPTI: "optiscaler - replace the upscaler, model resolution dial",
-    BRIDGE: "bridge - private D3D12 session",
-    FEEDER: "feeder - synthetic DLAA contract",
-    STANDALONE: "standalone-dlssnr - own feed, DLAA or DLSS SR, frame generation",
+    NATIVE: "native - hooks the game's own DLSS (D3D12)",
+    UPSTREAM: "neural-upstream - runs before the game's DLSS, cheaper",
+    OPTI: "optiscaler - replaces the upscaler, no ReShade",
+    BRIDGE: "bridge - the game's DLSS mirrored onto D3D12 (D3D11, Vulkan)",
+    FEEDER: "feeder - for games without DLSS (depth + shader motion vectors)",
+    STANDALONE: "standalone-dlssnr - own feed, DLSS SR and frame generation",
+    RENODX: "renodx-dlss - in-process hook (D3D9/11/12), unproven",
     REMIX: "remix - DLSS 5 inside RTX Remix (path tracing)",
 }
 
+# One paragraph per route, shown under the dropdown. What it does, what it
+# needs, what it costs - in that order, and nothing a person choosing a
+# route does not need.
 BLURB = {
-    RENODX: ("ShortFuse's renodx-dlss add-on. Hooks D3D9, D3D11 and D3D12 "
-             "presentation in-process - no bridge, no shaders. Days old, and "
-             "reported not working in many games so far: try the recommended "
-             "route first and come here only if that fails."),
-    NATIVE: ("Simplest and best quality: no synthetic contract, no motion "
-             "vector shaders, and the game's own DLSS quality mode applies."),
+    NATIVE: ("Krish's renodx-dlss5 add-on hooks the DLSS calls the game "
+             "already makes and adds the neural pass after them. Nothing "
+             "synthetic, no shaders; the game's own DLSS quality mode "
+             "still applies. 64-bit D3D12 games with DLSS."),
     UPSTREAM: ("matiasLombo's neural-upstream add-on runs the network at "
-               "render resolution, BEFORE the game's own DLSS upscales - "
-               "the same enhancement on a smaller image, so it costs much "
-               "less, and your DLSS quality mode still applies. It does "
-               "the neural rendering itself, so no renodx add-on goes in "
-               "beside it. Configured from its tab in the ReShade overlay. "
-               "Days old; its author tested GTA V Enhanced and Bright "
-               "Memory Infinite."),
-    OPTI: ("No ReShade at all. OptiScaler takes over upscaling and runs the "
-           "model over its output. Its model-resolution dial is the biggest "
-           "fps lever there is: cost falls with the square of it, and the "
-           "frame itself stays full detail. The author tested RTX 50 only; "
-           "on RTX 20/30/40 it runs on the community runtime this tool "
-           "installs. The game must already use DLSS - or FSR 2/3 or XeSS, "
-           "whose calls OptiScaler redirects into DLSS."),
-    BRIDGE: ("Reproduces the DLSS contract on a private D3D12 session. The "
-             "route for Vulkan games with DLSS. Its author has stopped "
-             "development at 1.3.0."),
-    FEEDER: ("Builds a DLAA contract from ReShade's depth buffer and "
-             "shader-estimated motion vectors. Always DLAA, never upscaling. "
-             "The only route for 32-bit and OpenGL games."),
-    STANDALONE: ("kibblerz's standalone-dlssnr add-on does the whole pipeline "
-                 "itself: its own feed (VORT motion vectors, ReShade depth), "
-                 "the network, then DLAA when the game runs at the monitor's "
-                 "resolution or real DLSS Super Resolution when it runs "
-                 "below it, and frame generation on top - no feeder, no "
-                 "renodx add-on, and the game needs no DLSS of its own. The "
-                 "result is shown through a topmost window of its own, which "
-                 "is the fragile part: change resolution or display mode and "
-                 "it needs a restart. F10 compares. Experimental."),
-    REMIX: ("This game already has an RTX Remix mod. Remix replaces the "
-            "renderer and path traces the frame in its own runtime, in the "
-            "'.trex' folder; the DLSS 5 neural pass runs there too, after "
-            "DLSS, so the game's own DLSS quality setting still applies. "
-            "Nothing is injected into the game: no ReShade, no feeder, no "
-            "add-on - and any ReShade proxy DLL left in the folder crashes "
-            "a Remix game before it draws. The tool puts nvngx_dlssnr.dll "
-            "into the .trex folder and switches the pass on in rtx.conf. "
-            "If the installed runtime has no neural pass at all (NVIDIA's "
-            "own has none), 'swap the Remix runtime' replaces it with a "
-            "community build that does - experimental, because it also "
-            "replaces the fixes a mod's own runtime may carry."),
+               "render resolution, BEFORE the game's DLSS upscales - the "
+               "same result on a smaller image, so it costs a fraction. "
+               "Does the neural pass itself, so no renodx add-on goes in "
+               "beside it. Configured from its own tab in ReShade. New; "
+               "its author tested GTA V Enhanced and Bright Memory Infinite."),
+    OPTI: ("No ReShade. OptiScaler takes over the game's upscaler (DLSS, or "
+           "FSR 2/3 and XeSS redirected into DLSS) and runs the model over "
+           "its output. Its model-resolution dial is the biggest fps lever "
+           "there is: the cost falls with the square of it and the frame "
+           "keeps full detail. The author tested RTX 50; on RTX 20/30/40 "
+           "it runs on the community runtime this tool installs."),
+    BRIDGE: ("NIGos' dlss5-bridge mirrors the game's own DLSS contract onto "
+             "a private D3D12 session, so a D3D11 or Vulkan game keeps its "
+             "DLSS quality mode. Actively maintained; every release is "
+             "tested on both APIs."),
+    FEEDER: ("jlrouzies-fr's DLSS5-Feeder builds a DLAA contract out of "
+             "ReShade's depth buffer and shader-estimated motion vectors, "
+             "for games that have no DLSS at all. Always DLAA, never "
+             "upscaling. D3D10/11/12, Vulkan, OpenGL, 32-bit (through a "
+             "host64 helper) and DirectX 9 (through DXVK)."),
+    STANDALONE: ("kibblerz's standalone-dlssnr add-on does the whole "
+                 "pipeline itself: its own feed (VORT motion vectors, "
+                 "ReShade depth), the network, then DLAA at native "
+                 "resolution or real DLSS Super Resolution below it, and "
+                 "frame generation on top. Presents through a window of its "
+                 "own, which is the fragile part: a resolution or display "
+                 "mode change needs a restart. F10 compares. Experimental."),
+    RENODX: ("ShortFuse's renodx-dlss add-on hooks D3D9, D3D11 and D3D12 "
+             "presentation in-process - no bridge, no shaders. Reported "
+             "not working in many games; the only route for 64-bit DirectX "
+             "9, otherwise try the recommended one first."),
+    REMIX: ("This game has an RTX Remix mod. Remix path traces the frame in "
+            "its own runtime (the '.trex' folder) and the neural pass runs "
+            "there, after DLSS, so the game's DLSS quality setting applies. "
+            "Nothing is injected into the game - no ReShade, no feeder, no "
+            "add-on; a ReShade proxy DLL in a Remix folder crashes the game "
+            "before it draws. The tool puts nvngx_dlssnr.dll into .trex and "
+            "switches the pass on in rtx.conf. If the runtime has no neural "
+            "pass (NVIDIA's own has none), 'swap the Remix runtime' puts in "
+            "a community build that does - experimental, it can undo fixes "
+            "the mod's own runtime carried."),
 }
+
+# Per-executable facts the route texts cannot know. Found by people who did
+# the install by hand and wrote down why it failed; shown beside the
+# conflicts before INSTALL. Keys are lower-case executable names.
+QUIRKS: dict[str, str] = {
+    "quake3.exe": ("this Quake III executable loads opengl32.dll from "
+                   "System32 and never sees ReShade's copy beside it - use "
+                   "the ioquake3 build (ioquake3.org), which loads from its "
+                   "own folder"),
+    "openmw.exe": ("OpenGL: the renodx-dlss5 add-on is pinned to 4.60 here "
+                   "(4.70 stalls after four frames on GL) and motion vectors "
+                   "come from VORT - LumeniteFX reads none on OpenGL"),
+}
+
+
+def quirks(exe, api: str = "") -> tuple[str, ...]:
+    """The QUIRKS lines for this executable and API, if any."""
+    name = getattr(exe, "name", exe or "") or ""
+    out: list[str] = []
+    if api == "OpenGL":
+        out.append("OpenGL: motion vectors come from VORT (LumeniteFX reads "
+                   "none here) and the renodx-dlss5 add-on is pinned to 4.60 - "
+                   "both applied at install, whatever the dropdowns say")
+    hit = QUIRKS.get(str(name).lower())
+    if hit and hit not in out:
+        out.append(hit)
+    return tuple(out)
+
 
 # What must NOT sit in the folder or run beside each route, and what breaks
 # when it does. Short and honest: these are the conflicts people actually
@@ -580,7 +611,9 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
                "does not upscale - the game's own DLSS still does"),
     OPTI: ("no ReShade at all on this route; other RenoDX add-ons will not load",
            "the game must already use DLSS, FSR 2/3 or XeSS",
-           "not with a frame-gen unlocker or dlss-enabler in the folder"),
+           "not with a frame-gen unlocker or dlss-enabler in the folder",
+           "frame generation (tick below, D3D12): the game's own frame "
+           "generation must be OFF"),
     BRIDGE: ("not with the feeder or renodx-dlss add-on in the same folder "
              "- both build a contract and the game dies before its swap chain",
              "NVIDIA Smooth Motion off for this game",

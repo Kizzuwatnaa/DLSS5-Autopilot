@@ -43,7 +43,7 @@ import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import (emulators, anticheat, dlss, dxvk, feedcfg, games, gpu, net,
+from . import (emulators, anticheat, dlss, dxvk, feedcfg, games, gpu, mfg, net,
                optiscaler, pe, prefs, reengine, refw, remix, reshade_ini, sources, vulkan)
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
@@ -113,7 +113,7 @@ def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
     # loaded by ReShade regardless and hooks the same swap chain.
     ours = {"dlss5-feed.addon64", "dlss5-bridge.addon64",
             RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
-            STANDALONE_ADDON.lower()}
+            STANDALONE_ADDON.lower(), "rtx40mfg-ui.addon64"}
     for low, orig in names.items():
         if low.endswith(".addon64") and low not in ours:
             found.append(orig)
@@ -223,6 +223,14 @@ class Options:
     feeder_tag: str = ""                    # "" = stable or newest pre-release
     dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
+    # OptiScaler route, D3D12: FSR 3.1 frame generation from the libraries
+    # OptiScaler ships, on any card. Off by default - it adds latency and
+    # every game's HUD reacts differently.
+    fg: bool = False
+    # ReShade routes, RTX 40, D3D12/Vulkan games that ship DLSS Frame
+    # Generation: dashdogy's RTX40MFG-Unlock for 3x/4x multipliers. Research
+    # software; off by default and only offered where mfg.applies() says so.
+    mfg: bool = False
     # REMIX route: replace the mod's Remix runtime with a community build
     # that HAS the neural pass. Off by default and deliberately opt-in - a
     # mod's runtime is often a fork carrying game-specific fixes, and
@@ -284,8 +292,9 @@ def reliability(g: games.Game, path: str = FEEDER,
             "the game. New, and only a handful of Remix mods ship a runtime "
             "with the pass at all.")
     if g.api == "DX10":
-        return EXPERIMENTAL, ("DirectX 10 is not supported by any DLSS 5 "
-                              "component.")
+        return BETA, ("Direct3D 10 through the feeder's private D3D11 relay "
+                      "device (feeder 0.13.1 and newer). Days old; a D3D10 "
+                      "game installs like a D3D11 one.")
     if path == NATIVE:
         return STABLE, ("The game's own DLSS is hooked directly - no synthetic "
                         "contract, no motion-vector shaders, and your in-game "
@@ -464,9 +473,6 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
         # contract onto a private D3D12 session. ReShade still has to be
         # attached to the Vulkan runtime, which its own installer does.
         return True, ""
-    if g.api == "DX10":
-        return False, ("DirectX 10 is not supported by any DLSS 5 component - "
-                       "the feeder dropped it and nothing else hooks D3D10.")
     return True, ""
 
 
@@ -618,8 +624,13 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     if opt.path == FEEDER:
         steps.append("ReShade shader headers")
         steps.append("DLSS5-Feeder")
-        if opt.provider in (3, 4):
+        # install() moves an OpenGL game's provider to VORT before it plans,
+        # so the switch is already visible here.
+        provider = 2 if g.api == "OpenGL" and opt.provider in (3, 4) else opt.provider
+        if provider in (3, 4):
             steps.append("LumeniteFX (motion vectors)")
+        elif provider == 2:
+            steps.append("VORT Motion (motion vectors)")
     elif opt.path == BRIDGE:
         steps.append("dlss5-bridge")
 
@@ -628,6 +639,9 @@ def plan(g: games.Game, opt: Options) -> list[str]:
               "nvngx_dlssnr.dll", "nvngx_dlss.dll"]
     if opt.path == FEEDER and g.bitness == 32:
         steps.append("host64 helper process")
+    if opt.mfg and mfg.applies(gpu.detect()[1], g.api, g.install_dir, g.folder)[0] \
+            and mfg.loader_name(g.exe, {refw.DINPUT8} if reengine.detected(g.install_dir) else set()):
+        steps.append("RTX 40 multi-frame generation")
     steps.append("ReShade configuration")
     if opt.path == FEEDER:
         steps.append("dlss5-feed.cfg")
@@ -700,6 +714,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
             "Remix mod first.")
     pv.steps = plan(g, opt)
     x64 = g.bitness == 64
+    if opt.path == FEEDER and g.api == "OpenGL" and opt.provider in (3, 4):
+        opt = replace(opt, provider=2)       # as install() does: VORT on GL
     dxvk_from = g.api if uses_dxvk(g, opt) else ""
     g = via_dxvk(g, opt)
     proxy = _proxy_name(g.api, opt.reshade_proxy)
@@ -991,6 +1007,11 @@ def preview(g: games.Game, opt: Options) -> Preview:
                 add(pv.writes, rel(SHADERS, LUMENITE_PROVIDER_FX.get(opt.provider, "lumenite_Kernel.fx")))
                 add(pv.writes, rel(INCLUDE, "lumenite_*.fxh"))
                 add(pv.writes, rel(TEXTURES, "lumenite_*.png"))
+        elif opt.provider == 2 or g.api == "OpenGL":
+            if not foreign_lumenite(root, preinstalled, marker=VORT_FX):
+                add(pv.writes, rel(SHADERS, VORT_FX))
+                add(pv.writes, rel(VORT_INCLUDE, "vort_*.fxh"))
+                add(pv.writes, rel(TEXTURES, VORT_TEXTURE))
 
     # 5/6/7) DLSS parts: in host64/ on the 32-bit feeder path
     dlss_dir = "" if (x64 or opt.path != FEEDER) else host
@@ -1026,6 +1047,31 @@ def preview(g: games.Game, opt: Options) -> Preview:
         write(rel(dlss_dir, DLSS))
     if opt.path == STANDALONE and not (present(DLSSG) and opt.keep_game_dlss):
         write(DLSSG)
+
+    # 8b) RTX 40 multi-frame generation, when it applies here
+    if opt.mfg and mfg.applies(gpu.detect()[1], g.api, root, g.folder)[0]:
+        lname = mfg.loader_name(g.exe, {refw.DINPUT8} if reengine.detected(root) else set())
+        if lname is None:
+            pv.warnings.append(
+                f"multi-frame generation will be skipped: {g.exe.name if g.exe else 'the executable'} "
+                f"imports none of {', '.join(mfg.LOADER_NAMES)}, so the ASI loader has no "
+                f"name it would be loaded under")
+        else:
+            for n in mfg.FILES:
+                write(n, keep=False)
+            plain_backup(lname)
+            write(lname, keep=False)
+            write(lname[:-4] + ".ini")
+    elif not opt.mfg:
+        for n in mfg.FILES:
+            if n in preinstalled or n.lower() in {p.lower() for p in preinstalled}:
+                add(pv.removes, f"{n} (multi-frame generation is off now)")
+    # A pinned feeder build older than the D3D10 relay is a blocker, and
+    # needs no network to say so.
+    if opt.path == FEEDER and g.api == "DX10" and opt.feeder_tag and \
+            sources.feeder_key(opt.feeder_tag) < sources.feeder_key(sources.FEEDER_DX10_MIN):
+        pv.blockers.append(f"DLSS5-Feeder {opt.feeder_tag} refuses Direct3D 10 games - "
+                           f"pick {sources.FEEDER_DX10_MIN} or newer in 'feeder build'")
 
     # 8/9/10) host64, ReShade configuration, the cfg
     if not x64 and opt.path == FEEDER:
@@ -1096,6 +1142,11 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
         + ("  (this exact build, as requested)" if opt.feeder_tag
            else "  (pre-release, as requested)" if opt.feeder_prerelease else ""))
     rep.components["feeder"] = tag
+    if g.api == "DX10" and sources.feeder_key(tag) < sources.feeder_key(sources.FEEDER_DX10_MIN):
+        raise InstallError(
+            f"DLSS5-Feeder {tag} refuses Direct3D 10 games. Pick "
+            f"{sources.FEEDER_DX10_MIN} or newer in 'feeder build' - that is "
+            f"the first build with the D3D10 relay - and install again.")
     addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
     needed = (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ())
     # From 0.10.0 the feeder ships one zip instead of loose files.
@@ -1157,6 +1208,39 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
             rep.written.append(str(p_.relative_to(root)))
         log(f"      {want_fx} + includes + texture ({len(w)} files) - only the "
             f"provider the feed reads, not the whole pack")
+    elif opt.provider == 2:
+        _install_vort(root, rep, dl, log, begin)
+
+
+def _install_vort(root: Path, rep: "Report", dl, log, begin) -> None:
+    """VORT Motion beside the game: the .fx, its includes and its texture.
+
+    A copy the person installed themselves is used as it is - a second
+    vort_Motion.fx under reshade-shaders is two techniques of one name and
+    a red error in the overlay.
+    """
+    begin("VORT Motion (motion vectors)")
+    theirs = foreign_lumenite(root, rep.preinstalled, marker=VORT_FX)
+    if theirs:
+        rel_t = theirs.relative_to(root)
+        rep.notes.append(f"VORT is already installed at {rel_t.parent} "
+                         f"- your copy is used, nothing duplicated")
+        rep.skipped.append("VORT (already installed)")
+        log(f"      already installed at {rel_t.parent} - using your "
+            f"copy, no duplicate")
+        return
+    z = dl(sources.VORT_ZIP, sources.VORT_ZIP_NAME)
+    _extract(z, "Shaders/" + VORT_FX, root / SHADERS / VORT_FX, rep, root)
+    rep.written.append(str(SHADERS / VORT_FX))
+    w = net.extract_tree(z, "Shaders/Includes", str(VORT_INCLUDE),
+                         root, only_ext=(".fxh",))
+    for p_ in w:
+        rep.written.append(str(p_.relative_to(root)))
+    _extract(z, "Textures/" + VORT_TEXTURE,
+             root / TEXTURES / VORT_TEXTURE, rep, root)
+    rep.written.append(str(TEXTURES / VORT_TEXTURE))
+    log(f"      {VORT_FX} + {len(w)} includes + {VORT_TEXTURE} "
+        f"(Vortigern, MIT)")
 
 
 # ---------------------------------------------------------------- install
@@ -1392,6 +1476,8 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "warnings": rep.warnings,
             "feed_cfg": opt.feed,
             "nr": opt.nr,
+            "fg": opt.fg,
+            "mfg": opt.mfg,
             "native_dlss": opt.native_dlss,
             "upscaler": opt.upscaler,
             "keep_game_dlss": opt.keep_game_dlss,
@@ -1427,6 +1513,8 @@ def options_from_manifest(root: Path) -> Options | None:
         provider=int(data.get("provider") or 3),
         feed=dict(data.get("feed_cfg") or {}),
         nr=dict(data.get("nr") or {}),
+        fg=bool(data.get("fg", False)),
+        mfg=bool(data.get("mfg", False)),
         path=path,
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
@@ -1580,6 +1668,12 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     root = g.install_dir
     rep = Report()
     x64 = g.bitness == 64
+    if opt.path == FEEDER and g.api == "OpenGL" and opt.provider in (3, 4):
+        # LumeniteFX reads 0% motion under OpenGL (perseval-BLR, six GL
+        # games); VORT's optical flow is what works there.
+        opt = replace(opt, provider=2)
+        log("      OpenGL game: motion vectors from VORT (LumeniteFX gives "
+            "none on GL)")
     # Through DXVK the game is a Vulkan game from here on: no proxy DLL, the
     # Vulkan layer instead. DXVK itself goes in at step 0, below.
     dxvk_from = g.api if uses_dxvk(g, opt) else ""
@@ -1693,6 +1787,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # including a ReShade.ini that would sit next to OptiScaler and confuse
     # everything - and the new manifest would not list them, so a later
     # uninstall could never clean them up either.
+
+    if opt.path == FEEDER and g.api == "DX10":
+        # Only feeder 0.13.1+ reaches D3D10. Checked here, before a single
+        # file is written: raised from inside the feeder step it left a
+        # bare ReShade behind (review, 1.7.0).
+        tag0, _ = sources.resolve_feeder(prerelease=opt.feeder_prerelease,
+                                         tag=opt.feeder_tag)
+        if sources.feeder_key(tag0) < sources.feeder_key(sources.FEEDER_DX10_MIN):
+            raise InstallError(
+                f"DLSS5-Feeder {tag0} refuses Direct3D 10 games. Pick "
+                f"{sources.FEEDER_DX10_MIN} or newer in 'feeder build' - that is "
+                f"the first build with the D3D10 relay - and install again.")
 
     previous = _previous_route(root)
     if previous and previous != opt.path:
@@ -1956,6 +2062,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             optiscaler.enable_nr(root, log, settings=opt.nr)
             for line in optiscaler.describe_nr(opt.nr):
                 rep.notes.append(line)
+            if opt.fg and g.api == "DX12":
+                if optiscaler.enable_fg(root, log):
+                    rep.notes.append("frame generation: FSR 3.1 through "
+                                     "OptiScaler, one generated frame per "
+                                     "rendered one, on any RTX card. Turn the "
+                                     "game's own frame generation OFF; expect "
+                                     "added latency and check the HUD")
+                    rep.components["fg"] = "fsr31"
+            elif opt.fg:
+                log("      frame generation needs a D3D12 game - not on this one")
+                rep.warnings.append("frame generation was requested but the "
+                                    "game is not D3D12; not enabled")
             if _opti_needs_dlss(opt):
                 optiscaler.enable_inputs(root, opt.upscaler, g.api, log)
                 rep.notes.append(
@@ -2098,28 +2216,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                              "nvngx.dll beside it is the add-on's caller bridge, "
                              "not a driver file - uninstall removes it")
 
-            begin("VORT Motion (motion vectors)")
-            theirs = foreign_lumenite(root, rep.preinstalled, marker=VORT_FX)
-            if theirs:
-                rel_t = theirs.relative_to(root)
-                rep.notes.append(f"VORT is already installed at {rel_t.parent} "
-                                 f"- your copy is used, nothing duplicated")
-                rep.skipped.append("VORT (already installed)")
-                log(f"      already installed at {rel_t.parent} - using your "
-                    f"copy, no duplicate")
-            else:
-                z = dl(sources.VORT_ZIP, sources.VORT_ZIP_NAME)
-                _extract(z, "Shaders/" + VORT_FX, root / SHADERS / VORT_FX, rep, root)
-                rep.written.append(str(SHADERS / VORT_FX))
-                w = net.extract_tree(z, "Shaders/Includes", str(VORT_INCLUDE),
-                                     root, only_ext=(".fxh",))
-                for p_ in w:
-                    rep.written.append(str(p_.relative_to(root)))
-                _extract(z, "Textures/" + VORT_TEXTURE,
-                         root / TEXTURES / VORT_TEXTURE, rep, root)
-                rep.written.append(str(TEXTURES / VORT_TEXTURE))
-                log(f"      {VORT_FX} + {len(w)} includes + {VORT_TEXTURE} "
-                    f"(Vortigern, MIT)")
+            _install_vort(root, rep, dl, log, begin)
         else:
             sf = opt.path == ROUTE_RENODX
             addon_name = RENODX_SF if sf else RENODX
@@ -2159,6 +2256,28 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.components["renodx_sf"] = e["label"]
             else:
                 want = opt.renodx
+                if not want and gpu.driver_at_least(sources.DRIVER_FAULT_MIN):
+                    # 616.64+: 4.6/4.7 fault on every evaluate (sources.py has
+                    # the measurement). 4.55 is the classic engine that still
+                    # runs there - and it also satisfies the OpenGL and stable-
+                    # feeder pins below, so it wins outright.
+                    want = sources.DRIVER_FAULT_RENODX_PIN
+                    log(f"      driver {gpu.driver_version()}: renodx-dlss5 pinned to "
+                        f"{want} - 4.6/4.7 fault inside the NGX runtime on 616.64 "
+                        f"and newer (every evaluate, no neural frame)")
+                    rep.notes.append(f"renodx-dlss5 pinned to {want}: on driver "
+                                     f"616.64+ the 4.6/4.7 builds fault in the "
+                                     f"driver's NGX runtime on every evaluate")
+                if not want and g.api == "OpenGL":
+                    # 4.70's fenced workset pool never recycles under GL and
+                    # the pass stalls after four frames; 4.60 is the last
+                    # build that runs there (verified on six GL games by
+                    # perseval-BLR/dlss5-classic-games).
+                    want = sources.OPENGL_RENODX_PIN
+                    log(f"      OpenGL game: renodx-dlss5 pinned to {want} "
+                        f"(4.70 stalls on GL after a few frames)")
+                    rep.notes.append(f"renodx-dlss5 pinned to {want}: newer "
+                                     f"builds stall on OpenGL")
                 if not want and opt.path == FEEDER:
                     # The feeder's stable release only accepts 4.55; anything
                     # newer overlaps it and the DLSS feature dies in CreateFeature.
@@ -2288,6 +2407,45 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             reshade_ini.write_addon_only_ini(host)
             rep.written.append(f"{HOST_DIR}/ReShade.ini")
             log(f"      {HOST_DIR}/ ready (ReShade + DLSS parts inside)")
+
+        # --- 8b) RTX 40 multi-frame generation (opt-in - see mfg.py) --------
+        if opt.mfg:
+            ok_mfg, why_mfg = mfg.applies(gpu.detect()[1], g.api, root, g.folder)
+            if ok_mfg:
+                begin("RTX 40 multi-frame generation")
+                taken = {refw.DINPUT8} if reengine.detected(root) else set()
+                try:
+                    mtag, mfiles = mfg.install(root, g.exe, log, taken=taken,
+                                               preinstalled=rep.preinstalled)
+                except mfg.NoLoaderName as e:
+                    log(f"      multi-frame generation skipped: {e}")
+                    rep.warnings.append(f"multi-frame generation not enabled: {e}")
+                    mtag, mfiles = "", []
+            else:
+                mtag, mfiles = "", []
+            if mfiles:
+                rep.written += mfiles
+                rep.components["mfg"] = mtag
+                rep.notes.append(
+                    f"RTX40MFG-Unlock {mtag}: multi-frame generation on this "
+                    f"RTX 40 - pick the multiplier in ReShade's DLSS MFG tab "
+                    f"(Follow game / fixed / Dynamic). The game's own DLSS "
+                    f"Frame Generation must be ON; the unlock raises its "
+                    f"multiplier, it does not add frame generation")
+                rep.warnings.append(
+                    "multi-frame generation on RTX 40 is research software: "
+                    "artifacts, a frozen picture or a crash are possible at "
+                    "the higher multipliers, and on Vulkan")
+            elif not ok_mfg:
+                log(f"      multi-frame generation skipped: {why_mfg}")
+                rep.warnings.append(f"multi-frame generation not enabled: {why_mfg}")
+        else:
+            # The box is off: an unlock an earlier install of ours placed
+            # here comes out, or it would keep hooking Streamline while the
+            # new manifest says the option is off.
+            for gone in mfg.remove_leftovers(root, rep.preinstalled, log):
+                rep.preinstalled.discard(gone)
+                rep.preinstalled.discard(gone.replace("\\", "/"))
 
         # --- 9) ReShade configuration ----------------------------------------
         begin("ReShade configuration")
@@ -2466,7 +2624,8 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                  "dgVoodoo.conf", "dgVoodooCpl.exe",
                  "ReShade.ini", "ReShadePreset.ini",
                  str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),
-                 str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE)]
+                 str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE),
+                 *mfg.FILES]
         # A d3d9.dll here is ours (DXVK, or dgVoodoo2 from an older release)
         # UNLESS the folder is a Remix game, where that name belongs to the
         # Remix bridge client. With no manifest to tell them apart the Remix
@@ -2630,7 +2789,11 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     except OSError:
         pass
 
-    reshade_ini.remove_our_techniques(root)
+    try:
+        _prov = int(data.get("provider")) if data.get("provider") is not None else None
+    except (TypeError, ValueError):
+        _prov = None
+    reshade_ini.remove_our_techniques(root, _prov)
     try:
         prefs.drop_install(root)
     except Exception:
