@@ -289,7 +289,7 @@ def reliability(g: games.Game, path: str = FEEDER,
             "The Remix runtime already installed here has the DLSS 5 neural "
             "pass built in; all this does is put nvngx_dlssnr.dll beside it "
             "and switch the pass on in rtx.conf. Nothing is injected into "
-            "the game. New, and only a handful of Remix mods ship a runtime "
+            "the game. Only a handful of Remix mods ship a runtime "
             "with the pass at all.")
     if g.api == "DX10":
         return BETA, ("Direct3D 10 through the feeder's private D3D11 relay "
@@ -302,8 +302,7 @@ def reliability(g: games.Game, path: str = FEEDER,
     if path == UPSTREAM:
         return BETA, ("neural-upstream runs the network at render resolution, "
                       "before the game's own DLSS. Its author tested two "
-                      "games by its author (GTA V Enhanced, Bright Memory "
-                      "Infinite).")
+                      "games (GTA V Enhanced, Bright Memory Infinite).")
     if path == STANDALONE:
         return EXPERIMENTAL, ("standalone-dlssnr does everything itself - own "
                               "feed, DLAA or DLSS Super Resolution, frame "
@@ -337,8 +336,8 @@ def reliability(g: games.Game, path: str = FEEDER,
     if path == BRIDGE:
         if g.api == "Vulkan":
             return BETA, ("The bridge mirrors the game's DLSS contract onto a "
-                          "private D3D12 session. This is the only route for "
-                          "Vulkan and it is newer than the rest.")
+                          "private D3D12 session - the route for Vulkan games "
+                          "that ship DLSS; the feeder is the fallback.")
         return BETA, ("The bridge reproduces the DLSS contract on a private "
                       "D3D12 session. Fewer moving parts than the feeder, but "
                       "less proven.")
@@ -358,10 +357,11 @@ def reliability(g: games.Game, path: str = FEEDER,
             "Upstream marks this beta and it often fails to start the DLSS "
             "feature.")
     if g.api == "OpenGL":
-        return EXPERIMENTAL, (
+        return BETA, (
             "OpenGL needs interop extensions the driver may not expose to "
-            "this game, and the game must render on the NVIDIA card. Upstream "
-            "has verified it on one 32-bit title; frequently does not work.")
+            "this game, and the game must render on the NVIDIA card. Verified "
+            "on six games with VORT motion vectors and add-on 4.60, which the "
+            "tool applies.")
     if g.api in ("DX11", "DX12", "Unknown"):
         return STABLE, "DirectX 11/12 is the path DLSS 5 feeding is built around."
     return BETA, "Untested path."

@@ -16,6 +16,7 @@ import os
 import re
 import time
 import urllib.error
+import http.client
 import urllib.request
 from pathlib import Path
 
@@ -107,19 +108,31 @@ class RateLimited(RuntimeError):
     """GitHub's anonymous API allows 60 requests an hour per IP."""
 
 
-def _get(url: str, timeout: int = 60) -> bytes:
+def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
+    """One small read (a release listing, reshade.me's page). A timeout or a
+    dropped connection is retried with a pause; an HTTP error is not."""
     req = urllib.request.Request(url, headers=UA)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        if e.code in (403, 429) and "api.github.com" in url:
-            raise RateLimited(
-                "GitHub is rate limiting this connection (60 anonymous API "
-                "requests per hour). Wait an hour and try again, or use a VPN / "
-                "different network. Downloads already in the cache still work."
-            ) from e
-        raise
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 429) and "api.github.com" in url:
+                raise RateLimited(
+                    "GitHub is rate limiting this connection (60 anonymous API "
+                    "requests per hour). Wait an hour and try again, or use a VPN / "
+                    "different network. Downloads already in the cache still work."
+                ) from e
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError,
+                http.client.HTTPException) as e:
+            # HTTPException: the body dropped after the headers (IncompleteRead)
+            last = e
+            if attempt == attempts - 1:
+                raise
+            time.sleep(2.0 * (attempt + 1))
+    raise last if last else RuntimeError(url)
 
 
 # GitHub allows 60 anonymous API calls an hour per address. That is easy to

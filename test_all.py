@@ -414,6 +414,23 @@ check("unknown architecture is never filtered away",
       all("Unknown" in v for v in _seen.values()), str(_seen))
 check("a known architecture still filters",
       "Sixtyfour" not in _seen["32"], str(_seen["32"]))
+# issue #30: the add-on dropdown opened on the newest build and passed it as
+# an explicit choice, so the driver pin to 4.55 never ran from the GUI
+_app.catalog = {"renodx": [{"label": "4.70", "tag": "4.70", "url": "u"},
+                           {"label": "4.55", "tag": "4.55", "url": "u"}],
+                "renodx_sf": []}
+_saved_find = _gui.prefs.find_renodx
+_gui.prefs.find_renodx = lambda sf=False: (None, [])
+_app._fill_addon_list(False)
+_o = _app._opts()
+check("the DLSS 5 add-on dropdown opens on auto, not on the newest build",
+      _app.cb_renodx.get().startswith("auto") and _app.cb_renodx["values"][1] == "4.70",
+      f"{_app.cb_renodx.get()!r} {_app.cb_renodx['values']}")
+check("...so the options carry no explicit add-on version and the installer's pins apply",
+      _o.renodx is None, repr(_o.renodx))
+_app.cb_renodx.set("4.70")
+check("a build picked from the list is still an explicit choice", _app._opts().renodx == "4.70")
+_gui.prefs.find_renodx = _saved_find
 _r.destroy()
 
 section("6d. a quarantined file is reported, not ignored")
@@ -587,7 +604,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.7.0", update.VERSION == "1.7.0", update.VERSION)
+check("version is 1.7.1", update.VERSION == "1.7.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -3221,9 +3238,9 @@ check("DLSS Frame Generation alone is also enough evidence",
       pe.detect_api(_d / "Game.exe")[0] == "DX12")
 shutil.rmtree(_d, ignore_errors=True)
 _d = Path(tempfile.mkdtemp(prefix="plain_dx11_"))
-shutil.copyfile(X64, _d / "Game.exe")
-check("a plain D3D11 game with neither is still DX11",
-      pe.detect_api(_d / "Game.exe")[0] in ("DX11", "Unknown"))
+shutil.copyfile(r"C:\Windows\System32\where.exe", _d / "Game.exe")
+check("an exe with neither, and no graphics DLL named anywhere, stays Unknown",
+      pe.detect_api(_d / "Game.exe")[0] == "Unknown")
 shutil.rmtree(_d, ignore_errors=True)
 
 section("33. a Vulkan-layer install is diagnosed by the registry, not the folder")
@@ -3475,20 +3492,90 @@ shutil.rmtree(_d, ignore_errors=True)
 
 section("38. screen and window capture through the player (video.py)")
 _ff = Path("C:/t/ffmpeg.exe")
-_c = video.capture_command(_ff, "screen 2", 60, gpu=True)
-check("a screen goes through Desktop Duplication on the GPU and NVENC",
-      "ddagrab=output_idx=1:framerate=60" in _c and "h264_nvenc" in _c
-      and _c[-1].startswith("udp://127.0.0.1:") and "-zerolatency" in _c, str(_c))
-_c = video.capture_command(_ff, "screen 1", 60, gpu=False)
-check("the fallback is GDI of the desktop with libx264, capped at 30 fps",
-      "gdigrab" in _c and "desktop" in _c and "libx264" in _c
-      and _c[_c.index("-framerate") + 1] == "30", str(_c))
-_c = video.capture_command(_ff, "window: Firefox - YouTube", 60)
-check("a window is captured by title through GDI",
-      "gdigrab" in _c and "title=Firefox - YouTube" in _c and "ddagrab" not in " ".join(_c), str(_c))
+_c = video.capture_command(_ff, "screen 2", 30, gpu=True, region=None, output_idx=1)
+check("a whole monitor goes through Desktop Duplication on the GPU and NVENC",
+      "ddagrab=output_idx=1:framerate=30" in _c and "h264_nvenc" in _c
+      and _c[-1].startswith("udp://127.0.0.1:"), str(_c))
+_c = video.capture_command(_ff, "screen 1", 30, gpu=True, region=(0, 0, 1190, 1080), output_idx=0)
+check("a region is cut on the GPU with ddagrab's own offset and size",
+      any(x == "ddagrab=output_idx=0:framerate=30:offset_x=0:offset_y=0:video_size=1190x1080" for x in _c), str(_c))
+_c = video.capture_command(_ff, "screen 1", 30, gpu=False, region=(10, 20, 640, 480))
+check("the fallback is GDI of the same region with libx264",
+      "gdigrab" in _c and "-offset_x" in _c and "640x480" in _c and "libx264" in _c, str(_c))
+_cap, _park = video.split_layout((0, 0, 1920, 1080))
+check("one monitor is split: capture on the left, the player parked on the right, no overlap",
+      _cap == (0, 0, 1190, 1080) and _park == (1190, 0, 730, 1080)
+      and _cap[0] + _cap[2] == _park[0], f"{_cap} {_park}")
+_cap, _park = video.split_layout((1920, 0, 4480, 1440))
+check("a second monitor's own origin is kept", _cap[0] == 1920 and _cap[2] % 2 == 0 and _park[0] == 1920 + _cap[2])
+import tkinter as _tkw
+# The window belongs to ANOTHER process, as in real use (a Tk window of this
+# process renders black through PrintWindow once an earlier root was torn down).
+_child = subprocess.Popen([sys.executable, "-c",
+    "import tkinter as t; r=t.Tk(); r.title('dlss5 grab test'); r.geometry('400x300+40+40'); "
+    "r.configure(bg='#3060c0'); r.mainloop()"])
+_u = video._user32()
+_hw = 0
+for _ in range(100):
+    _hw = _u.FindWindowW(None, "dlss5 grab test")
+    if _hw:
+        break
+    time.sleep(0.05)
+time.sleep(0.4)
+_wd = _ht = 0; _buf = b""; _samples = []
+for _ in range(5):
+    _wd, _ht, _buf = video.grab_window(_hw) if _hw else (0, 0, b"")
+    _samples = list(memoryview(_buf)[0::4 * 53]) if _buf else []      # blue channel of BGRA
+    if _samples and sum(_samples) / len(_samples) > 150:
+        break
+    time.sleep(0.3)
+check("grab_window returns another process's window pixels (a blue tk window is not black)",
+      _wd >= 2 and _ht >= 2 and len(_buf) == _wd * _ht * 4 and _samples and sum(_samples) / len(_samples) > 150,
+      f"hwnd={_hw} {_wd}x{_ht} mean-blue-channel={sum(_samples)/len(_samples) if _samples else None}")
+_child.kill()
+# the feed thread against a stand-in encoder: a .cmd that swallows stdin
+_stub_dir = Path(tempfile.mkdtemp(prefix="feedstub_"))
+_stub = _stub_dir / "ffmpeg.cmd"
+_stub.write_text("@echo off\r\n\"" + sys.executable + "\" -c \"import sys; sys.stdin.buffer.read()\"\r\n", encoding="utf8")
+_root2 = _tkw.Tk(); _root2.geometry("320x240+60+60"); _root2.update()
+_feed = video._WindowFeed(_stub, _root2.winfo_id(), 20).start()
+for _ in range(40):
+    _root2.update(); time.sleep(0.05)
+_sent = _feed.frames
+_feed.stop()
+for _ in range(12):                 # PrintWindow needs the window's thread to pump
+    _root2.update(); time.sleep(0.05)
+check("the window feed grabs frames and pushes them down the pipe; stop() ends the thread",
+      _sent >= 5 and not _feed.alive(), f"sent={_sent} alive={_feed.alive()}")
+# an encoder that refuses the GPU path: the first write breaks, the CPU path is opened
+_calls = []
+_orig_cmd = video.window_pipe_command
+def _fake_cmd(ff, w_, h_, fps, gpu=True):
+    _calls.append(gpu)
+    return ["cmd", "/c", "exit", "1"] if gpu else [str(_stub)]
+video.window_pipe_command = _fake_cmd
+_msgs = []
+_feed2 = video._WindowFeed(_stub, _root2.winfo_id(), 20, _msgs.append).start()
+for _ in range(40):
+    _root2.update(); time.sleep(0.05)
+_feed2.stop()
+for _ in range(12):                 # PrintWindow needs the window's thread to pump
+    _root2.update(); time.sleep(0.05)
+video.window_pipe_command = _orig_cmd
+check("NVENC refusing the pipe falls back to the CPU encoder and the feed keeps going",
+      _calls[:2] == [True, False] and _feed2.frames >= 3 and any("CPU encoder" in m for m in _msgs),
+      f"calls={_calls} frames={_feed2.frames} msgs={_msgs}")
+_root2.destroy()
+shutil.rmtree(_stub_dir, ignore_errors=True)
+_c = video.window_pipe_command(Path("C:/t/ffmpeg.exe"), 1190, 1080, 30)
+check("the window feed pipes raw BGRA into NVENC at the chosen rate",
+      "rawvideo" in _c and "1190x1080" in _c and "h264_nvenc" in _c and _c[_c.index("-r") + 1] == "30", str(_c))
 _ls = video.list_screens()
 check("the list starts with the monitors and never lists this tool's own window",
       _ls and _ls[0] == "screen 1" and not any("DLSS 5 Autopilot" in s for s in _ls), str(_ls[:4]))
+_region, _idx, _park, _other = video.plan_capture("screen 1")
+check("on this PC the plan parks the player beside the capture (one monitor) or on the other one",
+      (_other and _region is None) or (not _other and _region is not None and _park is not None), str((_region, _idx, _park, _other)))
 
 section("39. OpenGL games get VORT motion vectors, installed by the tool")
 check("VORT is a provider the tool installs, with its technique above the feed",
@@ -3705,6 +3792,87 @@ try:
     check("on an older driver the same install IS outdated (4.70 works there)", _items and _items[0].outdated, str(_items))
 finally:
     _cmp._latest, gpu.driver_at_least = _saved
+shutil.rmtree(_d, ignore_errors=True)
+
+section("45. 1.7.1: online games warned, metadata reads retried, Xbox text, graphics-api override")
+from core import anticheat  # noqa: E402
+_d = Path(tempfile.mkdtemp(prefix="ac_"))
+for n in ("ZenlessZoneZero.exe", "EAAntiCheat.GameServiceLauncher.exe"):
+    (_d / n).write_bytes(b"MZ")
+_f = anticheat.detect(_d, _d)
+check("HoYoverse and EA Javelin games are detected as anti-cheat",
+      _f.present and "HoYoverse anti-cheat" in _f.products and "EA Javelin" in _f.products, str(_f.products))
+shutil.rmtree(_d, ignore_errors=True)
+
+import urllib.error as _ue
+_calls = {"n": 0}
+class _Resp:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return b"ok"
+def _flaky(req, timeout=0):
+    _calls["n"] += 1
+    if _calls["n"] < 3:
+        raise TimeoutError("The read operation timed out")
+    return _Resp()
+_saved = (sources.urllib.request.urlopen, sources.time.sleep)
+sources.urllib.request.urlopen = _flaky
+sources.time.sleep = lambda s: None
+try:
+    check("a metadata read survives two timeouts (#26)", sources._get("https://x/") == b"ok" and _calls["n"] == 3)
+finally:
+    sources.urllib.request.urlopen, sources.time.sleep = _saved
+
+check("the Xbox hint no longer claims every Store game has an 'Enable mods' switch",
+      "Only games whose publisher" in games.XBOX_HINT and "Steam version" in games.XBOX_HINT)
+
+_d = Path(tempfile.mkdtemp(prefix="apiov_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_saved_pref = prefs.get("api_override")
+try:
+    games.set_api_override(_d, "DX9")
+    _g = games.manual(_d)
+    check("an API chosen for the folder overrides the executable's import table (#24)",
+          _g.api == "DX9" and _g.api_detected != "DX9" and "set by hand" in _g.api_why,
+          f"{_g.api} {_g.api_detected} {_g.api_why}")
+    games.set_api_override(_d, None)
+    _g = games.manual(_d)
+    check("clearing the override restores detection", _g.api == _g.api_detected and _g.api != "DX9")
+finally:
+    prefs.set_("api_override", _saved_pref or {})
+shutil.rmtree(_d, ignore_errors=True)
+
+section("46. issue #31: a renderer loaded at run time is still recognised (Call of Juarez: Gunslinger)")
+_d = Path(tempfile.mkdtemp(prefix="coj_"))
+_exe = _d / "CoJGunslinger.exe"
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _exe)
+check("an exe with no graphics import and no name in it stays Unknown",
+      pe.detect_api(_exe)[0] == "Unknown")
+with open(_exe, "ab") as _f:
+    _f.write(b"\0\0" + "d3d9.dll".encode("utf-16-le") + b"\0\0")
+_api, _why = pe.detect_api(_exe)
+check("d3d9.dll named in the exe (UTF-16) -> DirectX 9, and the reason says so",
+      _api == "DX9" and "run time" in _why, f"{_api}: {_why}")
+_g = games.manual(_d)
+check("...so the game is 32-bit / DX9 and gets the DXVK route, not dxgi.dll + feeder",
+      _g.bitness == 32 and _g.api == "DX9", f"{_g.bitness} {_g.api}")
+with open(_exe, "ab") as _f:
+    _f.write(b"\0dxgi.dll\0")
+check("a DXGI name beside it wins, as in the static table", pe.detect_api(_exe)[0] == "DX12")
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _exe)
+shutil.copyfile(r"C:\Windows\SysWOW64\Magnification.dll", _d / "engine.dll")
+_api, _why = pe.detect_api(_exe)
+check("an engine DLL beside the exe that imports d3d9.dll is the renderer",
+      _api == "DX9" and "engine.dll" in _why, f"{_api}: {_why}")
+shutil.copyfile(r"C:\Windows\SysWOW64\Magnification.dll", _d / "d3d9.dll")
+(_d / "engine.dll").unlink()
+check("a proxy d3d9.dll (DXVK, ReShade) beside the exe is not consulted",
+      pe.detect_api(_exe)[0] == "Unknown")
+(_d / "nvngx_dlss.dll").write_bytes(b"MZ")
+with open(_exe, "ab") as _f:
+    _f.write(b"\0d3d9.dll\0")
+check("a run-time d3d9.dll with the game's own DLSS beside it is still a modern renderer",
+      pe.detect_api(_exe)[0] == "DX12")
 shutil.rmtree(_d, ignore_errors=True)
 
 section("RESULT")

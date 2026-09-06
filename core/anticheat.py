@@ -36,6 +36,19 @@ MARKERS: tuple[tuple[str, str], ...] = (
     ("punkbuster", "PunkBuster"),
     ("faceit", "FACEIT AC"),
     ("ricochet", "Ricochet"),
+    # EA's own anti-cheat (EA SPORTS FC, Battlefield): the service launcher
+    # sits beside the game.
+    ("eaanticheat", "EA Javelin"),
+    ("ea_anticheat", "EA Javelin"),
+    # HoYoverse titles: the driver installs system-wide, so the executable
+    # name is the evidence. Online games; the anti-cheat closes the game
+    # the moment a proxy DLL is seen (#29).
+    ("zenlesszonezero", "HoYoverse anti-cheat"),
+    ("genshinimpact", "HoYoverse anti-cheat"),
+    ("starrail", "HoYoverse anti-cheat"),
+    ("mhyprot", "HoYoverse anti-cheat"),
+    ("ace-base", "ACE (Anti-Cheat Expert)"),
+    ("anticheatexpert", "ACE (Anti-Cheat Expert)"),
 )
 
 

@@ -22,7 +22,7 @@ directly and keeps its own Quality/Balanced/Performance modes.
              game's own DLSS as its input. Same-resolution network on a
              smaller image: proportionally cheaper, and the game's quality
              mode still applies. No renodx add-on beside it - two NGX hooks
-             fight. Days old, tested on two games by its author.
+             fight. Tested on two games by its author.
 
     OPTI     Dagherbou's OptiScaler fork. Replaces the upscaler and runs the
              model over its output, with a model-resolution dial (25-100%)
@@ -34,7 +34,7 @@ directly and keeps its own Quality/Balanced/Performance modes.
 
     BRIDGE   dlss5-bridge: reproduces the DLSS contract on a private D3D12
              session. The route for Vulkan games with DLSS (mirror), and a
-             fallback for D3D11. Its author has ended development at 1.3.0.
+             fallback for D3D11.
 
     FEEDER   DLSS5-Feeder builds a synthetic DLAA contract out of ReShade's
              depth buffer and shader-estimated motion vectors. Works without
@@ -55,8 +55,8 @@ directly and keeps its own Quality/Balanced/Performance modes.
              after DLSS. No ReShade, no feeder, no add-on - a ReShade proxy
              DLL in the folder crashes a Remix game before it draws.
 
-DirectX 10 is supported by none of them: the feeder dropped it and nothing
-else hooks D3D10.
+DirectX 10 is reached by the feeder alone (0.13.1 and later), through a
+private D3D11 relay device; nothing else hooks D3D10.
 """
 from __future__ import annotations
 
@@ -286,13 +286,13 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
         if not native_dlss:
             return False, "the game must already use DLSS"
         return True, ("runs the network before the game's DLSS, at render "
-                      "resolution - cheaper; its author tested two games")
+                      "resolution - cheaper; tested on two games")
     if route == STANDALONE:
         return True, ("own feed: DLAA at native resolution, DLSS SR below it, "
                       "frame generation; experimental - presents through a "
                       "window of its own")
     if route == RENODX:
-        return True, "new and unproven - reported not working in many games; try the others first"
+        return True, "unproven - reported not working in many games; try the others first"
     if route == BRIDGE:
         if api == "Vulkan":
             return True, "mirrors the game's DLSS onto D3D12"
@@ -456,8 +456,8 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
                         "reproduces the contract on a private D3D12 session "
                         "and the game's own quality mode still applies. "
                         "OptiScaler works too but replaces DLSS with FSR on "
-                        "D3D11. The renodx-dlss add-on is new and has not "
-                        "proven itself in the field yet.")
+                        "D3D11. The renodx-dlss add-on is reported working in "
+                        "few games so far.")
         else:                              # DX12 or unknown -> assume DXGI/D3D12
             s.options = [NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE,
                          RENODX]

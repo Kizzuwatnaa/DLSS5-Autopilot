@@ -38,9 +38,12 @@ def _isdir(p) -> bool:
 
 # What to tell someone whose Xbox / Game Pass game we cannot even read.
 # One sentence, shared with the installer so both places say the same thing.
-XBOX_HINT = ("Xbox app: open the game's page, Manage > Files > Enable mods, "
-             "then rescan - Windows hides these files from everything else "
-             "until then.")
+XBOX_HINT = ("Windows keeps this Store/Game Pass folder locked. Only games "
+             "whose publisher allows modding show 'Manage > Files > Browse' "
+             "(or 'Enable mods') in the Xbox app; if that entry is there, "
+             "use it and rescan. If it is not - Microsoft Flight Simulator, "
+             "most Store titles - the folder cannot be modified by anything, "
+             "and the Steam version of the game is the one that can be.")
 
 # Folder names Windows keeps under its own ownership for store games. Exact
 # segment match on purpose: ModifiableWindowsApps is the one that IS meant
@@ -95,6 +98,7 @@ class Game:
     bitness: int | None = None   # 32 / 64
     api: str = "?"
     api_why: str = ""
+    api_detected: str = ""          # what the executable said, before any override
     source: str = "Manual"       # Steam / Epic / GOG / Emulator / Manual
     candidates: list[Path] = field(default_factory=list)
     error: str = ""
@@ -677,6 +681,30 @@ def _prefer_real_exe(g: Game) -> None:
         g.exe = top
 
 
+APIS = ("DX9", "DX10", "DX11", "DX12", "Vulkan", "OpenGL")
+
+
+def api_override(folder: Path) -> str:
+    """The graphics API the person chose for this folder, or ""."""
+    try:
+        from . import prefs
+        return str((prefs.get("api_override") or {}).get(str(folder).lower(), "") or "")
+    except Exception:
+        return ""
+
+
+def set_api_override(folder: Path, api: str | None) -> None:
+    """Remember (or forget, with None/"") the API chosen for this folder."""
+    from . import prefs
+    d = dict(prefs.get("api_override") or {})
+    key = str(folder).lower()
+    if api and api in APIS:
+        d[key] = api
+    else:
+        d.pop(key, None)
+    prefs.set_("api_override", d)
+
+
 def enrich(g: Game) -> Game:
     """Pick the executable and detect its architecture / graphics API."""
     try:
@@ -698,6 +726,12 @@ def enrich(g: Game) -> Game:
             return g
         g.bitness = pe.exe_bitness(g.exe)
         g.api, g.api_why = pe.detect_api(g.exe)
+        g.api_detected = g.api
+        forced = api_override(g.folder)
+        if forced:
+            # The import table can lie: R.U.S.E. links D3D11 and renders
+            # with D3D9 (#24). A choice made on the install page wins.
+            g.api, g.api_why = forced, f"set by hand (detected {g.api_detected})"
         if g.emu is None:
             prof = emulators.profile_for(g.exe)
             if prof:

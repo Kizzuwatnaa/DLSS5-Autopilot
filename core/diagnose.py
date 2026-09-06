@@ -779,9 +779,11 @@ def analyse(install_dir: Path) -> Report:
         if d3d9_only and str(man.get("api") or "").upper() in ("DX11", "DX12"):
             rep.add(WARN, "ReShade attached to a Direct3D 9 device, not DXGI.",
                     "The app renders with D3D9 here (a video player on the EVR "
-                    "renderer, or a game in D3D9 mode); the feed needs "
-                    "D3D11/12. Switch the renderer to one that uses D3D11, or "
-                    "the game to DX11/DX12, and play again.")
+                    "renderer, or a game that links D3D11 but draws with "
+                    "D3D9); the feed needs D3D11/12. Either switch the game "
+                    "or player to D3D11/12, or set 'graphics api' to DirectX 9 "
+                    "on the install page and install again - the game then "
+                    "goes through DXVK like any DirectX 9 title.")
 
         # The game exiting before a swapchain exists means it never got to
         # rendering at all - nothing downstream of this is worth reading.
@@ -951,11 +953,11 @@ def analyse(install_dir: Path) -> Report:
                 "4.6/4.7 add-on: the driver routes the feature into the "
                 "runtime itself and those builds do not survive it (measured "
                 "by the feeder's author, DLSS5-Feeder #54). Install again: "
-                "since 1.7.0 the tool pins the add-on to 4.55 on these "
-                "drivers, which passes. The bridge route works around it in "
+                "the tool pins the add-on to 4.55 on these drivers, which "
+                "passes. The bridge route works around it in "
                 "memory; rolling the driver back to 616.56 also works.")
         rep.verdict = ("Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install "
-                       "again (4.55 is pinned now).")
+                       "again; the tool pins 4.55.")
         return rep
     rec = re.search(r"### CRASH RECORDED ###\s+exception (0x[0-9A-Fa-f]+)[^\n]*?"
                     r"last doing: ([^\n]+)", joined)
@@ -965,7 +967,7 @@ def analyse(install_dir: Path) -> Report:
                      f"{rec.group(2).strip()}.",
                 "That is the feeder itself going down, not the install. Two "
                 "things to try from the install page: another 'feeder build' "
-                "from the list (the stable 0.7.0 is the long-tested 32-bit "
+                "from the list (the stable release is the long-tested 32-bit "
                 "path), and a lower work resolution. Then report it to the "
                 "DLSS5-Feeder project with this log"
                 + (f" and the dump ({dump.group(1).strip()}; zip it, it "

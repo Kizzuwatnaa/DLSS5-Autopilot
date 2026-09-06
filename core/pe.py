@@ -254,7 +254,89 @@ def detect_api(path: Path) -> tuple[str, str]:
         return ("DX12", "no graphics DLL imported statically, but ships a "
                         "D3D12 Agility SDK or DLSS Frame Generation/Ray "
                         "Reconstruction - the real renderer is D3D12")
+    # No static graphics import at all: the engine LoadLibrary()s its
+    # renderer (Chrome Engine's Call of Juarez: Gunslinger names d3d9.dll in
+    # the exe and imports nothing - issue #31). The name it will load is
+    # still in the file, or in the engine DLL beside it.
+    name, where = _runtime_graphics(path)
+    if name:
+        api = _RUNTIME_API[name]
+        if api == "DX9" and _ships_dlss(path.parent):
+            api = "DX12"
+        return api, f"loads {name} at run time ({where}); no static graphics import"
     return "Unknown", "graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll"
+
+
+# Same priority as the static table above: DXGI evidence beats everything, a
+# lone d3d9.dll is DirectX 9.
+_RUNTIME_API = {
+    "d3d12.dll": "DX12", "d3d11.dll": "DX11", "d3d10.dll": "DX10",
+    "dxgi.dll": "DX12", "vulkan-1.dll": "Vulkan", "opengl32.dll": "OpenGL",
+    "d3d9.dll": "DX9",
+}
+_RUNTIME_SCAN_MAX = 512 * 1024 * 1024
+# Files our own routes (or ReShade, DXVK, OptiScaler) drop beside a game;
+# their imports say nothing about the game.
+_NOT_THE_GAME = set(_RUNTIME_API) | {"reshade32.dll", "reshade64.dll",
+                                     "reshade.dll", "d3d8.dll", "ddraw.dll",
+                                     "dinput8.dll", "winmm.dll", "version.dll",
+                                     "nvngx_dlssnr.dll", "nvngx_dlss.dll",
+                                     "optiscaler.dll", "dlss5-bridge.dll"}
+
+
+def _names_in(path: Path) -> set[str]:
+    """Which graphics DLL names the file mentions (ANSI or UTF-16)."""
+    found: set[str] = set()
+    needles = {n: (n.encode(), n.encode("utf-16-le")) for n in _RUNTIME_API}
+    try:
+        size = path.stat().st_size
+        if size > _RUNTIME_SCAN_MAX:
+            return found
+        with open(path, "rb") as f:
+            tail = b""
+            while True:
+                chunk = f.read(4 * 1024 * 1024)
+                if not chunk:
+                    break
+                low = (tail + chunk).lower()
+                for n, (a, u) in needles.items():
+                    if n not in found and (a in low or u in low):
+                        found.add(n)
+                tail = chunk[-64:]
+    except OSError:
+        pass
+    return found
+
+
+def _runtime_graphics(exe: Path) -> tuple[str, str]:
+    """(dll name, where it was seen) for a renderer loaded at run time.
+
+    The exe's own strings first; then the static imports of the DLLs beside
+    it (an engine DLL that imports d3d9.dll is the renderer). Proxy DLLs and
+    the files our routes place are not consulted.
+    """
+    found = _names_in(exe)
+    for n in _RUNTIME_API:              # dict order is the priority order
+        if n in found:
+            return n, "named in the exe"
+    try:
+        sibs = sorted(p for p in exe.parent.iterdir()
+                      if p.is_file() and p.suffix.lower() == ".dll"
+                      and p.name.lower() not in _NOT_THE_GAME)[:60]
+    except OSError:
+        return "", ""
+    best = ""
+    best_from = ""
+    for dll in sibs:
+        for imp in pe_imports(dll):
+            base = imp.rsplit("/", 1)[-1]
+            if base in _RUNTIME_API:
+                rank = list(_RUNTIME_API).index(base)
+                if not best or rank < list(_RUNTIME_API).index(best):
+                    best, best_from = base, dll.name
+    if best:
+        return best, f"{best_from} beside the exe imports it"
+    return "", ""
 
 
 def looks_like_game(exe: Path) -> bool:

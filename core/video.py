@@ -53,6 +53,10 @@ SETTINGS = {
     "DSVidRen": "14",
     "UpdaterAutoCheck": "0",
     "RememberWindowPos": "1",
+    # The window must stay where the tool parks it beside a screen capture;
+    # auto-zoom resizes it to the video's own size the moment a stream
+    # starts, back over the captured area.
+    "AutoZoom": "0",
     # 1440p keeps YouTube's VP9/AV1 streams within what one 60 fps neural
     # pass copes with comfortably; the player's options can raise it.
     "YDLMaxHeight": "1440",
@@ -157,7 +161,7 @@ def _write_ini(folder: Path) -> None:
                 seen.add(k)
                 # The renderer and the update prompt are what make this
                 # work; a user-changed renderer would silently break it.
-                if k in ("DSVidRen", "UpdaterAutoCheck"):
+                if k in ("DSVidRen", "UpdaterAutoCheck", "AutoZoom"):
                     out.append(f"{k}={settings[k]}")
                     continue
         out.append(ln)
@@ -712,6 +716,11 @@ def start_webcam(folder: Path, camera: str, size: str = "1280x720", fps: int = 3
     return _webcam_proc
 
 
+def capture_frames_sent() -> int:
+    """Frames the window capture has pushed so far (0 for the screen method)."""
+    return _window_feed.frames if _window_feed is not None else 0
+
+
 def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
     """(frames delivered, motion vectors alive) logged after wall time t0.
 
@@ -754,25 +763,70 @@ def feed_frames_since(folder: Path, t0: float) -> tuple[int, bool]:
 
 # Screen and window capture: anything on the desktop through DLSS 5 - a
 # browser playing a video, a stream, an emulator, a game nothing should be
-# injected into. Same pipe as the webcam: ffmpeg captures, encodes, and hands
-# the player a local MPEG-TS stream over UDP. A screen goes through the
-# Desktop Duplication API (ddagrab, on the GPU) and NVENC, so a 4K desktop at
-# 60 fps costs almost nothing; a single window goes through GDI, which is
-# the only capture that can follow one window, and libx264. Half a second
-# behind either way - for watching, not for playing.
+# injected into. Same pipe as the webcam: frames are encoded and handed to
+# the player as a local MPEG-TS stream over UDP. Two methods:
+#
+#   screen N  - part of the desktop through the Desktop Duplication API on
+#               the GPU (ddagrab + NVENC). The player is itself a window on
+#               that desktop, so it must sit outside the captured area or
+#               the capture shows the player showing the capture: with two
+#               monitors the player goes to the other one, with one the
+#               left 62% is captured and the player is parked on the right.
+#   window    - the window itself, through PrintWindow(PW_RENDERFULLCONTENT):
+#               the window's own composited content, hardware-accelerated
+#               windows included (a browser, Discord), and it keeps coming
+#               while other windows cover it - so the player can go
+#               fullscreen on top of the source. Frames go to ffmpeg over a
+#               pipe as raw BGRA and NVENC encodes them; about 80 frames a
+#               second at 1080p on the capture side, capped at the chosen
+#               rate. GDI screen capture (gdigrab) shows those windows as
+#               black, which is why ffmpeg's own window capture is not used.
 SCREEN_PREFIX = "screen "
 WINDOW_PREFIX = "window: "
+SPLIT = 0.62                    # share of the width that is captured
+_windows_by_title: dict = {}    # title -> hwnd, from the last list_screens()
+
+
+def _user32():
+    import ctypes
+    u = ctypes.windll.user32
+    try:
+        u.SetProcessDPIAware()
+    except Exception:
+        pass
+    return u
+
+
+def monitors() -> list[tuple[int, int, int, int]]:
+    """(left, top, right, bottom) of every monitor, primary first."""
+    import ctypes
+    import ctypes.wintypes as w
+    u = _user32()
+    out: list[tuple[int, int, int, int]] = []
+    proc = ctypes.WINFUNCTYPE(ctypes.c_int, w.HMONITOR, w.HDC,
+                              ctypes.POINTER(w.RECT), w.LPARAM)
+
+    def cb(_hm, _hdc, lprc, _lp):
+        r = lprc.contents
+        out.append((r.left, r.top, r.right, r.bottom))
+        return 1
+    try:
+        u.EnumDisplayMonitors(None, None, proc(cb), 0)
+    except Exception:
+        pass
+    out.sort(key=lambda r: (r[0] != 0 or r[1] != 0, r[0], r[1]))
+    return out or [(0, 0, 1920, 1080)]
 
 
 def list_screens() -> list[str]:
     """Every monitor, then every visible window big enough to matter."""
+    import ctypes
+    import ctypes.wintypes as w
     out: list[str] = []
+    _windows_by_title.clear()
     try:
-        import ctypes
-        import ctypes.wintypes as w
-        u = ctypes.windll.user32
-        n = int(u.GetSystemMetrics(80)) or 1          # SM_CMONITORS
-        out += [f"{SCREEN_PREFIX}{i + 1}" for i in range(n)]
+        u = _user32()
+        out += [f"{SCREEN_PREFIX}{i + 1}" for i in range(len(monitors()))]
         titles: list[str] = []
 
         @ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
@@ -785,48 +839,361 @@ def list_screens() -> list[str]:
                     r = w.RECT()
                     u.GetWindowRect(h, ctypes.byref(r))
                     if r.right - r.left >= 320 and r.bottom - r.top >= 200 \
-                            and b.value not in titles:
+                            and b.value not in titles \
+                            and not b.value.startswith("DLSS 5 Autopilot"):
                         titles.append(b.value)
+                        _windows_by_title[b.value] = int(h)
             return True
         u.EnumWindows(cb, 0)
-        out += [WINDOW_PREFIX + t for t in titles
-                if not t.startswith("DLSS 5 Autopilot")]
+        out += [WINDOW_PREFIX + t for t in titles]
     except Exception:
         pass
     return out or [SCREEN_PREFIX + "1"]
 
 
-def capture_command(ff: Path, target: str, fps: int = 60, gpu: bool = True) -> list[str]:
+def split_layout(mon: tuple[int, int, int, int]) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+    """((x, y, w, h) captured, (x, y, w, h) for the player) on one monitor.
+
+    Even numbers throughout - the encoder wants them - and the split lands on
+    the captured side's edge, so the player never overlaps the capture.
+    """
+    left, top, right, bottom = mon
+    width, height = right - left, bottom - top
+    cw = int(width * SPLIT) & ~1
+    ch = height & ~1
+    return (left, top, cw, ch), (left + cw, top, width - cw, height)
+
+
+def _rect(hwnd) -> tuple[int, int, int, int]:
+    import ctypes
+    import ctypes.wintypes as w
+    r = w.RECT()
+    _user32().GetWindowRect(hwnd, ctypes.byref(r))
+    return (r.left, r.top, r.right - r.left, r.bottom - r.top)
+
+
+def _monitor_of(rect) -> tuple[int, int, int, int]:
+    x, y, wd, ht = rect
+    cx, cy = x + wd // 2, y + ht // 2
+    for m in monitors():
+        if m[0] <= cx < m[2] and m[1] <= cy < m[3]:
+            return m
+    return monitors()[0]
+
+
+def _move(hwnd, rect, topmost: bool = False) -> None:
+    """Restore and place a window; topmost keeps the player above the source."""
+    import ctypes
+    import ctypes.wintypes as w
+    u = _user32()
+    SW_RESTORE, SWP_SHOWWINDOW = 9, 0x0040
+    x, y, wd, ht = rect
+    try:
+        # Without argtypes a -1 (HWND_TOPMOST) is passed as a 32-bit int and
+        # Windows sees an invalid handle: the call fails and nothing moves.
+        u.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        u.ShowWindow(w.HWND(hwnd), SW_RESTORE)
+        u.SetWindowPos(w.HWND(hwnd), w.HWND(-1) if topmost else w.HWND(0),
+                       x, y, wd, ht, SWP_SHOWWINDOW)
+    except Exception:
+        pass
+
+
+def _player_hwnd(pid: int, timeout: float = 8.0):
+    """The player's main window once it exists, or None.
+
+    MPC-HC runs as a single instance: a second start hands the URL to the
+    running one and exits, so the pid we launched may own no window. After
+    a few seconds the window is looked up by its class instead.
+    """
+    import ctypes
+    import ctypes.wintypes as w
+    import time
+    u = _user32()
+    deadline = time.monotonic() + timeout
+    by_class_after = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if time.monotonic() > by_class_after:
+            h = u.FindWindowW(WINDOW_CLASS, None)
+            if h:
+                return int(h)
+        best = None
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
+        def cb(h, _l):
+            nonlocal best
+            p = w.DWORD()
+            u.GetWindowThreadProcessId(h, ctypes.byref(p))
+            if p.value == pid and u.IsWindowVisible(h):
+                x, y, wd, ht = _rect(h)
+                if best is None or wd * ht > best[1]:
+                    best = (int(h), wd * ht)
+            return True
+        u.EnumWindows(cb, 0)
+        if best and best[1] > 200 * 200:
+            return best[0]
+        time.sleep(0.25)
+    return None
+
+
+def capture_command(ff: Path, target: str, fps: int = 30, gpu: bool = True,
+                    region: tuple[int, int, int, int] | None = None,
+                    output_idx: int = 0) -> list[str]:
     """The ffmpeg command line that captures `target` into the player's UDP pipe.
 
-    `gpu` False is the fallback when NVENC or Desktop Duplication refuses:
-    GDI capture of the whole desktop and libx264 - slower, always works.
+    `region` is (x, y, w, h) in desktop coordinates, captured through the
+    Desktop Duplication API on the GPU (ddagrab's own offset and size, no
+    CPU copy). `gpu` False is the fallback when NVENC or Desktop Duplication
+    refuses: GDI capture of the same region and libx264 - slower, always
+    works, black for hardware-accelerated windows.
     """
     base = [str(ff), "-hide_banner", "-loglevel", "error"]
     out = ["-g", str(fps), "-f", "mpegts", f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"]
     x264 = ["-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
             "-pix_fmt", "yuv420p"]
-    if target.startswith(WINDOW_PREFIX):
-        title = target[len(WINDOW_PREFIX):]
-        return base + ["-f", "gdigrab", "-framerate", str(min(fps, 30)),
-                       "-i", f"title={title}"] + x264 + out
-    idx = 0
+    if not gpu:
+        cmd = base + ["-f", "gdigrab", "-framerate", str(min(fps, 30))]
+        if region is None:
+            # gdigrab knows no monitor index: the whole virtual desktop, all
+            # monitors and the parked player included. Cut this monitor out.
+            mons = monitors()
+            m = mons[min(output_idx, len(mons) - 1)]
+            ox = min(r[0] for r in mons)
+            oy = min(r[1] for r in mons)
+            region = (m[0] - ox, m[1] - oy, (m[2] - m[0]) & ~1, (m[3] - m[1]) & ~1)
+        x, y, wd, ht = region
+        cmd += ["-offset_x", str(x), "-offset_y", str(y), "-video_size", f"{wd}x{ht}"]
+        return cmd + ["-i", "desktop"] + x264 + out
+    grab = f"ddagrab=output_idx={output_idx}:framerate={fps}"
+    if region:
+        x, y, wd, ht = region
+        grab += f":offset_x={x}:offset_y={y}:video_size={wd}x{ht}"
+    return base + ["-init_hw_device", "d3d11va", "-filter_complex", grab,
+                   "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
+                   "-zerolatency", "1"] + out
+
+
+def plan_capture(target: str) -> tuple[tuple[int, int, int, int] | None, int,
+                                       tuple[int, int, int, int] | None, bool]:
+    """(region, output_idx, player_rect, other_monitor) for a target.
+
+    region None = the whole monitor. player_rect is where the player is
+    parked; other_monitor says that rect is a different monitor (maximise
+    there) rather than a strip beside the capture.
+    """
+    mons = monitors()
     try:
         idx = max(0, int(target[len(SCREEN_PREFIX):]) - 1)
     except ValueError:
         idx = 0
-    if gpu:
-        return base + ["-init_hw_device", "d3d11va", "-filter_complex",
-                       f"ddagrab=output_idx={idx}:framerate={fps}",
-                       "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
-                       "-zerolatency", "1"] + out
-    return base + ["-f", "gdigrab", "-framerate", str(min(fps, 30)),
-                   "-i", "desktop"] + x264 + out
+    idx = min(idx, len(mons) - 1)
+    mon = mons[idx]
+    if len(mons) > 1:
+        other = mons[(idx + 1) % len(mons)]
+        return None, idx, (other[0], other[1], other[2] - other[0], other[3] - other[1]), True
+    cap, park = split_layout(mon)
+    return (cap[0] - mon[0], cap[1] - mon[1], cap[2], cap[3]), idx, park, False
 
 
-def start_screen(folder: Path, target: str, fps: int = 60):
-    """Start capturing a screen or a window and the player on it."""
+class _BMI(__import__("ctypes").Structure):
+    import ctypes as _c
+    _fields_ = [("biSize", _c.c_uint32), ("biWidth", _c.c_int32), ("biHeight", _c.c_int32),
+                ("biPlanes", _c.c_uint16), ("biBitCount", _c.c_uint16),
+                ("biCompression", _c.c_uint32), ("biSizeImage", _c.c_uint32),
+                ("biXPelsPerMeter", _c.c_int32), ("biYPelsPerMeter", _c.c_int32),
+                ("biClrUsed", _c.c_uint32), ("biClrImportant", _c.c_uint32),
+                ("bmiColors", _c.c_uint32 * 3)]
+
+
+PW_RENDERFULLCONTENT = 0x2
+
+
+def grab_window(hwnd) -> tuple[int, int, bytes]:
+    """One frame of the window's own content as (width, height, BGRA bytes).
+
+    PrintWindow with PW_RENDERFULLCONTENT asks DWM for the window's
+    composited surface, so covered and hardware-accelerated windows come
+    out as they are; without that flag a covered browser is black.
+    """
+    import ctypes
+    u = _user32()
+    g = ctypes.windll.gdi32
+    x, y, wd, ht = _rect(hwnd)
+    wd &= ~1
+    ht &= ~1
+    if wd < 2 or ht < 2:
+        return 0, 0, b""
+    hdc = u.GetDC(0)
+    mem = g.CreateCompatibleDC(hdc)
+    bmi = _BMI()
+    bmi.biSize = 44
+    bmi.biWidth = wd
+    bmi.biHeight = -ht
+    bmi.biPlanes = 1
+    bmi.biBitCount = 32
+    bits = ctypes.c_void_p()
+    hbm = g.CreateDIBSection(hdc, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+    if not hbm or not bits.value:
+        g.DeleteDC(mem)
+        u.ReleaseDC(0, hdc)
+        return 0, 0, b""
+    old = g.SelectObject(mem, hbm)
+    try:
+        u.PrintWindow(hwnd, mem, PW_RENDERFULLCONTENT)
+        buf = ctypes.string_at(bits, wd * ht * 4)
+    finally:
+        g.SelectObject(mem, old)
+        g.DeleteObject(hbm)
+        g.DeleteDC(mem)
+        u.ReleaseDC(0, hdc)
+    return wd, ht, buf
+
+
+def window_pipe_command(ff: Path, width: int, height: int, fps: int, gpu: bool = True) -> list[str]:
+    """ffmpeg reading raw BGRA frames on stdin and streaming them to the player."""
+    base = [str(ff), "-hide_banner", "-loglevel", "error", "-f", "rawvideo",
+            "-pix_fmt", "bgra", "-s", f"{width}x{height}", "-r", str(fps), "-i", "-"]
+    enc = (["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-zerolatency", "1"]
+           if gpu else ["-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                        "-pix_fmt", "yuv420p"])
+    return base + enc + ["-g", str(fps), "-f", "mpegts",
+                         f"udp://127.0.0.1:{WEBCAM_PORT}?pkt_size=1316"]
+
+
+class _WindowFeed:
+    """Captures one window at `fps` and pumps it through ffmpeg to the player.
+
+    Runs on its own thread. A window that is minimised keeps sending its
+    last frame; a window that changes size restarts the encoder at the new
+    size; a window that closes ends the feed.
+    """
+
+    def __init__(self, ff: Path, hwnd: int, fps: int, log=None):
+        import threading
+        self.ff, self.hwnd, self.fps = ff, hwnd, max(1, min(fps, 60))
+        self.log = log or (lambda *_: None)
+        self.proc = None
+        self.frames = 0
+        self.gpu = True
+        self.since_open = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> "_WindowFeed":
+        self._thread.start()
+        return self
+
+    def alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def stop(self) -> None:
+        self._stop.set()
+        p = self.proc
+        if p is not None:
+            try:
+                p.stdin.close()
+            except Exception:
+                pass
+            try:
+                p.kill()
+                p.wait(timeout=3)
+            except Exception:
+                pass
+        self.proc = None
+
+    def _open(self, wd: int, ht: int, gpu: bool = True):
+        import subprocess
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        self.gpu = gpu
+        self.since_open = 0
+        try:
+            return subprocess.Popen(window_pipe_command(self.ff, wd, ht, self.fps, gpu),
+                                    stdin=subprocess.PIPE, cwd=str(self.ff.parent),
+                                    creationflags=flags)
+        except OSError:
+            return None
+
+    def _run(self) -> None:
+        import time
+        u = _user32()
+        interval = 1.0 / self.fps
+        wd = ht = 0
+        last = b""
+        nxt = time.monotonic()
+        while not self._stop.is_set():
+            if not u.IsWindow(self.hwnd):
+                self.log("      the captured window closed - feed ended")
+                break
+            if u.IsIconic(self.hwnd):
+                buf, w2, h2 = last, wd, ht
+            else:
+                w2, h2, buf = grab_window(self.hwnd)
+            if w2 and (w2, h2) != (wd, ht):
+                if self.proc is not None:
+                    self.log(f"      window resized to {w2}x{h2} - restarting the encoder")
+                    self.stop_encoder()
+                wd, ht = w2, h2
+                self.proc = self._open(wd, ht)
+                if self.proc is None:
+                    self.log("      ffmpeg refused the raw pipe - feed ended")
+                    break
+            p = self.proc
+            if buf and p is not None:
+                try:
+                    p.stdin.write(buf)
+                    self.frames += 1
+                    self.since_open += 1
+                    last = buf
+                except (BrokenPipeError, OSError, ValueError):
+                    # ValueError: stdin already closed by stop() on another thread
+                    if self._stop.is_set():
+                        break
+                    if self.gpu and self.since_open < self.fps:
+                        # ffmpeg opens the encoder at the first frame: NVENC
+                        # refusing it shows up here, not at Popen
+                        self.log("      NVENC refused the raw pipe - using the CPU encoder")
+                        self.stop_encoder()
+                        self.proc = self._open(wd, ht, gpu=False)
+                        if self.proc is None:
+                            self.log("      ffmpeg refused the raw pipe - feed ended")
+                            break
+                        continue
+                    self.log("      ffmpeg went away - feed ended")
+                    break
+            nxt += interval
+            delay = nxt - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                nxt = time.monotonic()
+        self.stop_encoder()
+
+    def stop_encoder(self) -> None:
+        p = self.proc
+        self.proc = None
+        if p is not None:
+            try:
+                p.stdin.close()
+                p.wait(timeout=3)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+
+
+_window_feed: "_WindowFeed | None" = None
+
+
+def start_screen(folder: Path, target: str, fps: int = 30):
+    """Start capturing a screen or a window and the player on it.
+
+    Returns the ffmpeg process. The player is parked where the capture
+    cannot see it (the other monitor, or the right-hand strip of this one).
+    """
     import subprocess
+    import threading
     import time
     global _webcam_proc
     stop_webcam()
@@ -835,22 +1202,119 @@ def start_screen(folder: Path, target: str, fps: int = 60):
         raise RuntimeError("ffmpeg is not in the player's tools folder yet - "
                            "run one download first, or press 'set up the video "
                            "player' again")
+    global _window_feed
+    if target.startswith(WINDOW_PREFIX):
+        hwnd = _windows_by_title.get(target[len(WINDOW_PREFIX):])
+        if not hwnd or not _user32().IsWindow(hwnd):
+            raise RuntimeError("that window is gone - press refresh and pick it again")
+        if _user32().IsIconic(hwnd):
+            _user32().ShowWindow(hwnd, 9)               # SW_RESTORE: a minimised window has no surface
+        _window_feed = _WindowFeed(ff, hwnd, fps).start()
+        time.sleep(2.0)
+        if not _window_feed.alive():
+            _window_feed = None
+            raise RuntimeError(f"could not capture '{target}'")
+        exe = Path(folder) / PLAYER_EXE
+        subprocess.Popen([str(exe), WEBCAM_URL, "/play"], cwd=str(folder))
+        _watch_player()
+        return None
+    region, idx, park, other = plan_capture(target)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    tries = [True, False] if target.startswith(SCREEN_PREFIX) else [False]
-    for gpu in tries:
-        _webcam_proc = subprocess.Popen(capture_command(ff, target, fps, gpu),
+    for gpu in (True, False):
+        _webcam_proc = subprocess.Popen(capture_command(ff, target, fps, gpu, region, idx),
                                         cwd=str(tools_dir(folder)), creationflags=flags)
         time.sleep(2.0)
         if _webcam_proc.poll() is None:
-            launch(folder, WEBCAM_URL)
-            return _webcam_proc
-    _webcam_proc = None
-    raise RuntimeError(f"ffmpeg could not capture '{target}' - a window has to be "
-                       f"open and not minimised; a screen number has to exist")
+            break
+    else:
+        _webcam_proc = None
+        raise RuntimeError(f"ffmpeg could not capture '{target}' - a window has to be "
+                           f"open and not minimised; a screen number has to exist")
+    exe = Path(folder) / PLAYER_EXE
+    player = subprocess.Popen([str(exe), WEBCAM_URL, "/play"], cwd=str(folder))
+
+    def park_player() -> None:
+        h = _player_hwnd(player.pid)
+        if not (h and park):
+            return
+        if other:
+            # The other monitor: move once, maximise once. A maximised window
+            # reports its rect with the invisible border, so it is judged by
+            # which monitor holds it, not by pixels.
+            target = (park[0], park[1], park[0] + park[2], park[1] + park[3])
+            end = time.monotonic() + 12
+            while time.monotonic() < end:
+                if _monitor_of(_rect(h)) != target:
+                    _move(h, park)
+                    _user32().ShowWindow(h, 3)      # SW_MAXIMIZE
+                time.sleep(0.5)
+            return
+        # The player re-sizes itself when the stream arrives; keep putting it
+        # back for a while, then leave it to the person.
+        end = time.monotonic() + 12
+        while time.monotonic() < end:
+            if _rect(h)[:2] != park[:2] or _rect(h)[2] != park[2]:
+                _move(h, park, topmost=True)
+            time.sleep(0.5)
+    threading.Thread(target=park_player, daemon=True).start()
+    _watch_player()
+    return _webcam_proc
+
+
+_watch_gen = 0
+
+
+def _watch_player() -> None:
+    """Stop the capture when the player window goes away.
+
+    Capture, encoding and UDP would otherwise run until 'stop' with nobody
+    listening. The player is watched by window class (single instance), on
+    a thread that stands down when a newer capture starts.
+    """
+    import threading
+    import time
+    global _watch_gen
+    _watch_gen += 1
+    gen = _watch_gen
+
+    def run() -> None:
+        u = _user32()
+        seen = False
+        end = time.monotonic() + 15
+        while gen == _watch_gen:
+            h = u.FindWindowW(WINDOW_CLASS, None)
+            if h:
+                seen = True
+            elif seen or time.monotonic() > end:
+                if gen == _watch_gen:
+                    stop_webcam()
+                return
+            time.sleep(2.0)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _unpark_player() -> None:
+    """Take the player out of the topmost band it was parked in."""
+    try:
+        import ctypes
+        import ctypes.wintypes as w
+        u = _user32()
+        h = u.FindWindowW(WINDOW_CLASS, None)
+        if h:
+            u.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
+                                       ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+            u.SetWindowPos(w.HWND(h), w.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002)   # NOTOPMOST, NOSIZE|NOMOVE
+    except Exception:
+        pass
 
 
 def stop_webcam() -> None:
-    global _webcam_proc
+    global _webcam_proc, _window_feed, _watch_gen
+    _watch_gen += 1                     # stands the player watcher down
+    if _window_feed is not None:
+        _window_feed.stop()
+        _window_feed = None
+    _unpark_player()
     if _webcam_proc is not None:
         try:
             _webcam_proc.kill()

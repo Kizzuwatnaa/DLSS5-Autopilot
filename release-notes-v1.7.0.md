@@ -5,10 +5,9 @@
 The video player card gets a **screen** row. Pick a monitor or a window and
 what is there plays through DLSS 5 in the player, about half a second
 behind: YouTube or Twitch in the browser, an emulator, a video call, a game
-nothing should be injected into. A monitor is captured with the Desktop
-Duplication API on the GPU and encoded by NVENC, so 4K at 60 fps costs
-next to nothing; a single window goes through GDI at 30 fps. Nothing is
-injected into the source.
+nothing should be injected into. The desktop is captured with the Desktop
+Duplication API on the GPU and encoded by NVENC. Nothing is injected into
+the source.
 
 ### Frame generation
 
@@ -64,7 +63,7 @@ tool installs 4.55 on every route that uses the add-on and says so in the log;
 bridge route works around it in memory since dlss5-bridge 1.4.9. If you
 installed with 1.6.x on one of these drivers, install again.
 
-### From the first two days of reports
+### From the first reports
 
 - **Removable drives are skipped** by the folder scan; a USB drive holding a
   backup copy got the install instead of the real game (#18).
@@ -91,8 +90,7 @@ list includes `DLSS5_Feed.fx` and the provider's shader (#13).
 
 The release workflow carries a signing step through the
 [SignPath Foundation](https://signpath.org). It runs once the project is
-enrolled and is skipped until then; this release is unsigned. The README
-has the *Code signing policy* section the foundation requires.
+enrolled and is skipped until then; this release is unsigned.
 
 ### Updater
 

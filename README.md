@@ -18,14 +18,14 @@ A network that runs over a finished frame and re-lights it: materials,
 skin, tone. NVIDIA shipped it on 3 September 2026 in NBA 2K27, for RTX 50.
 The community wired it into other games through ReShade add-ons and an
 OptiScaler fork, and re-targeted the runtime so RTX 40, 30 and 20 run it
-too. This tool automates that setup. Unofficial, early, and the parts
-change daily - the tool resolves the current versions every time it runs.
+too. This tool automates that setup. Unofficial; the tool resolves the
+current version of every part each time it runs.
 
 ## Using it
 
 1. Run `dlss5-autopilot.exe`. It scans Steam, Epic, GOG, EA, Ubisoft,
    Battle.net, Rockstar, Amazon, itch, Heroic, Xbox/Game Pass, `D:\Games\*`
-   folders and 18 emulators. Anything else: **Choose folder**.
+   folders and 19 emulators. Anything else: **Choose folder**.
 2. Pick the game. The card shows what was read - executable, 32/64-bit,
    graphics API, whether it ships DLSS - and the route it will take.
 3. Press **INSTALL**. The log says what went where. Then start the game and
@@ -37,27 +37,38 @@ and nothing else.
 
 ## Which route a game gets
 
-<p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means native on D3D12 or bridge on D3D11, and feeder without DLSS" width="900"></p>
+<p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means optiscaler on D3D12 (native and neural-upstream offered too) or bridge on D3D11, and feeder without DLSS" width="900"></p>
 
 The dropdown lists every route the game allows, marks the recommended one
 and greys out what your card cannot run. The card under it says, per
 route, what it does and what must not sit in the same folder.
 
+The graphics API comes from the executable's import table; when that
+table names no graphics DLL (the engine loads its renderer at run time),
+the tool reads the DLL names inside the exe and then the imports of the
+engine DLLs beside it. An import table can also lie - R.U.S.E. links
+D3D11 and renders with Direct3D 9 - so the install page has a
+**graphics api** dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan /
+OpenGL); the choice is remembered for that folder.
+
 | Route | What it is | For | FPS dial |
 |---|---|---|---|
-| **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS | the game's DLSS mode |
+| **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
 | **optiscaler** | Dagherbou's OptiScaler fork replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS | the game's DLSS mode |
-| **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper), DirectX 9 (DXVK) | work area 50-100 % (64-bit D3D11) |
+| **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
 | **renodx-dlss** | ShortFuse's add-on hooks D3D9/11/12 in-process; no bridge, no shaders | 64-bit DirectX 9 (nothing else reaches it); reported failing in many other games | the game's DLSS mode |
 | **remix** | the game has an **RTX Remix** mod; DLSS 5 runs inside the Remix runtime, after its upscaler. Nothing injected | any game with a `.trex` folder beside it | Remix's Neural Uplift sliders |
 
-**Two rules that override the diagram.** A Remix mod present means *remix*,
-always - ReShade crashes a Remix game before it draws. And nothing here
-goes into online games: ReShade with add-ons and anti-cheat do not coexist,
-so BattlEye, EAC and Vanguard titles are marked blocked.
+**Two things that override the diagram.** A Remix mod present means *remix*,
+always - ReShade crashes a Remix game before it draws. And an online game
+with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
+XIGNCODE3, Denuvo Anti-Cheat, PunkBuster, FACEIT, Ricochet, ACE) is marked
+in the list and asks for confirmation before INSTALL: ReShade add-ons and
+anti-cheat do not coexist, and a ban is on the person who chooses to
+install anyway.
 
 ### Frame generation
 
@@ -106,7 +117,8 @@ add-on or OptiScaler makes.
 | Route | Keys |
 |---|---|
 | optiscaler | **Insert** opens the overlay; neural rendering is already on |
-| native · bridge · neural-upstream | **Home** → DLSS 5 tab → neural rendering on; keep the game's DLSS on |
+| native · bridge | **Home** → DLSS 5 tab → neural rendering on (F5 toggles it in add-on 4.6+); keep the game's DLSS on |
+| neural-upstream | **Home** → NR Pre-Upscale tab; keep the game's DLSS on; with DLSS Frame Generation set the cadence to Quality |
 | feeder | **Home** → tick `LUMENITE: Kernel 2.0` (or VORT) and `DLSS 5 Feed`, provider above the feed → DLSS 5 panel → on. 32-bit games: the panel is a separate helper window beside the game |
 | renodx-dlss | **Home** → RenoDX DLSS tab; already on |
 | remix | **Alt+X** → Developer Settings → Post-Processing → Enable Neural Uplift |
@@ -156,12 +168,16 @@ through DLSS 5 offline with **process a file**, or point a webcam at it.
 **F6** toggles the effect while playing. Neural rendering redraws the whole
 window, menus included; expect text to look hand-drawn.
 
-**Anything on your screen.** The **screen** row captures a whole monitor
-(Desktop Duplication on the GPU, NVENC, 60 fps) or one window (GDI, 30 fps)
-and plays it through DLSS 5 about half a second behind: a browser playing
-YouTube or Twitch, an emulator, a video call, a game with anti-cheat.
-Nothing is injected into the source; the delay makes this for watching,
-not for playing.
+**Anything on your screen.** The **screen** row captures part of the
+desktop (Desktop Duplication on the GPU, NVENC, 30 fps) and plays it
+through DLSS 5 about half a second behind: a browser playing YouTube or
+Twitch, an emulator, a video call, a game with anti-cheat. Two methods:
+**screen** - with one monitor the left 62 % of the screen is captured and
+the player is parked on the right, on top; with two monitors the whole
+screen is captured and the player goes to the other one. **window** - one
+window from the list is captured on its own, wherever it is and whatever
+covers it, so the player can go fullscreen over it. Nothing is injected
+into the source; the delay makes this for watching, not for playing.
 
 ## RTX Remix
 
@@ -224,7 +240,8 @@ re-creates the swap chain, and the second feature creation crashes.
 NVIDIA's DLSS 5 launch drivers route the neural feature into the runtime
 itself, and the `renodx-dlss5` 4.6/4.7 add-on faults on every evaluate
 there (measured by the feeder's author: 4.7 passes 0/300, 4.55 passes
-300/300). The tool installs 4.55 on these drivers. The bridge route is unaffected
+300/300). With the add-on dropdown on *auto* the tool installs 4.55 on
+these drivers; a build picked from the list is used as picked. The bridge route is unaffected
 (dlss5-bridge 1.4.9 works around it in memory), and driver 616.56 works
 with every build.
 </details>
@@ -281,7 +298,10 @@ antivirus or VPN inside the HTTPS connection; turn that off for the tool.
 Not every launcher is in the registry, and an executable locked at scan
 time (antivirus, an updater, OneDrive placeholders) cannot be read.
 **Open log file** shows what each store returned; **Choose folder** always
-works. Xbox/Game Pass folders need *Enable mods* in the Xbox app first.
+works. Xbox/Game Pass: only games whose publisher allows modding show
+*Manage > Files > Browse* (or *Enable mods*) in the Xbox app - use it and
+rescan; without it the folder cannot be modified by anything, and the
+Steam version can.
 </details>
 
 <details>
@@ -305,7 +325,8 @@ Nothing is sent by itself - you see it in the browser and decide.
 dlss5-autopilot.exe "D:\Games\Game"                 install
 dlss5-autopilot.exe "D:\Games\Game" --check         detect only, write nothing
 dlss5-autopilot.exe "D:\Games\Game" --remove        uninstall
-dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler, renodx, bridge, feeder, standalone
+dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler, renodx, bridge, feeder, standalone, remix
+dlss5-autopilot.exe "D:\Games\Game" --route remix --remix-swap   replace a Remix runtime that has no neural pass
 dlss5-autopilot.exe "D:\Games\Game" --dxvk          run the game on Vulkan through DXVK (--no-dxvk turns the automatic choice off)
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
@@ -412,7 +433,7 @@ core/net.py           download, cache, extract
 core/installer.py     install engine, route switching, uninstall
 core/optiscaler.py    the OptiScaler route      core/remix*.py    the Remix route
 core/vulkan.py        ReShade as a Vulkan layer  core/dxvk.py      D3D9/D3D11 -> Vulkan
-core/refw.py          REFramework               core/anticheat.py BattlEye / EAC / Vanguard
+core/refw.py          REFramework               core/anticheat.py anti-cheat markers
 core/reshade_ini.py   ReShade.ini and presets    core/feedcfg.py   feeder / bridge cfg
 core/diagnose.py      logs -> verdict, bug-report body
 core/components.py    are the installed parts still current?

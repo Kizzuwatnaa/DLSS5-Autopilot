@@ -17,7 +17,7 @@
 
   <!-- RTX Remix -->
   <path d="M140 215 H190 V40 H230" class="ln"/>
-  <text x="150" y="60" class="lb">.trex folder beside it</text>
+  <text x="420" y="34" class="lb">.trex folder beside the exe</text>
   <rect x="230" y="22" width="180" height="36" rx="4" class="q"/>
   <text x="320" y="45" text-anchor="middle" class="t">RTX Remix mod present</text>
   <path d="M410 40 H700" class="ln"/>
@@ -76,13 +76,13 @@
   <text x="520" y="395" text-anchor="middle" class="t">has DLSS?</text>
 
   <path d="M580 380 H640 V354 H700" class="ln"/>
-  <text x="648" y="349" class="lb">yes, D3D12</text>
+  <text x="648" y="349" class="lb">D3D12</text>
   <rect x="700" y="332" width="160" height="44" rx="4" class="r"/>
-  <text x="780" y="351" text-anchor="middle" class="b">native</text>
-  <text x="780" y="367" text-anchor="middle" class="m">or neural-upstream / optiscaler</text>
+  <text x="780" y="351" text-anchor="middle" class="b">optiscaler</text>
+  <text x="780" y="367" text-anchor="middle" class="m">or native, upstream</text>
 
   <path d="M580 390 H640 V399 H700" class="ln"/>
-  <text x="648" y="394" class="lb">yes, D3D11</text>
+  <text x="648" y="394" class="lb">D3D11</text>
   <rect x="700" y="384" width="160" height="30" rx="4" class="r"/>
   <text x="780" y="404" text-anchor="middle" class="b">bridge</text>
 
@@ -90,5 +90,5 @@
   <text x="648" y="432" class="lb">no</text>
   <rect x="700" y="422" width="160" height="30" rx="4" class="r"/>
   <text x="780" y="442" text-anchor="middle" class="b">feeder</text>
-  <text x="780" y="468" text-anchor="middle" class="lb">with FSR 2/3 or XeSS: optiscaler is offered too</text>
+  <text x="860" y="468" text-anchor="end" class="lb">FSR/XeSS: optiscaler too</text>
 </svg>
