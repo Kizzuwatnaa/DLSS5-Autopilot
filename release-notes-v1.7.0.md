@@ -8,8 +8,7 @@ behind: YouTube or Twitch in the browser, an emulator, a video call, a game
 nothing should be injected into. A monitor is captured with the Desktop
 Duplication API on the GPU and encoded by NVENC, so 4K at 60 fps costs
 next to nothing; a single window goes through GDI at 30 fps. Nothing is
-hooked - the source is watched, not touched. Verified on the owner's PC: the
-feed processed frames within seconds of pressing start.
+injected into the source.
 
 ### Frame generation
 
@@ -24,9 +23,9 @@ feed processed frames within seconds of pressing start.
   executable really imports (`dinput8.dll`, or `version.dll` when a
   REFramework already holds the first). The multiplier is chosen in
   ReShade's **DLSS MFG** tab. Offered only on an RTX 40 and only when
-  `nvngx_dlssg.dll` / `sl.dlss_g.dll` is in the folder. Research software,
-  labelled as such; the loader's own ini is merged, not replaced, and the
-  file it displaces is backed up.
+  `nvngx_dlssg.dll` / `sl.dlss_g.dll` is in the folder. Research software;
+  the loader's own ini is merged, not replaced, and the file it displaces
+  is backed up.
 
 ### Direct3D 10
 
@@ -35,33 +34,31 @@ inside the game. The tool no longer refuses these games: the feeder route
 is offered, and an older feeder build picked by hand is refused with the
 build number that works.
 
-### OpenGL, done properly
+### OpenGL
 
 Two findings from [perseval-BLR](https://github.com/perseval-BLR/dlss5-classic-games),
 who verified DLSS 5 on six OpenGL games (OpenMW, ioquake3, Serious Sam,
-Jedi Academy, Riddick, DOOM 3 BFG) and wrote down why the obvious setup
-fails:
+Jedi Academy, Riddick, DOOM 3 BFG):
 
 - `renodx-dlss5` 4.70 stalls after four frames under OpenGL (its fenced
   workset pool never recycles there). OpenGL games are pinned to 4.60.
 - LumeniteFX reads 0 % motion under OpenGL. Motion vectors for OpenGL
-  games now come from **VORT Motion** (optical flow), which the tool
-  installs and puts above the feed in the preset - the provider switches
-  by itself, and VORT is a full provider on every API for anyone who
-  prefers it.
+  games come from **VORT Motion** (optical flow), which the tool installs
+  and puts above the feed in the preset. VORT can also be chosen on any
+  other API.
 
 The Quake III (GOG loads `opengl32.dll` from System32 - use ioquake3) and
 OpenMW notes are shown under the route card before INSTALL.
 
-### NVIDIA driver 616.64 and newer: the add-on build that survives it
+### NVIDIA driver 616.64 and newer: renodx-dlss5 pinned to 4.55
 
 The DLSS 5 launch drivers (616.64, 616.86) route NGX feature 18 into
 `nvngx_dlssnr.dll` itself, and the `renodx-dlss5` 4.6/4.7 add-on faults on
 every evaluate there - the game keeps rendering and no neural frame ever
-arrives, with nothing alarming in the logs. The feeder's author measured
+arrives. The feeder's author measured
 it on an RTX 5090 (DLSS5-Feeder #54): 4.7 passes 0 of 300 evaluates on
 616.64, **4.55 passes 300 of 300** on the same driver. On these drivers the
-tool now installs 4.55 on every route that uses the add-on and says why;
+tool installs 4.55 on every route that uses the add-on and says so in the log;
 *did it work?* names the fault when it sees the helper's stack
 (`D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5`). The
 bridge route works around it in memory since dlss5-bridge 1.4.9. If you
@@ -88,38 +85,29 @@ installed with 1.6.x on one of these drivers, install again.
 The report body starts with **Did the game start?** - yes / no / it closed
 itself - so a game that never launched is a report too, and sorts apart
 from one that launched and did nothing (#15). On the feeder route the file
-list now includes `DLSS5_Feed.fx` and the provider's shader; #13 could not
-be read without them.
+list includes `DLSS5_Feed.fx` and the provider's shader (#13).
 
-### Code signing, prepared
+### Code signing
 
-The permanent answer to Defender deleting new builds is a signature:
-reputation then follows the certificate instead of restarting with every
-file. The release workflow now carries a signing step through the
-[SignPath Foundation](https://signpath.org) (free for open source), which
-runs as soon as the project is enrolled and is skipped until then, and the
-README has the required *Code signing policy*.
+The release workflow carries a signing step through the
+[SignPath Foundation](https://signpath.org). It runs once the project is
+enrolled and is skipped until then; this release is unsigned. The README
+has the *Code signing policy* section the foundation requires.
 
-### The updater is ready for a different packaging
+### Updater
 
-Windows Defender's `!ml` heuristics have started deleting the single-file
-build on some PCs (#5). The single self-extracting `.exe` is what they react
-to; a one-folder build (the `.exe` beside an `_internal` folder) is the
-usual way out. That change cannot be made in the same release that
-teaches the updater about it - every copy already installed would fetch
-the new `.exe` alone and it would not start. So 1.7.0 keeps the single
-file and teaches the updater both layouts, including a folder-aware swap
-that keeps the old runtime as `_internal.old`; a later release can switch.
+The self-updater accepts both release layouts: the single `.exe`, and an
+`.exe` with an `_internal` folder beside it. For the folder layout the
+swap copies the folder (the install may be on another drive than the
+download), keeps the previous one as `_internal.old`, and rolls back if
+the copy fails. This release still ships the single file.
 
-### Definitions and the README
+### Route descriptions
 
-Every route has a one-line label and a short paragraph that says what it
-does, what it needs and what it costs - and the bridge is no longer
-described as abandoned (1.4.8 shipped this week). The README is rewritten:
-a decision diagram for which route a game gets, one table of routes, one
-of cards, and the troubleshooting folded away until needed.
+Each route has a one-line label and a short description of what it does,
+what it needs and what it costs. The bridge's description no longer calls
+it unmaintained; dlss5-bridge is actively released.
 
 ### Also
 
-- Per-executable notes under the route card (`QUIRKS` in `core/dlss.py`).
-- `test_all.py` sections 36-37 cover the above.
+- Per-executable notes under the route card (Quake III, OpenMW).

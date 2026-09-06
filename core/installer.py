@@ -293,15 +293,15 @@ def reliability(g: games.Game, path: str = FEEDER,
             "with the pass at all.")
     if g.api == "DX10":
         return BETA, ("Direct3D 10 through the feeder's private D3D11 relay "
-                      "device (feeder 0.13.1 and newer). Days old; a D3D10 "
-                      "game installs like a D3D11 one.")
+                      "device (feeder 0.13.1 and newer). A D3D10 game "
+                      "installs like a D3D11 one.")
     if path == NATIVE:
         return STABLE, ("The game's own DLSS is hooked directly - no synthetic "
                         "contract, no motion-vector shaders, and your in-game "
                         "DLSS quality setting still applies.")
     if path == UPSTREAM:
         return BETA, ("neural-upstream runs the network at render resolution, "
-                      "before the game's own DLSS. Days old, tested on two "
+                      "before the game's own DLSS. Its author tested two "
                       "games by its author (GTA V Enhanced, Bright Memory "
                       "Infinite).")
     if path == STANDALONE:
@@ -311,14 +311,14 @@ def reliability(g: games.Game, path: str = FEEDER,
                               "topmost window of its own. That window trick "
                               "is the fragile part: resolution or display-mode "
                               "changes need a restart, and some games hang at "
-                              "start. Days old, few games tested.")
+                              "start. Few games tested.")
     if path == ROUTE_RENODX:
         if g.api == "DX9":
             return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
                           "evaluates the presentation backbuffer with no "
                           "motion vectors, so expect a softer result.")
         return EXPERIMENTAL, ("The renodx-dlss add-on hooks the game in-process. "
-                              "Days old, and reported not working in many "
+                              "Reported not working in many "
                               "games so far. Try the recommended route first.")
     if path == OPTI and upscaler:
         return BETA, ("FSR/XeSS redirected into DLSS by OptiScaler - works in "

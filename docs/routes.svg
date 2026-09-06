@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="470" viewBox="0 0 900 470" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
-  <!-- Which route a game gets. Hand-laid; edit the numbers, not a tool. -->
-  <rect width="900" height="470" fill="#f6f8fa" rx="6"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="480" viewBox="0 0 900 480" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <rect width="900" height="480" fill="#f6f8fa" rx="6"/>
   <style>
     .q  { fill:#ffffff; stroke:#8b949e; stroke-width:1.2; }
     .r  { fill:#fff3d6; stroke:#b8860b; stroke-width:1.2; }
@@ -11,12 +10,12 @@
     .lb { fill:#57606a; font-size:11px; }
   </style>
 
-  <!-- column 1: the game -->
+  <!-- the game -->
   <rect x="20" y="205" width="120" height="44" rx="4" class="q"/>
   <text x="80" y="223" text-anchor="middle" class="b">your game</text>
   <text x="80" y="240" text-anchor="middle" class="m">exe, bitness, API</text>
 
-  <!-- RTX Remix short-circuit -->
+  <!-- RTX Remix -->
   <path d="M140 215 H190 V40 H230" class="ln"/>
   <text x="150" y="60" class="lb">.trex folder beside it</text>
   <rect x="230" y="22" width="180" height="36" rx="4" class="q"/>
@@ -30,16 +29,16 @@
   <rect x="230" y="82" width="180" height="36" rx="4" class="q"/>
   <text x="320" y="105" text-anchor="middle" class="t">32-bit</text>
   <path d="M410 100 H700" class="ln"/>
-  <text x="420" y="94" class="lb">DX9 gets DXVK in front; host64 helper</text>
+  <text x="420" y="94" class="lb">DirectX 9 through DXVK; host64 helper</text>
   <rect x="700" y="82" width="160" height="36" rx="4" class="r"/>
   <text x="780" y="105" text-anchor="middle" class="b">feeder</text>
 
-  <!-- 64-bit DX9 -->
+  <!-- 64-bit DirectX 9 -->
   <path d="M140 225 H190 V160 H230" class="ln"/>
   <rect x="230" y="142" width="180" height="36" rx="4" class="q"/>
   <text x="320" y="165" text-anchor="middle" class="t">64-bit DirectX 9</text>
   <path d="M410 160 H700" class="ln"/>
-  <text x="420" y="154" class="lb">only in-process hook that reaches D3D9</text>
+  <text x="420" y="154" class="lb">the only add-on that hooks D3D9</text>
   <rect x="700" y="142" width="160" height="36" rx="4" class="r"/>
   <text x="780" y="165" text-anchor="middle" class="b">renodx-dlss</text>
 
@@ -59,16 +58,16 @@
   <rect x="700" y="238" width="160" height="30" rx="4" class="r"/>
   <text x="780" y="258" text-anchor="middle" class="b">feeder</text>
 
-  <!-- OpenGL / DX10 -->
+  <!-- OpenGL / DirectX 10 -->
   <path d="M140 232 H190 V300 H230" class="ln"/>
   <rect x="230" y="282" width="180" height="36" rx="4" class="q"/>
   <text x="320" y="305" text-anchor="middle" class="t">OpenGL · DirectX 10</text>
   <path d="M410 300 H700" class="ln"/>
-  <text x="420" y="294" class="lb">opengl32.dll · feeder 0.13.1+ for D3D10</text>
+  <text x="420" y="294" class="lb">opengl32.dll · D3D10 needs feeder 0.13.1+</text>
   <rect x="700" y="282" width="160" height="36" rx="4" class="r"/>
   <text x="780" y="305" text-anchor="middle" class="b">feeder</text>
 
-  <!-- DX11 / DX12 -->
+  <!-- DirectX 11 / 12 -->
   <path d="M140 237 H190 V390 H230" class="ln"/>
   <rect x="230" y="372" width="180" height="36" rx="4" class="q"/>
   <text x="320" y="395" text-anchor="middle" class="t">DirectX 11 · 12</text>
@@ -76,20 +75,20 @@
   <rect x="460" y="372" width="120" height="36" rx="4" class="q"/>
   <text x="520" y="395" text-anchor="middle" class="t">has DLSS?</text>
 
-  <path d="M580 380 H640 V352 H700" class="ln"/>
-  <text x="600" y="374" class="lb">yes, D3D12</text>
-  <rect x="700" y="337" width="160" height="30" rx="4" class="r"/>
-  <text x="780" y="357" text-anchor="middle" class="b">native</text>
-  <text x="780" y="330" text-anchor="middle" class="lb">or neural-upstream / optiscaler</text>
+  <path d="M580 380 H640 V354 H700" class="ln"/>
+  <text x="648" y="349" class="lb">yes, D3D12</text>
+  <rect x="700" y="332" width="160" height="44" rx="4" class="r"/>
+  <text x="780" y="351" text-anchor="middle" class="b">native</text>
+  <text x="780" y="367" text-anchor="middle" class="m">or neural-upstream / optiscaler</text>
 
-  <path d="M580 390 H700" class="ln"/>
-  <text x="600" y="405" class="lb">yes, D3D11</text>
-  <rect x="700" y="375" width="160" height="30" rx="4" class="r"/>
-  <text x="780" y="395" text-anchor="middle" class="b">bridge</text>
+  <path d="M580 390 H640 V399 H700" class="ln"/>
+  <text x="648" y="394" class="lb">yes, D3D11</text>
+  <rect x="700" y="384" width="160" height="30" rx="4" class="r"/>
+  <text x="780" y="404" text-anchor="middle" class="b">bridge</text>
 
-  <path d="M580 400 H640 V428 H700" class="ln"/>
-  <text x="600" y="424" class="lb">no</text>
-  <rect x="700" y="413" width="160" height="30" rx="4" class="r"/>
-  <text x="780" y="433" text-anchor="middle" class="b">feeder</text>
-  <text x="780" y="458" text-anchor="middle" class="lb">FSR 2/3 or XeSS instead: optiscaler</text>
+  <path d="M580 400 H640 V437 H700" class="ln"/>
+  <text x="648" y="432" class="lb">no</text>
+  <rect x="700" y="422" width="160" height="30" rx="4" class="r"/>
+  <text x="780" y="442" text-anchor="middle" class="b">feeder</text>
+  <text x="780" y="468" text-anchor="middle" class="lb">with FSR 2/3 or XeSS: optiscaler is offered too</text>
 </svg>

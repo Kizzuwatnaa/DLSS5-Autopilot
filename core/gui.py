@@ -509,7 +509,7 @@ class App:
                  "opengl, vulkan and every 32-bit game go through extra "
                  "translation, a layer or a helper process, and the dlss "
                  "feature fails to create there far more often. directx 10 is "
-                 "not supported by anything. each game is labelled honestly - "
+                 "not supported by anything. each game is labelled - "
                  "do not expect the long shots to work.\n\nnever use any of "
                  "this online: anti-cheat flags reshade add-ons.")
         self.realitylbl.pack(anchor="w", pady=(6, 0))

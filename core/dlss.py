@@ -286,7 +286,7 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
         if not native_dlss:
             return False, "the game must already use DLSS"
         return True, ("runs the network before the game's DLSS, at render "
-                      "resolution - cheaper; days old, two games tested")
+                      "resolution - cheaper; its author tested two games")
     if route == STANDALONE:
         return True, ("own feed: DLAA at native resolution, DLSS SR below it, "
                       "frame generation; experimental - presents through a "
@@ -528,8 +528,8 @@ BLURB = {
                "render resolution, BEFORE the game's DLSS upscales - the "
                "same result on a smaller image, so it costs a fraction. "
                "Does the neural pass itself, so no renodx add-on goes in "
-               "beside it. Configured from its own tab in ReShade. New; "
-               "its author tested GTA V Enhanced and Bright Memory Infinite."),
+               "beside it. Configured from its own tab in ReShade. Its "
+               "author tested GTA V Enhanced and Bright Memory Infinite."),
     OPTI: ("No ReShade. OptiScaler takes over the game's upscaler (DLSS, or "
            "FSR 2/3 and XeSS redirected into DLSS) and runs the model over "
            "its output. Its model-resolution dial is the biggest fps lever "

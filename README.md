@@ -30,20 +30,20 @@ change daily - the tool resolves the current versions every time it runs.
    graphics API, whether it ships DLSS - and the route it will take.
 3. Press **INSTALL**. The log says what went where. Then start the game and
    press the key the tool named; **did it work?** reads the game's logs
-   afterwards and tells you in plain words.
+   afterwards and reports what happened.
 
 Uninstall removes exactly what was written, restores anything it replaced,
 and nothing else.
 
 ## Which route a game gets
 
-<p align="center"><img src="docs/routes.svg" alt="Route decision: Remix mod -> remix; 32-bit -> feeder; 64-bit DX9 -> renodx-dlss; Vulkan -> bridge with DLSS, feeder without; OpenGL and DX10 -> feeder; DX11/12 with DLSS -> native (D3D12) or bridge (D3D11), without -> feeder or optiscaler" width="900"></p>
+<p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means native on D3D12 or bridge on D3D11, and feeder without DLSS" width="900"></p>
 
 The dropdown lists every route the game allows, marks the recommended one
 and greys out what your card cannot run. The card under it says, per
 route, what it does and what must not sit in the same folder.
 
-| Route | What it is | For | Fps dial |
+| Route | What it is | For | FPS dial |
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
@@ -54,14 +54,14 @@ route, what it does and what must not sit in the same folder.
 | **renodx-dlss** | ShortFuse's add-on hooks D3D9/11/12 in-process; no bridge, no shaders | 64-bit DirectX 9 (nothing else reaches it); reported failing in many other games | the game's DLSS mode |
 | **remix** | the game has an **RTX Remix** mod; DLSS 5 runs inside the Remix runtime, after its upscaler. Nothing injected | any game with a `.trex` folder beside it | Remix's Neural Uplift sliders |
 
-**Two rules that override the picture.** A Remix mod present means *remix*,
+**Two rules that override the diagram.** A Remix mod present means *remix*,
 always - ReShade crashes a Remix game before it draws. And nothing here
 goes into online games: ReShade with add-ons and anti-cheat do not coexist,
 so BattlEye, EAC and Vanguard titles are marked blocked.
 
 ### Frame generation
 
-Two switches, both off by default, both honest about what they are:
+Two switches, both off by default:
 
 - **Frame generation, any RTX card** (optiscaler route, D3D12). OptiScaler
   ships AMD's FSR 3.1 frame-generation libraries; the tool turns them on
@@ -159,9 +159,9 @@ window, menus included; expect text to look hand-drawn.
 **Anything on your screen.** The **screen** row captures a whole monitor
 (Desktop Duplication on the GPU, NVENC, 60 fps) or one window (GDI, 30 fps)
 and plays it through DLSS 5 about half a second behind: a browser playing
-YouTube or Twitch, an emulator, a game you would not inject anything into,
-a video call. Nothing touches the source; it is watched, not hooked - so it
-is for watching, not for playing.
+YouTube or Twitch, an emulator, a video call, a game with anti-cheat.
+Nothing is injected into the source; the delay makes this for watching,
+not for playing.
 
 ## RTX Remix
 
@@ -198,15 +198,14 @@ other project is a link.
 | Populous: The Beginning · Silent Storm · Dungeon Keeper 2 | [xmarre](https://github.com/xmarre/Populous-3-RTX-Remix) · [WormSlayer](https://github.com/WormSlayer/silent-storm-rtx) · [mencelot](https://github.com/mencelot/dk2-dxwrapper-with-path-tracing-support) |
 | GTA: Vice City · Cry of Fear · Chess Titans | [GmanRO](https://github.com/GmanRO/GTA-VICE-CITY-RTX-REMIX-.ASI-compiled-within-linux-) · [michaelabilliot](https://github.com/michaelabilliot/CryofFear_RTX-REMIX) · [Kamilkampfwagen-II](https://github.com/Kamilkampfwagen-II/Chess-Titans-RTX) |
 
-More on [ModDB](https://www.moddb.com/rtx). Links are the authority; a mod
-existing is not the same as it running well.
+More on [ModDB](https://www.moddb.com/rtx). A mod existing is not the same
+as it running well.
 </details>
 
 ## When it does not work
 
 **did it work?** reads `ReShade.log`, `dlss5-feed.log`, `OptiScaler.log`
-and the Remix log and names the cause. The cases below are the ones people
-actually hit.
+and the Remix log and names the cause.
 
 <details>
 <summary>The game closes a second after starting, no message</summary>
@@ -225,8 +224,7 @@ re-creates the swap chain, and the second feature creation crashes.
 NVIDIA's DLSS 5 launch drivers route the neural feature into the runtime
 itself, and the `renodx-dlss5` 4.6/4.7 add-on faults on every evaluate
 there (measured by the feeder's author: 4.7 passes 0/300, 4.55 passes
-300/300). Since 1.7.0 the tool installs 4.55 on these drivers; an install
-made earlier needs installing again. The bridge route is unaffected
+300/300). The tool installs 4.55 on these drivers. The bridge route is unaffected
 (dlss5-bridge 1.4.9 works around it in memory), and driver 616.56 works
 with every build.
 </details>
@@ -245,8 +243,8 @@ resolution, then press F6. Found on Bayonetta.
 
 DirectX 9 and Vulkan games reach ReShade as a Vulkan *layer* - a registry
 entry, not a file. A 32-bit game needs the 32-bit layer; ReShade's own
-installer registers only the 64-bit one, and versions before 1.6.1 took
-that as done. Install again: the tool adds the missing one and says so.
+installer registers only the 64-bit one. Install again: the tool adds the
+missing one and says so in the log.
 </details>
 
 <details>
@@ -314,8 +312,6 @@ dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 
 ## Is it safe
 
-Fair question for an `.exe` from a Discord link.
-
 - **Every release is built by GitHub, not uploaded by a person.** A version
   tag runs [`release.yml`](.github/workflows/release.yml) on GitHub's
   runner, which builds the exe from the commit you can read, writes
@@ -335,7 +331,7 @@ Fair question for an `.exe` from a Discord link.
   [`core/sources.py`](core/sources.py).
 - **Antivirus warnings.** Defender's cloud heuristics (`Wacatac.B!ml`,
   `Ulthar.A!ml` - the `!ml` is a confidence score, not a match) can delete
-  a brand-new release in its first hours, before enough PCs have run it;
+  a new release in its first hours, before enough PCs have run it;
   the same file is left alone a day later. Every release is submitted to
   Microsoft as a false positive when it is published; if it happens to
   you, Windows Security → Protection history → Restore → Allow, or run
@@ -370,9 +366,9 @@ component stays under its own licence, fetched from its own publisher.
 |---|---|---|
 | ReShade, shader headers | [crosire/reshade](https://github.com/crosire/reshade) · [reshade-shaders](https://github.com/crosire/reshade-shaders) | BSD-3-Clause · per file |
 | DLSS5-Feeder | [jlrouzies-fr/DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder) | see repository |
-| dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | see repository |
-| neural-upstream | [matiasLombo/neural-upstream](https://github.com/matiasLombo/neural-upstream) | see repository |
-| standalone-dlssnr | [kibblerz/DLSS5-Reshade-AIO](https://github.com/kibblerz/DLSS5-Reshade-AIO) | see repository |
+| dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | MIT |
+| neural-upstream | [matiasLombo/neural-upstream](https://github.com/matiasLombo/neural-upstream) | MIT |
+| standalone-dlssnr | [kibblerz/DLSS5-Reshade-AIO](https://github.com/kibblerz/DLSS5-Reshade-AIO) | Apache-2.0 |
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | LumeniteFX · VORT shaders | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) · [vortigern11/vort_Shaders](https://github.com/vortigern11/vort_Shaders) | AGNYA · MIT |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
@@ -393,7 +389,7 @@ MIT - see [LICENSE](LICENSE). Rights holders: open an issue and it will be
 addressed.
 
 Thanks to [perseval-BLR/dlss5-classic-games](https://github.com/perseval-BLR/dlss5-classic-games)
-for the OpenGL and classic-game findings the tool now applies.
+for the OpenGL findings.
 
 <details>
 <summary>Building, tests, layout</summary>
@@ -418,7 +414,7 @@ core/optiscaler.py    the OptiScaler route      core/remix*.py    the Remix rout
 core/vulkan.py        ReShade as a Vulkan layer  core/dxvk.py      D3D9/D3D11 -> Vulkan
 core/refw.py          REFramework               core/anticheat.py BattlEye / EAC / Vanguard
 core/reshade_ini.py   ReShade.ini and presets    core/feedcfg.py   feeder / bridge cfg
-core/diagnose.py      logs -> plain-words verdict, bug-report body
+core/diagnose.py      logs -> verdict, bug-report body
 core/components.py    are the installed parts still current?
 core/update.py / selfupdate.py    update check, verified swap-in
 core/video.py         MPC-HC, YouTube, offline processing, webcam
