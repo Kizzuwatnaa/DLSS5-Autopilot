@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 import traceback
 import webbrowser
 from pathlib import Path
@@ -1014,7 +1015,20 @@ class App:
         def work() -> None:
             try:
                 gs = games.scan_all(progress=lambda m: self.q.put(("scan", m)))
-                self.q.put(("scanned", gs))
+                # Compatibility checks walk folders too. Doing them in _fill
+                # blocked Tk just as it received the last scan messages, so
+                # the window stayed painted at e.g. 95/97 for minutes.
+                rows = {}
+                sm = self._sm()
+                for i, g in enumerate(gs, 1):
+                    if not g.exe:
+                        continue
+                    self.q.put(("scan", f"Checking compatibility... {i}/{len(gs)}: {g.name}"))
+                    started = time.monotonic()
+                    rows[(str(g.folder), str(g.exe))] = self._inspect_row(g, sm)
+                    if time.monotonic() - started >= 1:
+                        log.write(f"checked {g.name} in {time.monotonic() - started:.1f}s")
+                self.q.put(("scanned", (gs, rows)))
             except Exception:
                 log.exception("scanning the library")
                 self.q.put(("error", traceback.format_exc()))
@@ -1114,6 +1128,26 @@ class App:
             self.tree.see(kids[0])
 
     @staticmethod
+    def _inspect_row(g: games.Game, sm: int | None):
+        """Read the compatibility columns, normally on the scan worker."""
+        try:
+            ok, _ = installer.check_supported(g)
+            if not ok:
+                # A locked Xbox executable already has a useful error; a
+                # second search cannot make it readable.
+                return False, "-", installer.EXPERIMENTAL, "-", False, ""
+            sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
+            level, _ = installer.reliability(g, sup.recommended)
+            outlook = {installer.STABLE: "reliable",
+                       installer.BETA: "beta",
+                       installer.EXPERIMENTAL: "often fails"}[level]
+            ac = anticheat.detect(g.install_dir, g.folder)
+            return ok, sup.recommended, level, outlook, ac.present, ac.summary
+        except Exception as e:
+            log.exception(f"inspecting {g.name}", e)
+            return False
+
+    @staticmethod
     def _matches(g: games.Game, terms: list[str]) -> bool:
         """Every word typed has to appear - in the name, folder or store."""
         if not terms:
@@ -1141,23 +1175,9 @@ class App:
             key = (str(g.folder), str(g.exe))
             row = self._rows.get(key)
             if row is None:
-                # Each of these reads the game folder, so any one of them can
-                # fail on a folder that has gone away or become unreadable.
-                # Letting that escape would abandon the whole list half-drawn.
-                try:
-                    ok, _ = installer.check_supported(g)
-                    sup = dlss.detect(g.install_dir, g.folder, g.api,
-                                      g.bitness or 0, self._sm())
-                    level, _ = installer.reliability(g, sup.recommended)
-                    outlook = {installer.STABLE: "reliable",
-                               installer.BETA: "beta",
-                               installer.EXPERIMENTAL: "often fails"}[level]
-                    ac = anticheat.detect(g.install_dir, g.folder)
-                    row = (ok, sup.recommended, level, outlook,
-                           ac.present, ac.summary)
-                except Exception as e:
-                    log.exception(f"inspecting {g.name}", e)
-                    row = False
+                # Newly chosen folders and changed installs need fresh rows;
+                # the library scan supplies its rows before asking Tk to fill.
+                row = self._inspect_row(g, self._sm())
                 self._rows[key] = row
             if row is False:
                 self.tree.insert("", "end", iid=str(i), text="  " + g.name,
@@ -2402,6 +2422,7 @@ class App:
                     self.scanlbl.config(text=payload.lower())
                     self.status.config(text=payload.lower())
                 elif kind == "scanned":
+                    payload, rows = payload
                     self.busy = False
                     # A folder chosen while the scan was still running used
                     # to vanish when the scan finished (issue #18).
@@ -2414,6 +2435,7 @@ class App:
                                       for x in payload):
                         self.all_games.insert(0, kp)
                     self._rows.clear()
+                    self._rows.update(rows)
                     self._fill()
                     self.status.config(text="scan complete")
                     self._check_stale()

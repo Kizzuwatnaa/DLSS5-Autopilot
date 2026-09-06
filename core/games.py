@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 import pathlib
 from pathlib import Path
@@ -233,6 +234,12 @@ def scan_epic() -> list[Game]:
         try:
             d = json.loads(item.read_text(encoding="utf8", errors="replace"))
         except (OSError, json.JSONDecodeError):
+            continue
+        # Epic also registers engine plugins, content packs and Unreal
+        # Engine itself. A plugin's InstallLocation can be the entire engine
+        # tree (Quixel Bridge), which is both a false game and a huge scan.
+        # Older manifests without these flags still get inspected.
+        if d.get("bIsApplication") is False or d.get("bIsExecutable") is False:
             continue
         loc = d.get("InstallLocation")
         if not loc or not Path(loc).is_dir():
@@ -796,9 +803,12 @@ def scan_all(progress=None) -> list[Game]:
 
     total = len(games)
     for i, g in enumerate(games, 1):
-        if progress and (i % 5 == 0 or i == total):
-            progress(f"Inspecting games... {i}/{total}")
+        if progress:
+            progress(f"Inspecting games... {i}/{total}: {g.name}")
+        started = time.monotonic()
         enrich(g)
+        if time.monotonic() - started >= 1:
+            log.write(f"inspected {g.name} in {time.monotonic() - started:.1f}s")
     games.sort(key=lambda g: g.name.lower())
     return games
 

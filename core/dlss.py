@@ -62,8 +62,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 
-from . import remix
+from . import log, remix
 
 NATIVE, BRIDGE, FEEDER, OPTI, RENODX = "native", "bridge", "feeder", "optiscaler", "renodx"
 UPSTREAM = "upstream"
@@ -92,6 +93,8 @@ _SKIP_DIRS = {"content", "paks", "saved", "logs", "movies", "sounds", "music",
               "screenshots", "steamapps", "redist", "_commonredist", "host64",
               "reshade-shaders"}
 _WALK_DEPTH = 9
+_WALK_DIRS = 6000
+_WALK_SECONDS = 6.0
 
 # A game without DLSS may still ship AMD FSR 2/3 or Intel XeSS. OptiScaler
 # hooks those calls as its input ([Inputs] EnableFsr2Inputs / EnableFsr3Inputs
@@ -123,24 +126,31 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None,
     import os
     out: list[str] = []
     try:
-        base_depth = len(Path(folder).resolve().parts)
+        # Resolve the roots once. Resolving every directory (and skip_dir
+        # again for each one) made large engine trees take minutes on Windows.
+        folder = Path(folder).resolve()
+        skip_dir = Path(skip_dir).resolve() if skip_dir is not None else None
     except OSError:
         return out
-    for root, dirs, files in os.walk(folder):
+    base_depth = len(folder.parts)
+    deadline = time.monotonic() + _WALK_SECONDS
+    for seen, (root, dirs, files) in enumerate(os.walk(folder), 1):
+        # A depth limit and a match limit do not bound trees with thousands
+        # of directories and no runtime DLLs. Check even in the skipped root.
+        if seen > _WALK_DIRS or time.monotonic() >= deadline:
+            log.write(f"stopped looking for runtime DLLs under {folder} "
+                      f"after {seen - 1} folders - search budget reached", "warn")
+            break
         rp = Path(root)
-        depth = len(rp.resolve().parts) - base_depth if rp.exists() else 0
+        depth = len(rp.parts) - base_depth
         if depth >= _WALK_DEPTH:
             dirs[:] = []
         else:
             dirs[:] = [d for d in dirs if d.lower() not in _SKIP_DIRS
                        and d.lower() not in extra_skip
                        and not d.startswith(".")]
-        if skip_dir is not None:
-            try:
-                if rp.resolve() == Path(skip_dir).resolve():
-                    continue
-            except OSError:
-                pass
+        if rp == skip_dir:
+            continue
         for f in files:
             if f.lower() in names:
                 try:
