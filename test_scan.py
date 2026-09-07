@@ -17,7 +17,7 @@ class ScanTests(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.temp = tempfile.TemporaryDirectory(prefix="autopilot_scan_")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.logs = self.stack.enter_context(patch.object(log, "write"))
 
     def test_epic_ignores_non_applications_but_keeps_older_manifests(self):
