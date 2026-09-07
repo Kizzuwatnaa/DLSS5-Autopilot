@@ -3,7 +3,8 @@ r"""DLSS 5 Autopilot - entry point.
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
                                                     [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|remix]
-                                                    [--dxvk | --no-dxvk] [--remix-swap]
+                                                    [--dxvk | --no-dxvk] [--remix-swap] [--vr]
+                                                    [--opti-build y4my4my4m]
                 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 
 --dxvk runs a D3D11 game on Vulkan through DXVK, with ReShade as a Vulkan
@@ -48,7 +49,8 @@ def _console() -> None:
 
 
 def cli(target: Path, remove: bool, check: bool, route: str = "",
-        dxvk: bool | None = None, game=None, remix_swap: bool = False) -> int:
+        dxvk: bool | None = None, game=None, remix_swap: bool = False,
+        vr: bool = False, opti_build: str = "") -> int:
     g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
@@ -97,7 +99,7 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         print(f"renodx   : {local.name if local else 'will download from the mirror'}")
         if ok:
             popt = installer.Options(path=sup.recommended,
-                                     native_dlss=sup.native_dlss, dxvk=use_dxvk,
+                                     native_dlss=sup.native_dlss, dxvk=use_dxvk, vr=vr, opti_build=opti_build,
                                      upscaler=sup.upscaler,
                                      remix_swap=remix_swap)
             print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
@@ -113,7 +115,7 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     try:
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
-                                 dxvk=use_dxvk, upscaler=sup.upscaler,
+                                 dxvk=use_dxvk, vr=vr, opti_build=opti_build, upscaler=sup.upscaler,
                                  remix_swap=remix_swap),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
@@ -152,6 +154,18 @@ def main() -> int:
     if "--route" in args and args.index("--route") + 1 < len(args):
         route = args[args.index("--route") + 1]
         args.remove(route)
+    opti_build = ""
+    if "--opti-build" in args and args.index("--opti-build") + 1 < len(args):
+        opti_build = args[args.index("--opti-build") + 1]
+        args.remove(opti_build)
+        from core import optiscaler as _opti
+        if opti_build not in _opti.BUILDS:
+            print(f"error: --opti-build takes one of: "
+                  f"{', '.join(k for k in _opti.BUILDS if k)}", file=sys.stderr)
+            return 2
+        if route and route != "optiscaler":
+            print("note: --opti-build applies to --route optiscaler only; "
+                  "ignored here", file=sys.stderr)
     positional = [a for a in args if not a.startswith("-")]
     if "--video" in args:
         _console()
@@ -174,6 +188,8 @@ def main() -> int:
                    remove="--remove" in args,
                    check="--check" in args,
                    route=route,
+                   vr="--vr" in args,
+                   opti_build=opti_build,
                    dxvk=(True if "--dxvk" in args
                          else False if "--no-dxvk" in args else None),
                    remix_swap="--remix-swap" in args)

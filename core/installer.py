@@ -211,6 +211,7 @@ class Options:
     ignore_gpu_mismatch: bool = False
     path: str = FEEDER                      # native / bridge / feeder
     opti_proxy: str = ""                    # "" = pick a free name for this game
+    opti_build: str = ""                    # key of optiscaler.BUILDS
     reshade_proxy: str = ""                 # "" = choose from the API
     native_dlss: bool = False               # game ships its own DLSS
     # "fsr" / "xess" / "": the upscaler a game WITHOUT DLSS ships. On the
@@ -231,6 +232,11 @@ class Options:
     # Generation: dashdogy's RTX40MFG-Unlock for 3x/4x multipliers. Research
     # software; off by default and only offered where mfg.applies() says so.
     mfg: bool = False
+    # ReShade routes: register ReShade's OpenXR layer as well, so the pass
+    # runs on the image the VR headset shows rather than the desktop mirror
+    # (#33). Global for the user, like the Vulkan layer. Not tried with a
+    # headset by the author.
+    vr: bool = False
     # REMIX route: replace the mod's Remix runtime with a community build
     # that HAS the neural pass. Off by default and deliberately opt-in - a
     # mod's runtime is often a fork carrying game-specific fixes, and
@@ -599,7 +605,8 @@ def plan(g: games.Game, opt: Options) -> list[str]:
         # still has to go in first on an RE Engine game - OptiScaler is a
         # proxy DLL too, and RE Engine's tamper checks do not care which one.
         return (steps[:1] if steps[:1] and steps[0].startswith("REFramework") else []) \
-            + ["OptiScaler (DLSS-NR build)", "nvngx_dlssnr.dll"] \
+            + [f"OptiScaler ({optiscaler.BUILDS.get(opt.opti_build, optiscaler.BUILDS['']).split('  -  ')[0]})",
+               "nvngx_dlssnr.dll"] \
             + (["nvngx_dlss.dll"] if _opti_needs_dlss(opt) else []) \
             + ["OptiScaler configuration"]
     steps.append("ReShade (Vulkan layer)" if g.api == "Vulkan" else "ReShade")
@@ -930,7 +937,10 @@ def preview(g: games.Game, opt: Options) -> Preview:
         for old in optiscaler.find_legacy(root):
             backup(old.name)
             add(pv.removes, f"{old.name} (pre-0.9 OptiScaler leftover)")
-        members = _cached_zip_members("OptiScaler-DLSSNR-*.zip")
+        # The fork's archive is a .7z, which this cannot list: its preview
+        # names the proxy and the folders the build brings instead.
+        members = (_cached_zip_members("OptiScaler-DLSSNR-*.zip")
+                   if opt.opti_build != optiscaler.FORK else None)
         if members:
             for m in members:
                 if Path(m).name in optiscaler.SKIP:
@@ -951,6 +961,10 @@ def preview(g: games.Game, opt: Options) -> Preview:
         write(MANIFEST, keep=False)
         return pv
 
+    if getattr(g, "emu", None) is not None:
+        pv.outside.append(f"{g.emu.name}: its own config is switched to the "
+                          f"render backend ReShade can reach (backed up beside "
+                          f"it; 'Uninstall' restores it)")
     # 1) ReShade
     if g.api == "Vulkan":
         found = vulkan.existing_registration()
@@ -965,6 +979,21 @@ def preview(g: games.Game, opt: Options) -> Preview:
                                "removes it again")
     else:
         write(proxy)
+    if opt.vr and x64:
+        from . import openxr
+        xr_found = openxr.existing_registration()
+        if xr_found is not None and not openxr.is_ours(xr_found):
+            pv.outside.append(f"reuses the existing ReShade OpenXR layer ({xr_found})")
+        else:
+            pv.outside.append(
+                f"OpenXR layer (VR): {openxr.LAYER_NAME} registered for this "
+                f"user (files in {openxr.layer_dir()}) - it loads into EVERY "
+                f"OpenXR application until the last VR install is removed")
+        pv.warnings.append("VR through OpenXR has not been tried with a "
+                           "headset by the author; OpenXR games only")
+    elif opt.vr:
+        pv.warnings.append("VR: the OpenXR layer is 64-bit only - nothing is "
+                           "registered for this 32-bit game")
     host = HOST_DIR
     if not x64 and opt.path == FEEDER:
         add(pv.writes, rel(host, "dxgi.dll"))
@@ -1467,6 +1496,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "bitness": g.bitness,
             "api": g.api,
             "proxy": proxy,
+            "opti_build": opt.opti_build if opt.path == OPTI else "",
             "provider": opt.provider,
             "path": opt.path,
             "reliability": level,
@@ -1478,6 +1508,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "nr": opt.nr,
             "fg": opt.fg,
             "mfg": opt.mfg,
+            "vr": bool(opt.vr) and opt.path not in (OPTI, ROUTE_REMIX),
             "native_dlss": opt.native_dlss,
             "upscaler": opt.upscaler,
             "keep_game_dlss": opt.keep_game_dlss,
@@ -1515,6 +1546,7 @@ def options_from_manifest(root: Path) -> Options | None:
         nr=dict(data.get("nr") or {}),
         fg=bool(data.get("fg", False)),
         mfg=bool(data.get("mfg", False)),
+        vr=bool(data.get("vr", False)),
         path=path,
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
@@ -1524,6 +1556,7 @@ def options_from_manifest(root: Path) -> Options | None:
         native_dlss=(path in (NATIVE, UPSTREAM) or (path == OPTI and not upscaler)
                      or bool(data.get("native_dlss", False))),
         opti_proxy=(data.get("proxy") or "") if path == OPTI else "",
+        opti_build=str(data.get("opti_build") or "") if path == OPTI else "",
         # A runtime we swapped last time must be swapped again on an update,
         # or the update would put the mod's neural-pass-less runtime back.
         remix_swap=bool((data.get("components") or {}).get("remix_runtime")),
@@ -2005,8 +2038,17 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             if oproxy != optiscaler.DEFAULT_PROXY and not opt.opti_proxy:
                 log(f"      {optiscaler.DEFAULT_PROXY} is already taken here, "
                     f"installing as {oproxy} instead")
-            orel = optiscaler.resolve()
+            orel = optiscaler.resolve(opt.opti_build)
             rep.components["optiscaler"] = orel[0]
+            if opt.opti_build == optiscaler.FORK:
+                log(f"      y4my4my4m's fork, {orel[0]}")
+                rep.notes.append("OptiScaler is y4my4my4m's fork of the DLSS-NR "
+                                 "build, with multi-frame generation on RTX 40 "
+                                 "(OptiScaler.ini: [DLSSG] AdaMfgUnlock=true) and "
+                                 "its own neural-pass changes. The rest is on the "
+                                 "overlay (Insert). Development builds - if a "
+                                 "game misbehaves, install again with the "
+                                 "DLSS-NR build.")
             for f in optiscaler.install(root, proxy=oproxy, dl=dl, log=log,
                                         backup=lambda p: _backup(p, rep, root),
                                         release=orel):
@@ -2111,6 +2153,28 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         setup = dl(url, f"ReShade_Setup_{ver}_Addon.exe")
         log(f"      ReShade {ver}")
         rep.components["reshade"] = ver
+        if opt.vr and not x64:
+            log("      VR: the OpenXR layer is 64-bit only - skipped for this "
+                "32-bit game")
+        elif opt.vr:
+            from . import openxr
+            xr_manifest, xr_fresh = openxr.install_layer(setup, log)
+            prefs.add_openxr_game(root)
+            if xr_fresh:
+                rep.notes.append("registered ReShade as an OpenXR layer for this "
+                                 "user, so the pass reaches the headset's image; "
+                                 "it loads into EVERY OpenXR application until "
+                                 "'Uninstall' removes it")
+            else:
+                rep.notes.append(f"reused the existing ReShade OpenXR layer "
+                                 f"({xr_manifest})")
+            rep.warnings.append("VR through OpenXR has not been tried with a "
+                                "headset by the author, and only games that "
+                                "run on OpenXR are reached (OpenVR/SteamVR "
+                                "titles are not): if the headset shows nothing "
+                                "new, or the game refuses to start, untick "
+                                "'VR headset' and install again - and say what "
+                                "happened in a report")
         # The installer exe has a zip appended: both ReShade32.dll and ReShade64.dll.
         if g.api == "Vulkan":
             # A Vulkan game never loads dxgi.dll. ReShade reaches it as an
@@ -2200,11 +2264,25 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
             begin("standalone-dlssnr")
             stag, surls = sources.resolve_standalone()
-            for name in sources.STANDALONE_ASSETS:
-                f = dl(surls[name], f"standalone-{stag}-{name}")
-                dest = (root / SHADERS / name) if name.endswith(".fx") else root / name
-                _copy(f, dest, rep, root)
-                log(f"      {dest.relative_to(root)}")
+            if sources.STANDALONE_ZIP in surls:
+                # 2.1.0 and later: one 64-bit archive laid out like a game folder.
+                zf = dl(surls[sources.STANDALONE_ZIP], f"standalone-{stag}-64-bit.zip")
+                for name in sources.STANDALONE_ASSETS + sources.STANDALONE_ZIP_EXTRA:
+                    dest = (root / SHADERS / name) if name.endswith(".fx") else root / name
+                    try:
+                        _extract(zf, name, dest, rep, root)
+                    except RuntimeError:        # net.extract_one: not in the archive
+                        if name in sources.STANDALONE_ASSETS:
+                            raise RuntimeError(f"The DLSS5-Reshade-AIO archive has no {name}.")
+                        continue
+                    rep.written.append(str(dest.relative_to(root)))
+                    log(f"      {dest.relative_to(root)}")
+            else:
+                for name in sources.STANDALONE_ASSETS:
+                    f = dl(surls[name], f"standalone-{stag}-{name}")
+                    dest = (root / SHADERS / name) if name.endswith(".fx") else root / name
+                    _copy(f, dest, rep, root)
+                    log(f"      {dest.relative_to(root)}")
             log(f"      standalone-dlssnr {stag}")
             if stag == "latest":
                 log("      (GitHub's API was out of reach; took the newest "
@@ -2483,6 +2561,13 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "Pre-Upscale' tab in the ReShade overlay. With "
                                  "DLSS Frame Generation on, set its cadence to "
                                  "Quality (every frame) or expect stutter.")
+                rep.notes.append("If the picture only gets darker, the add-on "
+                                 "is not reading the game's exposure buffer "
+                                 "(it normalises the frame against it, and "
+                                 "some games do not expose one). There is no "
+                                 "setting for that: switch the route to "
+                                 "native, which runs after the game's own "
+                                 "tone mapping.")
             rep.written.append("ReShade.ini")
             if opt.path == STANDALONE:
                 # Search paths so ReShade can compile the two shaders; no
@@ -2802,6 +2887,19 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     # The Vulkan layer is registered once for the whole user, so it may only be
     # removed when the LAST game that needs it goes. Removing it while another
     # Vulkan install still relies on it would silently break that game.
+    try:
+        if str(root) in prefs.openxr_games():
+            from . import openxr
+            still_xr = prefs.drop_openxr_game(root)
+            if still_xr:
+                log(f"kept the OpenXR layer: {len(still_xr)} other VR "
+                    f"install(s) still use it")
+            elif openxr.unregister():
+                removed.append("OpenXR layer registration")
+                log("removed: our ReShade OpenXR layer registration "
+                    "(no VR games left)")
+    except Exception:
+        pass
     try:
         was_vulkan = str(root) in prefs.vulkan_games()
         if was_vulkan:

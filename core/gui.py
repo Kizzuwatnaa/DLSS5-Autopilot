@@ -56,6 +56,17 @@ def font(size: int = 10, weight: str = "normal") -> tuple:
     return (MONO[0], size, weight)
 
 
+# Pixels per 96-DPI pixel. Fonts are in points and follow Tk's scaling, but
+# every bare integer Tk takes - row heights, frame widths, wrap lengths,
+# column widths - is a pixel. At 4K/200% the fonts doubled while the rows
+# stayed 26 px tall and the text was cut to its upper half (issue #40).
+SCALE = 1.0
+
+
+def px(n: int) -> int:
+    return max(1, round(n * SCALE))
+
+
 FEEDER_CHOICES = ("stable - newest release",
                   "newest pre-release")
 
@@ -92,6 +103,7 @@ class App:
         self.dxvk = tk.BooleanVar(value=False)
         self.fg = tk.BooleanVar(value=False)
         self.mfg = tk.BooleanVar(value=False)
+        self.vr = tk.BooleanVar(value=False)
         self.sm: int | None = None          # the card's architecture, once known
         self.stale: dict[str, int] = {}     # install folder -> outdated parts
         self.route_fit: dict[str, tuple[bool, str]] = {}
@@ -119,19 +131,19 @@ class App:
         st.configure("H1.TLabel", font=font(15), foreground=TXT)
         st.configure("Dim.TLabel", foreground=DIM, font=font(9))
         st.configure("TButton", background=BG, foreground=BODY, borderwidth=1,
-                     focuscolor=BG, padding=(14, 7), font=font(10),
+                     focuscolor=BG, padding=(px(14), px(7)), font=font(10),
                      relief="solid", bordercolor=EDGE)
         st.map("TButton", background=[("active", FIELD), ("disabled", BG)],
                foreground=[("disabled", FAINT)], bordercolor=[("disabled", LINE)])
         st.configure("Accent.TButton", background=AMBER, foreground=BG,
-                     font=font(10, "bold"), padding=(22, 8), borderwidth=0)
+                     font=font(10, "bold"), padding=(px(22), px(8)), borderwidth=0)
         st.map("Accent.TButton", background=[("active", "#e8bd7a"),
                                              ("disabled", LINE)],
                foreground=[("disabled", FAINT)])
         st.configure("TRadiobutton", background=PANEL, foreground=TXT, font=font(10))
         st.map("TRadiobutton", background=[("active", PANEL)])
         st.configure("Treeview", background=PANEL, fieldbackground=PANEL,
-                     foreground=BODY, rowheight=26, borderwidth=0, font=font(10))
+                     foreground=BODY, rowheight=px(26), borderwidth=0, font=font(10))
         st.configure("Treeview.Heading", background=BG, foreground=DIM,
                      borderwidth=0, font=font(9))
         st.map("Treeview", background=[("selected", AMBER)],
@@ -152,7 +164,7 @@ class App:
             self.root.option_add(f"*TCombobox*Listbox.{k}", v)
         self.root.option_add("*TCombobox*Listbox.font", font(10))
         st.configure("TProgressbar", background=AMBER, troughcolor=FIELD,
-                     borderwidth=0, thickness=4)
+                     borderwidth=0, thickness=px(4))
 
     # ---------------------------------------------------------------- chrome
     def _build(self) -> None:
@@ -181,8 +193,8 @@ class App:
             r.iconbitmap(default=str(ico))
         except Exception:
             pass
-        r.geometry("1060x830")
-        r.minsize(980, 720)
+        r.geometry(f"{px(1060)}x{px(830)}")
+        r.minsize(px(980), px(720))
         # Open filling the screen: the three-column layout reads better with
         # room, and a small window in a corner looked like a dialog box.
         try:
@@ -192,7 +204,7 @@ class App:
         r.configure(bg=BG)
         self._style()
 
-        rail = tk.Frame(r, bg=RAIL, width=236)
+        rail = tk.Frame(r, bg=RAIL, width=px(236))
         rail.pack(side="left", fill="y")
         rail.pack_propagate(False)
         tk.Frame(r, bg=LINE, width=1).pack(side="left", fill="y")
@@ -228,7 +240,7 @@ class App:
 
         tk.Frame(rail, bg=RAIL).pack(fill="both", expand=True)
         self.gpulbl = tk.Label(rail, text="", bg=RAIL, fg=DIM, anchor="w",
-                               justify="left", font=font(8), wraplength=196)
+                               justify="left", font=font(8), wraplength=px(196))
         self.gpulbl.pack(fill="x", padx=20, pady=(0, 6))
         self.verlbl = tk.Label(rail, text=f"v{update.VERSION}", bg=RAIL, fg=DIM,
                                anchor="w", font=font(8))
@@ -435,7 +447,7 @@ class App:
                      fg=RUST if "experimental" in tag else FAINT,
                      font=font(8)).pack(side="left", padx=10)
             tk.Label(card.inner, text=desc, bg=PANEL, fg=DIM, anchor="w",
-                     justify="left", wraplength=660, font=font(9))\
+                     justify="left", wraplength=px(660), font=font(9))\
                 .pack(anchor="w", padx=22, pady=(2, 11))
 
         # Video is the same feed with no depth buffer: a D3D11 player set up
@@ -452,7 +464,7 @@ class App:
                    command=self._video_setup).pack(side="right")
         self.videolbl = tk.Label(
             vi, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
-            wraplength=660,
+            wraplength=px(660),
             text="a portable MPC-HC in a folder of your choice, with dlss5 fed "
                  "into it. play any file, or File > Open URL with a youtube "
                  "link - it streams live, nothing is downloaded. F6 switches "
@@ -460,7 +472,7 @@ class App:
                  "the feed costs about 5% of the frame.")
         self.videolbl.pack(anchor="w", pady=(4, 0))
         vi.bind("<Configure>",
-                lambda e: self.videolbl.configure(wraplength=max(380, e.width - 10)))
+                lambda e: self.videolbl.configure(wraplength=max(px(380), e.width - px(10))))
 
         # Old games rebuilt with path tracing: DLSS 5 goes inside the Remix
         # runtime there, so it is a route of its own rather than an add-on.
@@ -476,7 +488,7 @@ class App:
                    command=self._show_remix).pack(side="right")
         self.remixlbl = tk.Label(
             ri, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
-            wraplength=660,
+            wraplength=px(660),
             text="RTX Remix is a separate, free NVIDIA mod that rebuilds an old "
                  "game (2000s-era, fixed-function DirectX - GTA IV, Portal, Deus "
                  "Ex, Vampire Bloodlines...) with real-time ray tracing: a full "
@@ -488,11 +500,11 @@ class App:
                  "GTA IV: path tracing and DLSS 5 running together.")
         self.remixlbl.pack(anchor="w", pady=(4, 0))
         ri.bind("<Configure>",
-                lambda e: self.remixlbl.configure(wraplength=max(380, e.width - 10)))
+                lambda e: self.remixlbl.configure(wraplength=max(px(380), e.width - px(10))))
 
         # What the publishers ship right now - the tool always fetches these.
         self.boardlbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8),
-                                 anchor="w", justify="left", wraplength=680)
+                                 anchor="w", justify="left", wraplength=px(680))
         self.boardlbl.pack(fill="x", pady=(10, 0))
         self._load_board()
 
@@ -504,7 +516,7 @@ class App:
                  font=font(10, "bold")).pack(anchor="w")
         self.realitylbl = tk.Label(
             wi, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
-            wraplength=680,
+            wraplength=px(680),
             text="dlss5 works reliably on 64-bit directx 11/12. directx 9, "
                  "opengl, vulkan and every 32-bit game go through extra "
                  "translation, a layer or a helper process, and the dlss "
@@ -514,7 +526,7 @@ class App:
                  "this online: anti-cheat flags reshade add-ons.")
         self.realitylbl.pack(anchor="w", pady=(6, 0))
         wi.bind("<Configure>",
-                lambda e: self.realitylbl.configure(wraplength=max(380, e.width - 10)))
+                lambda e: self.realitylbl.configure(wraplength=max(px(380), e.width - px(10))))
         return f
 
     # ---------------------------------------------------------------- step 2
@@ -570,12 +582,12 @@ class App:
         cols = ("source", "arch", "api", "route", "outlook", "status")
         self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings", height=13)
         self.tree.heading("#0", text="  game")
-        self.tree.column("#0", width=250, anchor="w")
+        self.tree.column("#0", width=px(250), anchor="w")
         for c, t, w in (("source", "source", 76), ("arch", "arch", 62),
                         ("api", "api", 80), ("route", "route", 74),
                         ("outlook", "outlook", 96), ("status", "status", 92)):
             self.tree.heading(c, text=t)
-            self.tree.column(c, width=w, anchor="w")
+            self.tree.column(c, width=px(w), anchor="w")
         sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True, padx=(2, 0), pady=2)
@@ -1195,7 +1207,17 @@ class App:
             elif g.installed:
                 # Read fresh every time: this changes on install and uninstall.
                 n_stale = self.stale.get(str(g.install_dir), 0)
-                if n_stale:
+                man = diagnose._manifest(g.install_dir)
+                man_api = man.get("api") or ""
+                # A DXVK install is recorded as Vulkan on purpose: the game
+                # was relabelled for the layer, not misdetected.
+                if man_api and man_api != g.api and not man.get("dxvk") \
+                        and man.get("proxy") != diagnose.VULKAN_LAYER:
+                    # Installed for one renderer, detected as another (a
+                    # Unity game installed as OpenGL by 1.7.1): the files
+                    # in the folder are never loaded.
+                    status, tag = f"reinstall - was {man_api}", "stale"
+                elif n_stale:
                     status, tag = f"update ({n_stale} newer)", "stale"
                 else:
                     status, tag = "installed", "installed"
@@ -1322,10 +1344,10 @@ class App:
         self.cb_route.bind("<<ComboboxSelected>>", self._on_route)
 
         self.routelbl = tk.Label(inner, bg=PANEL, fg=DIM, font=font(8),
-                                 justify="left", anchor="w", wraplength=680)
+                                 justify="left", anchor="w", wraplength=px(680))
         self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 8))
         inner.bind("<Configure>",
-                   lambda e: self.routelbl.configure(wraplength=max(360, e.width - 8)),
+                   lambda e: self.routelbl.configure(wraplength=max(px(360), e.width - px(8))),
                    add="+")
 
         self.lbl_mv = row(3, "motion vectors")
@@ -1392,13 +1414,13 @@ class App:
                                 # you can actually see.
                                 bg=AMBER, fg=TXT, troughcolor=SLIDER_TROUGH,
                                 highlightthickness=0, borderwidth=0,
-                                showvalue=True, font=font(9), length=230,
+                                showvalue=True, font=font(9), length=px(230),
                                 sliderlength=22, sliderrelief="raised",
                                 activebackground=SLIDER_HOT,
                                 command=self._on_workres)
         self.sc_work.pack(side="left")
         self.workhint = tk.Label(wrap, text="", bg=PANEL, fg=DIM, font=font(8),
-                                 justify="left", wraplength=340)
+                                 justify="left", wraplength=px(340))
         self.workhint.pack(side="left", padx=(14, 0))
 
         self.lbl_preset = row(9, "dlss preset")
@@ -1432,6 +1454,12 @@ class App:
         self.cb_nrstyle.current(0)
         self.nrhint = tk.Label(inner, text="the rest is on the overlay (Insert)",
                                bg=PANEL, fg=DIM, font=font(8))
+        # Which OptiScaler + DLSS-NR build goes in (#21).
+        self.lbl_optibuild = tk.Label(inner, text="optiscaler build", bg=PANEL,
+                                      fg=DIM, font=font(9))
+        self.cb_optibuild = ttk.Combobox(inner, state="readonly",
+                                         values=list(optiscaler.BUILDS.values()))
+        self.cb_optibuild.current(0)
         # FSR 3.1 frame generation from the libraries OptiScaler ships; any
         # RTX card, D3D12 games. NVIDIA's multi-frame (3x/4x) is RTX 50
         # hardware and is not offered as if it were this.
@@ -1484,9 +1512,20 @@ class App:
             activebackground=PANEL, activeforeground=TXT, font=font(8),
             borderwidth=0)
 
+        # ReShade routes: the OpenXR layer, so a VR game's headset image gets
+        # the pass and not only the desktop mirror (#33). Untested here.
+        self.ck_vr = tk.Checkbutton(
+            inner, text="VR headset (OpenXR): register ReShade's OpenXR layer as "
+                        "well, so the pass runs on the image the headset shows. "
+                        "OpenXR games only, not OpenVR/SteamVR. Experimental - "
+                        "not tried with a headset; please report",
+            variable=self.vr, bg=PANEL, fg=DIM, selectcolor=FIELD,
+            activebackground=PANEL, activeforeground=TXT, font=font(8),
+            borderwidth=0)
+
         self.reswarn = tk.Label(
             inner, bg=PANEL, fg=RUST, font=font(8), justify="left", anchor="w",
-            wraplength=680,
+            wraplength=px(680),
             text="!! set your screen resolution BEFORE turning neural rendering "
                  "on. the feature is created for one backbuffer size; changing "
                  "resolution or display mode while it runs forces a rebuild that "
@@ -1494,7 +1533,7 @@ class App:
         self.reswarn.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(12, 0))
 
         inner.bind("<Configure>",
-                   lambda e: self.reswarn.configure(wraplength=max(360, e.width - 8)))
+                   lambda e: self.reswarn.configure(wraplength=max(px(360), e.width - px(8))))
 
         # The video player's link box: paste, play. Packed in _enter_install.
         self.urlrow = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
@@ -1801,7 +1840,7 @@ class App:
             return
         g.exe = g.candidates[i]
         g.emu = None
-        games.enrich(g)
+        games.enrich(g, chosen=True)
         self._set_pathlbl(g)
         self._sync_workres()
         self._log(f"> target exe -> {g.exe.name}  ({g.bit_label} {g.api}); "
@@ -1843,9 +1882,12 @@ class App:
         for w in (self.lbl_preset, self.cb_preset, self.lbl_hdr, self.cb_hdr,
                   self.dlaalbl, self.lbl_nrpreset, self.cb_nrpreset,
                   self.lbl_nrstyle, self.cb_nrstyle, self.nrhint, self.ck_fg,
+                  self.lbl_optibuild, self.cb_optibuild,
                   self.lbl_feederver, self.cb_feederver, self.feederhint):
             w.grid_remove()
         if opti:
+            self.lbl_optibuild.grid(row=12, column=0, sticky="w", padx=(0, 14), pady=5)
+            self.cb_optibuild.grid(row=12, column=1, columnspan=2, sticky="ew", pady=5)
             self.lbl_nrpreset.grid(row=9, column=0, sticky="w", padx=(0, 14), pady=5)
             self.cb_nrpreset.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
             self.lbl_nrstyle.grid(row=10, column=0, sticky="w", padx=(0, 14), pady=5)
@@ -1912,6 +1954,12 @@ class App:
         else:
             self.ck_mfg.grid_remove()
             self.mfg.set(False)
+        if self.game and not opti and path != dlss.REMIX and (self.game.bitness or 64) == 64:
+            self.ck_vr.grid(row=18, column=0, columnspan=3, sticky="w",
+                            pady=(6, 0))
+        else:
+            self.ck_vr.grid_remove()
+            self.vr.set(False)
         self._sync_workres()
         if self.game:
             level, why = installer.reliability(self.game, path)
@@ -2300,11 +2348,13 @@ class App:
             dxvk=self.dxvk.get(),
             fg=bool(self.fg.get()) and getattr(self, 'route', None) == dlss.OPTI,
             mfg=bool(self.mfg.get()),
+            vr=bool(self.vr.get()),
             path=getattr(self, 'route', dlss.FEEDER),
             native_dlss=bool(self.support and self.support.native_dlss),
             upscaler=str(getattr(self.support, 'upscaler', '') or ''),
             opti_proxy=("" if self.cb_proxy.current() <= 0
                         else optiscaler.PROXY_NAMES[self.cb_proxy.current() - 1]),
+            opti_build=list(optiscaler.BUILDS)[max(0, self.cb_optibuild.current())],
             reshade_proxy=("" if self.cb_rproxy.current() <= 0
                            else installer.RESHADE_PROXIES[self.cb_rproxy.current() - 1]),
         )
@@ -2760,6 +2810,8 @@ def run() -> int:
         import ctypes
         dpi = ctypes.windll.user32.GetDpiForWindow(root.winfo_id()) or 96
         root.tk.call("tk", "scaling", dpi / 72.0)
+        global SCALE
+        SCALE = max(1.0, dpi / 96.0)
     except Exception:
         pass
     # Installed before the window is built: a failure while building it is

@@ -45,17 +45,22 @@ route, what it does and what must not sit in the same folder.
 
 The graphics API comes from the executable's import table; when that
 table names no graphics DLL (the engine loads its renderer at run time),
-the tool reads the DLL names inside the exe and then the imports of the
-engine DLLs beside it. An import table can also lie - R.U.S.E. links
-D3D11 and renders with Direct3D 9 - so the install page has a
-**graphics api** dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan /
-OpenGL); the choice is remembered for that folder.
+the tool reads the DLL names inside the exe, the imports of the DLLs
+beside it and the names inside the largest of them, and ranks them as
+the import table would: a Direct3D name anywhere outranks OpenGL or
+Vulkan, because an engine that can drive several backends names all of
+them and draws with Direct3D on Windows. A Unity game (UnityPlayer.dll
+beside the exe) is Direct3D 11 unless started with -force-d3d12,
+-force-vulkan or -force-glcore. An import table can also lie - R.U.S.E. links D3D11 and
+renders with Direct3D 9 - so the install page has a **graphics api**
+dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan / OpenGL); the choice
+is remembered for that folder.
 
 | Route | What it is | For | FPS dial |
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
-| **optiscaler** | Dagherbou's OptiScaler fork replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
+| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's build, from the install page) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS | the game's DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
@@ -235,6 +240,20 @@ re-creates the swap chain, and the second feature creation crashes.
 </details>
 
 <details>
+<summary>The desktop mirror changes, the VR headset does not</summary>
+
+A VR game that runs on OpenXR draws the headset's image through it; the
+desktop window is a mirror of it, and that is where a proxy DLL or the
+Vulkan layer puts ReShade. The **VR headset (OpenXR)** checkbox on the
+install page (or `--vr`) registers ReShade's OpenXR layer as well, which
+hooks the image the headset shows. Games on OpenVR/SteamVR are not
+reached by it. It is global for the user, like the Vulkan layer, and the
+last VR uninstall removes it. This has not been tried with a headset
+by the author. It is offered as an experiment; a report of what happens,
+either way, is what it needs.
+</details>
+
+<details>
 <summary>Driver 616.64 or newer: everything loads, nothing changes</summary>
 
 NVIDIA's DLSS 5 launch drivers route the neural feature into the runtime
@@ -328,6 +347,8 @@ dlss5-autopilot.exe "D:\Games\Game" --remove        uninstall
 dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler, renodx, bridge, feeder, standalone, remix
 dlss5-autopilot.exe "D:\Games\Game" --route remix --remix-swap   replace a Remix runtime that has no neural pass
 dlss5-autopilot.exe "D:\Games\Game" --dxvk          run the game on Vulkan through DXVK (--no-dxvk turns the automatic choice off)
+dlss5-autopilot.exe "D:\Games\Game" --vr            register ReShade's OpenXR layer as well (VR, OpenXR games; untried with a headset)
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   y4my4my4m's OptiScaler build instead of Dagherbou's
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
 
@@ -391,6 +412,7 @@ component stays under its own licence, fetched from its own publisher.
 | neural-upstream | [matiasLombo/neural-upstream](https://github.com/matiasLombo/neural-upstream) | MIT |
 | standalone-dlssnr | [kibblerz/DLSS5-Reshade-AIO](https://github.com/kibblerz/DLSS5-Reshade-AIO) | Apache-2.0 |
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
+| OptiScaler fork, multi-frame generation | [y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG) | GPL-3.0 |
 | LumeniteFX · VORT shaders | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) · [vortigern11/vort_Shaders](https://github.com/vortigern11/vort_Shaders) | AGNYA · MIT |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
 | REFramework (RE Engine games only) | [praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly) | MIT |

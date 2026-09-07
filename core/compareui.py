@@ -16,7 +16,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from . import compare
-from .gui import AMBER, BG, DIM, EDGE, LINE, PANEL, TXT, font
+from .gui import AMBER, BG, DIM, EDGE, LINE, PANEL, TXT, font, px
 
 TOGGLE_KEY = "F6"
 _FIT_DELAY_MS = 120
@@ -39,7 +39,7 @@ class CompareWindow:
         self.win = tk.Toplevel(parent)
         self.win.title(f"before / after - {game_name}")
         self.win.configure(bg=BG)
-        self.win.minsize(720, 420)
+        self.win.minsize(px(720), px(420))
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{int(sw * 0.8)}x{int(sh * 0.7)}")
         try:

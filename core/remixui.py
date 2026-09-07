@@ -13,6 +13,7 @@ import webbrowser
 from tkinter import ttk
 
 from . import remixlist
+from .gui import px
 
 
 class RemixWindow:
@@ -146,7 +147,7 @@ class RemixWindow:
                      font=self.font(8)).pack(side="left", padx=(10, 0))
         line = m.mod + (" - " + m.note if m.note else "")
         tk.Label(left, text=line, bg=PANEL, fg=DIM, font=self.font(8),
-                 anchor="w", justify="left", wraplength=760).pack(anchor="w")
+                 anchor="w", justify="left", wraplength=px(760)).pack(anchor="w")
         lk = tk.Label(row, text="[ open page ]", bg=PANEL, fg=AMBER,
                       font=self.font(9), cursor="hand2")
         lk.pack(side="right", padx=(12, 4))

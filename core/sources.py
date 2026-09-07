@@ -49,6 +49,12 @@ STANDALONE_API = ("https://api.github.com/repos/kibblerz/DLSS5-Reshade-AIO/"
 # is its caller-identity bridge: without it beside the add-on nothing
 # initialises ("required private runtime dependency missing" in its log).
 STANDALONE_ASSETS = ("standalone-dlssnr.addon64", "nvngx.dll", "DLSS5_AIO_Feed.fx")
+# From 2.1.0 the release is two laid-out archives instead of loose files;
+# the 64-bit one holds the same three files (plus a second shader) under
+# the paths a game folder uses. resolve_standalone() hands the archive back
+# under this key and the installer extracts by file name.
+STANDALONE_ZIP = "__zip64__"
+STANDALONE_ZIP_EXTRA = ("StandaloneBoundary.fx",)
 STANDALONE_LATEST = ("https://github.com/kibblerz/DLSS5-Reshade-AIO/releases/"
                      "latest/download/")
 # Vortigern's VORT shaders (MIT). vort_Motion.fx is the optical-flow provider
@@ -115,7 +121,9 @@ def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
     last: Exception | None = None
     for attempt in range(attempts):
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            from . import net           # net imports this module
+            with urllib.request.urlopen(req, timeout=timeout,
+                                        context=net.ssl_context()) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code in (403, 429) and "api.github.com" in url:
@@ -130,6 +138,9 @@ def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
             # HTTPException: the body dropped after the headers (IncompleteRead)
             last = e
             if attempt == attempts - 1:
+                from . import net
+                if net.untrusted(url.split("/")[2], e):
+                    raise net.untrusted(url.split("/")[2], e) from e
                 raise
             time.sleep(2.0 * (attempt + 1))
     raise last if last else RuntimeError(url)
@@ -190,13 +201,61 @@ def _json(url: str):
         return data
 
 
+RESHADE_TAGS_API = "https://api.github.com/repos/crosire/reshade/tags?per_page=5"
+
+
+def _reshade_url(version: str) -> str:
+    return f"{RESHADE_HOME}/downloads/ReShade_Setup_{version}_Addon.exe"
+
+
 def resolve_reshade() -> tuple[str, str]:
-    """(version, url) of the latest ReShade add-on installer, from reshade.me."""
-    html = _get(RESHADE_HOME).decode("utf8", "replace")
-    m = RESHADE_SETUP_RE.search(html)
-    if not m:
-        raise RuntimeError("Could not find the ReShade add-on installer link on reshade.me.")
-    return m.group(1), RESHADE_HOME + m.group(0)
+    """(version, url) of the latest ReShade add-on installer.
+
+    reshade.me first. The site answers 500 to about every other request on
+    some days, with the full page as the body, so a 5xx with the link in it
+    still counts and a bare 5xx is retried. Then the release tag on GitHub
+    (crosire/reshade publishes tags, not release assets - the exe only lives
+    on reshade.me, but its URL follows the version). Then the newest setup
+    already in the cache, so an install on a machine that has done one
+    before does not depend on the site at all.
+    """
+    errors: list[str] = []
+    for attempt in range(3):
+        try:
+            html = _get(RESHADE_HOME).decode("utf8", "replace")
+        except urllib.error.HTTPError as e:
+            try:
+                html = e.read().decode("utf8", "replace")
+            except Exception:
+                html = ""
+            errors.append(f"reshade.me: HTTP {e.code}")
+        except Exception as e:
+            errors.append(f"reshade.me: {e}")
+            html = ""
+        m = RESHADE_SETUP_RE.search(html)
+        if m:
+            return m.group(1), RESHADE_HOME + m.group(0)
+        time.sleep(0.5 * (attempt + 1))
+    try:
+        tags = _json(RESHADE_TAGS_API)
+        for t in (tags if isinstance(tags, list) else []):
+            name = str(t.get("name", ""))
+            if re.fullmatch(r"v\d+(\.\d+)+", name):
+                return name[1:], _reshade_url(name[1:])
+        errors.append("GitHub: no version tag on crosire/reshade")
+    except Exception as e:
+        errors.append(f"GitHub tags: {e}")
+    try:
+        from . import net
+        cached = sorted(net.cache_dir().glob("ReShade_Setup_*_Addon.exe"),
+                        key=lambda p: [int(x) for x in p.name.split("_")[2].split(".")])
+        if cached:
+            ver = cached[-1].name.split("_")[2]
+            return ver, _reshade_url(ver)
+    except Exception as e:
+        errors.append(f"cache: {e}")
+    raise RuntimeError("Could not find the ReShade add-on installer: "
+                       + "; ".join(errors))
 
 
 def feeder_releases() -> list[tuple[str, bool]]:
@@ -305,8 +364,13 @@ def resolve_standalone() -> tuple[str, dict[str, str]]:
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
     missing = [n for n in STANDALONE_ASSETS if n not in assets]
     if missing:
+        zip64 = next((u for n, u in assets.items()
+                      if n.lower().endswith("-64-bit.zip")), None)
+        if zip64:
+            urls[STANDALONE_ZIP] = zip64
+            return rel.get("tag_name", "?"), urls
         raise RuntimeError("The DLSS5-Reshade-AIO release is missing "
-                           f"{', '.join(missing)}.")
+                           f"{', '.join(missing)} and has no 64-bit archive.")
     for name in STANDALONE_ASSETS:
         urls[name] = assets[name]
     return rel.get("tag_name", "?"), urls

@@ -6,6 +6,7 @@ Run this before cutting a release.
 import inspect
 import json
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -604,7 +605,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.7.1", update.VERSION == "1.7.1", update.VERSION)
+check("version is 1.7.2", update.VERSION == "1.7.2", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -2296,7 +2297,7 @@ for _runtime, _kind, _name in (("ffx_fsr2_api_x64.dll", "fsr", "FSR"),
     _opt = installer.Options(path=dlss.OPTI, upscaler=_kind)
     _steps = installer.plan(_g, _opt)
     check(f"{_name}: the plan lists nvngx_dlss.dll",
-          "nvngx_dlss.dll" in _steps and "OptiScaler (DLSS-NR build)" in _steps,
+          "nvngx_dlss.dll" in _steps and any(s.startswith("OptiScaler (") for s in _steps),
           str(_steps))
     _pv = installer.preview(_g, _opt)
     check(f"{_name}: the preview lists nvngx_dlss.dll and says beta",
@@ -3804,13 +3805,15 @@ check("HoYoverse and EA Javelin games are detected as anti-cheat",
       _f.present and "HoYoverse anti-cheat" in _f.products and "EA Javelin" in _f.products, str(_f.products))
 shutil.rmtree(_d, ignore_errors=True)
 
+import io
+import re
 import urllib.error as _ue
 _calls = {"n": 0}
 class _Resp:
     def __enter__(self): return self
     def __exit__(self, *a): return False
     def read(self): return b"ok"
-def _flaky(req, timeout=0):
+def _flaky(req, timeout=0, **kw):
     _calls["n"] += 1
     if _calls["n"] < 3:
         raise TimeoutError("The read operation timed out")
@@ -3874,6 +3877,277 @@ with open(_exe, "ab") as _f:
 check("a run-time d3d9.dll with the game's own DLSS beside it is still a modern renderer",
       pe.detect_api(_exe)[0] == "DX12")
 shutil.rmtree(_d, ignore_errors=True)
+
+section("47. issues #46-#48: an engine that merely names opengl32.dll is not an OpenGL game")
+_d = Path(tempfile.mkdtemp(prefix="unity_"))
+_exe = _d / "HouseParty.exe"
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _exe)
+with open(_exe, "ab") as _f:
+    _f.write(b"\0opengl32.dll\0")
+check("an exe naming only opengl32.dll, nothing beside it: OpenGL (Gunslinger-style run-time load)",
+      pe.detect_api(_exe)[0] == "OpenGL")
+(_d / "engine.dll").write_bytes(b"MZ" + b"\0" * 600_000 + b"d3d11.dll\0opengl32.dll\0")
+_api, _why = pe.detect_api(_exe)
+check("...but a DLL beside it that names d3d11.dll outranks the OpenGL string",
+      _api == "DX11" and "engine.dll" in _why, f"{_api}: {_why}")
+(_d / "engine.dll").unlink()
+(_d / "UnityPlayer.dll").write_bytes(b"MZ" + b"\0" * 100)
+_api, _why = pe.detect_api(_exe)
+check("UnityPlayer.dll beside the exe decides: Direct3D 11, and the reason names Unity",
+      _api == "DX11" and "Unity" in _why, f"{_api}: {_why}")
+_g = games.manual(_d)
+check("...so the game is not put on the opengl32.dll route", _g.api == "DX11", _g.api)
+(_d / "UnityPlayer.dll").unlink()
+(_d / "sl.interposer.dll").write_bytes(b"MZ" + b"\0" * 600_000 + b"d3d12.dll\0")
+(_d / "ourthing.dll").write_bytes(b"MZ" + b"\0" * 600_000 + b"d3d12.dll\0")
+(_d / "dlss5-autopilot.json").write_text(json.dumps({"files": ["ourthing.dll"]}), encoding="utf8")
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _exe)
+with open(_exe, "ab") as _f:
+    _f.write(b"\0opengl32.dll\0")
+check("DLLs our routes drop (Streamline) and files named in our manifest are not sibling evidence",
+      pe.detect_api(_exe)[0] == "OpenGL", pe.detect_api(_exe))
+(_d / "dlss5-autopilot.json").unlink()
+(_d / "UnityPlayer.dll").write_bytes(b"MZ" + b"\0" * 100)
+check("the side windows scale their pixels too",
+      "px(760)" in Path("core/remixui.py").read_text(encoding="utf8")
+      and "px(720)" in Path("core/compareui.py").read_text(encoding="utf8"))
+_launcher = _d / "Launcher.exe"
+_ship = _d / "Bin" / "Win64" / "Game-Win64-Shipping.exe"
+_ship.parent.mkdir(parents=True)
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _launcher)
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _ship)
+(_d / "dlss5-autopilot.json").write_text(json.dumps({"exe": "Launcher.exe", "files": []}), encoding="utf8")
+(_d / "dlss5-feed.addon64").write_bytes(b"MZ")
+_g56 = games.Game("Conan", _d, exe=_launcher, candidates=[_launcher, _ship])
+games.enrich(_g56)
+check("a scan adopts the earlier install's folder and exe (unchanged)",
+      _g56.exe == _launcher and _g56.install_dir == _d, (_g56.exe, _g56.install_dir))
+_g56.exe = _ship
+games.enrich(_g56, chosen=True)
+check("an executable picked in the list keeps that pick and installs beside it (#56)",
+      _g56.exe == _ship and _g56.install_dir == _ship.parent, (_g56.exe, _g56.install_dir))
+(_d / "dlss5-autopilot.json").unlink()
+(_d / "dlss5-feed.addon64").unlink()
+_launcher.unlink()
+_ship.unlink()
+_ship.parent.rmdir()
+_ship.parent.parent.rmdir()
+check("the preview discloses an emulator config change",
+      "its own config is switched" in inspect.getsource(installer.preview))
+check("the game list does not flag a DXVK install as an API change",
+      'man.get("proxy") != diagnose.VULKAN_LAYER' in inspect.getsource(_gui))
+check("an unknown optiscaler build key in a manifest does not break the plan",
+      any(s.startswith("OptiScaler (") for s in
+          installer.plan(games.Game("X", _d, exe=_exe, bitness=64, api="DX12"),
+                         installer.Options(path=dlss.OPTI, opti_build="future"))))
+for _k in range(65):
+    (_d / f"a{_k:02}.dll").write_bytes(b"MZ")
+check("...even behind 65 other DLLs (the engine rule is not cut with the list)",
+      pe.detect_api(_exe)[0] == "DX11")
+(_d / "UnityPlayer.dll").unlink()
+for _k in range(65):
+    (_d / f"a{_k:02}.dll").unlink()
+shutil.copyfile(r"C:\Windows\SysWOW64\where.exe", _exe)
+with open(_exe, "ab") as _f:
+    _f.write(b"\0d3d9.dll\0")
+(_d / "bink2w64.dll").write_bytes(b"MZ" + b"\0" * 600_000 + b"d3d11.dll\0dxgi.dll\0")
+_api, _why = pe.detect_api(_exe)
+check("an exe that names d3d9.dll itself is DirectX 9 whatever Bink beside it names (#31 stands)",
+      _api == "DX9" and "named in the exe" in _why, f"{_api}: {_why}")
+(_d / "host64").mkdir()
+(_d / "host64" / "dlss5-feed-host64.exe").write_bytes(open(_exe, "rb").read())
+check("the feeder's helper under host64 is never a candidate executable",
+      pe.find_game_exes(_d) == [_exe], pe.find_game_exes(_d))
+_exe.unlink()
+check("...even when it is the only executable left in the folder", pe.find_game_exes(_d) == [])
+# The diagnosis and the report body for a game that was installed as OpenGL
+(_d / diagnose.MANIFEST).write_text(json.dumps({"path": "feeder", "proxy": "opengl32.dll",
+                                                "api": "OpenGL", "exe": "HouseParty.exe"}),
+                                    encoding="utf8")
+(_d / "opengl32.dll").write_bytes(b"MZ")
+_rep = diagnose.analyse(_d)
+check("no ReShade.log after an opengl32.dll install: the diagnosis says the game may not draw with OpenGL",
+      any("does not render with OpenGL" in f.title for f in _rep.findings),
+      [f.title for f in _rep.findings])
+(_d / diagnose.RESHADE_LOG).write_text("INFO | Initializing crosire's ReShade\nExiting ...\n", encoding="utf8")
+_rep = diagnose.analyse(_d)
+check("a ReShade.log with no add-on registered under opengl32.dll points at the graphics api dropdown",
+      any("another program" in f.title for f in _rep.findings),
+      [f.title for f in _rep.findings])
+class _G:
+    name = "House Party"; exe = _d / "HouseParty.exe"; bit_label = "64-bit"; api = "DX11"
+    api_why = "Unity player beside the exe - Direct3D 11 on Windows"
+_body = diagnose.issue_body("1.7.2", "RTX", 120, "616.64", _G(), "feeder", None, "", _d / "a.log", _d)
+check("the report body carries the reason behind the detected API",
+      "- arch/api: 64-bit / DX11 (Unity player beside the exe" in _body
+      and "\n- route: feeder" in _body, _body[:600])
+check("the game list marks an install whose manifest api differs from the detected one",
+      'f"reinstall - was {man_api}"' in inspect.getsource(_gui))
+shutil.rmtree(_d, ignore_errors=True)
+
+section("48. issue #40: pixel sizes follow the display scale, not only the fonts")
+import re as _re
+_gsrc = inspect.getsource(_gui)
+check("_gui.px() rounds to the display scale", _gui.px(26) == 26)
+_gui.SCALE = 2.0
+check("...and doubles at 200 %", _gui.px(26) == 52 and _gui.px(1060) == 2120)
+check("the Treeview row height is scaled", "rowheight=px(26)" in _gsrc)
+check("the window geometry and the side rail are scaled",
+      'px(1060)' in _gsrc and 'width=px(236)' in _gsrc)
+check("no bare wraplength is left", not _re.search(r"wraplength=\d", _gsrc))
+check("run() sets SCALE from the window's DPI", "SCALE = max(1.0, dpi / 96.0)" in _gsrc)
+_gui.SCALE = 1.0
+
+section("49. issue #54: the exe carries its own root certificates")
+_ctx = net.ssl_context()
+check("ssl_context() is one shared, verifying context",
+      _ctx is net.ssl_context() and _ctx.verify_mode == ssl.CERT_REQUIRED)
+check("...with the certifi bundle loaded on top of the Windows store",
+      _ctx.cert_store_stats()["x509_ca"] > 100, _ctx.cert_store_stats())
+check("every fetch goes through it",
+      "context=ssl_context()" in inspect.getsource(net.download)
+      and "context=net.ssl_context()" in inspect.getsource(sources._get))
+check("the release build installs certifi",
+      "pip install --upgrade certifi" in Path(".github/workflows/release.yml").read_text(encoding="utf8"))
+check("a failed verification is explained",
+      "untrusted(name, e)" in inspect.getsource(net.download))
+
+section("50. issue #21: y4my4my4m's OptiScaler fork, from a .7z, through Windows' tar.exe")
+check("the build list starts with the build the route always installed",
+      list(optiscaler.BUILDS)[0] == "" and optiscaler.FORK in optiscaler.BUILDS)
+_tag, _url = optiscaler.resolve(optiscaler.FORK)
+check("the fork resolves to a plain archive, not the _with_DLSS one",
+      _url.lower().endswith((".7z", ".zip")) and "with_dlss" not in _url.lower(), _url)
+_tag0, _url0 = optiscaler.resolve()
+check("the default build still resolves to Dagherbou's zip", _url0.lower().endswith(".zip"), _url0)
+_d = Path(tempfile.mkdtemp(prefix="sz_"))
+(_d / "in").mkdir()
+(_d / "in" / "OptiScaler.dll").write_bytes(b"MZ-opti")
+(_d / "in" / "OptiScaler.pdb").write_bytes(b"symbols")
+(_d / "in" / "OptiScaler").mkdir()
+(_d / "in" / "OptiScaler" / "libxess.dll").write_bytes(b"MZ-xess")
+_r = subprocess.run([str(optiscaler._tar_exe()), "-cf", str(_d / "t.7z"), "--format", "7zip",
+                     "-C", str(_d / "in"), "."], capture_output=True, text=True)
+check("Windows' tar.exe writes a 7z for the test", _r.returncode == 0, _r.stderr)
+optiscaler.extract_7z(_d / "t.7z", _d / "out")
+check("...and extract_7z unpacks it", (_d / "out" / "OptiScaler" / "libxess.dll").read_bytes() == b"MZ-xess")
+shutil.rmtree(net.cache_dir() / "unpacked" / "t", ignore_errors=True)
+_game = _d / "game"
+_game.mkdir()
+_w = optiscaler.install(_game, proxy="winmm.dll", dl=lambda url, name: _d / "t.7z",
+                        release=("t", "https://example/t.7z"))
+check("install() from a .7z: OptiScaler.dll under the proxy name, subfolder kept, .pdb skipped",
+      (_game / "winmm.dll").read_bytes() == b"MZ-opti"
+      and (_game / "OptiScaler" / "libxess.dll").is_file()
+      and not (_game / "OptiScaler.pdb").exists()
+      and sorted(_w) == ["OptiScaler/libxess.dll", "winmm.dll"], _w)
+_game_b = _d / "game_b"
+_game_b.mkdir()
+_w2 = optiscaler.install(_game_b, proxy="winmm.dll", dl=lambda url, name: _d / "t.7z",
+                         release=("t", "https://example/t.7z"))
+check("a second install reuses the unpacked copy and writes the same files", sorted(_w2) == sorted(_w))
+(_d / "wrapped").mkdir()
+shutil.copytree(_d / "in", _d / "wrapped" / "OptiScaler_v10")
+_r = subprocess.run([str(optiscaler._tar_exe()), "-cf", str(_d / "w.7z"), "--format", "7zip",
+                     "-C", str(_d / "wrapped"), "."], capture_output=True, text=True)
+_game2 = _d / "game2"
+_game2.mkdir()
+_w3 = optiscaler.install(_game2, proxy="dxgi.dll", dl=lambda url, name: _d / "w.7z",
+                         release=("w", "https://example/w.7z"))
+check("an archive wrapped in one folder is unwrapped, so the proxy DLL still lands in the game folder",
+      (_game2 / "dxgi.dll").is_file() and "dxgi.dll" in _w3, _w3)
+shutil.rmtree(net.cache_dir() / "unpacked" / "w", ignore_errors=True)
+check("a failed TLS verification is explained, whatever exception type carried it",
+      net.untrusted("x", Exception("<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>")) is not None
+      and net.untrusted("x", Exception("timed out")) is None
+      and "net.untrusted" in inspect.getsource(sources._get))
+check("Options carries the build and the manifest records it",
+      hasattr(installer.Options(), "opti_build")
+      and '"opti_build": opt.opti_build' in inspect.getsource(installer))
+check("the install page offers the build list",
+      "cb_optibuild" in inspect.getsource(_gui) and "opti_build=list(optiscaler.BUILDS)" in inspect.getsource(_gui))
+shutil.rmtree(_d, ignore_errors=True)
+shutil.rmtree(net.cache_dir() / "unpacked" / "t", ignore_errors=True)
+
+section("51. issue #33: ReShade's OpenXR layer for VR, registered like the Vulkan one")
+from core import openxr as _xr
+_d = Path(tempfile.mkdtemp(prefix="xr_"))
+_saved_dir = _xr.layer_dir
+_xr.layer_dir = lambda: _d
+_setup = next(iter(sorted(net.cache_dir().glob("ReShade_Setup_*_Addon.exe"))), None)
+check("a cached ReShade setup is at hand for the test", _setup is not None)
+if _setup is not None:
+    _m, _fresh = _xr.install_layer(_setup, log=lambda *_: None)
+    check("the OpenXR manifest and ReShade64.dll are placed beside the Vulkan layer files",
+          _m == _d / _xr.MANIFEST and (_d / _xr.DLL).is_file())
+    _data = json.loads(_m.read_text(encoding="utf8"))
+    check("the manifest names ReShade's OpenXR layer and points at the DLL beside it",
+          _data["api_layer"]["name"] == _xr.LAYER_NAME
+          and _data["api_layer"]["library_path"] == ".\\" + _xr.DLL, _data)
+    check("...and it is registered for this user, active",
+          any(p == _m and v == 0 for p, v in _xr.registrations()), _xr.registrations())
+    check("a second install reuses it", _xr.install_layer(_setup)[1] is False)
+    check("unregister removes exactly that value", _xr.unregister() is True
+          and not any(p == _m for p, _ in _xr.registrations()))
+    check("...and a second unregister finds nothing", _xr.unregister() is False)
+_xr.layer_dir = _saved_dir
+shutil.rmtree(_d, ignore_errors=True)
+check("Options.vr exists, the manifest records it and the install page offers it",
+      hasattr(installer.Options(), "vr") and '"vr": bool(opt.vr)' in inspect.getsource(installer)
+      and "ck_vr" in inspect.getsource(_gui) and "vr=bool(self.vr.get())" in inspect.getsource(_gui))
+check("the ReShade step registers the layer when asked, and uninstall drops it with the last VR game",
+      "openxr.install_layer(setup, log)" in inspect.getsource(installer)
+      and "prefs.openxr_games()" in inspect.getsource(installer))
+check("the command line has --vr", '"--vr" in args' in Path("dlss5_autopilot.py").read_text(encoding="utf8"))
+check("the command line has --opti-build and it reaches Options",
+      '"--opti-build" in args' in Path("dlss5_autopilot.py").read_text(encoding="utf8")
+      and Path("dlss5_autopilot.py").read_text(encoding="utf8").count("opti_build=opti_build") == 3)
+check("'did it work?' lists the OpenXR registration for a VR install",
+      any("OpenXR layer" in ln for ln in diagnose._presence(Path("."), {"vr": True, "path": "feeder"}, "feeder")))
+check("every HTTPS fetch goes through ssl_context()",
+      "context=ssl_context()" in inspect.getsource(net.fetch_text))
+
+section("52. reshade.me answers 500 with the page as the body; the installer link is still found")
+import urllib.error as _ue
+_saved_get, _saved_json = sources._get, sources._json
+_page = b'<a href="/downloads/ReShade_Setup_6.8.0_Addon.exe">x</a>'
+def _five_hundred(url, *a, **k):
+    raise _ue.HTTPError(url, 500, "Internal Server Error", {}, io.BytesIO(_page))
+sources._get = _five_hundred
+check("a 500 whose body carries the link resolves 6.8.0 from it",
+      sources.resolve_reshade() == ("6.8.0", "https://reshade.me/downloads/ReShade_Setup_6.8.0_Addon.exe"),
+      sources.resolve_reshade())
+def _bare(url, *a, **k):
+    raise _ue.HTTPError(url, 500, "Internal Server Error", {}, io.BytesIO(b""))
+sources._get = _bare
+sources._json = lambda url: [{"name": "v6.8.1"}, {"name": "v6.8.0"}]
+check("a bare 500 falls back to the newest version tag on crosire/reshade",
+      sources.resolve_reshade() == ("6.8.1", "https://reshade.me/downloads/ReShade_Setup_6.8.1_Addon.exe"),
+      sources.resolve_reshade())
+sources._json = lambda url: (_ for _ in ()).throw(RuntimeError("rate limited"))
+_cached = sorted(net.cache_dir().glob("ReShade_Setup_*_Addon.exe"))
+_r = sources.resolve_reshade() if _cached else None
+check("...and then to the newest setup already in the cache",
+      not _cached or (_r[0] in _cached[-1].name and _r[1].endswith(f"ReShade_Setup_{_r[0]}_Addon.exe")), _r)
+sources._get, sources._json = _saved_get, _saved_json
+check("the real site or its fallbacks resolve a version", re.fullmatch(r"\d+(\.\d+)+", sources.resolve_reshade()[0]) is not None)
+
+section("53. DLSS5-Reshade-AIO 2.1.0 ships one 64-bit archive instead of loose files")
+sources._json = lambda url: {"tag_name": "v2.1.0", "assets": [
+    {"name": "DLSS5-ReShade-AIO-v2.1.0-32-bit.zip", "browser_download_url": "https://x/32.zip"},
+    {"name": "DLSS5-ReShade-AIO-v2.1.0-64-bit.zip", "browser_download_url": "https://x/64.zip"}]}
+_tag, _urls = sources.resolve_standalone()
+check("a zip-only release resolves to its 64-bit archive",
+      _tag == "v2.1.0" and _urls.get(sources.STANDALONE_ZIP) == "https://x/64.zip", _urls)
+sources._json = lambda url: {"tag_name": "v2.0.9", "assets": [
+    {"name": n, "browser_download_url": "https://x/" + n} for n in sources.STANDALONE_ASSETS]}
+_tag, _urls = sources.resolve_standalone()
+check("a loose-file release still resolves file by file",
+      _tag == "v2.0.9" and sources.STANDALONE_ZIP not in _urls and all(n in _urls for n in sources.STANDALONE_ASSETS))
+sources._json = _saved_json
+_tag, _urls = sources.resolve_standalone()
+check("the live release resolves one way or the other",
+      sources.STANDALONE_ZIP in _urls or all(n in _urls for n in sources.STANDALONE_ASSETS), (_tag, list(_urls)))
 
 section("RESULT")
 if FAILS:

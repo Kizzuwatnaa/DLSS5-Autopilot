@@ -55,6 +55,8 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip wheel setuptools
+          # The root-certificate bundle the exe carries (net.ssl_context).
+          python -m pip install --upgrade certifi
           if python -m pip install --no-binary pyinstaller --no-cache-dir pyinstaller; then
             echo "BOOTLOADER=compiled on this runner" >> "$GITHUB_ENV"
           else

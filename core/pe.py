@@ -22,6 +22,9 @@ _SKIP_PARTS = (
     "crashhandler", "crashreport", "crashpad", "easyanticheat", "battleye",
     "touchup", "installer", "activation", "cleanup", "helper", "webhelper",
     "unitycrashhandler", "ue4prereqsetup", "ue5prereqsetup", "epicwebhelper",
+    # The feeder's 32-bit helper, which our own install puts under host64\.
+    # Ranked above a 32-bit game executable it was taken for the game.
+    "dlss5-feed-host",
 )
 
 
@@ -237,6 +240,9 @@ def detect_api(path: Path) -> tuple[str, str]:
     if has("vulkan-1.dll"):
         return "Vulkan", "imports vulkan-1.dll, no DXGI"
     if has("opengl32.dll"):
+        engine = _engine_default(path)
+        if engine:
+            return engine
         return "OpenGL", "imports opengl32.dll, no DXGI"
     if has("d3d9.dll"):
         # A real DirectX 9 game does not ship DLSS. Red Dead Redemption 2
@@ -260,7 +266,9 @@ def detect_api(path: Path) -> tuple[str, str]:
     # still in the file, or in the engine DLL beside it.
     name, where = _runtime_graphics(path)
     if name:
-        api = _RUNTIME_API[name]
+        api = _RUNTIME_API.get(name, name)
+        if name not in _RUNTIME_API:
+            return api, where
         if api == "DX9" and _ships_dlss(path.parent):
             api = "DX12"
         return api, f"loads {name} at run time ({where}); no static graphics import"
@@ -277,11 +285,35 @@ _RUNTIME_API = {
 _RUNTIME_SCAN_MAX = 512 * 1024 * 1024
 # Files our own routes (or ReShade, DXVK, OptiScaler) drop beside a game;
 # their imports say nothing about the game.
-_NOT_THE_GAME = set(_RUNTIME_API) | {"reshade32.dll", "reshade64.dll",
-                                     "reshade.dll", "d3d8.dll", "ddraw.dll",
-                                     "dinput8.dll", "winmm.dll", "version.dll",
-                                     "nvngx_dlssnr.dll", "nvngx_dlss.dll",
-                                     "optiscaler.dll", "dlss5-bridge.dll"}
+_NOT_THE_GAME = set(_RUNTIME_API) | {
+    "reshade32.dll", "reshade64.dll", "reshade.dll", "d3d8.dll", "ddraw.dll",
+    "dinput8.dll", "winmm.dll", "version.dll", "dbghelp.dll", "winhttp.dll",
+    "wininet.dll", "d3dcompiler_47.dll",
+    "nvngx_dlssnr.dll", "nvngx_dlss.dll", "nvngx_dlssd.dll", "nvngx_dlssg.dll",
+    "_nvngx.dll", "nvngx-wrapper.dll", "remix_nvngx.dll",
+    "optiscaler.dll", "dlss5-bridge.dll", "dlss-enabler.dll",
+    "dlss-enabler-headless.dll", "rtx40mfgcore.dll",
+    "sl.interposer.dll", "sl.common.dll", "sl.reflex.dll", "sl.dlss.dll",
+    "sl.dlss_g.dll", "sl.dlss_d.dll", "sl.pcl.dll",
+    "libxess.dll", "libxess_dx11.dll", "libxess_fg.dll", "libxell.dll",
+    "amd_fidelityfx_dx12.dll", "amd_fidelityfx_vk.dll",
+    "amd_fidelityfx_upscaler_dx12.dll", "amd_fidelityfx_framegeneration_dx12.dll",
+    "amd_fidelityfx_loader_dx12.dll",
+    "ffx_fsr2_api_x64.dll", "ffx_fsr2_api_dx12_x64.dll", "ffx_fsr2_api_vk_x64.dll",
+    "ffx_fsr3upscaler_x64.dll", "ffx_backend_dx12_x64.dll", "ffx_backend_vk_x64.dll",
+}
+
+
+def _ours_in(folder: Path) -> set[str]:
+    """Names the tool's own manifest in this folder says it wrote."""
+    import json
+    try:
+        data = json.loads((folder / "dlss5-autopilot.json").read_text(encoding="utf8"))
+        files = data.get("files") if isinstance(data, dict) else None
+        return {str(f).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                for f in (files or []) if isinstance(f, str)}
+    except (OSError, ValueError):
+        return set()
 
 
 def _names_in(path: Path) -> set[str]:
@@ -308,34 +340,96 @@ def _names_in(path: Path) -> set[str]:
     return found
 
 
+# An engine module beside the exe that settles the renderer by itself. Unity
+# names every backend it can drive (d3d11, d3d12, opengl32, vulkan-1) in
+# UnityPlayer.dll and in older players in the exe, and picks Direct3D 11 on
+# Windows unless the game is started with -force-glcore/-force-vulkan/
+# -force-d3d12. Taking opengl32.dll from those strings put Cities: Skylines
+# II, House Party and every other Unity game on the OpenGL route, where the
+# game never loads opengl32.dll and ReShade never appears (issues #46-#48).
+_ENGINE_DEFAULT = {
+    "unityplayer.dll": ("DX11", "Unity player beside the exe - Direct3D 11 "
+                                "on Windows unless the game is started with "
+                                "-force-d3d12, -force-vulkan or -force-glcore"),
+}
+# How many of the largest DLLs beside the exe get their strings read when
+# their import tables name no renderer either. An engine DLL of a few MB
+# that LoadLibrary()s its backend is the usual case.
+_RUNTIME_SIBLING_STRINGS = 6
+_RUNTIME_SIBLING_MIN = 512 * 1024
+_RUNTIME_SIBLING_MAX = 64 * 1024 * 1024
+# Named by engines that can drive several backends, used by few: a lone
+# mention in the exe is not yet the renderer.
+_AMBIGUOUS = {"opengl32.dll", "vulkan-1.dll"}
+
+
+def _engine_default(exe: Path, names: dict[str, Path] | None = None) -> tuple[str, str] | None:
+    """(api, reason) when an engine module beside the exe settles it."""
+    if names is None:
+        try:
+            names = {p.name.lower(): p for p in exe.parent.iterdir()
+                     if p.suffix.lower() == ".dll"}
+        except OSError:
+            return None
+    for n, hit in _ENGINE_DEFAULT.items():
+        if n in names and names[n].is_file():
+            return hit
+    return None
+
+
 def _runtime_graphics(exe: Path) -> tuple[str, str]:
     """(dll name, where it was seen) for a renderer loaded at run time.
 
-    The exe's own strings first; then the static imports of the DLLs beside
-    it (an engine DLL that imports d3d9.dll is the renderer). Proxy DLLs and
-    the files our routes place are not consulted.
+    A known engine module beside the exe decides first. Then the exe's own
+    strings: a Direct3D name there is taken as it stands (Call of Juarez:
+    Gunslinger names d3d9.dll and nothing else - #31), because the DLLs
+    beside a game mention renderers of their own (Bink, CEF, SDL name
+    d3d11.dll) and must not overrule the game. Only when the exe names
+    nothing, or nothing but opengl32.dll / vulkan-1.dll - which engines
+    that can drive several backends name without using - are the DLLs
+    beside it consulted: their import tables, then the strings of the
+    largest of them, ranked in the static table's order so a Direct3D
+    name outranks OpenGL or Vulkan. Proxy DLLs and the files our routes
+    place are not consulted.
     """
-    found = _names_in(exe)
-    for n in _RUNTIME_API:              # dict order is the priority order
-        if n in found:
-            return n, "named in the exe"
     try:
-        sibs = sorted(p for p in exe.parent.iterdir()
-                      if p.is_file() and p.suffix.lower() == ".dll"
-                      and p.name.lower() not in _NOT_THE_GAME)[:60]
+        names = {p.name.lower(): p for p in exe.parent.iterdir()
+                 if p.suffix.lower() == ".dll"}
     except OSError:
-        return "", ""
-    best = ""
-    best_from = ""
+        names = {}
+    engine = _engine_default(exe, names)
+    if engine:
+        return engine
+    found = _names_in(exe)
+    own = next((n for n in _RUNTIME_API if n in found), "")
+    if own and own not in _AMBIGUOUS:
+        return own, "named in the exe"
+    seen: dict[str, str] = {}
+    if own:
+        seen[own] = "named in the exe"
+    ours = _NOT_THE_GAME | _ours_in(exe.parent)
+    sibs = sorted((p for n, p in names.items() if n not in ours
+                   and p.is_file()), key=lambda p: p.name.lower())[:60]
     for dll in sibs:
         for imp in pe_imports(dll):
             base = imp.rsplit("/", 1)[-1]
             if base in _RUNTIME_API:
-                rank = list(_RUNTIME_API).index(base)
-                if not best or rank < list(_RUNTIME_API).index(best):
-                    best, best_from = base, dll.name
-    if best:
-        return best, f"{best_from} beside the exe imports it"
+                seen.setdefault(base, f"{dll.name} beside the exe imports it")
+
+    def _size(p: Path) -> int:
+        try:
+            return p.stat().st_size
+        except OSError:
+            return 0
+    big = sorted((p for p in sibs
+                  if _RUNTIME_SIBLING_MIN <= _size(p) <= _RUNTIME_SIBLING_MAX),
+                 key=lambda p: -_size(p))[:_RUNTIME_SIBLING_STRINGS]
+    for dll in big:
+        for n in _names_in(dll):
+            seen.setdefault(n, f"named in {dll.name} beside the exe")
+    for n in _RUNTIME_API:              # dict order is the priority order
+        if n in seen:
+            return n, seen[n]
     return "", ""
 
 
@@ -353,6 +447,7 @@ _PRUNE_DIRS = {
     "support", "docs", "manual", "soundtrack", "artbook", "extras", "dxsetup",
     "crashreportclient", "epicwebhelper", "thirdparty", "steamvr", "openvr",
     "__installer", "dotnetfx", "movies", "content", "data", "assets", "textures",
+    "host64",
 }
 _MAX_DEPTH = 5
 

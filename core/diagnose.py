@@ -544,6 +544,14 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 "(or emulator) has to render with Vulkan - check its renderer "
                 "setting. A game that shipped through DXVK does; an emulator "
                 "left on OpenGL or D3D does not, and no ReShade.log appears.")
+    elif proxy and proxy.lower() == "opengl32.dll":
+        rep.add(INFO, f"Or the {app} does not render with OpenGL.",
+                "This install went in as opengl32.dll, which only loads when "
+                "the game draws with OpenGL. Unity and other engines name "
+                "OpenGL among their backends yet draw with Direct3D on "
+                "Windows, and then nothing here is ever loaded. Pick "
+                "DirectX 11 or DirectX 12 in the 'graphics api' dropdown on the "
+                "install page and install again.")
     elif proxy:
         alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
@@ -806,6 +814,14 @@ def analyse(install_dir: Path) -> Report:
             rep.add(BAD, "ReShade loaded no add-ons.",
                     "Add-on support requires the ReShade build WITH add-ons, "
                     "and AddonPath must point at the game folder.")
+            if (man.get("proxy") or "").lower() == "opengl32.dll":
+                rep.add(INFO, "Or this log is from another program's ReShade.",
+                        "This install went in as opengl32.dll, which only "
+                        "loads when the game draws with OpenGL; Unity and "
+                        "other engines name OpenGL among their backends yet "
+                        "draw with Direct3D on Windows. Pick DirectX 11 or "
+                        "DirectX 12 in the 'graphics api' dropdown on the "
+                        "install page and install again.")
         _shader_failures(rtext, provider_tech, rep)
         if "untested build" in rtext:
             rep.add(WARN, "The add-on flagged your nvngx_dlssnr as an untested build.",
@@ -1041,6 +1057,12 @@ def analyse(install_dir: Path) -> Report:
         rep.add(INFO, "This route leaves no frame log of its own.",
                 f"Open the ReShade overlay and check the {panel}: it shows "
                 f"the live state and whether it is switched on.")
+        if rep.route == "upstream":
+            rep.add(INFO, "If the picture only gets darker, switch the route "
+                          "to native.",
+                    "neural-upstream normalises the frame against the game's "
+                    "exposure buffer, and some games do not expose one; the "
+                    "native route runs after the game's own tone mapping.")
         rep.verdict = (f"Add-ons loaded. Confirm in the {panel} - this "
                        f"route does not log frames.")
     else:
@@ -1198,6 +1220,14 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     names: list[str] = []
     extra: list[str] = []
     proxy = man.get("proxy")
+    if man.get("vr"):
+        try:
+            from . import openxr
+            reg = openxr.existing_registration()
+        except Exception:
+            reg = None
+        extra.append("- ReShade OpenXR layer (VR): "
+                     + ("registered" if reg else "NOT REGISTERED - install again"))
     if proxy == VULKAN_LAYER:
         # Not a file, so it cannot be looked for in the folder. It used to be
         # reported as "MISSING" here, which sent people hunting through their
@@ -1296,7 +1326,8 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         f"- game: {getattr(game, 'name', None) or '-'}\n"
         f"- exe: {exe}\n"
         f"- arch/api: {getattr(game, 'bit_label', None) or '-'} / "
-        f"{getattr(game, 'api', None) or '-'}\n"
+        f"{getattr(game, 'api', None) or '-'}"
+        + (f" ({game.api_why})" if getattr(game, 'api_why', None) else "") + "\n"
         f"- route: {route or '-'}\n"
         + diag[:1200])
 

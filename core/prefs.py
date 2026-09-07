@@ -187,3 +187,25 @@ def drop_vulkan_game(install_dir) -> list[str]:
     games_ = [g for g in vulkan_games() if g != d]
     set_("vulkan_games", games_)
     return games_
+
+
+# The VR installs that rely on our OpenXR layer registration, so the last
+# uninstall is the one that removes it.
+def openxr_games() -> list[str]:
+    v = get("openxr_games", [])
+    return v if isinstance(v, list) else []
+
+
+def add_openxr_game(install_dir) -> None:
+    d = str(install_dir)
+    games_ = openxr_games()
+    if d not in games_:
+        games_.append(d)
+        set_("openxr_games", games_)
+
+
+def drop_openxr_game(install_dir) -> list[str]:
+    d = str(install_dir)
+    games_ = [g for g in openxr_games() if g != d]
+    set_("openxr_games", games_)
+    return games_

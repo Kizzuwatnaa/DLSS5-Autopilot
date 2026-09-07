@@ -43,13 +43,28 @@ release page and never bundled here, like every other component.
 """
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
 from . import net, sources
 
 API = "https://api.github.com/repos/Dagherbou/OptiScaler_DLSSNR/releases/latest"
+
+# y4my4my4m's fork of the same build: multi-frame generation on RTX 40
+# and its own neural-pass changes, published as development builds in .7z
+# archives (issue #21). Windows' own tar.exe (bsdtar, Windows 10 1803 and later)
+# unpacks 7z, so nothing is bundled for it.
+FORK_API = ("https://api.github.com/repos/y4my4my4m/"
+            "OptiScaler_DLSSNR_Multipass_MFG/releases?per_page=10")
+FORK = "y4my4my4m"
+# Key -> dropdown label. "" is the build the route installs by default.
+BUILDS = {
+    "": "Dagherbou's DLSS-NR build  -  the release page's latest",
+    FORK: "y4my4my4m's fork  -  multi-frame generation on RTX 40, development builds",
+}
 
 # Insert opens OptiScaler's own overlay (0x2D / VK_INSERT).
 OVERLAY_KEY = "Insert"
@@ -81,22 +96,99 @@ PROXY_HELP = {
 LEGACY_FILES = ("nvapi64.dll", "nvngx.dll", "OptiScaler.asi",
                 "Remove OptiScaler.bat", "Remove_OptiScaler.bat")
 
+# Debug symbols and import libraries the fork's archive carries; a game
+# folder has no use for them.
+SKIP_SUFFIXES = {".pdb", ".exp", ".lib"}
+
 # The setup scripts do by hand what this tool does itself.
 SKIP = {"setup_windows.bat", "setup_linux.sh"}
 
 
-def resolve() -> tuple[str, str]:
-    """(tag, zip url) of the latest OptiScaler + DLSS-NR build.
+def resolve(build: str = "") -> tuple[str, str]:
+    """(tag, archive url) of the newest OptiScaler + DLSS-NR build.
 
-    Goes through the shared cached fetcher, so this route survives GitHub's
-    anonymous rate limit the same way every other component does - a stale
-    cached answer beats refusing to install.
+    `build` is a key of BUILDS. Goes through the shared cached fetcher, so
+    this route survives GitHub's anonymous rate limit the same way every
+    other component does - a stale cached answer beats refusing to install.
     """
+    if build == FORK:
+        rels = sources._json(FORK_API)
+        rels = [r for r in (rels if isinstance(rels, list) else [])
+                if not r.get("draft") and r.get("tag_name") != "nightly"]
+        # GitHub orders by creation time and the fork's releases share one;
+        # the "nightly" tag never changes, so its archive would be cached
+        # once under that name and never refreshed.
+        rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+        for rel in rels:
+            for a in rel.get("assets", []):
+                low = a["name"].lower()
+                # The "_with_DLSS" archive carries DLSS 310 and Streamline
+                # as well; the game's own copies (or the tool's) stay.
+                if low.endswith((".7z", ".zip")) and "with_dlss" not in low:
+                    return rel.get("tag_name", "?"), a["browser_download_url"]
+        raise RuntimeError("y4my4my4m's OptiScaler fork has no release with "
+                           "a .7z or .zip archive.")
+    if build:
+        raise ValueError(f"unknown OptiScaler build {build!r}")
     rel = sources._json(API)
     for a in rel.get("assets", []):
-        if a["name"].lower().endswith(".zip"):
+        if a["name"].lower().endswith((".zip", ".7z")):
             return rel.get("tag_name", "?"), a["browser_download_url"]
     raise RuntimeError("The OptiScaler DLSS-NR release has no .zip asset.")
+
+
+def _tar_exe() -> Path:
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
+
+
+def extract_7z(archive: Path, dest: Path) -> None:
+    """Unpack a .7z with Windows' tar.exe (libarchive), into dest."""
+    tar = _tar_exe()
+    if not tar.is_file():
+        raise RuntimeError(f"{archive.name} is a .7z archive and this Windows "
+                           f"has no tar.exe to open it (Windows 10 1803 and "
+                           f"later ship one at {tar}).")
+    dest.mkdir(parents=True, exist_ok=True)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    r = subprocess.run([str(tar), "-xf", str(archive), "-C", str(dest)],
+                       capture_output=True, text=True, creationflags=flags)
+    if r.returncode != 0:
+        raise RuntimeError(f"tar.exe could not unpack {archive.name}: "
+                           f"{(r.stderr or r.stdout).strip()[-300:]}")
+
+
+def _unpacked(archive: Path) -> Path:
+    """The archive's files in a folder under the cache, unpacked once."""
+    out = net.cache_dir() / "unpacked" / archive.stem
+    if out.is_dir() and any(out.iterdir()):
+        return _top(out)
+    # Into a side folder first: an extraction that dies half-way must not
+    # be taken for a complete one on the next install.
+    tmp = out.with_name(out.name + ".part")
+    shutil.rmtree(tmp, ignore_errors=True)
+    shutil.rmtree(out, ignore_errors=True)
+    if archive.suffix.lower() == ".7z":
+        extract_7z(archive, tmp)
+    else:
+        tmp.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive) as arc:
+            arc.extractall(tmp)
+    tmp.rename(out)
+    return _top(out)
+
+
+def _top(root: Path) -> Path:
+    """The folder holding the files: an archive wrapped in one directory
+    is unwrapped, so OptiScaler.dll is found where the proxy rename looks."""
+    entries = list(root.iterdir())
+    if len(entries) == 1 and entries[0].is_dir():
+        return entries[0]
+    return root
+
+
+def _archive_name(tag: str, url: str) -> str:
+    ext = ".7z" if url.lower().endswith(".7z") else ".zip"
+    return f"OptiScaler-DLSSNR-{tag}{ext}"
 
 
 def is_optiscaler(path: Path) -> bool:
@@ -198,22 +290,20 @@ def install(exe_dir: Path, proxy: str = DEFAULT_PROXY, dl=None, log=None,
 
     tag, url = release if release else resolve()
     log(f"      OptiScaler DLSS-NR {tag}")
-    z = dl(url, f"OptiScaler-DLSSNR-{tag}.zip")
+    z = dl(url, _archive_name(tag, url))
 
-    with zipfile.ZipFile(z) as arc:
-        for member in arc.namelist():
-            if member.endswith("/"):
-                continue
-            if Path(member).name in SKIP:
-                continue
-            # OptiScaler.dll has to carry whatever name the game will load.
-            rel = proxy if member == MAIN_DLL else member
-            target = exe_dir / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            _keep(target)          # someone may have a tuned OptiScaler.ini
-            with arc.open(member) as src, open(target, "wb") as out:
-                shutil.copyfileobj(src, out, 1 << 20)
-            written.append(rel.replace("\\", "/"))
+    src_root = _unpacked(z)
+    for src in sorted(p for p in src_root.rglob("*") if p.is_file()):
+        member = src.relative_to(src_root).as_posix()
+        if src.name in SKIP or src.suffix.lower() in SKIP_SUFFIXES:
+            continue
+        # OptiScaler.dll has to carry whatever name the game will load.
+        rel = proxy if member == MAIN_DLL else member
+        target = exe_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _keep(target)          # someone may have a tuned OptiScaler.ini
+        shutil.copyfile(src, target)
+        written.append(rel)
 
     log(f"      OptiScaler.dll installed as {proxy}")
     log(f"      {FORWARDER} placed - the model refuses calls from a module "

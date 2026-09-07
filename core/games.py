@@ -712,8 +712,16 @@ def set_api_override(folder: Path, api: str | None) -> None:
     prefs.set_("api_override", d)
 
 
-def enrich(g: Game) -> Game:
-    """Pick the executable and detect its architecture / graphics API."""
+def enrich(g: Game, chosen: bool = False) -> Game:
+    """Pick the executable and detect its architecture / graphics API.
+
+    `chosen` means the person picked this executable in the list: it is not
+    replaced by the store's stub or by an earlier install's record, and the
+    files go beside it (issue #56: Conan Exiles installed beside the launcher
+    after the Shipping exe was chosen).
+    """
+    if chosen:
+        g.install_root = None
     try:
         if g.exe is None or not g.exe.is_file():
             cands = pe.find_game_exes(g.folder)
@@ -725,8 +733,9 @@ def enrich(g: Game) -> Game:
             g.exe = cands[0]
         elif not g.candidates:
             g.candidates = pe.find_game_exes(g.folder) or [g.exe]
-        _prefer_real_exe(g)
-        adopt_previous_install(g)
+        if not chosen:
+            _prefer_real_exe(g)
+            adopt_previous_install(g)
         if _xbox_locked(g):
             # Keep the game in the list with its executable, so the detail
             # card can show the fix; there is nothing else to read here.

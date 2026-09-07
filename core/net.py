@@ -38,6 +38,48 @@ def clear_cache() -> None:
         shutil.rmtree(CACHE, ignore_errors=True)
 
 
+_SSL: ssl.SSLContext | None = None
+
+
+def untrusted(name: str, e: Exception) -> RuntimeError | None:
+    """The error to raise when TLS verification failed, else None.
+
+    urlopen reports a failed verification as a URLError whose reason is
+    the SSLError, so the text is checked rather than the type.
+    """
+    if "CERTIFICATE_VERIFY_FAILED" not in str(e):
+        return None
+    return RuntimeError(
+        f"{name}: Windows does not trust GitHub's certificate ({e}). Open "
+        f"https://github.com once in Edge (Windows fetches a missing root "
+        f"certificate the first time a Microsoft program needs it), then "
+        f"try again. An antivirus that inspects HTTPS causes this too - "
+        f"exclude this tool or turn that off.")
+
+
+def ssl_context() -> ssl.SSLContext:
+    """Windows' root store plus the certifi bundle shipped in the exe.
+
+    Python reads the Windows certificate store once, as it is. A freshly
+    installed Windows has only a handful of roots in it and fetches the rest
+    on demand through CryptoAPI - which Python's OpenSSL never asks for - so
+    the first download on a new machine died with 'unable to get local
+    issuer certificate' (issue #54, Windows 11 25H2, two reporters). The
+    bundle covers that; the system store stays, so a corporate or antivirus
+    root that inspects HTTPS is still trusted.
+    """
+    global _SSL
+    if _SSL is None:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+            ctx.load_verify_locations(cafile=certifi.where())
+        except Exception:
+            pass
+        _SSL = ctx
+    return _SSL
+
+
 def download(url: str, name: str, progress=None, force: bool = False,
              attempts: int = 4) -> Path:
     """Download to the cache and return the path. progress(done, total).
@@ -62,7 +104,7 @@ def download(url: str, name: str, progress=None, force: bool = False,
             headers["Range"] = f"bytes={have}-"
         req = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=120, context=ssl_context()) as r:
                 resuming = r.status == 206
                 if not resuming:
                     have = 0
@@ -96,6 +138,8 @@ def download(url: str, name: str, progress=None, force: bool = False,
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)
+                if untrusted(name, e):
+                    raise untrusted(name, e) from e
                 raise RuntimeError(
                     f"{name}: the secure connection kept breaking ({e}). "
                     f"Something is sitting between this PC and GitHub - an "
@@ -107,6 +151,8 @@ def download(url: str, name: str, progress=None, force: bool = False,
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)
+                if untrusted(name, e):
+                    raise untrusted(name, e) from e
                 raise
             time.sleep(1.0 * (attempt + 1))
     raise last if last else RuntimeError(f"{name}: download failed")
@@ -174,9 +220,14 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
 def fetch_text(url: str) -> bytes:
     req = urllib.request.Request(url, headers=sources.UA)
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with urllib.request.urlopen(req, timeout=60, context=ssl_context()) as r:
             return r.read()
-    except urllib.error.HTTPError as e:
+    except urllib.error.URLError as e:
+        if not isinstance(e, urllib.error.HTTPError):
+            if untrusted(url.split("/")[2], e):
+                raise untrusted(url.split("/")[2], e) from e
+            raise
+        # (HTTPError is a URLError; the checks below apply to it only)
         # Same anonymous API allowance as sources._get; keep the message
         # identical so the user sees one clear explanation either way.
         if e.code in (403, 429) and "api.github.com" in url:
