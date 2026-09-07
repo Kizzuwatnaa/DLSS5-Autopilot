@@ -82,7 +82,9 @@ jobs:
 
       - name: Tests that need no network
         shell: bash
-        run: python test_reshade_ini.py
+        run: |
+          python test_reshade_ini.py
+          python -m unittest -v test_scan
 
       - name: Build
         run: |
