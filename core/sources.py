@@ -162,6 +162,19 @@ def _cache_path(url: str) -> Path:
     return _API_CACHE / (hashlib.sha256(url.encode("utf8")).hexdigest()[:32] + ".json")
 
 
+def cached_json(url: str):
+    """Whatever is in the cache for this URL, of any age, or None.
+
+    For the preview, which promises not to make a single request: it may
+    look at what an earlier install fetched, and must simply know less when
+    nothing has been fetched yet.
+    """
+    try:
+        return json.loads(_cache_path(url).read_text(encoding="utf8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _json(url: str):
     """Fetch JSON, backed by an on-disk cache.
 

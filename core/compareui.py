@@ -39,7 +39,11 @@ class CompareWindow:
         self.win = tk.Toplevel(parent)
         self.win.title(f"before / after - {game_name}")
         self.win.configure(bg=BG)
-        self.win.minsize(px(720), px(420))
+        # Not more than the screen has: at 300% px(420) is 1260 on a
+        # 1080-tall panel and the window could not be shrunk to fit.
+        self.win.minsize(
+            min(px(720), int(self.win.winfo_screenwidth() * 0.6)),
+            min(px(420), int(self.win.winfo_screenheight() * 0.5)))
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
         self.win.geometry(f"{int(sw * 0.8)}x{int(sh * 0.7)}")
         try:

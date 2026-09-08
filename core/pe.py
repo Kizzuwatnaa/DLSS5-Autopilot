@@ -58,8 +58,15 @@ def exe_bitness(path: Path) -> int:
     raise PEError(f"Unsupported machine type: 0x{machine:04x}")
 
 
-def pe_imports(path: Path) -> list[str]:
-    """Lower-cased DLL names from the executable's static import table.
+def pe_imports(path: Path, delay: bool = False) -> list[str]:
+    """Lower-cased DLL names from the executable's import table.
+
+    `delay` reads the DELAY-LOAD table instead of the static one. A delay
+    import is still a dependency the linker recorded - the loader just
+    resolves it on first use - and some engines link d3d9.dll for something
+    old while delay-loading the renderer they actually draw with (Grand
+    Theft Auto V, issue #77: read as a DirectX 9 game and sent to a route
+    that has nothing for it).
 
     Returns an empty list if anything cannot be parsed - that is not an
     error, just "unknown".
@@ -102,7 +109,15 @@ def pe_imports(path: Path) -> list[str]:
             else:
                 return []
 
-            imp = at(opt + dd + 8, 4)
+            # Data directory 1 is the import table, 13 the delay-load one.
+            # NumberOfRvaAndSizes sits just before the directories and says
+            # how many there are; an image with fewer would have this read
+            # land in the section table instead.
+            want = 13 if delay else 1
+            n_dirs = struct.unpack_from("<I", at(opt + dd - 4, 4) or b"\0" * 4, 0)[0]
+            if n_dirs <= want:
+                return []
+            imp = at(opt + dd + want * 8, 4)
             if len(imp) < 4:
                 return []
             import_rva = struct.unpack_from("<I", imp, 0)[0]
@@ -125,11 +140,23 @@ def pe_imports(path: Path) -> list[str]:
             if desc is None:
                 return []
 
-            # Import descriptors are 20-byte records; grab them in one read.
-            table = at(desc, 20 * 1024)
+            # Import descriptors are 20-byte records, delay-load ones 32,
+            # with the DLL name at a different offset; grab them in one read.
+            step, name_at = (32, 4) if delay else (20, 12)
+            table = at(desc, step * 1024)
             names: list[str] = []
-            for i in range(len(table) // 20):
-                name_rva, first_thunk = struct.unpack_from("<II", table, i * 20 + 12)
+            for i in range(len(table) // step):
+                if delay:
+                    attrs, name_rva = struct.unpack_from("<II", table, i * step)
+                    first_thunk = name_rva
+                    # Attributes bit 0 clear means the old linkers wrote
+                    # virtual addresses here, not RVAs; those cannot be
+                    # resolved without the image base, so they are skipped.
+                    if name_rva and not (attrs & 1):
+                        continue
+                else:
+                    name_rva, first_thunk = struct.unpack_from(
+                        "<II", table, i * step + name_at)
                 if name_rva == 0 and first_thunk == 0:
                     break
                 n_off = to_off(name_rva)
@@ -245,16 +272,65 @@ def detect_api(path: Path) -> tuple[str, str]:
             return engine
         return "OpenGL", "imports opengl32.dll, no DXGI"
     if has("d3d9.dll"):
-        # A real DirectX 9 game does not ship DLSS. Red Dead Redemption 2
-        # imports d3d9.dll and no DXGI at all, yet renders through D3D12 (or
-        # Vulkan) - taking the legacy import at face value put it on the DX9
-        # route, where nothing it needs is offered (issue #12).
+        # A d3d9.dll in the import table is the weakest evidence in the whole
+        # file. Engines keep it for a launcher, a video player, an old
+        # settings dialog or a compatibility path long after they stopped
+        # drawing with it: Red Dead Redemption 2 imports d3d9.dll and no DXGI
+        # at all yet renders with D3D12 (issue #12), and Grand Theft Auto V
+        # was read as a DirectX 9 game and sent to a route that has nothing
+        # for it (issue #77 - which of the readings below rescues it has not
+        # been checked on that executable). So every other kind of evidence
+        # is asked first, and only a game with nothing else anywhere is
+        # called DirectX 9.
         modern = _ships_dlss(path.parent)
         if modern:
             return ("DX12", f"imports d3d9.dll, but ships {modern} - the "
                             f"renderer is D3D12 or Vulkan, not DirectX 9. "
                             f"If the game is set to Vulkan, pick that in "
                             f"the settings before installing")
+        if _has_d3d12_agility_sdk(path.parent):
+            return ("DX12", "imports d3d9.dll, but ships a D3D12 Agility SDK "
+                            "- the renderer is D3D12, not DirectX 9")
+        # A delay-load is still a dependency the linker recorded; the loader
+        # simply resolves it on first use. d3d11/d3d12 there means the game
+        # draws with it. A bare dxgi.dll does not count: a DirectX 9 game
+        # can use DXGI on its own just to enumerate displays.
+        delayed = set(pe_imports(path, delay=True))
+        for dll, api, label in (("d3d12.dll", "DX12", "Direct3D 12"),
+                                ("d3d11.dll", "DX11", "Direct3D 11")):
+            if dll in delayed:
+                return (api, f"imports d3d9.dll, but delay-loads {dll} - the "
+                             f"renderer is {label} and the d3d9 import is a "
+                             f"leftover")
+        # Last: what the file says about itself - but only the parts of it
+        # that are records rather than text. _runtime_graphics ranks d3d11
+        # above d3d9, and every executable here has "d3d9.dll" in its bytes
+        # (the import table's own name string), so a game that merely
+        # MENTIONS d3d11.dll - SDL2 carries that literal for its render
+        # backend - would come back as D3D11 and be sent to a dxgi proxy it
+        # never loads. A 32-bit game reaching here is DirectX 9 in every
+        # case seen so far and has the most to lose from a wrong answer, so
+        # it is left alone entirely.
+        try:
+            wide = exe_bitness(path) == 64
+        except PEError:
+            # Unreadable is not evidence of anything; a game that cannot be
+            # parsed keeps the answer its import table already gave.
+            wide = False
+        if wide:
+            name, where = _runtime_graphics(path)
+            label = {"DX12": "Direct3D 12", "DX11": "Direct3D 11"}
+            # "named in the exe" is a string; an engine's marker file or
+            # another DLL's import table is a record. Only records count.
+            strong = where != "named in the exe"
+            if strong and name in ("d3d12.dll", "d3d11.dll"):
+                api = _RUNTIME_API[name]
+                return (api, f"imports d3d9.dll, but {name} is the one it "
+                             f"loads at run time ({where}) - the renderer is "
+                             f"{label[api]}, not DirectX 9")
+            if strong and name in label:
+                return (name, f"imports d3d9.dll, but {where} - the renderer "
+                              f"is {label[name]}, not DirectX 9")
         return "DX9", "imports d3d9.dll, no DXGI"
     if _has_d3d12_agility_sdk(path.parent):
         return ("DX12", "no graphics DLL imported statically, but ships a "

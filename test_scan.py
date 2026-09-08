@@ -126,6 +126,7 @@ class ScanTests(unittest.TestCase):
         app.root = Mock()
         app.busy = False
         app._rows = {}
+        app._recheck = set()   # games a worker is re-reading; _fill skips those
         app._fill_job = None
         app._crash_shown = False
         app.all_games = []

@@ -135,6 +135,12 @@ def check(root: Path) -> list[Item]:
         # either.
         if name == "dlssnr":
             outdated = False
+        elif name == "optiscaler" and man.get("opti_build"):
+            # A fork publishes its own numbers on its own release page;
+            # comparing them with Dagherbou's says nothing, and an
+            # "outdated" here would never clear - installing again puts the
+            # same fork back, because the manifest records which one.
+            outdated = False
         elif name == "renodx":
             # The add-on is pinned on purpose in two cases, and the pin is
             # the newest build that works there - nagging "1 newer" would

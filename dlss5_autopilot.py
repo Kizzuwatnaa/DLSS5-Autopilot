@@ -4,7 +4,7 @@ GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
                                                     [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|remix]
                                                     [--dxvk | --no-dxvk] [--remix-swap] [--vr]
-                                                    [--opti-build y4my4my4m]
+                                                    [--opti-build y4my4my4m|wilsjo2]
                 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 
 --dxvk runs a D3D11 game on Vulkan through DXVK, with ReShade as a Vulkan

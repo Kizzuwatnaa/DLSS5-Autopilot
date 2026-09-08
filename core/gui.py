@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import (anticheat, components, diagnose, dlss, dxvk, feedcfg, reengine,
-               games, gpu, profiles, video,
+               games, gpu, library, pe, profiles, video,
                installer, log, optiscaler, prefs, reshade_ini, selfupdate,
                sources, update)
 from . import mfg as _mfg
@@ -67,6 +67,92 @@ def px(n: int) -> int:
     return max(1, round(n * SCALE))
 
 
+def lines(n: int, floor: int = 5) -> int:
+    """A row count that keeps roughly its pixel height as the font scales.
+
+    Text and Treeview heights are counted in rows, and a row is as tall as
+    the font: 14 rows at 300% ask for three times the pixels they asked for
+    at 100%. Scaling the fonts alone therefore turned "the log fits under
+    the settings" into "the log is one and a half lines tall" (issue #40).
+    """
+    return max(floor, round(n / SCALE))
+
+
+class Scroller(tk.Frame):
+    """A frame whose contents scroll vertically when the window is too short.
+
+    At 100% every page fits and this is invisible - no scrollbar, no change
+    in layout. At 200%/300% the install page's settings alone are taller
+    than the whole screen, and without somewhere to scroll they push the log
+    and the buttons out of the window instead (issue #40).
+    """
+
+    def __init__(self, parent: tk.Misc, **kw) -> None:
+        super().__init__(parent, bg=BG, **kw)
+        self._h = 0
+        # A canvas asks for 7 centimetres of height by default, which is
+        # 795 pixels at 300% - enough on its own to push a page off the
+        # window. It is given its room by the geometry manager instead.
+        self._canvas = tk.Canvas(self, bg=BG, highlightthickness=0,
+                                 borderwidth=0, takefocus=0, height=px(40))
+        self._bar = ttk.Scrollbar(self, orient="vertical",
+                                  command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._on_scroll)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        self.inner = tk.Frame(self._canvas, bg=BG)
+        self._win = self._canvas.create_window((0, 0), window=self.inner,
+                                               anchor="nw")
+        self.inner.bind("<Configure>", self._resized)
+        self._canvas.bind("<Configure>", self._canvas_resized)
+        # The wheel is bound while the pointer is over this frame only, so
+        # the game list and the log keep their own wheels.
+        self._canvas.bind("<Enter>", lambda e: self._canvas.bind_all(
+            "<MouseWheel>", self._wheel))
+        self._canvas.bind("<Leave>", lambda e: self._canvas.unbind_all(
+            "<MouseWheel>"))
+
+    def content_height(self) -> int:
+        return self.inner.winfo_reqheight()
+
+    def set_height(self, h: int) -> None:
+        """How much room this area gets. The rest of it scrolls."""
+        self._h = h
+        if self._canvas.cget("height") != h:
+            self._canvas.configure(height=h)
+        self._update_bar()
+
+    def _resized(self, _e=None) -> None:
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._update_bar()
+
+    def _canvas_resized(self, e) -> None:
+        self._canvas.itemconfigure(self._win, width=e.width)
+        self._update_bar()
+
+    def _update_bar(self) -> None:
+        # No scrollbar while everything fits - at 100% nothing about this
+        # frame is visible at all. The height asked for is the one to
+        # compare against: winfo_height() is still the old value until the
+        # geometry manager has run, and the bar would appear a beat late.
+        have = self._h or self._canvas.winfo_height()
+        need = self.content_height() > have + 2
+        if need and not self._bar.winfo_ismapped():
+            # Before the canvas: the canvas is packed with expand=True and
+            # claims the whole width, so a scrollbar packed after it is laid
+            # out one pixel wide and never seen.
+            self._bar.pack(side="right", fill="y", before=self._canvas)
+        elif not need and self._bar.winfo_ismapped():
+            self._bar.pack_forget()
+            self._canvas.yview_moveto(0.0)
+
+    def _on_scroll(self, first: str, last: str) -> None:
+        self._bar.set(first, last)
+
+    def _wheel(self, e) -> None:
+        if self._bar.winfo_ismapped():
+            self._canvas.yview_scroll(int(-e.delta / 120), "units")
+
+
 FEEDER_CHOICES = ("stable - newest release",
                   "newest pre-release")
 
@@ -89,6 +175,9 @@ class App:
         # One row costs several folder reads, so keep them: without this a
         # search box would re-read the whole library on every keystroke.
         self._rows: dict[tuple, object] = {}
+        # Games a worker thread is re-reading right now: _fill lists them
+        # without a compatibility row rather than reading them itself.
+        self._recheck: set[tuple] = set()
         self._fill_job: str | None = None
         self.game: games.Game | None = None
         self.catalog: dict[str, list[dict]] = {}
@@ -193,8 +282,14 @@ class App:
             r.iconbitmap(default=str(ico))
         except Exception:
             pass
-        r.geometry(f"{px(1060)}x{px(830)}")
-        r.minsize(px(980), px(720))
+        # Scaling the window with the fonts asks for 3180x2490 at 300%, and
+        # a 4K screen is 2160 tall: the window opened taller than the screen
+        # and minsize kept it there, so the bottom of every page - the log,
+        # INSTALL - was off the display and no amount of dragging helped
+        # (issue #40). Never ask for more than the screen has.
+        sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
+        r.geometry(f"{min(px(1060), int(sw * 0.95))}x{min(px(830), int(sh * 0.92))}")
+        r.minsize(min(px(980), int(sw * 0.6)), min(px(720), int(sh * 0.5)))
         # Open filling the screen: the three-column layout reads better with
         # room, and a small window in a corner looked like a dialog box.
         try:
@@ -207,7 +302,7 @@ class App:
         rail = tk.Frame(r, bg=RAIL, width=px(236))
         rail.pack(side="left", fill="y")
         rail.pack_propagate(False)
-        tk.Frame(r, bg=LINE, width=1).pack(side="left", fill="y")
+        tk.Frame(r, bg=LINE, width=px(1)).pack(side="left", fill="y")
 
         brand = tk.Frame(rail, bg=RAIL)
         brand.pack(fill="x", padx=20, pady=(24, 22))
@@ -283,7 +378,7 @@ class App:
 
         bar = tk.Frame(right, bg=BG)
         bar.pack(side="bottom", fill="x", padx=28, pady=14)
-        tk.Frame(right, bg=LINE, height=1).pack(side="bottom", fill="x", padx=28)
+        tk.Frame(right, bg=LINE, height=px(1)).pack(side="bottom", fill="x", padx=px(28))
 
         self.body = tk.Frame(right, bg=BG)
         self.body.pack(fill="both", expand=True, padx=28, pady=(20, 10))
@@ -419,7 +514,13 @@ class App:
 
     # ---------------------------------------------------------------- step 1
     def _page_arch(self) -> tk.Frame:
-        f = tk.Frame(self.body, bg=BG)
+        outer = tk.Frame(self.body, bg=BG)
+        # The first page anyone sees, and at 200% scaling it was 448
+        # pixels taller than the window with the bottom of it simply
+        # gone - no scrollbar, no way to reach it (issue #40).
+        scroll = Scroller(outer)
+        scroll.pack(fill="both", expand=True)
+        f = scroll.inner
         ttk.Label(f, text="what are you installing for?", style="H1.TLabel")\
             .pack(anchor="w")
         ttk.Label(f, text="not sure if a game is 32- or 64-bit? leave it on "
@@ -527,7 +628,7 @@ class App:
         self.realitylbl.pack(anchor="w", pady=(6, 0))
         wi.bind("<Configure>",
                 lambda e: self.realitylbl.configure(wraplength=max(px(380), e.width - px(10))))
-        return f
+        return outer
 
     # ---------------------------------------------------------------- step 2
     def _page_games(self) -> tk.Frame:
@@ -577,10 +678,14 @@ class App:
         self.scanlbl = ttk.Label(f, text="", style="Dim.TLabel")
         self.scanlbl.pack(anchor="w", pady=(6, 10))
 
+        # The detail line under the list is packed first, from the bottom:
+        # packed after the list it was squeezed to one pixel on a short
+        # window and the selected game's details were simply not there
+        # (issue #40, at 300%).
         wrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
-        wrap.pack(fill="both", expand=True)
         cols = ("source", "arch", "api", "route", "outlook", "status")
-        self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings", height=13)
+        self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings",
+                                 height=lines(13, 4))
         self.tree.heading("#0", text="  game")
         self.tree.column("#0", width=px(250), anchor="w")
         for c, t, w in (("source", "source", 76), ("arch", "arch", 62),
@@ -600,7 +705,8 @@ class App:
         self.tree.bind("<Double-1>", lambda e: self._next())
 
         det = self._card(f, pad=(14, 11))
-        det.pack(fill="x", pady=(10, 0))
+        det.pack(side="bottom", fill="x", pady=(10, 0))
+        wrap.pack(fill="both", expand=True)
         self.detail = tk.Label(det.inner, text="select a game for details",
                                bg=PANEL, fg=FAINT, font=font(9),
                                anchor="w", justify="left")
@@ -616,6 +722,7 @@ class App:
             messagebox.showwarning(APP, f"no executable found in:\n{d}")
             return
         self.all_games.insert(0, g)
+        self.root.after(1, self._remember_library)
         # A search still in the box could hide the folder just chosen.
         self.search.set("")
         self._cancel_fill()
@@ -724,6 +831,13 @@ class App:
         try:
             pr = int(opt.feed.get("preset", 0) or 0)
             self.cb_preset.current(list(feedcfg.PRESETS).index(pr))
+        except Exception:
+            pass
+        # The build is part of the profile, and applying everything else
+        # while leaving this on the first entry means the person gets
+        # Dagherbou's build with a profile they saved on a fork.
+        try:
+            self.cb_optibuild.current(list(optiscaler.BUILDS).index(opt.opti_build))
         except Exception:
             pass
         self._log(f"> profile '{name}': " + ", ".join(profiles.describe(opt)), "ok")
@@ -1015,10 +1129,106 @@ class App:
                                      "start a video first. F6 inside the "
                                      "player does the same thing.")
 
+    def _forget_row(self, g) -> None:
+        """Drop one game's compatibility row - it is about to be re-read."""
+        if g is not None and getattr(g, "exe", None):
+            self._rows.pop((str(g.folder), str(g.exe)), None)
+        else:
+            self._rows.clear()
+
+    def _remember_library(self) -> None:
+        """Write the library back after something changed it outside a scan.
+
+        A folder chosen by hand, a different executable picked, an install
+        or an uninstall: without this the next launch would show the library
+        as it was before, and the person would have to rescan to get their
+        own change back.
+        """
+        # Not while a worker is still re-reading games: their rows are
+        # deliberately absent and their Game objects still hold the OLD
+        # renderer, so saving now would write that with a fresh stamp and
+        # the next launch would never look at them again. The "rechecked"
+        # handler saves once the worker lands.
+        if self._recheck:
+            return
+        # Never write an empty set of rows over a full one: that would cost
+        # the next launch the whole compatibility pass.
+        if self.all_games and (self._rows or not library.FILE.is_file()):
+            library.save(self.all_games, self._rows, update.VERSION, self._sm())
+
+    def _load_cached(self) -> bool:
+        """Show the library found last time, without walking the disks again.
+
+        Everything that has not changed since is on screen at once. Games
+        whose folder or executable moved on are read again - their renderer
+        may be what changed - and that costs a folder walk each, so it
+        happens on a worker thread while the list is already usable.
+        "rescan" always does the full walk (issue #67).
+        """
+        try:
+            got = library.load(update.VERSION, self._sm())
+        except Exception:
+            log.exception("reading the library cache")
+            got = None
+        if not got:
+            return False
+        gs, rows, changed = got
+        self.all_games = list(gs)
+        kp = video.known()
+        if kp and not any(x.install_dir == kp.install_dir for x in gs):
+            self.all_games.insert(0, kp)
+        self._rows.clear()
+        self._rows.update(rows)
+        # Rows for the changed games are filled in by the worker below; until
+        # then they are simply not in _rows, and _fill leaves them to it.
+        # Keyed on the folder alone: enrich() can reassign g.exe (it
+        # adopts a previous install's executable), and a key built from the
+        # old one would stop matching half way through.
+        self._recheck = {str(g.folder) for g in changed}
+        self._recheck_id = getattr(self, "_recheck_id", 0) + 1
+        self._fill()
+        self.scanlbl.config(
+            text=f"{len(self.shown)} games  ::  from the last scan"
+                 + (f"  ::  reading {len(self._recheck)} that changed"
+                    if self._recheck else "")
+                 + "  ::  press rescan to look for new ones")
+        if changed:
+            self._recheck_changed(changed)
+        return True
+
+    def _recheck_changed(self, changed: list) -> None:
+        """Read the games whose folder moved on, off the Tk thread.
+
+        Both halves matter: games.enrich() re-reads the executable, so a
+        game that switched renderer in an update is not installed for the
+        old one, and _inspect_row walks the folder for what is already in
+        it. Doing either inline is what froze the window before the scan
+        was moved to a worker (issues #8, #18, #32).
+        """
+        sm = self._sm()
+
+        gen = self._recheck_id
+
+        def work() -> None:
+            rows = {}
+            for g in changed:
+                try:
+                    games.enrich(g)
+                except Exception:
+                    log.exception(f"re-reading {g.name}")
+                if g.exe:
+                    rows[(str(g.folder), str(g.exe))] = self._inspect_row(g, sm)
+            self.q.put(("rechecked", (gen, rows)))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _scan(self) -> None:
         if self.busy:
             return
         self.busy = True
+        # Whatever a recheck worker is holding is about to be replaced.
+        self._recheck = set()
+        self._recheck_id = getattr(self, "_recheck_id", 0) + 1
         self._rows.clear()
         self.tree.delete(*self.tree.get_children())
         self.scanlbl.config(text="scanning...")
@@ -1040,6 +1250,7 @@ class App:
                     rows[(str(g.folder), str(g.exe))] = self._inspect_row(g, sm)
                     if time.monotonic() - started >= 1:
                         log.write(f"checked {g.name} in {time.monotonic() - started:.1f}s")
+                library.save(gs, rows, update.VERSION, sm)
                 self.q.put(("scanned", (gs, rows)))
             except Exception:
                 log.exception("scanning the library")
@@ -1186,6 +1397,14 @@ class App:
         for i, g in enumerate(self.shown):
             key = (str(g.folder), str(g.exe))
             row = self._rows.get(key)
+            if row is None and str(g.folder) in self._recheck:
+                # A worker is walking this folder; reading it here as well
+                # would block the window, which is the whole reason the
+                # compatibility pass is not done on this thread.
+                self.tree.insert("", "end", iid=str(i), text="  " + g.name,
+                                 values=(g.source.lower(), g.bit_label, g.api,
+                                         "-", "-", "reading..."))
+                continue
             if row is None:
                 # Newly chosen folders and changed installs need fresh rows;
                 # the library scan supplies its rows before asking Tk to fill.
@@ -1318,12 +1537,17 @@ class App:
     # ---------------------------------------------------------------- step 3
     def _page_install(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
-        self.gamelbl = ttk.Label(f, text="", style="H1.TLabel")
+        # Everything above the buttons goes in here: the settings are taller
+        # than the screen once the fonts are scaled, and this is what keeps
+        # them from squeezing the log out of the window (issue #40).
+        self.installscroll = Scroller(f)
+        top = self.installscroll.inner
+        self.gamelbl = ttk.Label(top, text="", style="H1.TLabel")
         self.gamelbl.pack(anchor="w")
-        self.pathlbl = ttk.Label(f, text="", style="Dim.TLabel")
+        self.pathlbl = ttk.Label(top, text="", style="Dim.TLabel")
         self.pathlbl.pack(anchor="w", pady=(4, 12))
 
-        card = self._card(f)
+        card = self._card(top)
         card.pack(fill="x")
         inner = card.inner
         inner.columnconfigure(1, weight=1)
@@ -1400,7 +1624,7 @@ class App:
                        activeforeground=TXT, font=font(9), borderwidth=0)\
             .grid(row=6, column=2, sticky="w", padx=(10, 0))
 
-        tk.Frame(inner, bg=LINE, height=1).grid(row=7, column=0, columnspan=3,
+        tk.Frame(inner, bg=LINE, height=px(1)).grid(row=7, column=0, columnspan=3,
                                                 sticky="ew", pady=(12, 9))
 
         row(8, "work area", TXT)
@@ -1536,7 +1760,7 @@ class App:
                    lambda e: self.reswarn.configure(wraplength=max(px(360), e.width - px(8))))
 
         # The video player's link box: paste, play. Packed in _enter_install.
-        self.urlrow = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        self.urlrow = tk.Frame(top, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
         ui = tk.Frame(self.urlrow, bg=PANEL)
         ui.pack(fill="x", padx=12, pady=8)
         tk.Label(ui, text="link", bg=PANEL, fg=DIM, font=font(9)).pack(side="left")
@@ -1619,11 +1843,11 @@ class App:
                  "clipboard is picked up by itself.")
         self.urlhint.pack(fill="x", padx=12, pady=(0, 8))
 
-        barwrap = tk.Frame(f, bg=BG)
+        barwrap = tk.Frame(top, bg=BG)
         barwrap.pack(fill="x", pady=(12, 2))
         self.pb = ttk.Progressbar(barwrap, mode="determinate", maximum=100)
         self.pb.pack(fill="x")
-        self.pblbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8), anchor="w")
+        self.pblbl = tk.Label(top, text="", bg=BG, fg=DIM, font=font(8), anchor="w")
         self.pblbl.pack(fill="x")
 
         # Packed to the bottom BEFORE the log, so a growing log can never push
@@ -1662,10 +1886,15 @@ class App:
         self.btn_toggle = ttk.Button(act, text="neural rendering on/off (F6)",
                                      command=self._toggle_nr)
 
+        # Packed before the settings, and from the bottom: whatever room is
+        # left after the buttons is the log's, and the settings above it
+        # take what remains - and scroll when that is not enough. Packed the
+        # other way round, a tall settings card left the log a line and a
+        # half at 300% scaling (issue #40).
         logwrap = tk.Frame(f, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
-        logwrap.pack(fill="both", expand=True, pady=(6, 0))
+        logwrap.pack(side="bottom", fill="both", expand=True, pady=(6, 0))
         self.log = tk.Text(logwrap, bg=PANEL, fg=BODY, insertbackground=BODY,
-                           font=font(9), borderwidth=0, height=14,
+                           font=font(9), borderwidth=0, height=lines(14, 6),
                            wrap="word", state="disabled", spacing1=1)
         lsb = ttk.Scrollbar(logwrap, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=lsb.set)
@@ -1675,6 +1904,39 @@ class App:
         self.log.tag_configure("err", foreground=RED)
         self.log.tag_configure("warn", foreground=RUST)
         self.log.tag_configure("head", foreground=AMBER)
+        self.installscroll.pack(side="top", fill="x")
+
+        # Pack hands a widget everything it asks for before the next one
+        # gets anything, so at 300% the settings took the window and left
+        # the log a line and a half - and reversing the order only moved the
+        # problem to the settings (22 pixels of a 1221-pixel form). Split
+        # what the window actually has: the settings get what they need, up
+        # to two thirds of it, and the log keeps the rest (issue #40).
+        logwrap.pack_propagate(False)
+
+        def _split(_e=None) -> None:
+            h = f.winfo_height()
+            if h < 50:
+                return
+            spare = h - act.winfo_reqheight() - act2.winfo_reqheight() - px(16)
+            rows = max(1, int(self.log.cget("height")))
+            row = max(1, (self.log.winfo_reqheight() + px(20)) // rows)
+            # The settings get what they need, but never more than the
+            # window minus a readable log - at 300% the settings alone are
+            # twice the height of the whole page. Whatever they do not need
+            # is the log's, which is why a roomy window still opens with a
+            # tall log and no scrollbar anywhere.
+            # ...and never fewer than three lines of log: the settings
+            # can scroll for what they lose, the log cannot be read at
+            # one and a half lines.
+            keep = max(row * 3, min(row * 8, int(spare * 0.38)))
+            settings = max(0, min(self.installscroll.content_height(),
+                                  spare - keep))
+            self.installscroll.set_height(settings)
+            logwrap.configure(height=max(row, spare - settings))
+
+        f.bind("<Configure>", _split)
+        self._split_install = _split
         return f
 
     # --------------------------------------------------------- components
@@ -2142,10 +2404,18 @@ class App:
         i = self.cb_api.current()
         chosen = "" if i <= 0 else games.APIS[i - 1]
         games.set_api_override(g.folder, chosen or None)
+        self.root.after(1, self._remember_library)
         detected = getattr(g, "api_detected", "") or g.api
-        g.api = chosen or detected
-        g.api_why = (f"set by hand (detected {detected})" if chosen
-                     else "detected from the executable")
+        if chosen:
+            g.api, g.api_why = chosen, f"set by hand (detected {detected})"
+        else:
+            # Read it again rather than writing a placeholder: the reason is
+            # what a bug report shows, and "detected from the executable"
+            # hides which evidence decided it.
+            try:
+                g.api, g.api_why = pe.detect_api(g.exe)
+            except Exception:
+                g.api, g.api_why = detected, "detected from the executable"
         self._log(f"> graphics api: {g.api}" + ("" if chosen else " (auto)"))
         self._enter_install()
 
@@ -2252,6 +2522,12 @@ class App:
 
         if not self.catalog:
             self._load_catalog()
+        # This page's rows change height here - the video player's link box
+        # is packed and unpacked inside the scrolling area - and that does
+        # not resize the page itself, so no <Configure> fires and the split
+        # between the settings and the log would keep the previous game's
+        # measurements.
+        self.root.after_idle(self._split_install)
 
     def _find_local_renodx(self) -> None:
         found, cands = prefs.find_renodx()
@@ -2430,11 +2706,22 @@ class App:
             return
         if self.step == 1:
             self._show(2)
-            if not self.all_games and self.scan_on_start.get():
+            # "scan library at start" off means no library at start, cache or
+            # not: someone who unticked it asked for an empty list, and
+            # handing them one anyway would make the box mean nothing. The
+            # line below tells them the fast path exists.
+            if not self.all_games and self.scan_on_start.get() \
+                    and self._load_cached():
+                pass
+            elif not self.all_games and self.scan_on_start.get():
                 self._scan()
             elif not self.all_games:
-                self.scanlbl.config(text="library scan is off - press rescan, "
-                                         "or choose folder for one game")
+                self.scanlbl.config(
+                    text="library scan is off - press rescan, or choose folder "
+                         "for one game"
+                    + (" (there is a saved library from last time: tick 'scan "
+                       "library at start' and it opens straight away)"
+                       if library.FILE.is_file() else ""))
                 kp = video.known()
                 if kp:
                     self.all_games.insert(0, kp)
@@ -2471,6 +2758,22 @@ class App:
                 if kind == "scan":
                     self.scanlbl.config(text=payload.lower())
                     self.status.config(text=payload.lower())
+                elif kind == "rechecked":
+                    gen, rows = payload
+                    if gen != getattr(self, "_recheck_id", 0):
+                        # A rescan started after this worker did; its rows
+                        # are the current ones and these are stale.
+                        continue
+                    self._rows.update(rows)
+                    self._recheck = set()
+                    if self.step == 2:
+                        self._fill()
+                        self.scanlbl.config(
+                            text=f"{len(self.shown)} games  ::  from the last "
+                                 f"scan  ::  {len(payload)} changed and were "
+                                 f"read again  ::  press rescan to look for "
+                                 f"new ones")
+                    self._remember_library()
                 elif kind == "scanned":
                     payload, rows = payload
                     self.busy = False
@@ -2487,6 +2790,7 @@ class App:
                     self._rows.clear()
                     self._rows.update(rows)
                     self._fill()
+                    self._remember_library()
                     self.status.config(text="scan complete")
                     self._check_stale()
                 elif kind == "update":
@@ -2534,6 +2838,7 @@ class App:
                     self._show_components(payload)
                 elif kind == "done":
                     self._finish_ok(payload)
+                    self._remember_library()
                 elif kind == "cameras":
                     cams, then = payload
                     self._cameras_found(cams, then)
@@ -2576,7 +2881,8 @@ class App:
                     self._show(3)
                 elif kind == "removed":
                     self._idle()
-                    self._rows.clear()
+                    self._forget_row(self.game)
+                    self._remember_library()
                     self._log(f"> uninstalled ({len(payload)} items)", "ok")
                     self.btn_remove.config(state="disabled")
                     if hasattr(self, "btn_rm2"):
@@ -2614,7 +2920,11 @@ class App:
 
     def _finish_ok(self, rep: installer.Report) -> None:
         self._idle()
-        self._rows.clear()
+        # Only this game's row changed. Clearing them all used to be free;
+        # now that the rows are kept for the next launch it would throw the
+        # whole library's compatibility pass away and make the next start
+        # re-read every folder on the Tk thread (issues #8, #18, #32).
+        self._forget_row(self.game)
         self.pb["value"] = 100
         self.pblbl.config(text="")
         self._log("")

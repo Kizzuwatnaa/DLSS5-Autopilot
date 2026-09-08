@@ -55,6 +55,28 @@ def defaults() -> dict:
     }
 
 
+def number(v, fallback: float = 0.0) -> float:
+    """A number out of a config value, whatever locale wrote it.
+
+    This file is written by the add-on as well as by us, and the add-on is
+    C++: its printf follows whatever locale the host process has set. A game
+    or emulator that calls setlocale - PCSX2 does, through Qt - makes it
+    write `mv_scale_x=1,000`, and reading that back with float() raised
+    ValueError out of the middle of an install, so nothing was installed at
+    all (issue #69). A comma where a full stop belongs is not a reason to
+    fail an install.
+    """
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    for attempt in (s, s.replace(",", ".")):
+        try:
+            return float(attempt)
+        except ValueError:
+            continue
+    return fallback
+
+
 def read(path: Path) -> dict:
     out: dict = {}
     try:
@@ -79,10 +101,11 @@ def write(dir_: Path, settings: dict | None = None, host_window: bool | None = N
     if host_window is not None:
         cur["host_window"] = 1 if host_window else 0
 
+    base = defaults()
     lines = []
     for k, v in cur.items():
         if isinstance(v, float) or k.startswith("mv_scale"):
-            lines.append(f"{k}={float(v):.3f}")
+            lines.append(f"{k}={number(v, float(base.get(k) or 0)):.3f}")
         else:
             lines.append(f"{k}={v}")
     p.write_text("\n".join(lines) + "\n", encoding="utf8")
@@ -92,21 +115,23 @@ def write(dir_: Path, settings: dict | None = None, host_window: bool | None = N
 def describe(settings: dict) -> list[str]:
     """Human-readable summary lines for the log."""
     out = []
-    wr = int(settings.get("work_resolution", 100))
+    # Every value here can have come back out of the .cfg the add-on writes,
+    # so none of them is trusted to be a number this locale can parse (#69).
+    wr = int(number(settings.get("work_resolution", 100), 100))
     if wr != 100:
         out.append(f"work_resolution={wr}% (smaller neural work area - "
                    f"higher fps, slightly less detail)")
-    pr = int(settings.get("preset", 0))
+    pr = int(number(settings.get("preset", 0)))
     if pr:
         out.append(f"preset={pr} ({PRESETS.get(pr, '?')})")
-    hd = int(settings.get("hdr", -1))
+    hd = int(number(settings.get("hdr", -1), -1))
     if hd != -1:
         out.append(f"hdr={hd} ({HDR.get(hd)})")
-    di = int(settings.get("depth_inverted", -1))
+    di = int(number(settings.get("depth_inverted", -1), -1))
     if di != -1:
         out.append(f"depth_inverted={di} ({DEPTH.get(di)})")
     for ax in ("x", "y"):
-        v = float(settings.get(f"mv_scale_{ax}", 1.0))
+        v = number(settings.get(f"mv_scale_{ax}", 1.0), 1.0)
         if abs(v - 1.0) > 1e-6:
             out.append(f"mv_scale_{ax}={v:.3f}")
     return out
@@ -155,13 +180,13 @@ def write_bridge(dir_: Path, settings: dict | None = None) -> Path:
 
 def describe_bridge(settings: dict) -> list[str]:
     out = []
-    if int(settings.get("synth_after", 0)):
+    if int(number(settings.get("synth_after", 0))):
         out.append(f"synth_after={settings['synth_after']} (synthetic contract "
                    f"armed - the game has no DLSS of its own)")
     g = settings.get("ofa_grid")
-    if g is not None and int(g) != 2:
-        out.append(f"ofa_grid={g} ({OFA_GRID.get(int(g), '?')})")
+    if g is not None and int(number(g, 2)) != 2:
+        out.append(f"ofa_grid={g} ({OFA_GRID.get(int(number(g, 2)), '?')})")
     pf = settings.get("ofa_perf")
-    if pf is not None and int(pf) != 20:
-        out.append(f"ofa_perf={pf} ({OFA_PERF.get(int(pf), '?')})")
+    if pf is not None and int(number(pf, 20)) != 20:
+        out.append(f"ofa_perf={pf} ({OFA_PERF.get(int(number(pf, 20)), '?')})")
     return out

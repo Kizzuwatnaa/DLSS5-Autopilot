@@ -281,8 +281,18 @@ def launch(folder: Path, target: str = "") -> None:
     subprocess.Popen(args, cwd=str(folder))
 
 
-FFMPEG_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
+# BtbN publishes a rolling release tagged "latest" whose asset names never
+# change, and a dated autobuild every few hours whose names carry the build
+# hash. /releases/latest returns the DATED one, so looking for the stable
+# name in it found nothing and every video download failed with "ffmpeg
+# build not found on GitHub" (issue #75). The tag is the one to ask for.
+FFMPEG_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest"
 FFMPEG_ASSET = "ffmpeg-master-latest-win64-gpl.zip"
+# ...and when the API is out of reach or the names change again, the tag's
+# download URL resolves on its own, the same fallback the ReShade and
+# DLSS5-Reshade-AIO downloads use.
+FFMPEG_DIRECT = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/"
+                 "latest/" + FFMPEG_ASSET)
 FFMPEG = "ffmpeg.exe"
 FFPROBE = "ffprobe.exe"
 DOWNLOADS = "downloads"
@@ -555,11 +565,23 @@ def ensure_ffmpeg(folder: Path, on_prog=None, on_log=None) -> Path:
     if dst.is_file():
         return dst
     say = on_log or (lambda *_: None)
-    data = sources._json(FFMPEG_API)
-    url = next((a["browser_download_url"] for a in data.get("assets", [])
-                if a.get("name") == FFMPEG_ASSET), None)
-    if not url:
-        raise RuntimeError("ffmpeg build not found on GitHub")
+    url = None
+    try:
+        assets = sources._json(FFMPEG_API).get("assets", [])
+        url = next((a["browser_download_url"] for a in assets
+                    if a.get("name") == FFMPEG_ASSET), None)
+        if not url:
+            # The exact name has moved before. Any static 64-bit Windows GPL
+            # build in that release will do: not -shared (it needs its DLLs
+            # beside it), not lgpl (no NVENC), not arm64.
+            url = next((a["browser_download_url"] for a in assets
+                        if (n := a.get("name", "").lower()).endswith(".zip")
+                        and "win64" in n and "gpl" in n
+                        and "lgpl" not in n and "shared" not in n), None)
+    except Exception as e:
+        say(f"      the ffmpeg release listing did not answer ({e}); "
+            f"using the direct download")
+    url = url or FFMPEG_DIRECT
 
     def p(done: int, total: int) -> None:
         if on_prog:

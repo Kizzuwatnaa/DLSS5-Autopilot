@@ -150,6 +150,86 @@ def _tail(path: Path, limit: int = 400_000) -> str:
         return ""
 
 
+# ReShade writes one line per launch into the same ReShade.log and never
+# truncates it, so a tail can hold several sessions at once (issue #22: the
+# same add-on reported five times). Everything the diagnosis reads out of
+# that file - which add-ons loaded, which errors were raised, whether a
+# swapchain was ever created - is only true of ONE run, and mixing runs is
+# how a build the person replaced days ago still shows up as "loaded"
+# (Detroit: Become Human, issue #63, reported 0.14.0-beta.5 and 0.13.1-beta.1
+# side by side). This line starts every session; the last one starts the run
+# that matters.
+_RESHADE_SESSION = "Initializing crosire's ReShade"
+
+
+def _last_session(text: str) -> str:
+    """The last ReShade session in a log that may hold several."""
+    at = text.rfind(_RESHADE_SESSION)
+    # A tail can cut into the middle of a session, and then there is no
+    # marker to find - the whole tail is the best evidence there is.
+    return text[at:] if at > 0 else text
+
+
+# The same for the feeder's own log and its 32-bit helper's: each run starts
+# with "dlss5-feed 0.14.0-beta.5 (built ...) attached." The standalone
+# add-on's log was already read this way; the feeder's was not, so a crash
+# from a run two days ago could still be reported as what just happened.
+_FEED_SESSION = re.compile(r"^[\d:.]+\s+dlss5-feed\S*\s[^\n]*attached\.", re.M)
+
+
+def _last_feed_session(text: str) -> str:
+    last = None
+    for last in _FEED_SESSION.finditer(text):
+        pass
+    return text[last.start():] if last is not None and last.start() > 0 else text
+
+
+# Both the feeder's crash handler and its evaluate guard print the module
+# chain that led to a fault, innermost first:
+#   "crash stack, by module (innermost first): Game.exe <- KERNEL32.DLL"
+#   "evaluate fault stack, by module (innermost first): D3D12Core.dll <- ..."
+# The chain is the only thing in the log that says WHOSE bug it is. Taking
+# the first rule that matched instead sent Detroit: Become Human away as "a
+# feeder bug; try another feeder build" when the innermost frame was the
+# game's own executable and no add-on appeared in the chain at all (#63).
+_OURS_IN_STACK = ("dlss5-feed.addon64", "dlss5-feed.addon32",
+                  "dlss5-feed-host64.exe", "dlss5-feed-host32.exe",
+                  "renodx-dlss5.addon64", "renodx-dlss.addon64",
+                  "dlss5-bridge.addon64", "dlss5-dx11-bridge.addon64",
+                  "nvngx.dll.addon64", "standalone-dlssnr.addon64")
+# The graphics runtime, reached through our add-ons. A fault here is the
+# driver's or Direct3D's, and the chain below it says which of ours called
+# in. D3D12Core.dll is Microsoft's, not NVIDIA's - the wording says so.
+_NGX_IN_STACK = ("nvngx_dlssnr.dll", "_nvngx.dll", "nvngx.dll",
+                 "nvngx_dlss.dll", "D3D12Core.dll")
+
+
+def _fault_chain(text: str, kind: str = r"(?:crash|evaluate fault)") -> list[str]:
+    """The modules of the last fault stack in a feeder log, innermost first."""
+    last = None
+    for last in re.finditer(kind + r" stack, by module \(innermost first\):"
+                                   r"\s*([^\n]+)", text):
+        pass
+    if last is None:
+        return []
+    return [p.strip() for p in last.group(1).split("<-") if p.strip()]
+
+
+def _in(name: str, group: tuple[str, ...]) -> bool:
+    return any(name.lower() == n.lower() for n in group)
+
+
+def _family(name: str) -> str:
+    """'DLSS 5 Feed 0.14.0-beta.5' -> 'dlss 5 feed'.
+
+    The feeder puts its build in the add-on name, so two builds register
+    under two different names. Without the build they are one add-on, and
+    two of them in one session is two files fighting over the same frame.
+    """
+    low = re.sub(r"\s+v?\d+[\d.]*(?:-[A-Za-z]+[\d.]*)?\s*$", "", name.strip().lower())
+    return low.strip() or name.strip().lower()
+
+
 def _installed_at(install_dir: Path) -> float:
     try:
         return (install_dir / MANIFEST).stat().st_mtime
@@ -188,6 +268,31 @@ def _missing_addons(install_dir: Path, man: dict) -> list[str]:
 
 
 OPTI_LOG = "OptiScaler.log"
+
+
+def _last_run(text: str) -> str:
+    """The last run in a log whose lines are stamped with a clock time.
+
+    OptiScaler stamps every line "[HH:MM:SS.ffffff]" and appends run after
+    run. It has no banner this can key on, but a clock that jumps a long way
+    backwards can only mean a new run - which is enough to stop a line from
+    a session two days ago being read as what just happened.
+
+    A LONG way: several threads write this file and their lines arrive a few
+    milliseconds out of order, so a small step backwards is ordinary and
+    cutting there would throw away most of a healthy log.
+    """
+    cut, prev = 0, None
+    for m in re.finditer(r"^\[(\d{2}):(\d{2}):(\d{2})", text, re.M):
+        now = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        # A clock that goes back over midnight is one run crossing a day,
+        # not two runs; cutting there would throw away everything before
+        # midnight.
+        wrapped = prev is not None and prev > 86_100 and now < 300
+        if prev is not None and now < prev - 60 and not wrapped:
+            cut = m.start()
+        prev = now
+    return text[cut:]
 
 
 def _opti_log(install_dir: Path) -> Path | None:
@@ -255,7 +360,7 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     upscaler recorded in the manifest the input hook has to show up too.
     """
     p = _opti_log(install_dir)
-    text = _tail(p) if p else ""
+    text = _last_run(_tail(p)) if p else ""
     if not text:
         rep.add(BAD, "No OptiScaler log from this install yet.",
                 "Either the game has not been run since installing, or "
@@ -274,27 +379,76 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
                 "Play once and check again.")
     _check_inputs(text, str((man or {}).get("upscaler") or ""), rep)
     lines = text.splitlines()
-    nr = [ln for ln in lines if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
-    running = [ln for ln in nr if "running at" in ln]
-    failed = [ln for ln in nr if any(k in ln for k in (
+    nr = [(i, ln) for i, ln in enumerate(lines)
+          if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
+    running = [x for x in nr if "running at" in x[1]]
+    failed = [x for x in nr if any(k in x[1] for k in (
         "create failed", "unavailable", "did not run", "not found beside",
         "would not load", "disabling for this session", "refused"))]
     if "forwarder loaded" in text:
         rep.add(OK, "OptiScaler loaded and found the neural-rendering forwarder.")
-    if running:
-        rep.add(OK, "Neural rendering is running.", running[-1].strip()[-160:])
+    # The game is running on Vulkan while this route was installed for D3D12.
+    # OptiScaler hooks the game's own upscaler through NGX/D3D12; on Vulkan it
+    # sees the swapchain and nothing else, so its overlay keeps saying "select
+    # FSR or DLSS or XeSS as upscaler" however the game is set (Red Dead
+    # Redemption 2 twice, issues #66 and #70 - the game has a renderer switch
+    # and both people were on Vulkan).
+    if "Vulkan is creating swapchain" in text \
+            and str((man or {}).get("api") or "").upper() in ("DX11", "DX12"):
+        rep.add(BAD, "The game is drawing with Vulkan, and this route was "
+                     "installed for a Direct3D game.",
+                "OptiScaler replaces the game's own upscaler through NGX, "
+                "which is a Direct3D path: on Vulkan it never finds one, "
+                "which is what its overlay means by 'select FSR or DLSS or "
+                "XeSS as upscaler' even with DLSS already on in the game. "
+                "Set the game's graphics settings to DirectX 12 and start it "
+                "again. If it has to stay on Vulkan, switch the route to "
+                "feeder - that goes through ReShade's Vulkan layer and does "
+                "not touch the game's upscaler.")
+        rep.verdict = ("The game is on Vulkan; the optiscaler route needs "
+                       "a Direct3D renderer - or use the feeder route.")
+        return rep
+    # The game's own Present refusing the swapchain OptiScaler wrapped: the
+    # engine gives up and the game closes before neural rendering ever
+    # reports in (Assetto Corsa EVO, issue #58 - E_NOINTERFACE).
+    pres = None
+    for pres in re.finditer(r"Original present result:\s*([0-9A-Fa-f]{8})", text):
+        pass
+    if pres and not pres.group(1).startswith("0"):
+        rep.add(BAD, "The game refused the swapchain OptiScaler wrapped "
+                     f"(0x{pres.group(1).upper()}).",
+                "OptiScaler replaces the swapchain to put its upscaler in the "
+                "frame, and this game's own Present call would not accept it, "
+                "so the engine stops. Two things on the install page, one at "
+                "a time: the 'loads as' dropdown (winmm.dll instead of "
+                "dxgi.dll, so OptiScaler enters later), then another entry in "
+                "'optiscaler build'. If both close the same way, the feeder "
+                "route goes through ReShade and does not replace the game's "
+                "upscaler at all.")
+        rep.verdict = ("The game refused OptiScaler's swapchain - try another "
+                       "name in 'loads as', or the feeder route.")
+        return rep
+    # A failure logged AFTER the last "running at" is what the person saw
+    # last: the model started and then stopped. Taking "running" first said
+    # "Working." about a session that ended in a failure.
+    if running and (not failed or failed[-1][0] < running[-1][0]):
+        rep.add(OK, "Neural rendering is running.", running[-1][1].strip()[-160:])
         rep.verdict = "Working."
     elif failed:
-        rep.add(BAD, "Neural rendering did not start.", failed[-1].strip()[-220:])
-        if "refuse" in failed[-1] or "unavailable" in failed[-1]:
+        if running:
+            rep.add(OK, "Neural rendering started.", running[-1][1].strip()[-160:])
+        rep.add(BAD, "Neural rendering did not start.", failed[-1][1].strip()[-220:])
+        if "refuse" in failed[-1][1] or "unavailable" in failed[-1][1]:
             rep.add(INFO, "OptiScaler needs driver 616.56 or newer, and a "
                           "nvngx_dlssnr build for your card (the tool picks "
                           "one). If it keeps refusing, the native or "
                           "renodx-dlss route is one click away.")
-        rep.verdict = "OptiScaler loaded, but the model refused or failed."
+        rep.verdict = ("Neural rendering stopped after it started."
+                       if running else
+                       "OptiScaler loaded, but the model refused or failed.")
     elif nr:
         rep.add(WARN, "OptiScaler mentions neural rendering but never reports "
-                      "it running.", nr[-1].strip()[-160:])
+                      "it running.", nr[-1][1].strip()[-160:])
         rep.verdict = "Inconclusive - open the overlay (Insert) and read the "\
                       "status under the Neural Rendering checkbox."
     else:
@@ -530,6 +684,39 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         rep.verdict = "Installed after the last run - play once and check again."
         return rep
 
+    # DXVK writes its own log beside the game the moment it loads. One of
+    # those next to a missing ReShade.log settles the question the hints
+    # below can only guess at: the game DID run, DXVK DID load, and the
+    # ReShade layer did not - so telling this person the game was never
+    # started, or that it might not be on Vulkan, is plainly wrong (Call of
+    # Juarez: Gunslinger, issue #31, three rounds of that answer).
+    try:
+        from . import dxvk as _dxvk
+        exe_path = Path(str(man.get("exe") or ""))
+        since = _installed_at(install_dir)
+        # Dated, like every other log this file reads: one left by a run
+        # BEFORE this install - or by a game that ships its own DXVK - says
+        # nothing about whether the game has been started since.
+        dxvk_logs = [n for n in _dxvk.logs_for(exe_path if exe_path.name else None)
+                     if _fresh(install_dir / n, since)]
+    except Exception:
+        dxvk_logs = []
+    if dxvk_logs and proxy == VULKAN_LAYER:
+        bits = 32 if man.get("bitness") == 32 else 64
+        rep.add(BAD, "DXVK ran, and ReShade did not.",
+                f"{dxvk_logs[0]} was written since the install, so the {app} "
+                f"was started and DXVK loaded and translated it to Vulkan - "
+                f"but ReShade writes ReShade.log the moment it loads, and "
+                f"there is none, so ReShade is not in the chain. The "
+                f"likeliest reason is its {bits}-bit Vulkan layer, whose "
+                f"registration is per user and per architecture: install "
+                f"again to write it, and if the game still starts without a "
+                f"ReShade.log, say so - a {bits}-bit layer that registers "
+                f"and does not load is worth knowing about.")
+        rep.verdict = (f"DXVK ran and ReShade did not - install again to "
+                       f"rewrite the {bits}-bit Vulkan layer.")
+        return rep
+
     rep.add(WARN, f"The {app} has not been started since the install.",
             "ReShade writes ReShade.log the moment it loads, and there is "
             "none in the folder. All the files are still in place.")
@@ -598,6 +785,41 @@ def analyse(install_dir: Path) -> Report:
     since = _installed_at(install_dir)
     man = _manifest(install_dir)
     rep.route = man.get("path") or ""
+
+    # The install itself did not finish. The installer records that, and the
+    # folder then holds whatever arrived before it stopped - which is why a
+    # download cut short in the middle (a reset connection, issue #74) came
+    # back here as a game that would not work, with the parts that never
+    # downloaded reported as "MISSING" as if antivirus had eaten them.
+    # Nothing below this can mean anything until the install is finished.
+    if man.get("complete") is False:
+        # An uninstall that could not remove everything records itself the
+        # same way, and telling that person to install again is the opposite
+        # of what they need. Its own note says which it was.
+        if "uninstall left" in " ".join(man.get("notes") or []):
+            rep.add(BAD, "The uninstall did not finish.",
+                    "Some files could not be removed because the game or its "
+                    "launcher still had them open. Close the game and press "
+                    "uninstall again.")
+            rep.verdict = ("The uninstall left files behind - close the game "
+                           "and uninstall again.")
+            return rep
+        # Only files that were written and have since gone can be named:
+        # what a cut-off download never fetched was never recorded.
+        missing = [f for f in (man.get("files") or [])
+                   if isinstance(f, str) and not (install_dir / f).is_file()]
+        rep.add(BAD, "The install did not finish.",
+                "This folder was set up part of the way and the install "
+                "stopped - the install log on this page says why, and it is "
+                "usually a download that was cut off. "
+                + (f"Written and now gone: {', '.join(missing[:4])}"
+                   f"{', ...' if len(missing) > 4 else ''}. " if missing else "")
+                + "Press INSTALL again (whatever downloaded is kept, so it "
+                  "carries on), or 'uninstall' first if you would rather "
+                  "start from a clean folder.")
+        rep.verdict = "The install never finished - install again."
+        return rep
+
     if rep.route == "optiscaler":
         return _analyse_optiscaler(install_dir, rep, since, man)
     if rep.route == "remix":
@@ -614,15 +836,17 @@ def analyse(install_dir: Path) -> Report:
     feeder_route = rep.route not in ("native", "bridge", "renodx", "upstream",
                                      "standalone")
     if feeder_route:
-        text = _tail(feed)
-        htext = _tail(host, 150_000)
+        text = _last_feed_session(_tail(feed))
+        htext = _last_feed_session(_tail(host, 150_000))
     else:
         text = htext = ""
         if feed.is_file():
             rep.add(INFO, "An old dlss5-feed.log is still in the folder.",
                     "It is from a previous feeder install and says nothing "
                     "about this one, so it is ignored.")
-    rtext = _tail(reshade, 250_000)
+    # Only the last launch describes what the person just saw. Everything
+    # before it belongs to an install that may not even be this route.
+    rtext = _last_session(_tail(reshade, 250_000))
 
     if text and since and not _fresh(feed, since):
         rep.add(WARN, "The log predates the current install.",
@@ -774,6 +998,30 @@ def analyse(install_dir: Path) -> Report:
                     "They share the swap chain with the DLSS 5 add-on. If the "
                     "picture flickers or nothing happens, move their .addon64 "
                     "files out of the folder and test with ours alone.")
+        # Two builds of one add-on in the same launch. ReShade loads every
+        # .addon64 in the folder, so a copy left behind under another name -
+        # renamed by hand to keep it, or dropped in by another mod - is
+        # loaded beside ours and establishes a second contract on the same
+        # frame. The build is part of the name, so this only shows up here.
+        families: dict[str, list[str]] = {}
+        for n in loaded:
+            families.setdefault(_family(n), []).append(n)
+        for names in families.values():
+            # Only worth saying about an add-on this tool installs: two
+            # builds of somebody else's add-on are their business, and
+            # claiming a DLSS-contract fight there would be made up.
+            if len(names) > 1 and any(n in ours or "Feed" in n or "Bridge" in n
+                                      for n in names):
+                rep.add(BAD, f"{len(names)} builds of the same add-on are "
+                             f"loaded: " + ", ".join(names) + ".",
+                        "ReShade loads every .addon64 in the game folder. Two "
+                        "of them process the same frame and fight over the "
+                        "same DLSS contract, which ends in a freeze or a "
+                        "crash. One of them is this tool's - look in the game "
+                        "folder for the other .addon64 (an older build kept "
+                        "under another name) and move it out, then start the "
+                        "game again.")
+
         feeder_on = any("Feed" in n for n in loaded)
         bridge_on = any("Bridge" in n for n in loaded)
         if feeder_on and bridge_on:
@@ -810,7 +1058,14 @@ def analyse(install_dir: Path) -> Report:
                     "points at something in the folder stopping it rather "
                     "than at the DLSS setup. Uninstall and check the game "
                     "starts on its own first.")
-        if "Registered add-on" not in rtext:
+        # A log long enough to be cut down to its tail can easily lose the
+        # registration lines while every line an add-on WROTE is still
+        # there: Starfield's 400 KB ReShade.log reported "no add-ons" next
+        # to 34621 heartbeats from the add-on that had loaded (#51). ReShade
+        # prefixes an add-on's own lines with its name in brackets, and a
+        # line like that is proof enough on its own.
+        wrote = re.search(r"\|\s*(?:INFO|WARN|ERROR)\s*\|\s*\[[^\]]+\]", rtext)
+        if "Registered add-on" not in rtext and not wrote:
             rep.add(BAD, "ReShade loaded no add-ons.",
                     "Add-on support requires the ReShade build WITH add-ons, "
                     "and AddonPath must point at the game folder.")
@@ -950,6 +1205,12 @@ def analyse(install_dir: Path) -> Report:
     if rep.route == "standalone":
         return _analyse_standalone(rep, since, bool(rtext))
 
+    # neural-upstream writes its whole run into ReShade.log under [NRPRE].
+    # Older builds of the add-on wrote nothing, and those still fall through
+    # to the "confirm it in the overlay" answer below.
+    if rep.route == "upstream" and "[NRPRE]" in rtext:
+        return _analyse_upstream(rep, rtext)
+
     # --- the decisive part, from whichever log has it --------------------
     joined = "\n".join(x for x in (text, htext, rtext) if x)
     # The feeder's own crash handler: "### CRASH RECORDED ###  exception
@@ -960,35 +1221,107 @@ def analyse(install_dir: Path) -> Report:
     # catches an access violation inside D3D12Core.dll on every evaluate and
     # the game simply never gets a neural frame. The feeder's 0.14 builds
     # print the module chain; the chain is the signature.
-    drv = re.search(r"evaluate raised 0xC0000005[^\n]*in D3D12Core\.dll", joined)
-    if drv and re.search(r"nvngx_dlssnr\.dll\s*<-\s*_nvngx\.dll\s*<-\s*renodx-dlss5", joined):
+    # 0.14.0-beta.5's 64-bit feed log puts the module chain on the line
+    # after "evaluate raised" without naming D3D12Core.dll on the first
+    # (issue #37); the host log names it on both. The chain alone is the
+    # signature, so the first line only has to be the access violation.
+    drv = re.search(r"evaluate raised 0xC0000005", joined)
+    if drv and re.search(r"D3D12Core\.dll\s*<-\s*nvngx_dlssnr\.dll\s*<-\s*_nvngx\.dll\s*<-\s*renodx-dlss5", joined):
+        have = str((man.get("components") or {}).get("renodx") or "")
+        pinned = have.startswith("4.5")
         rep.add(BAD, "Every DLSS evaluate faults inside NVIDIA's NGX runtime "
                      "(D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- "
                      "renodx-dlss5).",
-                "This is NVIDIA driver 616.64 or newer with the renodx-dlss5 "
-                "4.6/4.7 add-on: the driver routes the feature into the "
-                "runtime itself and those builds do not survive it (measured "
-                "by the feeder's author, DLSS5-Feeder #54). Install again: "
-                "the tool pins the add-on to 4.55 on these drivers, which "
-                "passes. The bridge route works around it in "
-                "memory; rolling the driver back to 616.56 also works.")
-        rep.verdict = ("Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install "
+                "This is NVIDIA driver 616.64 or newer: the driver routes the "
+                "feature into the runtime itself and the renodx-dlss5 add-on "
+                "does not survive it (measured by the feeder's author, "
+                "DLSS5-Feeder #54). "
+                + (f"This install already carries {have}, the build that "
+                   f"passes on most games there, so on this one the fault is "
+                   f"in the driver's runtime itself and no renodx-dlss5 "
+                   f"build this tool can install changes it. "
+                   if pinned else
+                   "Install again: the tool pins the add-on to 4.55 on these "
+                   "drivers, which passes on most games. ")
+                + "Rolling the driver back to 616.56 works; the bridge route "
+                  "works around it in memory, for games that ship DLSS.")
+        rep.verdict = (f"Driver 616.64+ faults inside NGX even with renodx-dlss5 "
+                       f"{have} - roll the driver back to 616.56."
+                       if pinned else
+                       "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install "
                        "again; the tool pins 4.55.")
         return rep
+    # An external frame pacer between the feed and the screen. The feeder
+    # measures it (presents against frames fed) and NVIDIA Smooth Motion is
+    # the usual one: it presents interpolated frames the feed never made, and
+    # on Vulkan the two together take the game down (issue #63).
+    pacer = re.search(r"an external frame pacer is presenting this swapchain:"
+                      r"\s*([^\n]*)", joined)
+    if pacer:
+        rep.add(WARN, "Something else is pacing the frames this game presents.",
+                "The feed counted more presents than frames it fed ("
+                + pacer.group(1).strip()[:120] +
+                "). NVIDIA Smooth Motion does exactly this. Turn it off for "
+                "this game in the NVIDIA app (Graphics -> this game -> Smooth "
+                "Motion) and start it again: where a game draws with Vulkan, "
+                "this combination has been reported to take it down.")
+
     rec = re.search(r"### CRASH RECORDED ###\s+exception (0x[0-9A-Fa-f]+)[^\n]*?"
                     r"last doing: ([^\n]+)", joined)
     if rec:
         dump = re.search(r"crash dump written: ([^\n]+?)\s+--", joined)
-        rep.add(BAD, f"The feed recorded a crash ({rec.group(1)}) while "
-                     f"{rec.group(2).strip()}.",
-                "That is the feeder itself going down, not the install. Two "
-                "things to try from the install page: another 'feeder build' "
-                "from the list (the stable release is the long-tested 32-bit "
-                "path), and a lower work resolution. Then report it to the "
-                "DLSS5-Feeder project with this log"
-                + (f" and the dump ({dump.group(1).strip()}; zip it, it "
-                   f"shrinks to a few MB)" if dump else "") + ".")
-        rep.verdict = "The feed crashed after starting - a feeder bug; try another feeder build."
+        where = (f" and the dump ({dump.group(1).strip()}; zip it, it shrinks "
+                 f"to a few MB)" if dump else "")
+        # Whose crash is it? The feeder's handler catches every crash in the
+        # process, its own and the game's alike, and prints the module chain.
+        chain = _fault_chain(joined, "crash")
+        inner = chain[0] if chain else ""
+        mine = [c for c in chain if _in(c, _OURS_IN_STACK)]
+        pacer_note = (" The feed also measured an external frame pacer on "
+                      "this swapchain (above): that is the first thing to "
+                      "turn off." if pacer else "")
+        exe_name = Path(str(man.get("exe") or "")).name.lower()
+        inner_is_game = bool(exe_name) and inner.lower() == exe_name
+        if chain and inner_is_game and not mine:
+            # The innermost frame is the game, and nothing of ours appears
+            # anywhere below it. The feeder only recorded what it saw.
+            rep.add(BAD, f"The game crashed ({rec.group(1)}), and the feed "
+                         f"recorded it while {rec.group(2).strip()}.",
+                    "The stack the feeder wrote down is "
+                    + " <- ".join(chain[:4]) +
+                    " - the game's own code, with no add-on of ours in it. "
+                    "Nothing of ours raised this fault, so another feeder "
+                    "build is unlikely to change it." + pacer_note +
+                    " Next, one at a time: turn off any overlay that draws "
+                    "in this game (Smooth Motion, the NVIDIA overlay, "
+                    "Discord, RivaTuner), and if it still happens, uninstall "
+                    "here and confirm the game is stable on its own.")
+            rep.verdict = ("The crash is in the game's own code - no add-on "
+                           "in the stack.")
+        elif chain and _in(inner, _NGX_IN_STACK):
+            rep.add(BAD, f"The crash ({rec.group(1)}) is inside the "
+                         f"Direct3D 12 / NGX runtime ({inner}), reached "
+                         f"through "
+                    + (mine[0] if mine else "the DLSS 5 add-on") + ".",
+                    "The stack is " + " <- ".join(chain[:5]) + ". The feed "
+                    "asked the runtime for a neural frame and the runtime "
+                    "faulted, so no feeder build changes it. Try another "
+                    "'DLSS 5 add-on' build from the install page, and if the "
+                    "driver is 616.64 or newer, roll it back to 616.56.")
+            rep.verdict = ("The crash is in the graphics runtime, not in the "
+                           "feed - try another DLSS 5 add-on build.")
+        else:
+            named = (f" The stack is {' <- '.join(chain[:4])}." if chain else "")
+            rep.add(BAD, f"The feed recorded a crash ({rec.group(1)}) while "
+                         f"{rec.group(2).strip()}.",
+                    "That is the feeder itself going down, not the install."
+                    + named + pacer_note + " Two things to try from the "
+                    "install page: another 'feeder build' from the list (the "
+                    "stable release is the long-tested 32-bit path), and a "
+                    "lower work resolution. Then report it to the "
+                    "DLSS5-Feeder project with this log" + where + ".")
+            rep.verdict = ("The feed crashed after starting - a feeder bug; "
+                           "try another feeder build.")
         return rep
     crash = re.search(r"CreateFeature raised exception (0x[0-9A-Fa-f]+)", joined)
     ready = re.search(r"feature ready[:\s]", joined)
@@ -1068,6 +1401,158 @@ def analyse(install_dir: Path) -> Report:
     else:
         rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 
+    return rep
+
+
+def _analyse_upstream(rep: Report, rtext: str) -> Report:
+    """Read the neural-upstream add-on's own lines out of ReShade.log.
+
+    The route was answered with "this route leaves no frame log of its own"
+    for three releases (issues #39, #51, #64) while the add-on was writing
+    every step into ReShade.log under [NRPRE]: whether it is switched on,
+    whether it found the game's DLSS call, what NGX answered, and a heartbeat
+    per second with the state of the frame it is producing. All of it is
+    here, so none of those questions has to go back to the person.
+    """
+    def last(pat: str):
+        m = None
+        for m in re.finditer(pat, rtext):
+            pass
+        return m
+
+    on = last(r"\[NRPRE\] settings loaded: enabled=(\d)")
+    hooks = re.findall(r"\[NRPRE\] hook \d+ on NVSDK_NGX_\w+_EvaluateFeature: OK", rtext)
+    created = last(r"\[NRPRE\] CreateFeature id=18 -> res=(0x[0-9A-Fa-f]+)")
+    snippet = "[NRPRE] 2b: snippet route" in rtext
+    hb = last(r"\[NRPRE\] HB #(\d+) [^\n]*?finalvalid=(\d)[^\n]*?"
+              r"erfail=(\d+) grfail=(\d+) passthru=(\d+)")
+    expo = last(r"\[NRPRE\] HB #\d+ [^\n]*?meas=([\d.]+) valid=(\d)[^\n]*?"
+                r"fromgame=(\d)")
+    diag = last(r"\[NRPRE\] DIAG tick=\d+ run=(\d+) skip=(\d+)")
+    net = last(r"\[NRPRE\] HB #\d+ [^\n]*?net=(\d+x\d+|0x0)")
+    ev = last(r"\[NRPRE\] eval feat=\d+\s+render_subrect=(\d+x\d+)[^\n]*?"
+              r"Output=(\d+x\d+)")
+    # The last thing the add-on said. A device or swapchain re-creation as
+    # the final word, with heartbeats before it, is the add-on going down
+    # inside the rebuild - which is what a hang on loading a save looks like
+    # from outside (S.T.A.L.K.E.R. 2, issue #64).
+    # Closing the game ends the log the same way - the add-on says
+    # "resetting state (device destroyed)" on the way out - so only a NEW
+    # device or a rebuilt swapchain counts, and only when ReShade never got
+    # to its own orderly shutdown afterwards.
+    lines = re.findall(r"\[NRPRE\] ([^\n]*)", rtext)
+    ended_on_reset = bool(lines) and (
+        lines[-1].startswith("resetting state (new device)")
+        or lines[-1].startswith("resetting state (swapchain recreated)"))
+    if ended_on_reset:
+        after = rtext[rtext.rfind("[NRPRE] " + lines[-1]):]
+        if re.search(r"Unloading add-on|Exiting|Destroyed .* object|"
+                     r"Uninstalling .* hook", after):
+            ended_on_reset = False
+
+    if hooks:
+        rep.add(OK, f"The add-on hooked the game's DLSS call "
+                    f"({len(hooks)} entry point{'s' if len(hooks) > 1 else ''}).")
+    if created:
+        code = created.group(1)
+        if int(code, 16) == 1:
+            rep.add(OK, "NGX created the neural feature.")
+        elif snippet:
+            rep.add(WARN, f"NGX refused the neural feature ({code}); the "
+                          f"add-on ran its own snippet instead.",
+                    "Its fallback path does the same work without asking the "
+                    "driver for the feature, so this alone is not a fault - "
+                    "though the one freeze traced on this route so far was "
+                    "on a game that took it.")
+        else:
+            rep.add(BAD, f"NGX refused the neural feature ({code}).",
+                    "The driver would not create the neural pass for this "
+                    "game. Try the native or optiscaler route in the "
+                    "dropdown; both reach the same network another way.")
+            rep.verdict = f"The neural feature was refused by NGX ({code})."
+            return rep
+
+    if expo and expo.group(3) == "0" and float(expo.group(1) or 0) == 0.0:
+        rep.add(WARN, "The game hands the add-on no exposure value.",
+                "This route normalises the frame against the game's own "
+                "exposure buffer and this game does not expose one, so it "
+                "estimates instead - that is the route where the picture only "
+                "gets darker. The native route runs after the game's tone "
+                "mapping and does not need it.")
+
+    if ev:
+        rep.add(INFO, f"Neural pass at {ev.group(1)}, the game presents "
+                      f"{ev.group(2)}.")
+
+    if hb:
+        n, valid, erfail, grfail, passthru = hb.groups()
+        if int(passthru) > 0:
+            rep.add(WARN, f"{passthru} of {n} frames went through untouched.",
+                    "The add-on was in the frame and handed it on without "
+                    "running the network - a few around a load or a menu is "
+                    "normal.")
+        if int(erfail) or int(grfail):
+            rep.add(WARN, f"The add-on logged failures ({erfail} exposure, "
+                          f"{grfail} guides).")
+        if valid == "1":
+            rep.add(OK, f"Neural rendering is running ({n} heartbeats"
+                        + (f", {net.group(1)}" if net and net.group(1) != "0x0" else "")
+                        + ").")
+            # Frames went through, so nothing below about being switched off
+            # or never hooked can be true any more - only what came after.
+            if not ended_on_reset:
+                rep.verdict = "Working."
+                return rep
+        else:
+            rep.add(BAD, "The add-on is in the frame but produces nothing "
+                         f"({n} heartbeats, no valid result).",
+                    "Switch the route to native in the dropdown and install "
+                    "again - it runs the same network after the game's own "
+                    "upscaler instead of before it.")
+            rep.verdict = "The add-on runs but never produces a frame."
+            return rep
+
+    if ended_on_reset:
+        rep.add(BAD, "The add-on's log stops at a device re-creation "
+                     f"({lines[-1][:60]}).",
+                "The game threw its D3D12 device away and built a new one - "
+                "loading a save, or changing a display setting - and the "
+                "add-on wrote nothing after that. If the game hung or died "
+                "at that moment, this is where. Nothing here can be set to "
+                "avoid it: switch the route to native or optiscaler in the "
+                "dropdown, or take nvngx.dll.addon64 out of the folder while "
+                "you load. (If the game was only minimised or alt-tabbed "
+                "when this was taken, it stops here for that reason and "
+                "there is nothing wrong.)")
+        rep.verdict = ("Neural rendering ran, then the add-on stopped at a "
+                       "device re-creation.")
+        return rep
+
+    if on and on.group(1) == "0":
+        rep.add(BAD, "Neural rendering is switched off.",
+                "The add-on loaded with enabled=0. Open the ReShade overlay "
+                "(Home) and switch it on in the " + UPSTREAM_PANEL + ".")
+        rep.verdict = "Loaded, but switched off in the " + UPSTREAM_PANEL + "."
+        return rep
+
+    if not hooks:
+        rep.add(BAD, "The add-on never found the game's DLSS call.",
+                "This route rewrites the game's own DLSS; with no hook on it "
+                "there is nothing to rewrite. Either the game does not ship "
+                "DLSS, or it loads it after the add-on looked. The optiscaler "
+                "route brings its own upscaler and does not need the game's.")
+        rep.verdict = "The game's DLSS call was never hooked - nothing to run on."
+        return rep
+
+    if hb or (diag and int(diag.group(1)) > 0):
+        rep.verdict = "Working."
+        return rep
+
+    rep.add(INFO, "The add-on loaded and set itself up, but never ran.",
+            "Open the ReShade overlay (Home), the " + UPSTREAM_PANEL +
+            ", and check it is switched on; then play a few seconds and "
+            "check again.")
+    rep.verdict = "Loaded and set up; no neural frame yet."
     return rep
 
 
@@ -1264,7 +1749,12 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
             out.append(f"- {rx['key']}: "
                        f"{'set' if _remix.option_set(conf, rx['key']) else 'NOT SET'}")
         return out
-    if route != "optiscaler":
+    if route == "optiscaler":
+        # Three builds can be installed here and their packages differ; a
+        # report that does not say which one is unanswerable.
+        extra.append("- optiscaler build: "
+                     + (str(man.get("opti_build") or "") or "Dagherbou"))
+    else:
         names.append("ReShade.ini")
     names += _dxvk_files(man)
     # On the 32-bit feeder route the DLSS runtimes live in host64/ beside the

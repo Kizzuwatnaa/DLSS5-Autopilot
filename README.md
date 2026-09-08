@@ -43,8 +43,12 @@ The dropdown lists every route the game allows, marks the recommended one
 and greys out what your card cannot run. The card under it says, per
 route, what it does and what must not sit in the same folder.
 
-The graphics API comes from the executable's import table; when that
-table names no graphics DLL (the engine loads its renderer at run time),
+The graphics API comes from the executable's import table, with one
+exception: a d3d9.dll import is checked against the delay-load table, a
+D3D12 Agility SDK in the folder and the executable's own names before the
+game is called DirectX 9, because engines keep that import long after they
+stop drawing with it. When the table names no graphics DLL at all (the
+engine loads its renderer at run time),
 the tool reads the DLL names inside the exe, the imports of the DLLs
 beside it and the names inside the largest of them, and ranks them as
 the import table would: a Direct3D name anywhere outranks OpenGL or
@@ -60,7 +64,7 @@ is remembered for that folder.
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
-| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's build, from the install page) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
+| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's or wilsjo2's, from the install page) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS | the game's DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
@@ -152,7 +156,10 @@ matters.
 - **scan library at start** (games page): off means no scan at all -
   *rescan* and *choose folder* still work. The scan never walks a whole
   disk (launcher registries, `XboxGames`, folders named Games and the
-  like, emulator locations) and skips removable drives.
+  like, emulator locations) and skips removable drives. What it finds is
+  kept in `%LOCALAPPDATA%\dlss5-autopilot\library.json`, so later launches
+  show the list at once; a game that has changed on disk since is read
+  again, and **rescan** always does the full walk.
 - **What will happen?** lists what INSTALL would write, back up and remove,
   without writing anything.
 - **Before / after** puts the last two ReShade screenshots side by side.
@@ -348,7 +355,8 @@ dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler
 dlss5-autopilot.exe "D:\Games\Game" --route remix --remix-swap   replace a Remix runtime that has no neural pass
 dlss5-autopilot.exe "D:\Games\Game" --dxvk          run the game on Vulkan through DXVK (--no-dxvk turns the automatic choice off)
 dlss5-autopilot.exe "D:\Games\Game" --vr            register ReShade's OpenXR layer as well (VR, OpenXR games; untried with a headset)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   y4my4my4m's OptiScaler build instead of Dagherbou's
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   another OptiScaler build than Dagherbou's
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
 
@@ -413,6 +421,7 @@ component stays under its own licence, fetched from its own publisher.
 | standalone-dlssnr | [kibblerz/DLSS5-Reshade-AIO](https://github.com/kibblerz/DLSS5-Reshade-AIO) | Apache-2.0 |
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | OptiScaler fork, multi-frame generation | [y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG) | GPL-3.0 |
+| OptiScaler fork, neural pass before the upscaler | [wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass](https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass) | GPL-3.0 |
 | LumeniteFX · VORT shaders | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) · [vortigern11/vort_Shaders](https://github.com/vortigern11/vort_Shaders) | AGNYA · MIT |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
 | REFramework (RE Engine games only) | [praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly) | MIT |
@@ -447,6 +456,7 @@ python test_clean_machine.py   empty cache, no local files
 ```
 dlss5_autopilot.py    entry point (GUI + CLI)
 core/games.py         library scanning     core/emulators.py   emulator profiles
+core/library.py       the library, kept between launches
 core/pe.py            PE parsing, API detection, exe ranking
 core/gpu.py           card, driver, CUDA architecture, build tiers
 core/dlss.py          which route fits the game and the card
@@ -462,5 +472,10 @@ core/components.py    are the installed parts still current?
 core/update.py / selfupdate.py    update check, verified swap-in
 core/video.py         MPC-HC, YouTube, offline processing, webcam
 core/gui.py           interface
+
+_tools/upstream_watch.py     what moved upstream, and what they say they fixed
+_tools/replay_report.py      a bug report's own logs, through the diagnosis
+_tools/gui_scale_check.py    the window measured at other display scalings
+docs/releases/               the notes for every release, named after its tag
 ```
 </details>

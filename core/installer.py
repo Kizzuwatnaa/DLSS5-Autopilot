@@ -87,6 +87,13 @@ OTHER_NGX_HOOKS = ("OptiScaler.ini", "nvngx.ini", "fakenvapi.ini",
                    "dlss-enabler.dll", "dlss-enabler-upscaler.dll",
                    "nvngx-wrapper.dll", "dlssg_to_fsr3_amd_is_better.dll",
                    "dlssg_to_fsr3.ini", "nvngx.dll_dlssnr.dll",
+                   # sdli1995/dlssg_for_sm86: frame generation on RTX 30,
+                   # shipped as a version.dll proxy with DLSSG 310.1 inside
+                   # it. That is the same file name the MFG unlock's loader
+                   # and one of the OptiScaler proxies use, so a folder
+                   # holding both has two things in one slot - and the .ini
+                   # is what says which one is there.
+                   "dlssg_sm86.ini",
                    # NGX loads a plain nvngx.dll from the game folder before
                    # the driver's: an OptiScaler installed by hand under its
                    # old name, or the standalone route's caller bridge.
@@ -937,10 +944,15 @@ def preview(g: games.Game, opt: Options) -> Preview:
         for old in optiscaler.find_legacy(root):
             backup(old.name)
             add(pv.removes, f"{old.name} (pre-0.9 OptiScaler leftover)")
-        # The fork's archive is a .7z, which this cannot list: its preview
-        # names the proxy and the folders the build brings instead.
-        members = (_cached_zip_members("OptiScaler-DLSSNR-*.zip")
-                   if opt.opti_build != optiscaler.FORK else None)
+        # Which archive this build installs, so the preview lists that one
+        # and not whichever OptiScaler zip happens to be in the cache: with
+        # two forks cached, the glob alone described the wrong package
+        # (their file lists differ - docs, redistributables, weights).
+        # A .7z cannot be listed at all, and neither can a build nobody has
+        # downloaded yet; both fall through to naming the folders instead.
+        arch = optiscaler.archive_name(opt.opti_build)
+        members = (_cached_zip_members(arch)
+                   if arch.lower().endswith(".zip") else None)
         if members:
             for m in members:
                 if Path(m).name in optiscaler.SKIP:
@@ -2049,6 +2061,14 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "overlay (Insert). Development builds - if a "
                                  "game misbehaves, install again with the "
                                  "DLSS-NR build.")
+            elif opt.opti_build == optiscaler.PRESR:
+                log(f"      wilsjo2's fork, {orel[0]}")
+                rep.notes.append("OptiScaler is wilsjo2's fork of the DLSS-NR "
+                                 "build: the neural pass runs before super "
+                                 "resolution rather than after it, over one to "
+                                 "three passes (OptiScaler.ini: Passes=). Not "
+                                 "run in a game here - if it misbehaves, "
+                                 "install again with the DLSS-NR build.")
             for f in optiscaler.install(root, proxy=oproxy, dl=dl, log=log,
                                         backup=lambda p: _backup(p, rep, root),
                                         release=orel):

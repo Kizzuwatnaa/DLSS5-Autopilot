@@ -161,7 +161,7 @@ class RemixWindow:
             btn.pack(side="right", padx=(12, 0))
             btn.bind("<Button-1>",
                      lambda e, mm=m, gg=game, b=btn: self._fetch(mm, gg, b))
-        tk.Frame(self.body, bg=LINE, height=1).pack(fill="x", padx=14)
+        tk.Frame(self.body, bg=LINE, height=px(1)).pack(fill="x", padx=px(14))
 
     # ------------------------------------------------------------ fetching
 

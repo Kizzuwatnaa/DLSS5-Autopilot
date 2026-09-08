@@ -176,7 +176,11 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           ZIP="DLSS5-Autopilot-v${VERSION}-win64.zip"
-          NOTES="release-notes-${TAG}.md"
+          # The notes live in docs/releases/<tag>.md; the old flat
+          # release-notes-<tag>.md is still accepted so re-running an older
+          # tag's workflow keeps working.
+          NOTES="docs/releases/${TAG}.md"
+          [ -f "$NOTES" ] || NOTES="release-notes-${TAG}.md"
           TITLE="DLSS 5 Autopilot ${TAG}"
           # The notes are the notes file, nothing else. The hashes travel as
           # SHA256SUMS.txt beside the build (the self-updater reads it) and the

@@ -60,10 +60,32 @@ API = "https://api.github.com/repos/Dagherbou/OptiScaler_DLSSNR/releases/latest"
 FORK_API = ("https://api.github.com/repos/y4my4my4m/"
             "OptiScaler_DLSSNR_Multipass_MFG/releases?per_page=10")
 FORK = "y4my4my4m"
+
+# wilsjo2's fork runs the neural pass BEFORE super resolution instead of
+# after it, over one to three passes (Passes= in OptiScaler.ini) - the
+# ordering the neural-upstream route gets on the ReShade side, on the
+# OptiScaler side (issue #76). Requested with one game measured, so it is
+# offered and labelled as that, never chosen automatically.
+PRESR_API = ("https://api.github.com/repos/wilsjo2/"
+             "OptiScaler-DLSSNR-PreSR-Multipass/releases?per_page=10")
+PRESR = "wilsjo2"
+
+# Every fork publishes on its own release page, in the same shape: pick the
+# newest release that carries an archive. The second item names archives to
+# pass over.
+FORKS = {
+    # "_with_DLSS" carries DLSS 310 and Streamline as well; the game's own
+    # copies (or this tool's) stay.
+    FORK: (FORK_API, ("with_dlss",)),
+    PRESR: (PRESR_API, ()),
+}
+
 # Key -> dropdown label. "" is the build the route installs by default.
 BUILDS = {
     "": "Dagherbou's DLSS-NR build  -  the release page's latest",
     FORK: "y4my4my4m's fork  -  multi-frame generation on RTX 40, development builds",
+    PRESR: "wilsjo2's fork  -  neural rendering before the upscaler, "
+           "1-3 passes; not run here",
 }
 
 # Insert opens OptiScaler's own overlay (0x2D / VK_INSERT).
@@ -111,23 +133,23 @@ def resolve(build: str = "") -> tuple[str, str]:
     this route survives GitHub's anonymous rate limit the same way every
     other component does - a stale cached answer beats refusing to install.
     """
-    if build == FORK:
-        rels = sources._json(FORK_API)
+    if build in FORKS:
+        api, skip_names = FORKS[build]
+        rels = sources._json(api)
         rels = [r for r in (rels if isinstance(rels, list) else [])
                 if not r.get("draft") and r.get("tag_name") != "nightly"]
-        # GitHub orders by creation time and the fork's releases share one;
-        # the "nightly" tag never changes, so its archive would be cached
-        # once under that name and never refreshed.
+        # GitHub orders by creation time and a fork's releases share one; the
+        # "nightly" tag never changes, so its archive would be cached once
+        # under that name and never refreshed.
         rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
         for rel in rels:
             for a in rel.get("assets", []):
                 low = a["name"].lower()
-                # The "_with_DLSS" archive carries DLSS 310 and Streamline
-                # as well; the game's own copies (or the tool's) stay.
-                if low.endswith((".7z", ".zip")) and "with_dlss" not in low:
+                if low.endswith((".7z", ".zip")) \
+                        and not any(x in low for x in skip_names):
                     return rel.get("tag_name", "?"), a["browser_download_url"]
-        raise RuntimeError("y4my4my4m's OptiScaler fork has no release with "
-                           "a .7z or .zip archive.")
+        raise RuntimeError(f"{build}'s OptiScaler fork has no release with "
+                           f"a .7z or .zip archive.")
     if build:
         raise ValueError(f"unknown OptiScaler build {build!r}")
     rel = sources._json(API)
@@ -135,6 +157,31 @@ def resolve(build: str = "") -> tuple[str, str]:
         if a["name"].lower().endswith((".zip", ".7z")):
             return rel.get("tag_name", "?"), a["browser_download_url"]
     raise RuntimeError("The OptiScaler DLSS-NR release has no .zip asset.")
+
+
+def archive_name(build: str = "") -> str:
+    """The archive this build would install, from the cache alone, or "".
+
+    The preview needs to know which package it is about to describe without
+    making a request: two forks publish archives whose names start the same
+    way, so a cache holding both cannot be told apart by pattern.
+    """
+    api = FORKS[build][0] if build in FORKS else API
+    data = sources.cached_json(api)
+    rels = data if isinstance(data, list) else [data] if data else []
+    rels = [r for r in rels if isinstance(r, dict) and not r.get("draft")
+            and r.get("tag_name") != "nightly"]
+    rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    skip = FORKS[build][1] if build in FORKS else ()
+    for rel in rels:
+        for a in rel.get("assets", []):
+            low = a.get("name", "").lower()
+            if low.endswith((".7z", ".zip")) and not any(x in low for x in skip):
+                # The name it is cached under, which is built from the tag -
+                # not the asset's own name, which can be anything.
+                return _archive_name(rel.get("tag_name", "?"),
+                                     a["browser_download_url"])
+    return ""
 
 
 def _tar_exe() -> Path:

@@ -35,7 +35,7 @@ DIR = prefs.FILE.parent / "profiles"
 # machine. Order matters only for how the JSON reads.
 FIELDS = ("path", "provider", "renodx", "dlssnr", "dlss", "keep_game_dlss",
           "feed", "nr", "feeder_prerelease", "feeder_tag", "reshade_proxy",
-          "opti_proxy", "dxvk")
+          "opti_proxy", "opti_build", "dxvk")
 
 # work_resolution is the feeder's only cost dial (the route is always DLAA -
 # see feedcfg). OptiScaler's WorkingScale is quadratic in cost, which is why
@@ -212,6 +212,8 @@ def describe(opt: Options) -> list[str]:
         out.append(f"reshade as {opt.reshade_proxy}")
     if opt.opti_proxy:
         out.append(f"optiscaler as {opt.opti_proxy}")
+    if opt.opti_build:
+        out.append(f"optiscaler build: {opt.opti_build}")
     if opt.dxvk:
         out.append("dxvk")
     return out

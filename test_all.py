@@ -605,7 +605,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.7.2", update.VERSION == "1.7.2", update.VERSION)
+check("version is 1.7.3", update.VERSION == "1.7.3", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -3778,6 +3778,18 @@ check("the host log's fault chain is read as the 616.64 driver fault, not 'Worki
       "616.64" in _r.verdict and any("NGX runtime" in t for t in _levels(_r, "bad")), _r.verdict)
 shutil.rmtree(_d, ignore_errors=True)
 
+_d = _diag_dir("diag_drv55_", feed=_FEED_OK +
+    "12:00:00.000  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)\n"
+    "12:00:00.000  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- ReShade64.dll\n",
+    reshade='INFO | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0\n',
+    components={"renodx": "4.55", "feeder": "v0.14.0-beta.5"})
+_r = diagnose.analyse(_d)
+check("beta.5's two-line feed fault (no 'in D3D12Core.dll' on the first line) is still the driver fault",
+      "616.64" in _r.verdict and any("NGX runtime" in t for t in _levels(_r, "bad")), _r.verdict)
+check("...and with 4.55 already installed it says roll back, not 'install again'",
+      "616.56" in _r.verdict and not any("Install again" in (f_.detail or "") for f_ in _r.findings if f_.level == "bad"), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
 # the stale check must not nag toward the build the pin avoids
 from core import components as _cmp  # noqa: E402
 _d = Path(tempfile.mkdtemp(prefix="stale_"))
@@ -4148,6 +4160,754 @@ sources._json = _saved_json
 _tag, _urls = sources.resolve_standalone()
 check("the live release resolves one way or the other",
       sources.STANDALONE_ZIP in _urls or all(n in _urls for n in sources.STANDALONE_ASSETS), (_tag, list(_urls)))
+
+section("54. the 1.7.2 reports: whose crash it is, which launch the log describes, "
+        "and the neural-upstream route's own log")
+
+# ReShade never truncates ReShade.log, so a report can carry several launches
+# at once. Detroit: Become Human (issue #63) reported two feeder builds
+# "loaded" - one of them from a run before the update.
+_SESSION = "16:00:00:000 [1] | INFO  | Initializing crosire's ReShade version '6.8.0' (64-bit)\n"
+_two = (_SESSION
+        + 'INFO  | Registered add-on "DLSS 5 Feed 0.13.1-beta.1" v0.13.1.0\n'
+        + "INFO  | Redirecting IDXGIFactory::CreateSwapChain(...)\n"
+        + _SESSION.replace("16:00", "17:00")
+        + 'INFO  | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0\n'
+        + "INFO  | Redirecting IDXGIFactory::CreateSwapChain(...)\n")
+_d = _diag_dir("diag_session_", reshade=_two, feed=_FEED_OK)
+_r = diagnose.analyse(_d)
+check("only the last ReShade launch is read, so a replaced build is not reported as loaded",
+      any("0.14.0-beta.5" in t for t in _levels(_r, "ok"))
+      and not any("0.13.1" in t for t in _levels(_r, "ok")), _levels(_r, "ok"))
+shutil.rmtree(_d, ignore_errors=True)
+
+# ...but two builds inside ONE launch are two files fighting over the frame.
+_same = (_SESSION
+         + 'INFO  | Registered add-on "DLSS 5 Feed 0.13.1-beta.1" v0.13.1.0\n'
+         + 'INFO  | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0\n'
+         + "INFO  | Redirecting IDXGIFactory::CreateSwapChain(...)\n")
+_d = _diag_dir("diag_twobuilds_", reshade=_same, feed=_FEED_OK)
+_r = diagnose.analyse(_d)
+check("two builds of one add-on in the same launch are called out",
+      any("builds of the same add-on" in t for t in _levels(_r, "bad")), _levels(_r, "bad"))
+shutil.rmtree(_d, ignore_errors=True)
+
+# Issue #63: the feeder records every crash in the process, its own and the
+# game's alike. The module chain says which - and the game's own executable
+# with no add-on under it was being reported as "a feeder bug".
+_GAME_CRASH = (
+    "00:56:26.703  [feed] an external frame pacer is presenting this swapchain: 7623 "
+    "presents against 6098 frames fed since the first fed frame (1.25x). NVIDIA Smooth "
+    "Motion does exactly this.\n"
+    "00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0) at "
+    "00007FF6AD6D4067 in E:\\g\\DetroitBecomeHuman.exe; this add-on was last doing: "
+    "waiting for the result (Vulkan)\n"
+    "00:56:49.964  [feed] crash stack, by module (innermost first): "
+    "DetroitBecomeHuman.exe <- KERNEL32.DLL <- ntdll.dll\n")
+_d = _diag_dir("diag_gamecrash_", feed=_FEED_OK + _GAME_CRASH,
+               exe="DetroitBecomeHuman.exe")
+_r = diagnose.analyse(_d)
+check("a crash in the game's own executable is the game's, not the feeder's",
+      "game's own code" in _r.verdict and "feeder bug" not in _r.verdict, _r.verdict)
+check("...and the external frame pacer is named",
+      any("pacing the frames" in t for t in _levels(_r, "warn")), _levels(_r, "warn"))
+shutil.rmtree(_d, ignore_errors=True)
+
+_OURS_CRASH = (
+    "00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0) at "
+    "0x1 in E:\\g\\Game.exe; this add-on was last doing: building the mask\n"
+    "00:56:49.964  [feed] crash stack, by module (innermost first): "
+    "dlss5-feed.addon64 <- dxgi.dll <- Game.exe\n")
+_d = _diag_dir("diag_feedcrash_", feed=_FEED_OK + _OURS_CRASH)
+_r = diagnose.analyse(_d)
+check("a crash inside the feed add-on is still called a feeder bug",
+      "feeder bug" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_NGX_CRASH = (
+    "00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0) at "
+    "0x1 in E:\\g\\Game.exe; this add-on was last doing: evaluating\n"
+    "00:56:49.964  [feed] crash stack, by module (innermost first): "
+    "nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64\n")
+_d = _diag_dir("diag_ngxcrash_", feed=_FEED_OK + _NGX_CRASH)
+_r = diagnose.analyse(_d)
+check("a crash inside the graphics runtime is not blamed on the feeder",
+      "graphics runtime" in _r.verdict and "feeder bug" not in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# A module the tool cannot place is not evidence that the game crashed.
+# The list of our own files was missing dlss5-feed.addon32, so a 32-bit
+# feeder crashing in its own add-on would have been reported as the game's.
+_UNKNOWN_CRASH = (
+    "00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0) at "
+    "0x1 in E:\\g\\Game.exe; this add-on was last doing: presenting\n"
+    "00:56:49.964  [feed] crash stack, by module (innermost first): "
+    "somemod.dll <- KERNEL32.DLL <- ntdll.dll\n")
+_d = _diag_dir("diag_unknowncrash_", feed=_FEED_OK + _UNKNOWN_CRASH)
+_r = diagnose.analyse(_d)
+check("a module the tool cannot place is not called the game's crash",
+      "game's own code" not in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_32_CRASH = (
+    "00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0) at "
+    "0x1 in E:\\g\\Game.exe; this add-on was last doing: presenting\n"
+    "00:56:49.964  [feed] crash stack, by module (innermost first): "
+    "dlss5-feed.addon32 <- Game.exe\n")
+_d = _diag_dir("diag_32crash_", feed=_FEED_OK + _32_CRASH)
+_r = diagnose.analyse(_d)
+check("...and the 32-bit feeder's own add-on is still ours",
+      "feeder bug" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# OptiScaler's log holds every run too, and it has no banner - a clock that
+# jumps a long way back is what says "new run". A few milliseconds out of
+# order is several threads writing, not a new run.
+_ooo = "[00:00:01.000] a\n[00:00:05.000] b\n[00:00:02.000] c\n"
+check("threads writing a few ms out of order do not truncate the log",
+      diagnose._last_run(_ooo) == _ooo)
+check("...but a run from yesterday is cut away",
+      diagnose._last_run("[23:00:01.000] old\n[08:00:00.000] new\n").startswith("[08:00:00"))
+
+# The neural-upstream route writes its whole run into ReShade.log under
+# [NRPRE]. Three issues (#39 #51 #64) were answered with "this route keeps no
+# log" while the answer was in the file the report already carried.
+def _nrpre(*extra: str) -> str:
+    return (_SESSION
+            + 'INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.\n'
+            + "INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] addon registered (NR at render resolution)\n"
+            + "".join("INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] " + e + "\n" for e in extra))
+
+
+_HB = ("HB #7561 handle=0x1 | pw=1.0000 meas=0.0000 valid=0 upd=0 | hdr=2 det=1 "
+       "knee=0.750 kmeas=0.750 | expfresh=7559 fromgame=0 | net=2228x1256 "
+       "finalvalid=1 | cad=1 async=0 | erfail=0 grfail=0 passthru=0")
+_HOOK = "hook 0 on NVSDK_NGX_D3D12_EvaluateFeature: OK  C:\\w\\_nvngx.dll"
+
+
+def _up_dir() -> Path:
+    d = Path(tempfile.mkdtemp(prefix="up_"))
+    (d / "dlss5-autopilot.json").write_text(json.dumps(
+        {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+         "api": "DX12", "path": "upstream", "proxy": "dxgi.dll",
+         "files": ["dxgi.dll", "nvngx.dll.addon64"]}), encoding="utf8")
+    for n in ("dxgi.dll", "nvngx.dll.addon64", "ReShade.ini", "nvngx_dlssnr.dll"):
+        (d / n).write_bytes(b"MZ")
+    return d
+
+
+_d = _up_dir()
+(_d / "ReShade.log").write_text(_nrpre(
+    "settings loaded: enabled=1 cadence=1 codec=1 pw=1.000 knee=0.75", _HOOK,
+    "CreateFeature id=18 -> res=0xBAD0000B handle=0 | NR W=2228 H=1253",
+    "2b: snippet route, self=C:\\g\\nvngx.dll.addon64", _HB,
+    "resetting state (new device)"), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("the upstream route's log is read: it ran, then stopped at a device re-creation",
+      "device re-creation" in _r.verdict
+      and any("hooked the game's DLSS call" in t for t in _levels(_r, "ok")), _r.verdict)
+check("...and NGX refusing feature 18 with a snippet fallback is a warning, not the verdict",
+      any("0xBAD0000B" in t for t in _levels(_r, "warn")), _levels(_r, "warn"))
+check("...and a game that hands over no exposure is named (the 'only darker' route)",
+      any("no exposure value" in t for t in _levels(_r, "warn")), _levels(_r, "warn"))
+
+# closing the game ends the log the same way; that must not read as a hang
+(_d / "ReShade.log").write_text(_nrpre(
+    "settings loaded: enabled=1", _HOOK, _HB, "resetting state (new device)")
+    + 'INFO  | Unloading add-on "DLSS5 NR Pre-Upscale" ...\n', encoding="utf8")
+_r = diagnose.analyse(_d)
+check("...but an orderly shutdown after the reset is not a hang", _r.verdict == "Working.", _r.verdict)
+
+(_d / "ReShade.log").write_text(_nrpre("settings loaded: enabled=0"), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("switched off in the tab is said outright instead of 'confirm in the overlay'",
+      "switched off" in _r.verdict, _r.verdict)
+
+(_d / "ReShade.log").write_text(_nrpre("settings loaded: enabled=1"), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("no hook on the game's DLSS call answers 'the add-on loaded but nothing happens'",
+      "never hooked" in _r.verdict, _r.verdict)
+
+(_d / "ReShade.log").write_text(_nrpre(
+    "settings loaded: enabled=1", _HOOK, "CreateFeature id=18 -> res=0x00000001 handle=1",
+    _HB.replace("finalvalid=1", "finalvalid=0")), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("running with no valid result is not 'Working.'",
+      "never produces a frame" in _r.verdict, _r.verdict)
+
+# an older build of the add-on that logs nothing still gets the old answer
+(_d / "ReShade.log").write_text(
+    _SESSION + 'INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0\n', encoding="utf8")
+_r = diagnose.analyse(_d)
+check("an add-on build with no [NRPRE] lines still falls back to the overlay answer",
+      "does not log frames" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# The feeder's own log starts each run with "dlss5-feed ... attached.", and
+# the standalone route was already read one session at a time. The feeder's
+# was not, so a crash from a run days ago could be reported as what just
+# happened - the same mistake as the ReShade log above, in another file.
+_OLD_RUN = (
+    "12:00:00.000  dlss5-feed 0.13.1-beta.1 (built Sep  4 2026) attached.\n"
+    "12:00:01.000  ### CRASH RECORDED ###  exception 0xC0000005 at 0x1 in "
+    "E:\\g\\Game.exe; this add-on was last doing: an old run\n"
+    "13:00:00.000  dlss5-feed 0.14.0-beta.5 (built Sep  6 2026) attached.\n")
+_d = _diag_dir("diag_feedsess_", feed=_OLD_RUN + _FEED_OK)
+_r = diagnose.analyse(_d)
+check("a crash from an earlier run of the game is not this run's verdict",
+      _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = _diag_dir("diag_feedsess2_", feed=_FEED_OK + _OLD_RUN.split("\n")[1] + "\n")
+_r = diagnose.analyse(_d)
+check("...but a log with no session marker at all is still read whole",
+      "crashed" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# The same mistake on the optiscaler route: whichever line matched first won,
+# so a session that started and then failed was reported as "Working."
+def _opti_dir(prefix: str, log_text: str) -> Path:
+    d = Path(tempfile.mkdtemp(prefix=prefix))
+    (d / "dlss5-autopilot.json").write_text(json.dumps(
+        {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+         "api": "DX12", "path": "optiscaler", "proxy": "dxgi.dll",
+         "files": ["dxgi.dll"]}), encoding="utf8")
+    (d / "dxgi.dll").write_bytes(b"MZ")
+    (d / "OptiScaler.log").write_text(log_text, encoding="utf8")
+    return d
+
+
+_d = _opti_dir("opti_after_", "[I] [DLSS-NR] running at 2560x1440\n"
+                              "[I] [DLSS-NR] disabling for this session\n")
+_r = diagnose.analyse(_d)
+check("a failure after 'running at' is the verdict, not 'Working.'",
+      "stopped after it started" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = _opti_dir("opti_before_", "[I] [DLSS-NR] create failed\n"
+                               "[I] [DLSS-NR] running at 2560x1440\n")
+_r = diagnose.analyse(_d)
+check("...and a failure before it is the older news it is", _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# Issue #58: the game's own Present refused the swapchain OptiScaler wrapped.
+_d = _opti_dir("opti_present_",
+               "[I] Init done\n"
+               "[W] LocalPresent Original present result: 80004002\n")
+_r = diagnose.analyse(_d)
+check("the game refusing OptiScaler's swapchain is named, with what to try",
+      "refused OptiScaler's swapchain" in _r.verdict
+      and any("winmm.dll" in (f_.detail or "") for f_ in _r.findings), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = _opti_dir("opti_ok_present_",
+               "[I] [DLSS-NR] running at 2560x1440\n"
+               "[I] LocalPresent Original present result: 00000000\n")
+_r = diagnose.analyse(_d)
+check("...and a present that succeeded is not mistaken for one that failed",
+      _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+section("55. issue #40 again: scaling the fonts is not the whole of a 4K display")
+
+# The first round scaled the fonts and the row heights, and the report that
+# came back was "the text is readable now, but the log box next to the blue
+# arrow is one and a half lines". Three more things were wrong with it, and
+# none of them was a font.
+_gsrc = inspect.getsource(_gui)
+
+# 1. The window asked for more than the screen. px(830) is 2490 at 300%, on
+#    a display 2160 tall, and minsize kept it there: the bottom of every
+#    page was off the screen and dragging could not bring it back.
+check("the window never asks for more height than the screen has",
+      "winfo_screenheight()" in _gsrc and "min(px(830)" in _gsrc, )
+check("...and minsize cannot pin it larger than the screen either",
+      _re.search(r"minsize\(min\(px\(\d+\), int\(sw", _gsrc) is not None)
+
+# 2. Text and Treeview heights are counted in rows, and a row grows with the
+#    font: 14 rows of log at 300% is three times the pixels it was at 100%.
+_gui.SCALE = 1.0
+check("lines() leaves row counts alone at 100 %", _gui.lines(14) == 14)
+_gui.SCALE = 3.0
+check("...and cuts them to about the same pixel height at 300 %", _gui.lines(14) == 5)
+check("...with a floor, so nothing collapses to nothing", _gui.lines(4, 6) == 6)
+_gui.SCALE = 1.0
+check("the log and the game list are sized in lines(), not bare rows",
+      "height=lines(14, 6)" in _gsrc and "height=lines(13, 4)" in _gsrc)
+
+# 3. Pack hands the first widget everything it asks for. The settings card
+#    is 1221 pixels at 300%, so whichever of the settings and the log was
+#    packed first took the window and the other got what was left.
+check("the install page splits the window between the settings and the log",
+      "_split" in _gsrc and "installscroll.set_height" in _gsrc)
+check("the pages that overflow can scroll",
+      _gsrc.count("Scroller(") >= 2 and "class Scroller" in _gsrc)
+check("the game list's detail row is packed from the bottom, so it survives a short window",
+      'det.pack(side="bottom"' in _gsrc)
+
+# The whole point: every page fits the window at every scale, and what does
+# not fit scrolls instead of being cut off. Built for real, measured for
+# real - a 4K screen at 300% has the same room as a 1280x720 one at 100%.
+def _fits(scale: float, w: int, h: int) -> list[str]:
+    _gui.SCALE = scale
+    root = _tk.Tk()
+    root.tk.call("tk", "scaling", 96 * scale / 72.0)
+    bad = []
+    try:
+        app = _gui.App(root)
+        for _ in range(3):
+            root.state("normal")
+            root.geometry(f"{w}x{h}")
+            root.update_idletasks()
+            root.update()
+        for n, name in ((1, "architecture"), (2, "game list"), (3, "install")):
+            app.step = n
+            app._show(n)
+            for _ in range(3):
+                root.update_idletasks()
+                root.update()
+            page = (app.p1, app.p2, app.p3)[n - 1]
+            # Every action the page offers has to be inside the window.
+            for w_ in page.winfo_children():
+                if w_.winfo_ismapped() and w_.winfo_height() <= 1 < w_.winfo_reqheight():
+                    bad.append(f"{name}: {w_.winfo_class()} squeezed to nothing")
+        # ...and at 300% the log is still readable.
+        if app.log.winfo_height() < 3 * (app.log.winfo_reqheight()
+                                         / max(1, int(app.log.cget("height")))):
+            bad.append(f"log under three lines at {scale:.0%}")
+    finally:
+        root.destroy()
+        _gui.SCALE = 1.0
+    return bad
+
+_bad = []
+for _s, _w, _h in ((1.0, 1200, 900), (1.5, 1280, 720), (2.0, 1000, 700)):
+    _bad += [f"{_s:.0%}: {b}" for b in _fits(_s, _w, _h)]
+check("no page loses a widget off the window, at any scale", not _bad, _bad)
+
+
+section("56. issue #67: the library found last time, without walking the disks again")
+
+from core import library as _lib  # noqa: E402
+
+_d = Path(tempfile.mkdtemp(prefix="libcache_"))
+_saved_file = _lib.FILE
+_lib.FILE = _d / "library.json"
+_gdir = _d / "Some Game" / "bin"
+_gdir.mkdir(parents=True)
+_exe = _gdir / "Game.exe"
+_exe.write_bytes(b"MZ" + b"\0" * 100)
+_g = games.Game(name="Some Game", folder=_d / "Some Game", exe=_exe, bitness=64,
+                api="DX12", api_why="imports dxgi.dll", api_detected="DX12",
+                source="Steam", candidates=[_exe], kind="game")
+_gone = games.Game(name="Gone Game", folder=_d / "nowhere",
+                   exe=_d / "nowhere" / "x.exe", bitness=64, api="DX11", source="Epic")
+_key = (str(_g.folder), str(_g.exe))
+_row = (True, "feeder", "stable", "reliable", False, "")
+_lib.save([_g, _gone], {_key: _row, (str(_gone.folder), str(_gone.exe)): False}, "1.7.3", 89)
+
+_got = _lib.load("1.7.3", 89)
+check("the library comes back with every field the list needs",
+      _got is not None and [x.name for x in _got[0]] == ["Some Game"]
+      and _got[0][0].api_why == "imports dxgi.dll"
+      and _got[0][0].candidates == [_exe] and _got[1][_key] == _row
+      and _got[2] == [], _got)
+check("a game whose folder is gone is dropped, not shown as missing",
+      all(x.name != "Gone Game" for x in _got[0]))
+
+check("a cache from another release of this tool is not used",
+      _lib.load("1.7.2", 89) is None)
+check("...nor one measured against another graphics card",
+      _lib.load("1.7.3", 120) is None)
+
+# The compatibility columns are read from the game folder, so a game that
+# has changed on disk since has to be looked at again - that is the whole
+# reason a cache is allowed to exist at all.
+time.sleep(1.1)
+_exe.write_bytes(b"MZ" + b"\0" * 200)
+os.utime(_exe, None)
+_gs, _rows, _changed = _lib.load("1.7.3", 89)
+check("a game the store has updated keeps its place, loses its row, and is handed back to be read again",
+      [x.name for x in _gs] == ["Some Game"] and not _rows
+      and [x.name for x in _changed] == ["Some Game"], (_rows, _changed))
+
+_lib.save([_g], {_key: _row}, "1.7.3", 89)
+time.sleep(1.1)
+(_g.folder / "OptiScaler.dll").write_bytes(b"MZ")
+os.utime(_g.folder, None)
+check("...and so does one that had a mod dropped into it",
+      not _lib.load("1.7.3", 89)[1] and _lib.load("1.7.3", 89)[2])
+
+_lib.FILE.write_text("{ not json", encoding="utf8")
+check("an unreadable cache just means the normal scan runs", _lib.load("1.7.3", 89) is None)
+_lib.FILE.unlink()
+check("no cache at all is not an error", _lib.load("1.7.3", 89) is None)
+
+_gsrc = inspect.getsource(_gui)
+check("the GUI reads the cache at start and writes it after a scan",
+      "_load_cached" in _gsrc and "library.save(gs, rows" in _gsrc)
+check("...and writes it again when a folder is chosen or an install finishes",
+      _gsrc.count("_remember_library") >= 3, _gsrc.count("_remember_library"))
+check("rescan still does the full walk",
+      "def _scan" in _gsrc and "games.scan_all(" in _gsrc)
+_lib.FILE = _saved_file
+shutil.rmtree(_d, ignore_errors=True)
+
+
+section("57. the second day of 1.7.2: a comma for a full stop, an install that "
+        "never finished, a moved ffmpeg name, and a game on the wrong API")
+
+# Issue #69: the add-on writes dlss5-feed.cfg too, and it is C++ - on a
+# machine whose locale uses a comma for the decimal point (PCSX2 is Qt, and
+# Qt sets the locale) it writes "1,000". float() then raised out of the
+# middle of install() and NOTHING was installed.
+from core import feedcfg as _fc  # noqa: E402
+
+check("a comma decimal is read as the number it is", _fc.number("1,000") == 1.0)
+check("...and a full stop still is", _fc.number("0.750") == 0.75)
+check("...and rubbish falls back instead of raising", _fc.number("?", 1.0) == 1.0)
+check("...and a real number is passed through", _fc.number(2) == 2.0)
+
+_d = Path(tempfile.mkdtemp(prefix="feedcfg_"))
+(_d / "dlss5-feed.cfg").write_text(
+    "enabled=1\nmode=2\nmv_scale_x=1,000\nmv_scale_y=1,000\nwork_resolution=100\n",
+    encoding="utf8")
+_p = _fc.write(_d, {"work_resolution": 75})
+_txt = _p.read_text(encoding="utf8")
+check("the install survives a cfg written in another locale, and rewrites it",
+      "mv_scale_x=1.000" in _txt and "work_resolution=75" in _txt, _txt.replace("\n", " "))
+check("...and describing it does not raise either",
+      _fc.describe(_fc.read(_p)) and _fc.describe_bridge({"ofa_grid": "2,000"}) == [], )
+shutil.rmtree(_d, ignore_errors=True)
+
+# Issue #74: a download cut off (a reset connection) leaves a folder set up
+# part of the way. The installer records that; the diagnosis never read it,
+# so the missing parts were reported as if antivirus had eaten them.
+_d = _diag_dir("diag_incomplete_", feed=_FEED_OK, complete=False)
+_r = diagnose.analyse(_d)
+check("an install that never finished says so, before anything else",
+      "never finished" in _r.verdict
+      and any("did not finish" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = _diag_dir("diag_complete_", feed=_FEED_OK)
+_r = diagnose.analyse(_d)
+check("...and a finished one is read as before", _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# Issue #75: BtbN's /releases/latest is the DATED autobuild, whose asset
+# names carry the build hash; the stable name lives on the release tagged
+# "latest". Every video download failed with "ffmpeg build not found".
+check("the ffmpeg listing asks for the tag, not for 'the latest release'",
+      video.FFMPEG_API.endswith("/releases/tags/latest"), video.FFMPEG_API)
+check("there is a direct download to fall back on",
+      video.FFMPEG_DIRECT.endswith(video.FFMPEG_ASSET))
+_dated = ["ffmpeg-N-126475-g35b7df64a0-win64-gpl.zip",
+          "ffmpeg-N-126475-g35b7df64a0-win64-gpl-shared.zip",
+          "ffmpeg-N-126475-g35b7df64a0-win64-lgpl.zip",
+          "ffmpeg-N-126475-g35b7df64a0-winarm64-gpl.zip",
+          "ffmpeg-N-126475-g35b7df64a0-linux64-gpl.tar.xz"]
+_pick = [n for n in _dated
+         if n.lower().endswith(".zip") and "win64" in n.lower() and "gpl" in n.lower()
+         and "lgpl" not in n.lower() and "shared" not in n.lower()]
+check("...and the name pattern picks the static 64-bit Windows GPL build",
+      _pick == ["ffmpeg-N-126475-g35b7df64a0-win64-gpl.zip"], _pick)
+check("the real release still carries the name we ask for, or the pattern finds one",
+      any(a.get("name") == video.FFMPEG_ASSET
+          for a in sources._json(video.FFMPEG_API).get("assets", [])))
+
+# Issues #66 and #70, both Red Dead Redemption 2: the game was set to Vulkan
+# and the optiscaler route hooks a Direct3D path, so OptiScaler's overlay
+# kept asking for an upscaler that was already switched on.
+_d = _opti_dir("opti_vulkan_", "[I] Init done\n[I] Vulkan is creating swapchain!\n")
+_r = diagnose.analyse(_d)
+check("a game drawing with Vulkan on the optiscaler route is told so",
+      "on Vulkan" in _r.verdict and "DirectX 12" in " ".join(
+          (f_.detail or "") for f_ in _r.findings), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# Issue #76: a third OptiScaler build in the dropdown - wilsjo2's fork runs
+# the neural pass before super resolution instead of after it. Every fork
+# publishes the same way, so the branch that only knew y4my4my4m's is a
+# table now.
+check("the dropdown offers three builds, and the default is still the plain one",
+      list(optiscaler.BUILDS)[0] == ""
+      and optiscaler.PRESR in optiscaler.BUILDS
+      and optiscaler.FORK in optiscaler.BUILDS, list(optiscaler.BUILDS))
+check("...and the new one says it has not been tried here",
+      "not run here" in optiscaler.BUILDS[optiscaler.PRESR],
+      optiscaler.BUILDS[optiscaler.PRESR])
+check("every fork in the table has an API and a skip list",
+      all(isinstance(v, tuple) and len(v) == 2 and v[0].startswith("https://")
+          for v in optiscaler.FORKS.values()), optiscaler.FORKS)
+check("an unknown build key is still refused rather than silently installed",
+      _raises(lambda: optiscaler.resolve("nope")))
+
+_saved_json = sources._json
+sources._json = lambda url: [
+    {"tag_name": "nightly", "published_at": "2026-09-09T00:00:00Z",
+     "assets": [{"name": "x.7z", "browser_download_url": "https://x/nightly.7z"}]},
+    {"tag_name": "v0.7.1", "published_at": "2026-09-08T12:00:00Z",
+     "assets": [{"name": "OptiScaler-DLSSNR-v0.7.1-hybrid.zip",
+                 "browser_download_url": "https://x/new.zip"}]},
+    {"tag_name": "v0.6.2", "published_at": "2026-09-07T00:00:00Z",
+     "assets": [{"name": "old.zip", "browser_download_url": "https://x/old.zip"}]},
+]
+check("the newest dated release wins and the rolling 'nightly' tag is passed over",
+      optiscaler.resolve(optiscaler.PRESR) == ("v0.7.1", "https://x/new.zip"),
+      optiscaler.resolve(optiscaler.PRESR))
+sources._json = lambda url: [
+    {"tag_name": "v1", "published_at": "2026-09-08T12:00:00Z", "assets": [
+        {"name": "OptiScaler_with_DLSS.7z", "browser_download_url": "https://x/withdlss.7z"},
+        {"name": "OptiScaler.7z", "browser_download_url": "https://x/plain.7z"}]}]
+check("...and y4my4my4m's '_with_DLSS' archive is still passed over",
+      optiscaler.resolve(optiscaler.FORK) == ("v1", "https://x/plain.7z"),
+      optiscaler.resolve(optiscaler.FORK))
+sources._json = _saved_json
+check("all three builds resolve against the real release pages",
+      all(optiscaler.resolve(b)[1].startswith("https://")
+          for b in optiscaler.BUILDS))
+
+
+# With two forks' archives in the cache, the preview listed whichever one the
+# glob found first and described the wrong package - their file lists differ
+# by a dozen documents and a folder of weights. Found by the existing
+# "preview promised nothing the install did not do" check the moment a third
+# build was added.
+check("the preview describes the build it would install, from the cache alone",
+      len({optiscaler.archive_name(b) for b in optiscaler.BUILDS}) == len(optiscaler.BUILDS),
+      {b: optiscaler.archive_name(b) for b in optiscaler.BUILDS})
+check("...under the name the download saves it as",
+      all(optiscaler.archive_name(b).startswith("OptiScaler-DLSSNR-")
+          for b in optiscaler.BUILDS if optiscaler.archive_name(b)))
+check("cached_json never reaches the network",
+      "urlopen" not in inspect.getsource(sources.cached_json)
+      and sources.cached_json("https://example.invalid/nothing-was-ever-fetched") is None)
+_saved_get = sources._get
+
+
+def _no_net(*a, **k):
+    raise AssertionError("preview() made a request")
+
+
+sources._get = _no_net
+_d = Path(tempfile.mkdtemp(prefix="pv_opti_offline_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_pv = installer.preview(games.manual(_d), installer.Options(path=dlss.OPTI))
+check("the optiscaler preview still makes no request at all", bool(_pv.writes))
+sources._get = _saved_get
+shutil.rmtree(_d, ignore_errors=True)
+
+
+section("58. the release gate on 1.7.3's own changes")
+
+# The cache made two old habits expensive. An install used to throw every
+# compatibility row away because recomputing them was free; with the rows
+# saved for the next launch, that emptied the cache and gave the launch
+# after an install the whole folder walk again - on the Tk thread.
+_gsrc = inspect.getsource(_gui)
+check("an install drops only the row of the game it installed",
+      "_forget_row(self.game)" in _gsrc and "self._rows.clear()" not in
+      _gsrc.split("def _finish_ok")[1].split("def ")[0], )
+check("...and an empty set of rows is never written over a full one",
+      "self._rows or not library.FILE.is_file()" in _gsrc)
+check("...and the games that did change are read on a worker, not on the Tk thread",
+      "def _recheck_changed" in _gsrc
+      and "threading.Thread(target=work" in _gsrc.split("def _recheck_changed")[1][:1600]
+      and "games.enrich(g)" in _gsrc.split("def _recheck_changed")[1][:1600])
+check("...and _fill leaves those rows to the worker instead of reading them itself",
+      "str(g.folder) in self._recheck" in _gsrc)
+check("...keyed on the folder, which enrich() cannot reassign under it",
+      "self._recheck = {str(g.folder) for g in changed}" in _gsrc)
+check("...and a rescan makes a running recheck's answer stale, not authoritative",
+      "_recheck_id" in _gsrc and _gsrc.count("_recheck_id") >= 4)
+
+# A graphics API set by hand is kept in the settings, not in the library, so
+# a cached game came back with the renderer that was DETECTED - and would be
+# installed for it. That is the fault the dropdown exists to fix (#24/#66/#70).
+_d = Path(tempfile.mkdtemp(prefix="libapi_"))
+_saved_file = _lib.FILE
+_lib.FILE = _d / "library.json"
+(_d / "bin").mkdir()
+_exe2 = _d / "bin" / "Game.exe"
+_exe2.write_bytes(b"MZ")
+_g2 = games.Game(name="Some Game", folder=_d, exe=_exe2, bitness=64,
+                 api="DX12", api_detected="DX12", source="Steam")
+_lib.save([_g2], {}, "1.7.3", 89)
+games.set_api_override(_d, "Vulkan")
+try:
+    _back = _lib.load("1.7.3", 89)[0][0]
+    check("a graphics api set by hand survives a cached launch",
+          _back.api == "Vulkan" and "set by hand" in _back.api_why,
+          (_back.api, _back.api_why))
+finally:
+    games.set_api_override(_d, None)
+_lib.FILE = _saved_file
+shutil.rmtree(_d, ignore_errors=True)
+
+# An emulator chosen with "choose folder" keeps source "Manual", and its
+# profile is what switches the render backend. Dropping it meant the install
+# silently did nothing.
+check("an emulator profile is found again whatever the game's source says",
+      'if exe is not None:' in inspect.getsource(_lib._from_json)
+      and 'source == "Emulator"' not in inspect.getsource(_lib._from_json))
+
+# The fault chain: the list of our own modules was missing three files this
+# tool installs, and an unrecognised module was being called the game's.
+check("every add-on this tool installs is in the fault-chain list",
+      all(n in diagnose._OURS_IN_STACK for n in (
+          "dlss5-feed.addon64", "dlss5-feed.addon32", "renodx-dlss5.addon64",
+          "renodx-dlss.addon64", "dlss5-bridge.addon64",
+          "dlss5-dx11-bridge.addon64", "nvngx.dll.addon64",
+          "standalone-dlssnr.addon64")), diagnose._OURS_IN_STACK)
+
+# The upstream analyser could add "it is running" and then return a verdict
+# saying it was switched off or never hooked.
+def _up(*lines: str) -> str:
+    return (_SESSION
+            + 'INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0\n'
+            + "".join("INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] " + x + "\n" for x in lines))
+
+
+_d = _up_dir()
+(_d / "ReShade.log").write_text(_up("settings loaded: enabled=0", _HOOK, _HB), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("frames through the network outrank an 'enabled=0' written at load",
+      _r.verdict == "Working.", _r.verdict)
+(_d / "ReShade.log").write_text(_up("settings loaded: enabled=1", _HB), encoding="utf8")
+_r = diagnose.analyse(_d)
+check("...and outrank a hook line that never appeared", _r.verdict == "Working.", _r.verdict)
+(_d / "ReShade.log").write_text(
+    _up("settings loaded: enabled=1", _HOOK, _HB, "resetting state (new device)"),
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("...but not what happened after them",
+      "device re-creation" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# An uninstall that could not delete a locked file records itself the same
+# way a failed install does; telling that person to install again is the
+# opposite of what they need.
+_d = _diag_dir("diag_stuckuninstall_", feed=_FEED_OK, complete=False,
+               notes=["uninstall left 2 locked file(s); run it again with the game closed"])
+_r = diagnose.analyse(_d)
+check("a partial uninstall is not reported as a partial install",
+      _r.verdict.startswith("The uninstall")
+      and any("uninstall did not finish" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+# Found by replaying issue #51's own 400 KB ReShade.log: the tail is cut to
+# 250 KB, so the "Registered add-on" lines fell off the front while every
+# line the add-on WROTE was still there - and the report said "ReShade
+# loaded no add-ons" next to 34621 heartbeats from that add-on.
+_d = _up_dir()
+(_d / "ReShade.log").write_text(
+    "16:00:00:000 [1] | INFO  | Some line with no registration in it\n"
+    "16:00:01:000 [1] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] " + _HOOK + "\n"
+    "16:00:02:000 [1] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] " + _HB + "\n",
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("a log cut to its tail is not reported as 'no add-ons loaded'",
+      not any("no add-ons" in t for t in _levels(_r, "bad")), _levels(_r, "bad"))
+check("...and it is still read as working", _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+
+section("59. issue #77: a d3d9.dll import is the weakest evidence in the file")
+
+# Grand Theft Auto V was read as a DirectX 9 game because GTA5.exe imports
+# d3d9.dll, and went to a route that has nothing for it. The same shape as
+# Red Dead Redemption 2 (#12) and Call of Juarez (#31): engines keep a d3d9
+# import for a launcher or an old dialog long after they stopped drawing
+# with it. Every other kind of evidence is now asked first.
+_d = Path(tempfile.mkdtemp(prefix="d3d9ev_"))
+_exe = _d / "Game.exe"
+_exe.write_bytes(b"MZ")
+_saved_imports = pe.pe_imports
+
+
+def _fake_imports(static: list[str], delayed: list[str] | None = None):
+    pe.pe_imports = (lambda path, delay=False, _s=list(static),
+                     _d=list(delayed or []): _d if delay else _s)
+
+
+try:
+    _fake_imports(["d3d9.dll", "kernel32.dll"])
+    check("a game with nothing but d3d9 is still DirectX 9",
+          pe.detect_api(_exe)[0] == "DX9", pe.detect_api(_exe))
+
+    _fake_imports(["d3d9.dll"], ["d3d11.dll"])
+    _api, _why = pe.detect_api(_exe)
+    check("...but a delay-loaded d3d11 is the renderer, and the reason says so",
+          _api == "DX11" and "delay-loads d3d11.dll" in _why, (_api, _why))
+
+    _fake_imports(["d3d9.dll"], ["d3d12.dll"])
+    check("...and so is a delay-loaded d3d12", pe.detect_api(_exe)[0] == "DX12",
+          pe.detect_api(_exe))
+
+    # A DirectX 9 game may use DXGI on its own just to enumerate displays,
+    # so a bare dxgi delay-load must not flip it.
+    _fake_imports(["d3d9.dll"], ["dxgi.dll"])
+    check("...but a bare dxgi delay-load does not make a DX9 game modern",
+          pe.detect_api(_exe)[0] == "DX9", pe.detect_api(_exe))
+
+    # The evidence already used for RDR2 and for the Agility SDK still wins
+    # ahead of any of that.
+    _fake_imports(["d3d9.dll"], ["d3d11.dll"])
+    (_d / "nvngx_dlss.dll").write_bytes(b"MZ")
+    check("a game that ships DLSS beside a d3d9 import is D3D12, as before",
+          pe.detect_api(_exe)[0] == "DX12", pe.detect_api(_exe))
+    (_d / "nvngx_dlss.dll").unlink()
+finally:
+    pe.pe_imports = _saved_imports
+shutil.rmtree(_d, ignore_errors=True)
+
+# The delay-load table is data directory 13, and it is read out of real
+# executables, not just mocked: several games in a real library delay-load
+# a renderer they do not import statically.
+check("pe_imports takes a delay flag and both tables parse the same exe",
+      isinstance(pe.pe_imports(X64), list)
+      and isinstance(pe.pe_imports(X64, delay=True), list))
+check("...and the delay table is read from data directory 13",
+      "want = 13 if delay else 1" in inspect.getsource(pe.pe_imports))
+check("...after checking the image has that many data directories",
+      "n_dirs <= want" in inspect.getsource(pe.pe_imports))
+check("...with 32-byte descriptors and the name at offset 4",
+      "(32, 4) if delay else (20, 12)" in inspect.getsource(pe.pe_imports))
+
+
+# Issue #31, answered three times with "the game has not been started" while
+# DXVK's own log sat in the folder proving it had. DXVK writes that log the
+# moment it loads, so it settles what the hints could only guess at.
+_d = Path(tempfile.mkdtemp(prefix="dxvklog_"))
+(_d / "dlss5-autopilot.json").write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "CoJGunslinger.exe", "bitness": 32,
+     "api": "Vulkan", "proxy": diagnose.VULKAN_LAYER, "path": "feeder",
+     "dxvk": True, "files": ["d3d9.dll", "dlss5-feed.addon32"],
+     "vulkan": {"mine": True, "any": True}}), encoding="utf8")
+for _n in ("d3d9.dll", "dlss5-feed.addon32", "ReShade.ini", "nvngx_dlssnr.dll"):
+    (_d / _n).write_bytes(b"MZ")
+_r = diagnose.analyse(_d)
+check("with nothing in the folder it is still 'not started since the install'",
+      "Not started since the install" in _r.verdict, _r.verdict)
+(_d / "CoJGunslinger_d3d9.log").write_text("info:  DXVK: v2.4", encoding="utf8")
+_r = diagnose.analyse(_d)
+check("DXVK's own log proves the game ran, so the layer is what is missing",
+      "DXVK ran" in _r.verdict and "32-bit" in _r.verdict, _r.verdict)
+# ...but only a log written SINCE the install. One left by a run before it,
+# or by a game the person had already put DXVK into, says nothing.
+import os as _os
+_os.utime(_d / "CoJGunslinger_d3d9.log", (1, 1))
+_r = diagnose.analyse(_d)
+check("...and a DXVK log older than the install is not evidence the game ran",
+      "Not started since the install" in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
 
 section("RESULT")
 if FAILS:
