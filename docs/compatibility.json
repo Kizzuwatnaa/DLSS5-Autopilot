@@ -150,6 +150,21 @@
     }
    }
   },
+  "needforspeedheat.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Need for Speed\u2122 Heat ",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "nfs13.exe": {
    "drivers": {
     "616.64": {
@@ -264,6 +279,6 @@
    }
   }
  },
- "generated": "2026-09-10T14:29:33Z",
- "reports": 23
+ "generated": "2026-09-10T14:45:58Z",
+ "reports": 24
 }
