@@ -1,5 +1,20 @@
 {
  "games": {
+  "cyberpunk2077.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Cyberpunk 2077",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "dawnwalker.exe": {
    "drivers": {
     "616.64": {
@@ -233,7 +248,7 @@
    "drivers": {
     "616.92": {
      "failed": 3,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "UBOAT",
@@ -244,11 +259,11 @@
     },
     "standalone": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   }
  },
- "generated": "2026-09-10T11:17:09Z",
- "reports": 21
+ "generated": "2026-09-10T11:20:14Z",
+ "reports": 23
 }
