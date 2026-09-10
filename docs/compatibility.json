@@ -75,6 +75,21 @@
     }
    }
   },
+  "execpubg.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "PUBG: BATTLEGROUNDS",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "flatout.exe": {
    "drivers": {
     "616.64": {
@@ -294,6 +309,6 @@
    }
   }
  },
- "generated": "2026-09-10T15:59:12Z",
- "reports": 25
+ "generated": "2026-09-10T17:09:07Z",
+ "reports": 26
 }
