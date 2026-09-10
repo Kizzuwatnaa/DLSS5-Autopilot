@@ -15,7 +15,7 @@ python -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name dlss5-autopilot ^
-    --version-file version_info.txt ^
+    --version-file "%~dp0version_info.txt" ^
     --icon "%~dp0dlss5-autopilot.ico" ^
     --distpath "%~dp0" ^
     --workpath "%TEMP%\dlss5-autopilot-build" ^

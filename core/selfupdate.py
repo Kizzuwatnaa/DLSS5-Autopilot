@@ -90,7 +90,17 @@ def fetch(progress=None) -> Path:
                 # One-folder build: the .exe and everything under _internal,
                 # kept together - the .exe alone cannot start.
                 for n in folder + [member]:
-                    dest = workdir / Path(n[len(base):])
+                    # Member names come out of a downloaded archive, so they
+                    # are somebody else's strings: a `../` in one writes
+                    # outside the temporary folder, and it happens before the
+                    # build checks below can reject the download (#79).
+                    try:
+                        dest = net.inside(workdir, n[len(base):])
+                    except net.OutsideError as e:
+                        raise UpdateError(
+                            f"The release archive contains a path that writes "
+                            f"outside the update folder - refusing it. ({e})"
+                        ) from None
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     with arc.open(n) as src, open(dest, "wb") as dst:
                         dst.write(src.read())

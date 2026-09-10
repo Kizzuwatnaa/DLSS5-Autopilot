@@ -35,6 +35,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Release notes are written by other people, and they put emoji in them. A
+# Turkish console is cp1254, and printing one killed the whole run half way
+# down the list - the same crash the Windows event reader had. Print what
+# can be printed and carry on.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from core import optiscaler, prefs, sources, video   # noqa: E402
 
 SEEN = prefs.FILE.parent / "upstream-seen.json"
@@ -42,10 +52,15 @@ SEEN = prefs.FILE.parent / "upstream-seen.json"
 # name -> (releases API, asset names this tool asks for by exact name)
 # The asset check is the point: a release that still exists but no longer
 # carries the file we ask for is exactly how a download breaks silently.
+# "{tag}" in a name is replaced with the release's own tag before checking,
+# because half of these are versioned. Ask for what the resolver asks for
+# TODAY, not what it used to: a check that cries wolf every run is worse
+# than no check.
 INSTALLED = {
     "DLSS5-Feeder": (sources.FEEDER_API, ()),
     "dlss5-bridge": (sources.BRIDGE_API, ()),
-    "DLSS5-Reshade-AIO": (sources.STANDALONE_API, sources.STANDALONE_ASSETS),
+    "DLSS5-Reshade-AIO": (sources.STANDALONE_API,
+                          (sources.STANDALONE_ZIP_NAME,)),
     "OptiScaler (Dagherbou)": (optiscaler.API, ()),
     "OptiScaler fork (y4my4my4m)": (optiscaler.FORK_API, ()),
     "OptiScaler fork (wilsjo2)": (optiscaler.PRESR_API, ()),
@@ -70,6 +85,25 @@ WATCHED = {
     "kibblerz/DLSS5-Reshade-AIO":
         "already installed as the standalone route; here too so its shape "
         "changes are noticed.",
+    "bmitch87/DLSS5VKLayer":
+        "a Vulkan layer, and the name reads like a collision with ReShade's "
+        "- but it is Linux only (deb/rpm/tar.gz, no Windows build), so it "
+        "cannot share a registry with ours. Nothing to do unless it gains a "
+        "Windows layer.",
+    "RedDukeDev/dlss5-image-enhancer-zluda":
+        "runs the network over a single picture, and on AMD through ZLUDA. "
+        "MIT with releases. Not a game route, but it is the third project "
+        "getting the network onto Radeon - evidence for the AMD answer in "
+        "gpu.AMD_ANSWER, not an install.",
+    "banbanzhige/DLSS5Tool":
+        "a standalone Windows video and image upscaler (MIT). Writes into "
+        "no game folder and hooks nothing, so it is not an OTHER_NGX_HOOKS "
+        "entry; overlaps the video player instead.",
+    "m0chs/DLSS5-32bit":
+        "the same 32-bit approach this tool already ships - ReShade plus a "
+        "separate 64-bit helper. Nothing to take from it while it is a beta "
+        "with no users; watch in case it lands on marker files that would "
+        "share a folder with ours.",
 }
 
 # Repositories pushed recently whose name or description looks like this
@@ -153,7 +187,8 @@ def main() -> int:
             continue
         fresh[name] = tag
         moved = seen.get(name) not in (None, tag)
-        missing = [w for w in want if w not in assets]
+        missing = [w for w in (x.replace("{tag}", tag) for x in want)
+                   if w not in assets]
         flag = "NEW " if moved else "    "
         if moved or missing or show_all:
             print(f"  {flag}{name:<30} {tag:<28} {_iso(when)}  ({_age(when)})")

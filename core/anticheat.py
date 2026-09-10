@@ -108,5 +108,25 @@ WARNING = (
 )
 
 
+# Replacing a runtime the game ships is not the same act as injecting a
+# DLL, and it carries its own risk: a launcher that verifies its files puts
+# the old one back (harmless), and an online game's anti-cheat may treat a
+# changed file as tampering (not harmless). Said before the swap, not after.
+SWAP_WARNING = (
+    "Swapping {name} replaces a file the game itself ships.\n\n"
+    "The one that is there is backed up and comes back when you uninstall, "
+    "so nothing is lost. Two things to know before you do it: a launcher "
+    "that verifies its files will simply put its own copy back, and in an "
+    "online game an anti-cheat can treat a changed file as tampering.\n\n"
+    "For a single-player game this is the usual way to move off an old "
+    "build. For anything you play online, keep the game's own file."
+)
+
+
+def swap_message(name: str) -> str:
+    """What to say before replacing a runtime the game shipped."""
+    return SWAP_WARNING.format(name=name)
+
+
 def message(f: Finding) -> str:
     return WARNING.format(product=f.summary)

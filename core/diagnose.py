@@ -267,6 +267,34 @@ def _missing_addons(install_dir: Path, man: dict) -> list[str]:
     return [f for f in _addons(man) if not (install_dir / f).is_file()]
 
 
+# The add-ons are what antivirus goes for most often, but they are not the
+# only files whose absence explains everything after it. Somebody who has
+# installed three times and still has no nvngx_dlssnr.dll and no shader
+# in the folder does not need "install again" a fourth time -
+# something is removing them (GTA IV, issue #84).
+# Only files that cannot go missing on their own. ReShade.ini is the one
+# file ReShade itself rewrites, and the one people are told to delete to
+# reset their settings, so it is NOT here - listing it turned "you reset
+# your settings" into "antivirus quarantined your install" and returned
+# early over every rule below it, the 32-bit Vulkan layer clash included.
+_CORE_NAMES = ("nvngx_dlssnr.dll",)
+
+
+def _missing_core(install_dir: Path, man: dict) -> list[str]:
+    """Recorded files that the install wrote and are no longer there."""
+    out = []
+    for f in man.get("files") or []:
+        if not isinstance(f, str):
+            continue
+        base = f.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if not (base.endswith((".addon64", ".addon32", ".fx"))
+                or base in _CORE_NAMES):
+            continue
+        if not (install_dir / f).is_file():
+            out.append(f)
+    return out
+
+
 OPTI_LOG = "OptiScaler.log"
 
 
@@ -381,10 +409,22 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     lines = text.splitlines()
     nr = [(i, ln) for i, ln in enumerate(lines)
           if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
-    running = [x for x in nr if "running at" in x[1]]
+    # "running at WxH" is the base build's line when the model is created.
+    # The forks also print the model's cost every frame it actually draws
+    # ("DlssNr_Dx12::Dispatch DLSS-NR cost: 7.41 ms total = 7.23 ms model"),
+    # and on wilsjo2's after-RR path that dispatch line is the ONLY thing
+    # written - the report called a thirteen-minute session with a dispatch
+    # every frame "Inconclusive" (#81). A cost line is the strongest proof
+    # there is: the model cannot report a time for work it did not do.
+    running = [x for x in nr if "running at" in x[1]
+               or ("Dispatch" in x[1] and "cost" in x[1])]
     failed = [x for x in nr if any(k in x[1] for k in (
         "create failed", "unavailable", "did not run", "not found beside",
         "would not load", "disabling for this session", "refused"))]
+    # Settings echoed at startup ("DlssNr.Enabled: true") say what was asked
+    # for, not what happened. Separating them keeps the "never ran" verdict
+    # from sounding like the tool has no idea what went on.
+    settings_only = [x for x in nr if re.search(r"DlssNr\.\w+:", x[1])]
     if "forwarder loaded" in text:
         rep.add(OK, "OptiScaler loaded and found the neural-rendering forwarder.")
     # The game is running on Vulkan while this route was installed for D3D12.
@@ -446,18 +486,125 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
         rep.verdict = ("Neural rendering stopped after it started."
                        if running else
                        "OptiScaler loaded, but the model refused or failed.")
+    elif nr and len(settings_only) == len(nr):
+        # Every neural-rendering line is a setting being read back: the model
+        # was switched on and then never asked to draw a frame. On this route
+        # that has one usual cause - OptiScaler runs the model around the
+        # game's own upscaler, so if the game's DLSS/FSR/XeSS is off, or the
+        # game never reaches the point of running it, nothing dispatches and
+        # the overlay sits on "waiting for the upscaler to run" (#85, #70).
+        rep.add(BAD, "Neural rendering was switched on, but the model never "
+                     "drew a frame.", settings_only[-1][1].strip()[-160:])
+        rep.add(INFO, "OptiScaler runs the model around the game's own "
+                      "upscaler. Turn DLSS (or FSR/XeSS) on in the game's "
+                      "graphics menu and set it to anything but 'off' - with "
+                      "no upscaler running there is nothing for neural "
+                      "rendering to attach to, which is what the overlay "
+                      "means by 'waiting for the upscaler to run'. If the "
+                      "game has no upscaler at all, use the feeder route.")
+        rep.verdict = ("Neural rendering never ran - the game's own upscaler "
+                       "has to be on for this route.")
     elif nr:
         rep.add(WARN, "OptiScaler mentions neural rendering but never reports "
                       "it running.", nr[-1][1].strip()[-160:])
-        rep.verdict = "Inconclusive - open the overlay (Insert) and read the "\
-                      "status under the Neural Rendering checkbox."
+        rep.verdict = (f"Inconclusive - open the overlay "
+                       f"({_overlay_key()}) and read the status under the "
+                       f"Neural Rendering checkbox.")
     else:
         rep.add(WARN, "OptiScaler ran, but neural rendering was never asked for.",
-                "Press Insert in game and tick Neural Rendering; the tool "
-                "writes Enabled=true, but a hand-edited OptiScaler.ini can "
-                "override it.")
+                f"Press {_overlay_key()} in game and tick Neural Rendering; "
+                f"the tool writes Enabled=true, but a hand-edited "
+                f"OptiScaler.ini can override it.")
         rep.verdict = "OptiScaler loaded; neural rendering not switched on."
+        # ...and then say which of its four requirements are actually met on
+        # this machine, rather than leaving the person to guess which one
+        # broke. "OptiScaler does not engage" is six issues, four of them
+        # still open, and every one of them was answered with advice instead
+        # of with what the folder says.
+        for line in _opti_checklist(install_dir, man or {}):
+            rep.add(INFO, line)
     return rep
+
+
+def _overlay_key(default: str = "Insert") -> str:
+    """What this person actually has to press (#88 made it configurable)."""
+    try:
+        from . import reshade_ini as _ri
+        return _ri.overlay_key_name(default)
+    except Exception:
+        return default
+
+
+def _opti_checklist(install_dir: Path, man: dict) -> list[str]:
+    """The four things the OptiScaler route needs, each answered from disk.
+
+    Every line is a fact read out of the folder, the ini or the driver -
+    never an instruction. What to do about a missing one is already in the
+    findings above it.
+    """
+    out: list[str] = []
+    from . import optiscaler as _opti
+
+    # 1. Neural rendering switched on in the file OptiScaler actually reads.
+    ini = install_dir / _opti.INI
+    enabled = None
+    try:
+        text = ini.read_text(encoding="utf8", errors="replace")
+        m = re.search(r"^\s*Enabled\s*=\s*(\S+)", _section(text, _opti.NR_SECTION),
+                      re.M | re.I)
+        enabled = m.group(1).strip().lower() if m else None
+    except OSError:
+        text = ""
+    if enabled is None:
+        out.append(f"{_opti.INI}: no [{_opti.NR_SECTION}] Enabled line "
+                   f"({'the file is not there' if not ini.is_file() else 'the install writes one, so it has been changed since'}).")
+    else:
+        out.append(f"{_opti.INI}: [{_opti.NR_SECTION}] Enabled={enabled}.")
+
+    # 2. The runtime, and the forwarder the model insists on being called
+    #    through (its path has to contain "nvngx.dll"). The forwarder comes
+    #    out of the OptiScaler package, so it is only "missing" if this
+    #    install actually recorded writing it - a build that does not ship
+    #    one must not be reported as broken.
+    recorded = {str(f).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                for f in man.get("files") or [] if isinstance(f, str)}
+    for name in ("nvngx_dlssnr.dll", _opti.FORWARDER):
+        there = (install_dir / name).is_file()
+        if there:
+            out.append(f"{name}: present.")
+        elif name.lower() in recorded or name == "nvngx_dlssnr.dll":
+            out.append(f"{name}: MISSING - the install wrote it.")
+        else:
+            out.append(f"{name}: not in this folder (this build may not use one).")
+
+    # 3. The game's own upscaler - the thing the model attaches to.
+    up = str(man.get("upscaler") or "")
+    out.append(f"the game's own upscaler, recorded at install: "
+               f"{up or 'none recorded - the game was expected to use DLSS'}. "
+               f"It has to be running for the model to have anything to "
+               f"attach to.")
+
+    # 4. The driver, which is where the model itself lives.
+    try:
+        from . import gpu as _gpu
+        drv = _gpu.driver_version()
+        ok = _gpu.driver_at_least(_opti.DRIVER_MIN, drv)
+        out.append(f"driver {drv or 'unknown'}: "
+                   + ("new enough" if ok else
+                      f"older than {_opti.DRIVER_MIN}, the first driver "
+                      f"documented to carry the neural-rendering runtime"
+                      if ok is False else
+                      "could not be read"))
+    except Exception:
+        pass
+    return out
+
+
+def _section(text: str, name: str) -> str:
+    """One [section] out of an ini, without the ones after it."""
+    m = re.search(rf"^\[{re.escape(name)}\]\s*$(.*?)(?=^\[|\Z)", text,
+                  re.M | re.S | re.I)
+    return m.group(1) if m else ""
 
 
 def _analyse_remix(install_dir: Path, rep: "Report", since: float,
@@ -586,9 +733,9 @@ def _layer_state(man: dict) -> tuple[bool, bool]:
 def _layer_gone(man: dict) -> tuple[str, str, str] | None:
     """(title, detail, verdict) when the Vulkan layer cannot reach this game."""
     any_layer, mine = _layer_state(man)
+    bits = 32 if man.get("bitness") == 32 else 64
     if mine:
         return None
-    bits = 32 if man.get("bitness") == 32 else 64
     if any_layer:
         return ("A ReShade Vulkan layer is registered, but not the "
                 f"{bits}-bit one this game needs.",
@@ -637,7 +784,7 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
     proxy = man.get("proxy") or ""
     exe = man.get("exe") or "the game's executable"
     app = "app" if man.get("kind") == "video" else "game"
-    missing = _missing_addons(install_dir, man)
+    missing = _missing_core(install_dir, man)
 
     if proxy == VULKAN_LAYER:
         # Never a file. Until 1.6.1 this went through the "gone from the
@@ -669,15 +816,50 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         rep.verdict = "DXVK is missing from the folder - reinstall."
         return rep
 
-    if missing:
-        rep.add(BAD, f"Add-on missing from the folder: {', '.join(missing)}.",
-                "The install wrote it and it is no longer there - almost "
-                "always antivirus quarantine. Restore it, exclude the folder, "
-                "and install again.")
-        rep.verdict = "An add-on was quarantined - reinstall."
+    try:
+        from . import dxvk as _dxvk
+        exe_path = Path(str(man.get("exe") or ""))
+        since = _installed_at(install_dir)
+        # Dated, like every other log this file reads: one left by a run
+        # BEFORE this install - or by a game that ships its own DXVK - says
+        # nothing about whether the game has been started since.
+        dxvk_logs = [n for n in _dxvk.logs_for(exe_path if exe_path.name else None)
+                     if _fresh(install_dir / n, since)]
+    except Exception:
+        dxvk_logs = []
+
+    # Read above the rule below rather than beside its own: a missing file
+    # returns, and DXVK's log is the harder evidence.
+    if missing and not (dxvk_logs and proxy == VULKAN_LAYER):
+        # Stands aside for the DXVK-log and name-clash rules: a shader lost
+        # to the game's own file verification would otherwise bury the
+        # 32-bit layer answer (#31) under "restore your files". Same shape
+        # as the ReShade.ini regression named above _CORE_NAMES.
+        many = len(missing) > 1
+        rep.add(BAD, f"Written by the install and no longer in the folder: "
+                     f"{', '.join(missing[:5])}"
+                     f"{', ...' if len(missing) > 5 else ''}.",
+                "The install put "
+                + ("these files" if many else "it")
+                + " there and "
+                + ("they are" if many else "it is")
+                + " gone - a missing dll is almost always antivirus "
+                  "quarantine; a missing shader is more often the game's own "
+                  "launcher verifying its files, or a mod manager tidying up. "
+                  "Installing again "
+                  "writes the same files for the same thing to remove: "
+                  "restore them from quarantine first (Windows Security -> "
+                  "Protection history -> Restore), add this folder to the "
+                  "exclusions, and only then install again.")
+        rep.verdict = ("Files the install wrote are gone from the folder - "
+                       "restore them and exclude the folder before "
+                       "reinstalling.")
         return rep
 
-    if stale_reshade:
+    # Same guard as the rule above, and for the same reason: DXVK's own
+    # log proves the game HAS been started since the install, so "play once
+    # and check again" is not just unhelpful there, it is untrue.
+    if stale_reshade and not (dxvk_logs and proxy == VULKAN_LAYER):
         rep.add(WARN, "ReShade.log is older than the install.",
                 f"The {app} was last run before this install, so nothing "
                 f"has loaded the new files yet. Play once and check again.")
@@ -690,19 +872,36 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
     # ReShade layer did not - so telling this person the game was never
     # started, or that it might not be on Vulkan, is plainly wrong (Call of
     # Juarez: Gunslinger, issue #31, three rounds of that answer).
-    try:
-        from . import dxvk as _dxvk
-        exe_path = Path(str(man.get("exe") or ""))
-        since = _installed_at(install_dir)
-        # Dated, like every other log this file reads: one left by a run
-        # BEFORE this install - or by a game that ships its own DXVK - says
-        # nothing about whether the game has been started since.
-        dxvk_logs = [n for n in _dxvk.logs_for(exe_path if exe_path.name else None)
-                     if _fresh(install_dir / n, since)]
-    except Exception:
-        dxvk_logs = []
     if dxvk_logs and proxy == VULKAN_LAYER:
         bits = 32 if man.get("bitness") == 32 else 64
+        # 1.7.3 got this far and said "install again to rewrite the layer",
+        # which did not help, because the layer was there and being thrown
+        # away: both of ReShade's manifests call themselves VK_LAYER_reshade
+        # and the Vulkan loader keeps a name only once - it kept the 64-bit
+        # one and then refused it as the wrong bit-type. Its own trace in a
+        # 32-bit process is where that came from (#31, four rounds; #2).
+        clash = None
+        if bits == 32:
+            try:
+                from . import vulkan as _vk
+                clash = _vk.name_clash()
+            except Exception:
+                clash = None
+        if clash is not None:
+            rep.add(BAD, "The 32-bit ReShade layer carries the layer name "
+                         "the 64-bit one uses, so the Vulkan loader "
+                         "throws it away.",
+                    f"{dxvk_logs[0]} proves the game ran and DXVK translated "
+                    f"it, and there is still no ReShade.log. Both of "
+                    f"ReShade's layer manifests are called "
+                    f"VK_LAYER_reshade, and an implicit layer name may only "
+                    f"appear once: the loader keeps the 64-bit one, then "
+                    f"refuses it because a 32-bit game cannot load it. "
+                    f"Install again with this version - it gives the 32-bit "
+                    f"layer its own name.")
+            rep.verdict = ("The 32-bit Vulkan layer was being discarded as a "
+                           "duplicate name - install again to rewrite it.")
+            return rep
         rep.add(BAD, "DXVK ran, and ReShade did not.",
                 f"{dxvk_logs[0]} was written since the install, so the {app} "
                 f"was started and DXVK loaded and translated it to Vulkan - "
@@ -1118,7 +1317,30 @@ def analyse(install_dir: Path) -> Report:
             if "enabled" in state:
                 rep.add(OK, f"Motion vectors: {name} is enabled.")
             elif "not installed" in state:
-                rep.add(BAD, f"Motion vectors: {name} is not installed.")
+                # Issue #101: the report said "not installed" over a file
+                # list that showed the shader sitting in the folder, and a
+                # ReShade.log line saying a DIFFERENT technique was enabled.
+                # The add-on means "the technique this build reads is not
+                # switched on", which is not the same as a missing file -
+                # and the two together read as the tool contradicting
+                # itself. Look before repeating it.
+                # prov's third group is the technique, "Name@file.fx".
+                shader = (_t or "").split("@", 1)[1] if "@" in (_t or "") else ""
+                on_disk = bool(shader) and (
+                    install_dir / "reshade-shaders" / "Shaders" / shader).is_file()
+                if on_disk:
+                    rep.add(BAD, f"Motion vectors: {name} is installed but "
+                                 f"not switched on.",
+                            f"{shader} is in reshade-shaders\\Shaders, so "
+                            f"nothing is missing - the technique itself is "
+                            f"off, or another motion-vector technique is on "
+                            f"in its place. This build of DLSS5_Feed.fx reads "
+                            f"{name} and nothing else. Open the ReShade "
+                            f"overlay, tick {name} and put it ABOVE "
+                            f"'DLSS 5 Feed' in the list, or install again to "
+                            f"have the tool write the order itself.")
+                else:
+                    rep.add(BAD, f"Motion vectors: {name} is not installed.")
             else:
                 rep.add(BAD, f"Motion vectors: {name} is {state}.",
                         "Enable that technique in the ReShade overlay, ABOVE "
@@ -1344,6 +1566,36 @@ def analyse(install_dir: Path) -> Report:
                 "Usually a driver too old for this NGX runtime, or the game "
                 "running on the wrong GPU.")
 
+    # The add-on hooks NVSDK_NGX_D3D12_EvaluateFeature_C inside the driver's
+    # own NGX runtime. A driver that does not export it is a driver from
+    # before DLSS 5, and everything after this point is downstream of that:
+    # the video player report on driver 610.60 (#75) reached "Inconclusive"
+    # with this error sitting in its log twice.
+    hookfail = re.search(
+        r"vtable::Hook\(Failed to find (NVSDK_NGX_\w+_EvaluateFeature\w*)",
+        rtext or "")
+    # ...and only when nothing else worked: one failed hook on a D3D11
+    # variant, while the D3D12 path ran fine and delivered frames, would
+    # otherwise turn "Working." into "update your driver".
+    if hookfail and not delivered and not ready and not crash:
+        drv = ""
+        try:
+            from . import gpu as _gpu
+            drv = _gpu.driver_version() or ""
+        except Exception:
+            pass
+        rep.add(BAD, "The driver's NGX runtime does not export the call the "
+                     "add-on hooks.",
+                f"'Failed to find {hookfail.group(1)}' means the "
+                "neural-rendering entry point was not in the driver the game "
+                "ran with. 616.56 is the first driver documented to carry it"
+                + (f"; this machine reports {drv}" if drv else "") + ". "
+                "Update the graphics driver and install again - nothing else "
+                "in this folder can make up for it.")
+        rep.verdict = ("The driver has no DLSS 5 entry point - update the "
+                       "graphics driver.")
+        return rep
+
     if crash:
         rep.add(BAD, f"Creating the DLSS feature crashed ({crash.group(1)}).",
                 "The add-on and the nvngx_dlssnr build disagree. Nothing the "
@@ -1462,8 +1714,8 @@ def _analyse_upstream(rep: Report, rtext: str) -> Report:
                           f"add-on ran its own snippet instead.",
                     "Its fallback path does the same work without asking the "
                     "driver for the feature, so this alone is not a fault - "
-                    "though the one freeze traced on this route so far was "
-                    "on a game that took it.")
+                    "though the one freeze traced on this route was on "
+                    "a game that took it.")
         else:
             rep.add(BAD, f"NGX refused the neural feature ({code}).",
                     "The driver would not create the neural pass for this "
@@ -1700,6 +1952,14 @@ PROVIDER_FX = {2: "vort_Motion.fx", 3: "lumenite_Kernel.fx",
                4: "lumenite_QuantMotion.fx"}
 
 
+# A swapped ray-reconstruction runtime is invisible in a bug report
+# otherwise, and it is exactly the kind of thing that explains one.
+RR_RUNTIME = "nvngx_dlssd.dll"
+# installer.BACKUP_SUFFIX, spelled here so this module does not import
+# the installer for one string (it already avoids that everywhere).
+_BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+
+
 def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     """One line per file that decides whether anything can load at all."""
     names: list[str] = []
@@ -1749,6 +2009,18 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
             out.append(f"- {rx['key']}: "
                        f"{'set' if _remix.option_set(conf, rx['key']) else 'NOT SET'}")
         return out
+    # A ray-reconstruction runtime this install swapped, wherever the game
+    # keeps it: invisible in a report otherwise, and exactly the kind of
+    # thing that explains one.
+    rr = (man.get("components") or {}).get("dlssd")
+    if rr:
+        where = next((f for f in (man.get("files") or [])
+                      if isinstance(f, str)
+                      and f.replace("\\", "/").lower().endswith(RR_RUNTIME)
+                      and not f.endswith(_BACKUP_SUFFIX)), RR_RUNTIME)
+        there = (install_dir / where).is_file()
+        extra.append(f"- {where}: {'present' if there else 'MISSING'} "
+                     f"(swapped to {rr}; the game's own is backed up)")
     if route == "optiscaler":
         # Three builds can be installed here and their packages differ; a
         # report that does not say which one is unanswerable.
@@ -1789,7 +2061,8 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
 
 def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
                last_diag, autopilot_tail: str, autopilot_log_path,
-               install_dir, last_error: str = "") -> str:
+               install_dir, last_error: str = "",
+               answers: dict | None = None, crash=None) -> str:
     """The text of a bug report, with the evidence already in it.
 
     A report is only as good as what it carries. The machine, the verdict,
@@ -1806,11 +2079,20 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
             diag = ""
 
     exe = getattr(getattr(game, "exe", None), "name", None) or "-"
+    # Asked in the tool now (reportui). A template nobody filled in is how
+    # four of the nine reports on the first day of 1.7.3 arrived with the
+    # "yes / no / it closed itself" line untouched and nothing else said.
+    if answers:
+        said = str(answers.get("happened") or "").strip()
+        asked = (f"**Did the game start?** {answers.get('started') or '-'}\n\n"
+                 f"**What happened**\n{said}\n\n")
+    else:
+        asked = ("**Did the game start?** yes / no / it closed itself\n\n"
+                 "**What happened**\n\n\n"
+                 "**What I expected**\n\n\n")
     head = (
-        "**Did the game start?** yes / no / it closed itself\n\n"
-        "**What happened**\n\n\n"
-        "**What I expected**\n\n\n"
-        "---\n"
+        asked
+        + "---\n"
         f"- version: {version}\n"
         f"- gpu: {gpu_name} (sm_{sm}), driver {driver}\n"
         f"- game: {getattr(game, 'name', None) or '-'}\n"
@@ -1819,6 +2101,12 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         f"{getattr(game, 'api', None) or '-'}"
         + (f" ({game.api_why})" if getattr(game, 'api_why', None) else "") + "\n"
         f"- route: {route or '-'}\n"
+        # What Windows recorded, when there is one: the faulting module is
+        # the most useful line a "the game closed itself" report can carry,
+        # and nobody was attaching it because nobody knew to look.
+        + (f"- windows event: {crash.exe} faulted in {crash.module} "
+           f"{crash.code} at {crash.when} UTC\n"
+           if crash is not None and getattr(crash, "module", "") else "")
         + diag[:1200])
 
     files = ""

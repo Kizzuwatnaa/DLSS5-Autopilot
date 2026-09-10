@@ -42,9 +42,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import gui   # noqa: E402
 
-# (scaling, window) pairs: see the table above for what each one stands for.
-CASES = ((1.0, 1920, 1061), (1.25, 1920, 1061), (1.5, 1920, 1061),
-         (2.0, 1400, 900))
+# (scaling, window width, window height, what machine this is).
+#
+# A display is only ever two numbers to a window: how big the workspace is
+# in real pixels, and how much bigger everything is drawn. So each case
+# below is a REAL screen at a scaling Windows actually offers for it, turned
+# into the window the app would get - the work area, minus the taskbar.
+#
+#   2560x1440 is the common 27" panel; Windows offers 100 and 125 there.
+#   3840x2160 recommends 150 on a 27" and 200 on a 32"; 250 is a laptop.
+#   5120x2880 is the 5K panel, always at 200.
+#   7680x4320 is 8K, where Windows starts at 300 and people use 400.
+#
+# The scaling number here is gui.SCALE, which is the multiplier the app
+# applies to every bare pixel - it is NOT the same as Windows' percentage
+# when the two disagree: a 4K screen at 300% has a 1280-wide WORKSPACE, and
+# the window is 1280 logical pixels with everything drawn 1.5x, not 3x in a
+# 1280 window (that machine does not exist).
+CASES = (
+    (1.0, 1920, 1032, "1920x1080 at 100%"),
+    (1.25, 2560, 1392, "2560x1440 at 100% (fonts at 125%)"),
+    (1.5, 2048, 1112, "2560x1440 at 125%"),
+    (1.5, 2560, 1392, "3840x2160 at 150%"),
+    (2.0, 1920, 1032, "3840x2160 at 200%"),
+    (2.0, 1536, 816, "3840x2160 at 250% (27\" laptop)"),
+    (2.0, 2560, 1392, "5120x2880 at 200%"),
+    (2.5, 2048, 1112, "5120x2880 at 250%"),
+    (3.0, 2560, 1392, "7680x4320 at 300%"),
+    (3.5, 1920, 1032, "7680x4320 at 400%"),
+)
 
 
 def _pump(root: tk.Tk, n: int = 4) -> None:
@@ -53,7 +79,8 @@ def _pump(root: tk.Tk, n: int = 4) -> None:
         root.update()
 
 
-def check(scale: float, w: int, h: int, shot: str = "") -> list[str]:
+def check(scale: float, w: int, h: int, shot: str = "",
+          what: str = "") -> list[str]:
     bad: list[str] = []
     errors: list[str] = []
     gui.SCALE = scale
@@ -68,8 +95,13 @@ def check(scale: float, w: int, h: int, shot: str = "") -> list[str]:
             root.geometry(f"{w}x{h}+0+0")
             _pump(root, 2)
         win_h = root.winfo_height()
-        print(f"\n--- scaling {scale:.0%} in {root.winfo_width()}x{win_h} "
-              f"(a {int(1920 / scale)}x{int(1061 / scale)} workspace) ---")
+        # What is actually being varied is the RATIO: how much bigger
+        # everything is drawn than the window it has to fit in. The window
+        # cannot be made larger than the screen this runs on (the app
+        # maximises itself), so a bigger display is emulated by drawing
+        # bigger in the room there is - which is the same test.
+        print(f"\n--- {what or 'a display'}: everything drawn {scale:.2f}x "
+              f"in a {root.winfo_width()}x{win_h} window ---")
 
         for n, name in ((1, "architecture"), (2, "game list"), (3, "install")):
             app.step = n
@@ -141,10 +173,11 @@ def main() -> int:
     if "--shot" in sys.argv:
         shot = sys.argv[sys.argv.index("--shot") + 1]
         args = [a for a in args if a != shot]
-    cases = ([(float(args[0]), 1920, 1061)] if args else list(CASES))
+    cases = ([(float(args[0]), 1920, 1061, "as asked")] if args
+             else list(CASES))
     bad: list[str] = []
-    for scale, w, h in cases:
-        bad += check(scale, w, h, shot)
+    for scale, w, h, what in cases:
+        bad += check(scale, w, h, shot, what)
     print()
     print("=" * 70)
     if bad:

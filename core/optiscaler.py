@@ -69,6 +69,11 @@ FORK = "y4my4my4m"
 PRESR_API = ("https://api.github.com/repos/wilsjo2/"
              "OptiScaler-DLSSNR-PreSR-Multipass/releases?per_page=10")
 PRESR = "wilsjo2"
+# The key that fork's "before the upscaler" placement lives behind. It is
+# off by default there, so choosing the build is not the same as choosing
+# the behaviour it is chosen for (#81). Named here rather than written in
+# the GUI's settings dict: it belongs to the build, not to a preference.
+PRESR_BEFORE_SR = {"RunBeforeSR": True}
 
 # Every fork publishes on its own release page, in the same shape: pick the
 # newest release that carries an archive. The second item names archives to
@@ -188,20 +193,60 @@ def _tar_exe() -> Path:
     return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
 
 
+def _seven_zip() -> Path | None:
+    """7-Zip, if this machine has it. Issue #93.
+
+    Windows ships tar.exe (bsdtar) from 1803 on, and this tool used it for
+    .7z - but Microsoft's build has no LZMA in it, so on some machines it
+    unpacks nothing and says "LZMA codec is unsupported". Whether it works
+    is a property of the Windows build, which is not something a person can
+    be asked about, so try the real thing first where it exists.
+    """
+    for c in (shutil.which("7z"), shutil.which("7za"), shutil.which("7zr"),
+              r"C:\Program Files\7-Zip\7z.exe",
+              r"C:\Program Files (x86)\7-Zip\7z.exe"):
+        if c and Path(c).is_file():
+            return Path(c)
+    return None
+
+
 def extract_7z(archive: Path, dest: Path) -> None:
-    """Unpack a .7z with Windows' tar.exe (libarchive), into dest."""
-    tar = _tar_exe()
-    if not tar.is_file():
-        raise RuntimeError(f"{archive.name} is a .7z archive and this Windows "
-                           f"has no tar.exe to open it (Windows 10 1803 and "
-                           f"later ship one at {tar}).")
+    """Unpack a .7z into dest: 7-Zip if it is here, else Windows' tar.exe."""
     dest.mkdir(parents=True, exist_ok=True)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    sz = _seven_zip()
+    if sz is not None:
+        r = subprocess.run([str(sz), "x", str(archive), f"-o{dest}", "-y"],
+                           capture_output=True, text=True, creationflags=flags)
+        if r.returncode == 0:
+            return
+        seven_err = (r.stderr or r.stdout).strip()[-300:]
+    else:
+        seven_err = ""
+
+    tar = _tar_exe()
+    if not tar.is_file():
+        raise RuntimeError(
+            f"{archive.name} is a .7z archive and there is nothing here to "
+            f"open it: no 7-Zip, and this Windows has no tar.exe either "
+            f"(Windows 10 1803 and later ship one at {tar}). Install 7-Zip "
+            f"and run the install again."
+            + (f"\n\n7-Zip said: {seven_err}" if seven_err else ""))
     r = subprocess.run([str(tar), "-xf", str(archive), "-C", str(dest)],
                        capture_output=True, text=True, creationflags=flags)
     if r.returncode != 0:
+        err = (r.stderr or r.stdout).strip()[-300:]
+        hint = ""
+        if "lzma" in err.lower() or "unsupported" in err.lower():
+            # The exact failure #93 reported, and the answer is not obvious
+            # from the message Windows gives.
+            hint = ("\n\nWindows' own tar.exe is built without LZMA, so it "
+                    "cannot open a .7z on this machine. Install 7-Zip "
+                    "(7-zip.org) and run the install again - it is used "
+                    "first when it is there.")
         raise RuntimeError(f"tar.exe could not unpack {archive.name}: "
-                           f"{(r.stderr or r.stdout).strip()[-300:]}")
+                           f"{err}{hint}")
 
 
 def _unpacked(archive: Path) -> Path:
@@ -439,7 +484,9 @@ def enable_nr(exe_dir: Path, log=None, settings: dict | None = None) -> None:
         p.write_text(_ini_set(text, NR_SECTION, values), encoding="utf8")
         log(f"      OptiScaler.ini: [{NR_SECTION}] "
             + ", ".join(f"{k}={v}" for k, v in values.items()))
-        log(f"      if it does not come on, press {OVERLAY_KEY} in game and "
+        from . import reshade_ini
+        key = reshade_ini.overlay_key_name(OVERLAY_KEY)
+        log(f"      if it does not come on, press {key} in game and "
             f"tick it under DLSS Neural Rendering")
     except OSError:
         log("      could not write OptiScaler.ini")
@@ -459,6 +506,26 @@ FG_VALUES = {"Enabled": "true", "FGInput": "upscaler", "FGOutput": "fsrfg"}
 FG_HUD = {"HUDFix": "true"}
 FG_LIBS = ("OptiScaler/amd_fidelityfx_loader_dx12.dll",
            "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll")
+
+
+def set_overlay_key(exe_dir: Path, vk: int, log=None) -> None:
+    """Bind OptiScaler's overlay to a virtual-key code ([Menu] ShortcutKey).
+
+    Its default is Insert, and a keyboard without one has no way into the
+    overlay at all - which is where neural rendering is switched on (#88).
+    The ini wants hex, and "auto" means the default.
+    """
+    if not vk:
+        return
+    log = log or (lambda *_: None)
+    p = exe_dir / INI
+    try:
+        text = p.read_text(encoding="utf8", errors="replace") if p.is_file() else ""
+        p.write_text(_ini_set(text, "Menu", {"ShortcutKey": f"0x{int(vk):02X}"}),
+                     encoding="utf8")
+        log(f"      OptiScaler.ini: [Menu] ShortcutKey=0x{int(vk):02X}")
+    except OSError:
+        log("      could not write the overlay key into OptiScaler.ini")
 
 
 def enable_fg(exe_dir: Path, log=None) -> bool:
@@ -603,6 +670,11 @@ def describe_nr(settings: dict | None) -> list[str]:
     st = settings.get("Style")
     if st:
         out.append(f"style: {NR_STYLES.get(int(st), st)}")
+    if settings.get("RunBeforeSR"):
+        out.append("the neural pass runs before super resolution, at render "
+                   "resolution - which is what this build is for. "
+                   f"OptiScaler.ini: [{NR_SECTION}] RunBeforeSR=true; turn "
+                   "it off there to put the pass back after the upscaler.")
     return out
 
 

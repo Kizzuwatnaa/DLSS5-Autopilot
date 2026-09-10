@@ -148,6 +148,80 @@ def write_reshade_ini(game_dir: Path, provider: int = 3) -> None:
     ini.save(p)
 
 
+# The overlay key, for keyboards that do not have the default one. ReShade
+# opens on Home and OptiScaler on Insert, and a laptop or a 60% keyboard
+# often has neither (#88). Windows virtual-key codes, because that is what
+# both of them store: ReShade as "<vk>,0,0,0" in [INPUT] KeyOverlay,
+# OptiScaler as hex in [Menu] ShortcutKey.
+# What "write nothing" is stored as in the table. ReShade then opens on
+# Home and OptiScaler on Insert, which is why the entry is not named after
+# either of them - and why it may not carry Home's own key code: with both
+# on 0x24 the stored value could not say which of the two had been picked,
+# so picking Home wrote Home and then told the person to press Insert.
+ROUTE_DEFAULT = 0
+
+OVERLAY_KEYS = {
+    # Not "Home": this entry writes nothing, and ReShade then opens on
+    # Home while OptiScaler opens on Insert. Naming one was wrong on the
+    # other route. It must keep the word "default" - the GUI reads it.
+    "route default": ROUTE_DEFAULT,
+    # Home is ReShade's own default and OptiScaler's is Insert, so both are
+    # listed: on the OptiScaler route "route default" is Insert, and someone
+    # who wants Home has to be able to ask for it.
+    "Home": 0x24,
+    "Insert": 0x2D,
+    "End": 0x23,
+    "Delete": 0x2E,
+    "Page Up": 0x21,
+    "Page Down": 0x22,
+    "Backspace": 0x08,
+    "F9": 0x78,
+    "F10": 0x79,
+    "F11": 0x7A,
+    "F12": 0x7B,
+}
+
+
+def overlay_key_name(default: str = "Home") -> str:
+    """What to tell the person to press, given what they chose.
+
+    Every "press Home" and "press Insert" in the tool goes through here.
+    A person who rebound the key because their keyboard has neither (#88)
+    must not then be told to press one of them.
+    """
+    from . import prefs
+    try:
+        vk = int(prefs.get("overlay_key") or 0)
+    except (TypeError, ValueError):
+        vk = 0
+    # ROUTE_DEFAULT means "write nothing", and it is stored as 0. A hand
+    # edited settings file can still carry the code itself, and the caller
+    # knows which key its own route opens on, so it is the same answer.
+    if not vk:                    # ROUTE_DEFAULT: the caller's own key
+        return default
+    for name, code in OVERLAY_KEYS.items():
+        if code == vk:
+            return name
+    return f"0x{vk:02X}"
+
+
+def set_overlay_key(game_dir: Path, vk: int) -> None:
+    """Bind ReShade's overlay to `vk`. The three zeros are ctrl/shift/alt."""
+    if not vk:
+        return
+    p = Path(game_dir) / "ReShade.ini"
+    if not p.is_file():
+        return          # nothing to edit; the install writes it before this
+    ini = Ini.load(p)
+    if len(ini.sections) == 1 and not ini.sections[0][1]:
+        # Load swallows an OSError and hands back an empty Ini (one root
+        # section, no keys). Saving that would replace every ReShade
+        # setting the person has with a single key.
+        raise OSError(f"{p} could not be read")
+    ini.set("INPUT", "KeyOverlay", f"{int(vk)},0,0,0")
+    ini.save(p)
+
+
 # The sections of ReShade.ini that hold what the user set up by hand in the
 # overlay: key bindings, overlay behaviour (tutorial done, fps counter, font
 # size), the theme. ReShade keeps them per game, so every fresh install used

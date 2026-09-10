@@ -31,6 +31,25 @@ MANIFEST = "ReShade64.json"
 # DLL. Registered alongside the 64-bit one only when a 32-bit game asks.
 DLL32 = "ReShade32.dll"
 MANIFEST32 = "ReShade32.json"
+# ...under a DIFFERENT layer name, and this is load-bearing. Both of
+# ReShade's manifests call themselves VK_LAYER_reshade, and the key we
+# register under - HKCU\Software - is NOT redirected per architecture the
+# way HKLM\Software is, so a 32-bit game's loader sees both of ours at
+# once. The loader then de-duplicates implicit layers BY NAME, keeps the
+# first (the 64-bit one) and throws the 32-bit one away - and then refuses
+# the survivor. Its own words, from a 32-bit process:
+#
+#   Removing layer VK_LAYER_reshade (...ReShade32.json) because it is a
+#     duplicate of VK_LAYER_reshade (...ReShade64.json)
+#   Requested layer "VK_LAYER_reshade" was wrong bit-type.
+#
+# Nothing loads, no ReShade.log is written, and the game looks untouched -
+# Call of Juarez: Gunslinger (#31, four rounds of wrong answers), Bayonetta
+# (#2) and every other 32-bit game that goes through DXVK. Giving the
+# 32-bit manifest its own name makes both survive and each process load the
+# one it can. Verified with the Vulkan loader's own trace, 32-bit and
+# 64-bit, before and after.
+LAYER_NAME32 = "VK_LAYER_reshade32"
 
 
 def layer_dir() -> Path:
@@ -130,13 +149,45 @@ def _place(setup_exe: Path, d: Path, dll: str, manifest: str) -> Path:
     net.extract_one(setup_exe, manifest, d / manifest)
     # The manifest points at the DLL relative to itself, which is what we want,
     # but rewrite it anyway so a moved folder cannot leave a dangling path.
+    # The name is rewritten for the 32-bit layer at the same time: see
+    # LAYER_NAME32 above - sharing one name is what stopped it loading.
     try:
         data = json.loads((d / manifest).read_text(encoding="utf8"))
-        data.setdefault("layer", {})["library_path"] = f".\\{dll}"
+        layer = data.setdefault("layer", {})
+        layer["library_path"] = f".\\{dll}"
+        if manifest == MANIFEST32:
+            layer["name"] = LAYER_NAME32
         (d / manifest).write_text(json.dumps(data, indent=2), encoding="utf8")
     except (OSError, json.JSONDecodeError, AttributeError):
         pass
     return d / manifest
+
+
+def layer_name(path: Path) -> str:
+    """The name a manifest declares - what the loader de-duplicates on."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf8"))
+        return str(data.get("layer", {}).get("name", ""))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return ""
+
+
+def name_clash() -> Path | None:
+    """Our own 32-bit manifest, when it still shares the 64-bit one's name.
+
+    Installs made before this was understood left a ReShade32.json calling
+    itself VK_LAYER_reshade, and it stays broken until it is rewritten -
+    reinstalling reused it rather than replacing it.
+    """
+    m32 = layer_dir() / MANIFEST32
+    m64 = layer_dir() / MANIFEST
+    if not m32.is_file():
+        return None
+    n32 = layer_name(m32)
+    if n32 and n32 != LAYER_NAME32 and (not m64.is_file()
+                                        or n32 == layer_name(m64)):
+        return m32
+    return None
 
 
 def _register(manifest: Path) -> None:
@@ -160,8 +211,15 @@ def install_layer(setup_exe: Path, log=None, also32: bool = False) -> tuple[Path
     # (Bayonetta, GTA IV) after 1.6.0 sent DirectX 9 through DXVK: the install
     # said "reusing the Vulkan layer that is already registered", the game ran
     # on Vulkan, and ReShade was never in it.
+    # Ours, but written before the name clash was understood: it has to be
+    # rewritten, not reused, or the 32-bit game gets nothing again.
+    stale = name_clash() if also32 else None
+    if stale is not None:
+        log(f"      the 32-bit layer registered here shares the 64-bit "
+            f"layer's name, which is why it never loaded - rewriting it")
+
     found = registered_for(x64=not also32)
-    if found is not None and not is_ours(found):
+    if found is not None and not is_ours(found) and stale is None:
         log(f"      ReShade's Vulkan layer is already registered "
             f"({found}); reusing it")
         return found, False

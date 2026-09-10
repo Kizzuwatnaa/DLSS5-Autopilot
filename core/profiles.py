@@ -33,6 +33,10 @@ DIR = prefs.FILE.parent / "profiles"
 
 # The Options fields a profile carries - everything else is per game or per
 # machine. Order matters only for how the JSON reads.
+# `dlssd` is deliberately not here: a ray-reconstruction swap is about
+# one game's own runtime, and carrying it to another game would ask for a
+# file that game may not have. `overlay_key` and `target_fps` are the same
+# shape - they live in the settings, not in a per-game profile.
 FIELDS = ("path", "provider", "renodx", "dlssnr", "dlss", "keep_game_dlss",
           "feed", "nr", "feeder_prerelease", "feeder_tag", "reshade_proxy",
           "opti_proxy", "opti_build", "dxvk")
@@ -213,7 +217,11 @@ def describe(opt: Options) -> list[str]:
     if opt.opti_proxy:
         out.append(f"optiscaler as {opt.opti_proxy}")
     if opt.opti_build:
-        out.append(f"optiscaler build: {opt.opti_build}")
+        # The wilsjo2 build carries a placement with it, and a profile that
+        # names the build without it describes only half of what it does.
+        out.append(f"optiscaler build: {opt.opti_build}"
+                   + (" (neural pass before the upscaler)"
+                      if opt.opti_build == optiscaler.PRESR else ""))
     if opt.dxvk:
         out.append("dxvk")
     return out

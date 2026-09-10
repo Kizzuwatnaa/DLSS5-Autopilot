@@ -1,0 +1,54 @@
+# Adds up every shared result into docs/compatibility.json, which the tool
+# downloads before an install to say what other people found in this game.
+#
+# There is no server behind this and there never will be. A person presses
+# "it worked" / "it did not" in the tool; that opens an issue in their own
+# browser, carrying one machine-readable block and nothing that identifies
+# them - executable name, route, build, API, card architecture, driver, the
+# tool's version, and the outcome. This workflow reads those blocks off the
+# issues labelled `result` and writes the totals into one static file.
+#
+# Only the block is read. The prose around it is for people; if somebody
+# edits the JSON by hand into something that is not a record, `parse()`
+# drops it rather than guessing. Nothing here writes to a game's issue, and
+# nothing here posts anywhere.
+name: compatibility
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, closed, reopened, deleted]
+  schedule:
+    - cron: "17 4 * * *"        # a daily rebuild, so a deleted issue drops out
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: compatibility
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read every result issue and add them up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python .github/scripts/compatibility.py
+
+      - name: Commit the file if it changed
+        run: |
+          if git diff --quiet -- docs/compatibility.json; then
+            echo "nothing changed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/compatibility.json
+          git commit -m "compatibility: rebuild from the shared results"
+          git push

@@ -1,0 +1,16 @@
+# build.bat is run by cmd.exe, and cmd's line continuation (^) only works
+# with CRLF endings: checked out with LF it fails as "the following
+# arguments are required: scriptname" (issue #93). Nothing about the build
+# should depend on how somebody's git is configured.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Everything else is read by Python, which does not care.
+*.py text
+*.md text
+*.json text
+*.yml text
+*.fx text
+*.ico binary
+*.png binary
+*.svg text

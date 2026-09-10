@@ -215,7 +215,15 @@ def prepare(folder: Path, on_prog=None, on_log=None) -> games.Game:
                 rel = n[len(top):] if top else n
                 if not rel:
                     continue
-                dst = folder / rel
+                # The only place here that keeps an archive's own folder
+                # structure, so the only one where a `../` member could
+                # write outside the player folder (#79).
+                try:
+                    dst = net.inside(folder, rel)
+                except net.OutsideError as e:
+                    raise RuntimeError(
+                        f"The {PLAYER} archive contains a path that writes "
+                        f"outside {folder} - refusing it. ({e})") from None
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(n) as src, open(dst, "wb") as out:
                     out.write(src.read())

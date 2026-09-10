@@ -15,6 +15,18 @@ it by default; --no-dxvk turns that off.
 ships a runtime with no DLSS 5 neural pass, replace it with a community
 build that has one. Experimental - it also replaces whatever game-specific
 fixes the mod's own runtime carried.
+
+--vr registers ReShade's OpenXR layer as well, for a game that draws
+through OpenXR. The desktop window is only a mirror, so a proxy DLL on its
+own changes nothing in the headset; OpenVR/SteamVR titles are not reached
+either way. The registration is per user rather than per game, and the
+last VR uninstall removes it. Untried with a headset here.
+
+--opti-build applies to --route optiscaler only and picks a fork other
+than Dagherbou's: y4my4my4m (multi-pass, multi-frame generation) or
+wilsjo2 (the neural pass before the upscaler - installed with that
+placement switched on, which is off in the fork's own default). Neither
+has been run here.
 """
 from __future__ import annotations
 
@@ -24,7 +36,8 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import dlss, games, gpu, installer, prefs, update  # noqa: E402
+from core import (dlss, games, gpu, installer, optiscaler,  # noqa: E402
+                  prefs, reshade_ini, update)
 
 
 def _console() -> None:
@@ -64,6 +77,16 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     if card:
         drv = gpu.driver_version()
         print(f"gpu     : {card} ({gpu.label(sm)})" + (f"  driver {drv}" if drv else ""))
+        # ...the warning itself is printed after --route has had its say,
+        # a few lines below: it depends on which route is actually used.
+    else:
+        vendor = gpu.other_vendor()
+        if vendor == "AMD":
+            print("gpu     : no NVIDIA card detected")
+            for line in gpu.AMD_ANSWER.splitlines():
+                print("          " + line.strip())
+        else:
+            print("gpu     : no NVIDIA card detected - dlss5 will not run")
     print(f"exe     : {g.exe}")
     print(f"arch    : {g.bit_label}   API: {g.api} ({g.api_why})")
     if route:
@@ -72,6 +95,13 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
                   f"(options: {', '.join(sup.options)})", file=sys.stderr)
             return 1
         sup.recommended = route
+    if card:
+        # The same warning the install page shows, for the route that will
+        # actually be installed. A command-line install on a driver that
+        # cannot run any of this used to proceed in silence.
+        warn = dlss.driver_warning(sup.recommended, gpu.driver_version())
+        if warn:
+            print(f"driver  : {warn}")
     print(f"route   : {dlss.LABELS[sup.recommended]}")
     for o in sup.options:
         usable, note = dlss.fit(o, g.api, sup.native_dlss, sm,
@@ -135,7 +165,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         # See the matching note in gui.py: the DLSS 5 page is in the game's
         # own overlay and drives the 64-bit helper; the helper's separate
         # window must NOT be alt-tabbed to while playing.
-        print("In game: press Home, then turn on neural rendering in the "
+        print(f"In game: press {reshade_ini.overlay_key_name()}, then turn on "
+              f"neural rendering in the "
               "DLSS 5 page (F6 toggles it) - it drives the 64-bit helper for "
               "you. Play BORDERLESS or true fullscreen at your display's own "
               "resolution: in a bordered window the game presents a few "
@@ -143,8 +174,12 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
               "alt-tab to the helper's window while playing. Turn the game's "
               "own MSAA/SSAA off.")
     else:
-        print("In game: press Home, then enable neural rendering in the DLSS 5 "
-              "panel. Turn the game's own MSAA/SSAA off.")
+        # The route's own key, not ReShade's: OptiScaler opens on Insert.
+        _dflt = (optiscaler.OVERLAY_KEY if sup.recommended == dlss.OPTI
+                 else "Home")
+        print(f"In game: press {reshade_ini.overlay_key_name(_dflt)}, then "
+              f"enable neural rendering in the DLSS 5 panel. Turn the game's "
+              f"own MSAA/SSAA off.")
     return 0
 
 

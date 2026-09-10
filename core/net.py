@@ -80,6 +80,13 @@ def ssl_context() -> ssl.SSLContext:
     return _SSL
 
 
+# A server that is overloaded for a second is the commonest failure of
+# all, and it used to end the install with a traceback (#103).
+RETRY_CODES = (500, 502, 503, 504, 408)
+RETRIES = 3
+RETRY_WAIT = 2.0
+
+
 def download(url: str, name: str, progress=None, force: bool = False,
              attempts: int = 4) -> Path:
     """Download to the cache and return the path. progress(done, total).
@@ -126,8 +133,26 @@ def download(url: str, name: str, progress=None, force: bool = False,
                     f"({tmp.stat().st_size}/{total} bytes).")
             tmp.replace(dest)
             return dest
-        except urllib.error.HTTPError:
+        except urllib.error.HTTPError as e:
             tmp.unlink(missing_ok=True)          # 4xx/5xx: resuming won't help
+            # ...but a 5xx is the server having a bad second, not a wrong
+            # URL. The big files come through here, and an overloaded host
+            # used to end the install with a traceback (#103).
+            if e.code in RETRY_CODES and attempt < attempts - 1:
+                last = e
+                time.sleep(RETRY_WAIT * (attempt + 1))
+                continue
+            if e.code in RETRY_CODES:
+                host = url.split("/")[2] if "/" in url else url
+                raise sources.Unavailable(
+                    f"{host} is not answering right now (HTTP {e.code}). "
+                    f"That is the server this file is published on, not your "
+                    f"connection and not this tool - it was asked "
+                    f"{attempts} times. Wait a few minutes and install "
+                    f"again: anything already downloaded is cached and will "
+                    f"not be fetched twice, and whatever this attempt did "
+                    f"write is recorded, so 'uninstall' takes it back "
+                    f"out.") from e
             raise
         except ssl.SSLError as e:
             # "decryption failed or bad record mac" is not a hiccup: it is
@@ -164,6 +189,37 @@ def sha256(path: Path) -> str:
         for blk in iter(lambda: f.read(1 << 20), b""):
             h.update(blk)
     return h.hexdigest()
+
+
+class OutsideError(ValueError):
+    """A path from a file or an archive pointed outside where it may write."""
+
+
+def inside(root: Path, rel: str, absolute_ok: bool = False) -> Path:
+    """Resolve `rel` under `root`, refusing anything that leaves it.
+
+    Every path this tool writes to comes out of something somebody else
+    wrote: an archive's member names, or the install manifest sitting in the
+    game folder. `..` in either of those walks out of the folder, and a
+    string prefix test is not enough to catch it - "C:/Games/game-other"
+    starts with "C:/Games/game" (#79). Compare whole path parts instead.
+
+    An archive member is never absolute, so `absolute_ok` is off by default.
+    The install manifest is the exception: this tool writes an absolute
+    entry itself when a backup or a Remix runtime lands outside the install
+    folder, and refusing those meant an uninstall silently left them behind.
+    Even then the path has to resolve under `root` - what is refused is a
+    path that ESCAPES, not one that is written differently.
+    """
+    root = Path(root).resolve()
+    p = Path(rel.replace("\\", "/"))
+    if (p.is_absolute() or p.drive or rel.startswith(("/", "\\"))) \
+            and not absolute_ok:
+        raise OutsideError(f"{rel} is an absolute path - refused.")
+    target = (p if p.is_absolute() else root / p).resolve()
+    if target != root and root not in target.parents:
+        raise OutsideError(f"{rel} points outside {root} - refused.")
+    return target
 
 
 def zip_members(zpath: Path) -> list[str]:
@@ -209,7 +265,10 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
                 continue
             if only_names and tail.lower() not in tuple(n.lower() for n in only_names):
                 continue
-            target = out_root / dest_dir / tail
+            try:
+                target = inside(Path(out_root) / dest_dir, tail)
+            except OutsideError:
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             with z.open(n) as src, open(target, "wb") as out:
                 shutil.copyfileobj(src, out, 1 << 20)
@@ -217,12 +276,16 @@ def extract_tree(zpath: Path, inner_dir: str, dest_dir: str, out_root: Path,
     return written
 
 
-def fetch_text(url: str) -> bytes:
+def fetch_text(url: str, _try: int = 0) -> bytes:
     req = urllib.request.Request(url, headers=sources.UA)
     try:
         with urllib.request.urlopen(req, timeout=60, context=ssl_context()) as r:
             return r.read()
     except urllib.error.URLError as e:
+        if (isinstance(e, urllib.error.HTTPError)
+                and e.code in RETRY_CODES and _try < RETRIES):
+            time.sleep(RETRY_WAIT * (_try + 1))
+            return fetch_text(url, _try + 1)
         if not isinstance(e, urllib.error.HTTPError):
             if untrusted(url.split("/")[2], e):
                 raise untrusted(url.split("/")[2], e) from e
@@ -236,6 +299,16 @@ def fetch_text(url: str) -> bytes:
                 "requests per hour). Wait an hour and try again, or use a VPN / "
                 "different network. Downloads already in the cache still work."
             ) from e
+        if e.code in RETRY_CODES:
+            host = url.split("/")[2] if "/" in url else url
+            raise sources.Unavailable(
+                f"{host} is not answering right now (HTTP {e.code}). That is "
+                f"the server this file is published on, not your connection "
+                f"and not this tool - it was asked {RETRIES + 1} times. "
+                f"Wait a few minutes and install again: anything already "
+                f"downloaded is cached and will not be fetched twice, and "
+                f"whatever this attempt did write is recorded, so "
+                f"'uninstall' takes it back out.") from e
         raise
 
 

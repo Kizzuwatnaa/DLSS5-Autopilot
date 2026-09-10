@@ -2,7 +2,7 @@
 
 This tool never contacts a private server. It stays within these hosts:
     reshade.me
-    raw.githubusercontent.com   (crosire/reshade-shaders)
+    raw.githubusercontent.com   (crosire/reshade-shaders, NVIDIA/DLSS)
     api.github.com / github.com (DLSS5-Feeder, rhi-repo, DXVK,
                                  DLSS5-Reshade-AIO, dxvk-remix-plus-dlssnr,
                                  REFramework-nightly)
@@ -55,6 +55,10 @@ STANDALONE_ASSETS = ("standalone-dlssnr.addon64", "nvngx.dll", "DLSS5_AIO_Feed.f
 # under this key and the installer extracts by file name.
 STANDALONE_ZIP = "__zip64__"
 STANDALONE_ZIP_EXTRA = ("StandaloneBoundary.fx",)
+STANDALONE_REPO = "kibblerz/DLSS5-Reshade-AIO"
+# v2.1.0 - v2.2.0: "DLSS5-ReShade-AIO-v2.2.0-64-bit.zip". Only used when the
+# API cannot be reached and the asset list has to be guessed from the tag.
+STANDALONE_ZIP_NAME = "DLSS5-ReShade-AIO-{tag}-64-bit.zip"
 STANDALONE_LATEST = ("https://github.com/kibblerz/DLSS5-Reshade-AIO/releases/"
                      "latest/download/")
 # Vortigern's VORT shaders (MIT). vort_Motion.fx is the optical-flow provider
@@ -109,14 +113,72 @@ DRIVER_FAULT_RENODX_PIN = "4.55"
 # D3D10 games outright.
 FEEDER_DX10_MIN = "v0.13.1-beta.1"
 
+# The first DLSS5-Feeder that handles an HDR swapchain correctly. An HDR10
+# swapchain is R10G10B10A2_UNORM carrying PQ BT.2020, which is neither of
+# the two things the neural pass assumed, so on anything older the bright
+# parts of an HDR picture come out blown or flat (the project's own 0.15.1
+# release notes: "the neural pass was wrecking HDR highlights").
+FEEDER_HDR_MIN = "v0.15.1"
+
 
 class RateLimited(RuntimeError):
     """GitHub's anonymous API allows 60 requests an hour per IP."""
 
 
+# 5xx and a request timeout: the server having a bad minute rather than an
+# answer. Retried, and then explained - never shown as a traceback (#103).
+RETRY_CODES = (500, 502, 503, 504, 408)
+
+
+class Unavailable(RuntimeError):
+    """A publisher's server is down or overloaded right now (5xx).
+
+    Not our bug and not the person's: reshade.me has answered 500 (#59,
+    #61) and a mirror has answered 503 "Backend.max_conn reached" (#103).
+    Retried a few times before it reaches anyone, and then explained -
+    never as a traceback.
+    """
+
+
+def latest_tag(repo: str) -> str | None:
+    """The newest release's tag, without spending an API request.
+
+    `github.com/<repo>/releases/latest` is a redirect to the tag's own page,
+    and a redirect is not the API: it still answers when the 60 anonymous
+    API requests an hour are gone, which is exactly when the API-less
+    fallbacks below are running. Returns None when even that fails.
+    """
+    url = f"https://github.com/{repo}/releases/latest"
+    try:
+        from . import net           # net imports this module
+        req = urllib.request.Request(url, headers=UA, method="HEAD")
+        with urllib.request.urlopen(req, timeout=30,
+                                    context=net.ssl_context()) as r:
+            final = r.geturl()
+    except Exception:
+        return None
+    tag = final.rstrip("/").rsplit("/tag/", 1)
+    return tag[1] if len(tag) == 2 and tag[1] else None
+
+
+def _url_exists(url: str) -> bool:
+    """Does this download answer? One HEAD, no body, never raises."""
+    try:
+        from . import net
+        req = urllib.request.Request(url, headers=UA, method="HEAD")
+        with urllib.request.urlopen(req, timeout=30,
+                                    context=net.ssl_context()) as r:
+            return 200 <= getattr(r, "status", 200) < 400
+    except Exception:
+        return False
+
+
 def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
-    """One small read (a release listing, reshade.me's page). A timeout or a
-    dropped connection is retried with a pause; an HTTP error is not."""
+    """One small read (a release listing, reshade.me's page).
+
+    A timeout, a dropped connection or a 5xx is retried with a pause; any
+    other HTTP error is the answer and is raised as it is.
+    """
     req = urllib.request.Request(url, headers=UA)
     last: Exception | None = None
     for attempt in range(attempts):
@@ -132,6 +194,19 @@ def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
                     "requests per hour). Wait an hour and try again, or use a VPN / "
                     "different network. Downloads already in the cache still work."
                 ) from e
+            if e.code in RETRY_CODES:
+                last = e
+                if attempt < attempts - 1:
+                    time.sleep(2.0 * (attempt + 1))
+                    continue
+                host = url.split("/")[2] if "/" in url else url
+                raise Unavailable(
+                    f"{host} is not answering right now (HTTP {e.code}). "
+                    f"That is the server this list is published on, not your "
+                    f"connection and not this tool - it was asked "
+                    f"{attempts} times. Wait a few minutes and try again; "
+                    f"anything already downloaded is cached and will not be "
+                    f"fetched twice.") from e
             raise
         except (urllib.error.URLError, TimeoutError, OSError,
                 http.client.HTTPException) as e:
@@ -371,6 +446,23 @@ def resolve_standalone() -> tuple[str, dict[str, str]]:
     try:
         rel = _json(STANDALONE_API)
     except Exception:
+        # From 2.2.0 the loose files are gone from the release: the three
+        # names below now answer 404, so the old fallback failed the install
+        # for exactly the people it was written for - the rate-limited ones.
+        # The archive's name carries the tag, and the tag comes out of a
+        # redirect rather than the API.
+        tag = latest_tag(STANDALONE_REPO)
+        if tag:
+            guess = (f"https://github.com/{STANDALONE_REPO}/releases/download/"
+                     f"{tag}/{STANDALONE_ZIP_NAME.format(tag=tag)}")
+            # The archive's name is a guess - the publisher has renamed
+            # things before, which is the whole reason this branch exists.
+            # Ask before committing the install to it; a 404 here still has
+            # the loose files below to fall back on.
+            if _url_exists(guess):
+                urls[STANDALONE_ZIP] = guess
+                return tag, urls
+        # Older releases still carry the loose files; nothing else is left.
         for name in STANDALONE_ASSETS:
             urls[name] = STANDALONE_LATEST + name
         return "latest", urls
@@ -452,8 +544,62 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
             break
     for fam in fams.values():
         fam.sort(key=lambda d: d["key"], reverse=True)
+    # NVIDIA publishes the super-resolution, ray-reconstruction and frame
+    # generation runtimes itself. The tool was taking two of the three from
+    # a community mirror while the publisher shipped them itself, current
+    # and under a licence - so the publisher's builds go on the front of
+    # each list, and the mirror's stay behind them.
+    for fam, entries in nvidia_dlss().items():
+        fams[fam] = entries + fams.get(fam, [])
     _CATALOG_CACHE = fams
     return fams
+
+
+# NVIDIA's own SDK. The DLLs live in the repository tree rather than in a
+# release asset, so they are read at the tag - which is what makes the
+# version in the label true. Neural rendering is NOT among them: the SDK
+# carries super resolution, ray reconstruction and frame generation only.
+NVIDIA_DLSS_REPO = "NVIDIA/DLSS"
+NVIDIA_DLSS_DIR = "lib/Windows_x86_64/rel"
+NVIDIA_DLSS_FILES = (("dlss", "nvngx_dlss.dll"),
+                     ("dlssd", "nvngx_dlssd.dll"),
+                     ("dlssg", "nvngx_dlssg.dll"))
+_NVIDIA_CACHE: dict[str, list[dict]] | None = None
+
+
+def nvidia_dlss() -> dict[str, list[dict]]:
+    """NVIDIA's published runtimes as catalog entries, or {} when unreachable.
+
+    The tag comes from the releases redirect, so this costs no API request -
+    it works on the same connection that is already rate limited.
+    """
+    global _NVIDIA_CACHE
+    if _NVIDIA_CACHE:
+        return _NVIDIA_CACHE
+    tag = latest_tag(NVIDIA_DLSS_REPO)
+    if not tag:
+        # Not cached: a redirect that failed once (a blip, a proxy waking
+        # up) must not take the publisher's builds out of the list for the
+        # rest of the session.
+        return {}
+    out: dict[str, list[dict]] = {}
+    # The tag is the SDK's, and one SDK ships all three runtimes; NVIDIA
+    # versions them separately, so the label says which SDK rather than
+    # claiming to be each file's own version.
+    label = f"{tag.lstrip('vV')} (NVIDIA SDK)"
+    for fam, name in NVIDIA_DLSS_FILES:
+        out[fam] = [{
+            "tag": tag,
+            "label": label,
+            "url": (f"https://raw.githubusercontent.com/{NVIDIA_DLSS_REPO}/"
+                    f"{tag}/{NVIDIA_DLSS_DIR}/{name}"),
+            "size": 0,
+            # Not an archive: the file IS the download.
+            "raw": name,
+            "key": _ver_key(tag, ""),
+        }]
+    _NVIDIA_CACHE = out
+    return out
 
 
 def pick(entries: list[dict], want: str | None) -> dict:

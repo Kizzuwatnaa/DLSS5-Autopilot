@@ -25,7 +25,10 @@ current version of every part each time it runs.
 
 1. Run `dlss5-autopilot.exe`. It scans Steam, Epic, GOG, EA, Ubisoft,
    Battle.net, Rockstar, Amazon, itch, Heroic, Xbox/Game Pass, `D:\Games\*`
-   folders and 19 emulators. Anything else: **Choose folder**.
+   folders and 19 emulators. Anything else: **choose folder**. With **scan
+   library at start** on - the default - later runs open straight on that
+   library; **rescan** walks the disks again when you have installed or
+   removed a game.
 2. Pick the game. The card shows what was read - executable, 32/64-bit,
    graphics API, whether it ships DLSS - and the route it will take.
 3. Press **INSTALL**. The log says what went where. Then start the game and
@@ -48,15 +51,15 @@ exception: a d3d9.dll import is checked against the delay-load table, a
 D3D12 Agility SDK in the folder and the executable's own names before the
 game is called DirectX 9, because engines keep that import long after they
 stop drawing with it. When the table names no graphics DLL at all (the
-engine loads its renderer at run time),
-the tool reads the DLL names inside the exe, the imports of the DLLs
-beside it and the names inside the largest of them, and ranks them as
-the import table would: a Direct3D name anywhere outranks OpenGL or
-Vulkan, because an engine that can drive several backends names all of
-them and draws with Direct3D on Windows. A Unity game (UnityPlayer.dll
-beside the exe) is Direct3D 11 unless started with -force-d3d12,
--force-vulkan or -force-glcore. An import table can also lie - R.U.S.E. links D3D11 and
-renders with Direct3D 9 - so the install page has a **graphics api**
+engine loads its renderer at run time), the tool reads the DLL names inside
+the exe, the imports of the DLLs beside it and the names inside the largest
+of them, and ranks them as the import table would: a Direct3D name anywhere
+outranks OpenGL or Vulkan, because an engine that can drive several
+backends names all of them and draws with Direct3D on Windows. A Unity game
+(UnityPlayer.dll beside the exe) is Direct3D 11 unless started with
+-force-d3d12, -force-vulkan or -force-glcore. An import table can also lie
+- R.U.S.E. links D3D11 and renders with Direct3D 9 - so the install page
+has a **graphics api**
 dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan / OpenGL); the choice
 is remembered for that folder.
 
@@ -64,7 +67,7 @@ is remembered for that folder.
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
-| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's or wilsjo2's, from the install page) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
+| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's, or wilsjo2's - which is installed with its neural pass before the upscaler, the placement it exists for; neither of those two has been run here) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS | the game's DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
@@ -103,6 +106,26 @@ The first works in any D3D12 game on the optiscaler route; the second only
 raises a multiplier the game already has. NVIDIA's own multi-frame
 generation stays an RTX 50 feature.
 
+## Where the files come from
+
+`nvngx_dlss.dll` (super resolution) and `nvngx_dlssg.dll` (frame generation)
+are fetched from NVIDIA's own repository, read at its release tag.
+`nvngx_dlssd.dll` (ray reconstruction) can be swapped the same way, and only
+for a game that already ships one - the dropdown does not appear otherwise,
+and not on the optiscaler or remix routes, whose install cannot act on it.
+The game's own file is backed up and comes back on uninstall, and the
+download is checked for being a 64-bit Windows DLL before anything is
+overwritten.
+
+A swap is worth knowing two things about: a launcher that verifies its files
+puts its own copy back, and in an online game an anti-cheat can treat a
+changed file as tampering. For anything you play online, leave these on
+"keep the game's own".
+
+Neural rendering itself is not in NVIDIA's SDK. `nvngx_dlssnr.dll` comes
+from the community build that matches your card, which is what the next
+section is about.
+
 ## Your graphics card
 
 `nvngx_dlssnr.dll` is compiled per architecture. NVIDIA's build is FP8 for
@@ -116,12 +139,27 @@ fatbin records against the card before installing it.
 | RTX 40 | `310.8.0-RTX40`, community, sm_89 | moderate |
 | RTX 20 / 30 | `310.8.SF` / `SF-v2`, community, FP16 | heavy - about half your fps at 100 % model resolution; use the dial |
 | GTX, RTX 16 | - | does not run |
+| AMD, Intel | - | not from here - see below |
+
+Neural rendering runs inside NVIDIA's `nvngx_dlssnr.dll`, so a Radeon or an
+Arc card has no runtime for it to use. Two projects run the network on
+Radeon through HIP (RDNA 3 / RDNA 4 with HIP 7, Direct3D 12) and their users
+report both working, at a heavy cost. Neither can be installed from here:
+the open one keeps the runtime DLL and its weights in a Discord channel
+rather than in its releases, and the other is closed source. The tool says
+so when it finds an AMD card, and this becomes a route the day either of
+them publishes the whole thing.
 
 Swapping the DLL alone does nothing on any card: a game has to *ask* for
 neural rendering, and outside NBA 2K27 none do. That request is what the
 add-on or OptiScaler makes.
 
 ## In the game
+
+The keys below are the defaults. A keyboard without an Insert or a Home key
+has no way into the overlay at all, so the **overlay key** setting on the
+install page rebinds both ReShade's and OptiScaler's, and every instruction
+the tool prints then names the key that was chosen.
 
 | Route | Keys |
 |---|---|
@@ -142,7 +180,8 @@ matters.
 
 ## Settings worth knowing
 
-- **Model resolution** (optiscaler): 75 % is about half the cost of 100 %,
+- **work area** (the slider; on the optiscaler route its ini and log call
+  the same dial model resolution): 75 % is about half the cost of 100 %,
   50 % a quarter. The frame keeps full detail; only the model's
   contribution is computed small.
 - **Feeder build**: stable, newest pre-release, or any exact release when
@@ -160,6 +199,18 @@ matters.
   kept in `%LOCALAPPDATA%\dlss5-autopilot\library.json`, so later launches
   show the list at once; a game that has changed on disk since is read
   again, and **rescan** always does the full walk.
+- **aim for _ fps** (optiscaler, and the feeder's 64-bit D3D11 path - the
+  same places the work-area slider applies): put in the frame rate you want
+  and the tool works out the work area to reach it, from what the last runs
+  of that game actually measured. It says how confident it is and never
+  applies anything on its own.
+- **Overlay key**: ReShade opens its panel on Home and OptiScaler on
+  Insert. A keyboard with neither can bind another key here, once, for
+  every game.
+- **Ray reconstruction**: a game that ships `nvngx_dlssd.dll` can have it
+  replaced with a newer build. It is a swap - the game's own file is backed
+  up and comes back on uninstall - and the tool says what that means for a
+  launcher that verifies its files and for an online game's anti-cheat.
 - **What will happen?** lists what INSTALL would write, back up and remove,
   without writing anything.
 - **Before / after** puts the last two ReShade screenshots side by side.
@@ -232,8 +283,9 @@ as it running well.
 
 ## When it does not work
 
-**did it work?** reads `ReShade.log`, `dlss5-feed.log`, `OptiScaler.log`
-and the Remix log and names the cause.
+**did it work?** reads `ReShade.log`, `dlss5-feed.log`, `OptiScaler.log`,
+the DXVK and Remix logs, and - when the game left no log at all - Windows'
+own Application Error record, and names the cause.
 
 <details>
 <summary>The game closes a second after starting, no message</summary>
@@ -267,7 +319,9 @@ NVIDIA's DLSS 5 launch drivers route the neural feature into the runtime
 itself, and the `renodx-dlss5` 4.6/4.7 add-on faults on every evaluate
 there (measured by the feeder's author: 4.7 passes 0/300, 4.55 passes
 300/300). With the add-on dropdown on *auto* the tool installs 4.55 on
-these drivers; a build picked from the list is used as picked. The bridge route is unaffected
+these drivers; a build picked from the list is used as picked. That is a
+way round it and not a fix - some games fault on 4.55 too - so rolling the
+driver back to 616.56 is the surer test. The bridge route is unaffected
 (dlss5-bridge 1.4.9 works around it in memory), and driver 616.56 works
 with every build.
 </details>
@@ -323,7 +377,7 @@ antivirus or VPN inside the HTTPS connection; turn that off for the tool.
 
 Not every launcher is in the registry, and an executable locked at scan
 time (antivirus, an updater, OneDrive placeholders) cannot be read.
-**Open log file** shows what each store returned; **Choose folder** always
+**open log file** shows what each store returned; **choose folder** always
 works. Xbox/Game Pass: only games whose publisher allows modding show
 *Manage > Files > Browse* (or *Enable mods*) in the Xbox app - use it and
 rescan; without it the folder cannot be modified by anything, and the
@@ -341,9 +395,18 @@ Steam version can.
 | `CreateFeature raised exception 0xC0000005` | add-on / feeder version mismatch, or a runtime that does not match the card |
 </details>
 
-Bugs: **report a bug** in the tool opens a GitHub issue already filled in
-with version, card, driver, game, route, the last diagnosis and log tails.
-Nothing is sent by itself - you see it in the browser and decide.
+Bugs: **report a bug** in the tool asks two questions - did the game start,
+and what happened - and then opens a GitHub issue already filled in with
+version, card, driver, game, route, the last diagnosis, the log tails and,
+when Windows recorded one, the faulting module of the crash. Nothing is sent
+by itself - you see it in the browser and decide.
+
+**share the result** does the same for the compatibility list: the game's
+name and executable, the route and build, the graphics API, the card and
+driver, this tool's version, whether it worked, and the one-line verdict
+the diagnosis reached. No paths, no user name, nothing else. Those results are
+added up into one file the tool reads before an install, so the next person
+with the same game is told what happened on other machines.
 
 ## Command line
 
@@ -355,8 +418,8 @@ dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler
 dlss5-autopilot.exe "D:\Games\Game" --route remix --remix-swap   replace a Remix runtime that has no neural pass
 dlss5-autopilot.exe "D:\Games\Game" --dxvk          run the game on Vulkan through DXVK (--no-dxvk turns the automatic choice off)
 dlss5-autopilot.exe "D:\Games\Game" --vr            register ReShade's OpenXR layer as well (VR, OpenXR games; untried with a headset)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   another OptiScaler build than Dagherbou's
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   another OptiScaler build than Dagherbou's (not run here)
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes (not run here)
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
 
@@ -428,13 +491,18 @@ component stays under its own licence, fetched from its own publisher.
 | Remix runtime with DLSS 5 (swap option only) | [lunks/dxvk-remix-plus-dlssnr](https://github.com/lunks/dxvk-remix-plus-dlssnr) | see repository |
 | RTX40MFG-Unlock, Ultimate ASI Loader (multi-frame generation option only) | [dashdogy/RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock) · [ThirteenAG/Ultimate-ASI-Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) | MIT · MIT |
 | MPC-HC, yt-dlp, ffmpeg (video only) | their own releases | GPL / Unlicense / GPL |
-| RenoDX DLSS 5 add-ons (Krish, ShortFuse), NVIDIA NGX runtimes | community mirror [RankFTW/rhi-repo](https://github.com/RankFTW/rhi-repo) | **proprietary, no public licence** |
+| RenoDX DLSS 5 add-ons (Krish, ShortFuse) | community mirror [RankFTW/rhi-repo](https://github.com/RankFTW/rhi-repo) | **proprietary, no public licence** |
+| NVIDIA DLSS runtimes (super resolution, ray reconstruction, frame generation) | [NVIDIA/DLSS](https://github.com/NVIDIA/DLSS) | NVIDIA DLSS SDK licence |
+| NVIDIA NGX neural-rendering runtime | community mirror [RankFTW/rhi-repo](https://github.com/RankFTW/rhi-repo) | **proprietary, no public licence** |
 
-The DLSS 5 add-ons and the NVIDIA runtimes are closed-source with no
-published licence. They are not in this repository, not in the release
+The DLSS 5 add-ons and the neural-rendering runtime are closed-source with
+no published licence. They are not in this repository, not in the release
 archive, and not redistributed here; the tool downloads them from a public
 community mirror exactly as a person would by hand. If you are not
-comfortable with that, do not use this tool. Remix mods are never mirrored.
+comfortable with that, do not use this tool. The three NVIDIA runtimes are
+taken from NVIDIA's own repository under NVIDIA's SDK licence; the mirror's
+builds of the same three stay in the list behind them, so a build picked by
+hand can still come from the mirror. Remix mods are never mirrored.
 Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX,
 OptiScaler, RTX Remix or any project above. The installer's own code is
 MIT - see [LICENSE](LICENSE). Rights holders: open an issue and it will be
@@ -468,6 +536,10 @@ core/vulkan.py        ReShade as a Vulkan layer  core/dxvk.py      D3D9/D3D11 ->
 core/refw.py          REFramework               core/anticheat.py anti-cheat markers
 core/reshade_ini.py   ReShade.ini and presets    core/feedcfg.py   feeder / bridge cfg
 core/diagnose.py      logs -> verdict, bug-report body
+core/wincrash.py      Windows' own Application Error record
+core/autotune.py      the work area to reach a frame rate, from what it cost
+core/community.py     what other people found in this game
+core/reportui.py      the two questions a bug report needs answered
 core/components.py    are the installed parts still current?
 core/update.py / selfupdate.py    update check, verified swap-in
 core/video.py         MPC-HC, YouTube, offline processing, webcam
@@ -476,6 +548,8 @@ core/gui.py           interface
 _tools/upstream_watch.py     what moved upstream, and what they say they fixed
 _tools/replay_report.py      a bug report's own logs, through the diagnosis
 _tools/gui_scale_check.py    the window measured at other display scalings
+_tools/walkthrough.py        the real window, driven through every route
+_tools/detect_check.py       what every game in a library detects as
 docs/releases/               the notes for every release, named after its tag
 ```
 </details>

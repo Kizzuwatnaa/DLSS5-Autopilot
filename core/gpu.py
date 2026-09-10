@@ -100,6 +100,57 @@ def detect() -> tuple[str | None, int | None]:
     return best
 
 
+def other_vendor() -> str | None:
+    """"AMD" / "Intel" when there is one and no NVIDIA card, else None.
+
+    Worth telling apart because "no NVIDIA card detected" is not an answer
+    to "does this work on my RX 7600" (issue #53), and the answer for AMD is
+    a real one with a real reason.
+    """
+    if detect()[0]:
+        return None
+    names = " ".join(_adapters()).lower()
+    if any(k in names for k in ("radeon", "amd ", "advanced micro")):
+        return "AMD"
+    if any(k in names for k in ("intel", "arc ")):
+        return "Intel"
+    return None
+
+
+# What to say to somebody on an AMD card, and why the tool does not simply
+# install something. Both community routes exist and neither can be fetched:
+#
+#   zmodelerlover/dlss5-neural-amd  MIT, one release, the .addon64 is there -
+#       but the two files it refuses to run without (dlssnr_amd_pass1.dll and
+#       dlssnr_on_amd_weights.bin) are only in a Discord channel. This tool
+#       downloads from publishers' releases and bundles nothing; a Discord
+#       invite is neither.
+#   danielblnc's build  closed source, and its source has been asked for on
+#       GitHub after Defender flagged the executable. Not something to point
+#       people at from inside an installer.
+#
+# Checked 2026-09-09. If either publishes the whole thing in a release under
+# a licence that allows fetching, this becomes a route.
+AMD_ANSWER = (
+    "This is an AMD card, and DLSS 5 neural rendering runs inside NVIDIA's "
+    "own nvngx_dlssnr.dll - there is no NVIDIA runtime here for it to use.\n"
+    "Two people have made the network itself run on Radeon through HIP, and "
+    "their users report it working: RDNA 3 / RDNA 4 with HIP 7, Direct3D 12. "
+    "The cost is "
+    "heavy - one reported RX 9070 XT run dropped from about 80 fps to about "
+    "12. Neither can be installed from here, and the reason is not "
+    "caution:\n"
+    "  - the open one (zmodelerlover/dlss5-neural-amd) publishes the add-on, "
+    "but the runtime DLL and the weights it refuses to start without are "
+    "only in a Discord channel - this tool downloads from release pages and "
+    "bundles nothing;\n"
+    "  - the other one is closed source and its own users have asked for the "
+    "source after Windows Defender flagged it.\n"
+    "So: the route is real, the pieces are not fetchable yet. When either "
+    "project ships the whole thing in a release, it becomes a route here."
+)
+
+
 def label(sm: int | None) -> str:
     return SM_NAMES.get(sm, "unknown") if sm is not None else "unknown"
 
@@ -142,9 +193,102 @@ def driver_version() -> str | None:
     return None
 
 
-def driver_at_least(want: str) -> bool | None:
-    """Is the installed driver >= `want` ("616.56")? None when unknown."""
-    have = driver_version()
+def hdr_on() -> bool | None:
+    """Is any display running in HDR right now? None when it cannot be told.
+
+    Windows answers this through the display-config API: enumerate the
+    active paths, then ask each target whether advanced colour is enabled.
+    It matters because an HDR10 swapchain is R10G10B10A2_UNORM carrying PQ
+    BT.2020, which is neither of the two things the neural pass assumed -
+    the feeder's 0.15.1 release is the fix, and on anything older the bright
+    parts of an HDR picture come out wrong.
+    """
+    import ctypes
+    from ctypes import wintypes
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+    except OSError:
+        return None
+
+    class LUID(ctypes.Structure):
+        _fields_ = [("LowPart", wintypes.DWORD), ("HighPart", wintypes.LONG)]
+
+    class PATH_SOURCE(ctypes.Structure):
+        _fields_ = [("adapterId", LUID), ("id", wintypes.UINT),
+                    ("modeInfoIdx", wintypes.UINT),
+                    ("statusFlags", wintypes.UINT)]
+
+    class PATH_TARGET(ctypes.Structure):
+        _fields_ = [("adapterId", LUID), ("id", wintypes.UINT),
+                    ("modeInfoIdx", wintypes.UINT),
+                    ("outputTechnology", wintypes.UINT),
+                    ("rotation", wintypes.UINT), ("scaling", wintypes.UINT),
+                    # DISPLAYCONFIG_RATIONAL: two 32-bit fields. A single
+                    # 64-bit member is the same width but makes ctypes align
+                    # the struct to 8, which moves everything after it and
+                    # hands the API a target id it rejects (error 87).
+                    ("refreshRateNum", wintypes.DWORD),
+                    ("refreshRateDen", wintypes.DWORD),
+                    ("scanLineOrdering", wintypes.UINT),
+                    ("targetAvailable", wintypes.BOOL),
+                    ("statusFlags", wintypes.UINT)]
+
+    class PATH_INFO(ctypes.Structure):
+        _fields_ = [("sourceInfo", PATH_SOURCE), ("targetInfo", PATH_TARGET),
+                    ("flags", wintypes.UINT)]
+
+    class MODE_INFO(ctypes.Structure):
+        # Only the size matters here: the modes are never read, but
+        # QueryDisplayConfig will not fill the paths without them.
+        _fields_ = [("pad", ctypes.c_byte * 64)]
+
+    class HEADER(ctypes.Structure):
+        _fields_ = [("type", wintypes.UINT), ("size", wintypes.UINT),
+                    ("adapterId", LUID), ("id", wintypes.UINT)]
+
+    class ADVANCED_COLOR(ctypes.Structure):
+        _fields_ = [("header", HEADER), ("value", wintypes.UINT),
+                    ("colorEncoding", wintypes.UINT),
+                    ("bitsPerColorChannel", wintypes.UINT)]
+
+    QDC_ONLY_ACTIVE_PATHS = 0x2
+    GET_ADVANCED_COLOR_INFO = 9
+    try:
+        n_path, n_mode = wintypes.UINT(0), wintypes.UINT(0)
+        if user32.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS,
+                                              ctypes.byref(n_path),
+                                              ctypes.byref(n_mode)):
+            return None
+        paths = (PATH_INFO * n_path.value)()
+        modes = (MODE_INFO * n_mode.value)()
+        if user32.QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,
+                                     ctypes.byref(n_path), paths,
+                                     ctypes.byref(n_mode), modes, None):
+            return None
+        for i in range(n_path.value):
+            info = ADVANCED_COLOR()
+            info.header.type = GET_ADVANCED_COLOR_INFO
+            info.header.size = ctypes.sizeof(ADVANCED_COLOR)
+            info.header.adapterId = paths[i].targetInfo.adapterId
+            info.header.id = paths[i].targetInfo.id
+            if user32.DisplayConfigGetDeviceInfo(ctypes.byref(info)):
+                continue
+            # bit 1 is "advanced colour enabled"; bit 0 only says the display
+            # is capable of it, which is not the same thing at all.
+            if info.value & 0x2:
+                return True
+        return False
+    except Exception:
+        return None
+
+
+def driver_at_least(want: str, have: str | None = None) -> bool | None:
+    """Is the driver >= `want` ("616.56")? None when unknown.
+
+    `have` is for callers that already read the version (and for tests):
+    without it the installed one is looked up.
+    """
+    have = have or driver_version()
     if not have:
         return None
     try:

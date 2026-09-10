@@ -44,6 +44,59 @@ class ScanTests(unittest.TestCase):
         self.assertEqual({g.name for g in found}, {"Game", "Older game"})
         self.assertTrue(all(g.exe.name == "Game.exe" for g in found))
 
+    def test_steam_leftovers_without_a_manifest_are_not_games(self):
+        """Steam deletes the appmanifest on uninstall and leaves the folder.
+
+        On the developer's own machine that is 46 of 63 entries - saves,
+        shader caches, empty folders - every one of them offered as a game
+        to install into.
+        """
+        lib = self.root / "SteamLibrary"
+        apps = lib / "steamapps"
+        common = apps / "common"
+        common.mkdir(parents=True)
+        (apps / "appmanifest_1.acf").write_text(
+            '"AppState"{"name" "Real Game" "installdir" "RealGame" '
+            '"StateFlags" "4"}', encoding="utf8")
+        # Queued or still downloading: Steam writes the manifest and creates
+        # the folder before there is anything in it (Battlefield 6 sat in
+        # the list as an empty folder with StateFlags 1042).
+        (apps / "appmanifest_2.acf").write_text(
+            '"AppState"{"name" "Downloading Game" "installdir" "Downloading" '
+            '"StateFlags" "1042"}', encoding="utf8")
+        (common / "Downloading").mkdir()
+        (common / "RealGame").mkdir()
+        (common / "RealGame" / "RealGame.exe").write_bytes(b"MZ")
+        # uninstalled: manifest gone, folder and its shader cache left
+        (common / "GhostGame" / "ShaderCache").mkdir(parents=True)
+        # no manifest, but the executable is still there
+        (common / "SideloadedGame").mkdir()
+        (common / "SideloadedGame" / "Game.exe").write_bytes(b"MZ")
+        # uninstalled, but this tool installed into it: keep it, or there is
+        # no way left to remove what we wrote
+        ours = common / "OldInstall"
+        ours.mkdir()
+        (ours / "dlss5-autopilot.json").write_text("{}", encoding="utf8")
+
+        with patch.object(games, "_steam_root", return_value=lib),                 patch.object(games, "_steam_libraries", return_value=[lib]):
+            found = {g.name: g for g in games.scan_steam()}
+
+        self.assertIn("Real Game", found)
+        self.assertIn("SideloadedGame", found)
+        self.assertIn("OldInstall", found)
+        self.assertNotIn("GhostGame", found)
+        self.assertNotIn("Downloading Game", found)
+        self.assertNotIn("Downloading", found)
+
+    def test_has_exe_is_one_listing_and_never_raises(self):
+        d = self.root / "probe"
+        d.mkdir()
+        self.assertFalse(games._has_exe(d))
+        (d / "a.exe").write_bytes(b"MZ")
+        self.assertTrue(games._has_exe(d))
+        # unreadable folders stay in the list rather than vanishing
+        self.assertTrue(games._has_exe(self.root / "does-not-exist"))
+
     def test_progress_identifies_every_game_including_last_two(self):
         found = [games.Game(f"Game {i}", self.root / str(i)) for i in range(1, 98)]
         messages = []

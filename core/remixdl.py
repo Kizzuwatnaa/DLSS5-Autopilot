@@ -155,11 +155,11 @@ def resolve(mod_url: str) -> Fetch:
 
 def _safe_target(root_dir: Path, rel: str) -> Path:
     """Resolve an archive entry inside root_dir, refusing to escape it."""
-    target = (root_dir / rel).resolve()
-    if not str(target).startswith(str(root_dir.resolve())):
+    try:
+        return net.inside(root_dir, rel)
+    except net.OutsideError:
         raise NotAModError(f"The archive tries to write outside the game "
-                           f"folder ({rel}) - refused.")
-    return target
+                           f"folder ({rel}) - refused.") from None
 
 
 def install(mod_url: str, game_dir: Path, log=None, progress=None) -> list[str]:

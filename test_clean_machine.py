@@ -165,6 +165,35 @@ if __name__ == "__main__":
     if dx9.is_file():
         results.append(("DX9 (DXVK)", run("DX9 game", dx9, "OyunDX9.exe", False)))
 
+    # NVIDIA's own runtimes are the default source for super resolution and
+    # frame generation now, and they are fetched from a different host than
+    # everything else (raw.githubusercontent.com, at the release tag). If
+    # that path ever moves, EVERY install fails with "the download is only N
+    # bytes" - so it is checked here, against the live URL, before a tag.
+    print()
+    print("-" * 76)
+    print("NVIDIA's published runtimes")
+    from core import sources, installer as _inst
+    nv = sources.nvidia_dlss()
+    if not nv:
+        results.append(("NVIDIA runtimes", check(
+            "NVIDIA's release tag could be read", False,
+            "the redirect did not answer - the mirror is still there, but "
+            "the publisher's builds would be missing from every dropdown")))
+    else:
+        print(f"  tag: {nv['dlss'][0]['tag']}")
+        for fam in ("dlss", "dlssd", "dlssg"):
+            e = nv[fam][0]
+            got = None
+            try:
+                got = net.download(e["url"], f"clean-{fam}-{e['tag']}.dll")
+                ok, why = _inst._is_win64_dll(got)
+            except Exception as ex:
+                ok, why = False, str(ex)
+            results.append((f"NVIDIA {fam}", check(
+                f"{e['raw']} downloads and is a 64-bit Windows DLL", ok,
+                f"{got.stat().st_size:,} bytes" if ok and got else why)))
+
     print("=" * 76)
     print(f"total downloaded: {net.cache_size()/1048576:.0f} MB  (from an empty cache)")
     for name, ok in results:

@@ -17,3 +17,10 @@ renodx/
 # Local settings
 settings.json
 
+dist-new/
+
+# The detection baseline is one machine's game library - the names and
+# executables of whatever is installed on it. That is personal, it is only
+# meaningful on the machine that wrote it, and _tools/detect_check.py
+# writes it with --save on first run.
+_tools/detect_baseline.json
