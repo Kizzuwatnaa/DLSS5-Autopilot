@@ -90,6 +90,36 @@
     }
    }
   },
+  "painkiller.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Painkiller: Black Edition",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "risk of rain 2.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Risk of Rain 2",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "sottr.exe": {
    "drivers": {
     "616.92": {
@@ -121,6 +151,6 @@
    }
   }
  },
- "generated": "2026-09-10T03:18:55Z",
- "reports": 8
+ "generated": "2026-09-10T03:21:45Z",
+ "reports": 10
 }
