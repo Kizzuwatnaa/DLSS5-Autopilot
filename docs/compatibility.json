@@ -1,5 +1,21 @@
 {
- "games": {},
- "generated": "2026-09-10T00:50:52Z",
- "reports": 0
+ "games": {
+  "dawnwalker.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "The Blood of Dawnwalker",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  }
+ },
+ "generated": "2026-09-10T02:21:15Z",
+ "reports": 1
 }
