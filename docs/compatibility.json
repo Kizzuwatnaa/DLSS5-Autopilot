@@ -1,5 +1,20 @@
 {
  "games": {
+  "bannerlord.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Mount & Blade II: Bannerlord",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "cyberpunk2077.exe": {
    "drivers": {
     "616.56": {
@@ -309,6 +324,6 @@
    }
   }
  },
- "generated": "2026-09-10T17:23:22Z",
- "reports": 26
+ "generated": "2026-09-10T18:56:41Z",
+ "reports": 27
 }
