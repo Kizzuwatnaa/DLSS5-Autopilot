@@ -233,7 +233,7 @@
    "drivers": {
     "616.92": {
      "failed": 3,
-     "worked": 0
+     "worked": 1
     }
    },
    "name": "UBOAT",
@@ -241,10 +241,14 @@
     "feeder": {
      "failed": 3,
      "worked": 0
+    },
+    "standalone": {
+     "failed": 0,
+     "worked": 1
     }
    }
   }
  },
- "generated": "2026-09-10T10:24:47Z",
- "reports": 20
+ "generated": "2026-09-10T10:31:20Z",
+ "reports": 21
 }
