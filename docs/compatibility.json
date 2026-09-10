@@ -123,13 +123,17 @@
   "risk of rain 2.exe": {
    "drivers": {
     "616.92": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    },
    "name": "Risk of Rain 2",
    "routes": {
     "feeder": {
+     "failed": 1,
+     "worked": 0
+    },
+    "optiscaler": {
      "failed": 1,
      "worked": 0
     }
@@ -166,6 +170,6 @@
    }
   }
  },
- "generated": "2026-09-10T03:25:39Z",
- "reports": 11
+ "generated": "2026-09-10T03:25:59Z",
+ "reports": 12
 }
