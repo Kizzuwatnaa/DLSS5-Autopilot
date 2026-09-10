@@ -60,6 +60,21 @@
     }
    }
   },
+  "forzahorizon6.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Forza Horizon 6",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "goat2-win64-shipping.exe": {
    "drivers": {
     "616.64": {
@@ -230,6 +245,6 @@
    }
   }
  },
- "generated": "2026-09-10T10:18:35Z",
- "reports": 18
+ "generated": "2026-09-10T10:20:36Z",
+ "reports": 19
 }
