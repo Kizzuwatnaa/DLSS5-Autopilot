@@ -160,20 +160,61 @@ OFA_PERF = {
 
 def bridge_defaults(native_dlss: bool) -> dict:
     """Sensible starting point. synth_after only matters without native DLSS."""
-    d = {"vk_mirror": 1}
-    if not native_dlss:
-        d["synth_after"] = 3
-    return d
+    # Said either way: a folder first installed as a game without DLSS keeps
+    # its synth_after through a later install that found the game's DLSS,
+    # and the substitute then costs the mirror the whole session.
+    return {"vk_mirror": 1, "synth_after": 0 if native_dlss else 3}
+
+
+# From 1.4.0 the bridge replaces, at attach and before reading it, any
+# settings file whose first line is not "# dlss5-bridge <its own version>"
+# or "# dlss5-bridge keep" - with its built-in defaults, synth_after=0 among
+# them. An unstamped file from here was therefore replaced the first time
+# the bridge ran after an install, and a game with no DLSS of its own never got the substitute
+# contract synth_after asks for (#127). "keep" is the bridge's own way of
+# saying the file is meant to outlive a version.
+BRIDGE_STAMP = "# dlss5-bridge keep"
+# What survives from a file the bridge wrote itself (stamped with its own
+# version): the choices a person makes in its panel or by hand. The rest of such a file
+# is that version's full set of defaults, and "keep" would freeze them
+# across every later bridge - which is what its regeneration exists to stop.
+# Carried only when they differ from the bridge's own default: a dump
+# holds every one of them, and a default carried under "keep" is a default
+# frozen.
+BRIDGE_CARRY = {"ofa_grid": "2", "ofa_perf": "20", "mv_sign_x": "0",
+                "mv_sign_y": "0", "source": "auto", "synth": "0",
+                # set by hand, and the bridge's README names unwrap=2 as the
+                # value to try when a session that should work does not
+                "unwrap": "1", "vk_sync": "0", "vk_present": "0"}
+
+
+def _chosen(k: str, v) -> bool:
+    """A panel value that is not the bridge's default."""
+    base = BRIDGE_CARRY[k]
+    if k == "source":
+        return str(v).strip().lower() != base
+    return number(v, float(base)) != float(base)
 
 
 def write_bridge(dir_: Path, settings: dict | None = None) -> Path:
     """Create dlss5-bridge.cfg, preserving anything already in it."""
     p = dir_ / BRIDGE_NAME
     cur: dict = {}
-    cur.update(read(p))
+    old = read(p)
+    try:
+        first = p.read_text(encoding="utf8", errors="replace").split("\n", 1)[0].strip()
+    except OSError:
+        first = ""
+    if first.startswith("# dlss5-bridge ") and first != BRIDGE_STAMP:
+        old = {k: v for k, v in old.items()
+               if k in BRIDGE_CARRY and _chosen(k, v)}
+    cur.update(old)
     if settings:
         cur.update(settings)
-    p.write_text("\n".join(f"{k}={v}" for k, v in cur.items()) + "\n",
+    p.write_text(BRIDGE_STAMP + "\n"
+                 + "# written by dlss5-autopilot; the line above keeps it "
+                   "across bridge versions\n"
+                 + "\n".join(f"{k}={v}" for k, v in cur.items()) + "\n",
                  encoding="utf8")
     return p
 

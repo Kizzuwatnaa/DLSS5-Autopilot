@@ -280,6 +280,13 @@ def _missing_addons(install_dir: Path, man: dict) -> list[str]:
 _CORE_NAMES = ("nvngx_dlssnr.dll",)
 
 
+def _dlss_mod():
+    """core.dlss, imported where it is used, like this file's other siblings:
+    dlss imports installer, and installer imports this module."""
+    from . import dlss
+    return dlss
+
+
 def _missing_core(install_dir: Path, man: dict) -> list[str]:
     """Recorded files that the install wrote and are no longer there."""
     out = []
@@ -390,12 +397,58 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     p = _opti_log(install_dir)
     text = _last_run(_tail(p)) if p else ""
     if not text:
-        rep.add(BAD, "No OptiScaler log from this install yet.",
-                "Either the game has not been run since installing, or "
-                "OptiScaler is not loading at all - check that the proxy DLL "
-                "sits next to the executable the game actually launches, and "
-                "that antivirus did not quarantine it.")
-        rep.verdict = "Not run yet, or OptiScaler never loaded."
+        # An absent log is not proof of an absent OptiScaler. Whether one is
+        # written is a setting, and one of the builds this tool installs
+        # ships it off - a working install came back "never loaded" (#110).
+        # Say what is actually known, and how to make the next run answer.
+        proxy = str((man or {}).get("proxy") or "")
+        proxy_there = bool(proxy) and (install_dir / proxy).is_file()
+        logging_on = False
+        ini_there = (install_dir / "OptiScaler.ini").is_file()
+        try:
+            _ini = (install_dir / "OptiScaler.ini").read_text(
+                encoding="utf8", errors="replace")
+            logging_on = bool(re.search(r"^\s*LogToFile\s*=\s*true\b",
+                                        _ini, re.M | re.I))
+        except OSError:
+            pass
+        if proxy_there and not ini_there:
+            rep.add(BAD, "OptiScaler.ini is missing.",
+                    f"The proxy this install wrote ({proxy}) is in the folder "
+                    f"but OptiScaler's own settings file is not: the install "
+                    f"writes it, so something has removed it since. Without "
+                    f"it OptiScaler runs on its own defaults, and the "
+                    f"neural-rendering and log settings this install wrote "
+                    f"are gone. Install again.")
+            rep.verdict = "OptiScaler.ini is missing - install again."
+        elif proxy_there and not logging_on:
+            rep.add(WARN, "OptiScaler's log is switched off.",
+                    f"The proxy this install wrote ({proxy}) is in the folder, "
+                    f"and OptiScaler.ini does not ask for a log file - one of "
+                    f"the builds this tool installs ships that way. So a "
+                    f"missing log says nothing about whether it loaded. "
+                    f"Install again - the install sets [Log] LogToFile=true - "
+                    f"play once, and press 'did it work?' again. If the game is running well, nothing is wrong: "
+                    f"the log is how this tool checks, not how the feature "
+                    f"works.")
+            rep.verdict = ("OptiScaler's log is off - install again to switch it "
+                           "on, then play once.")
+        elif proxy_there:
+            rep.add(WARN, "No OptiScaler log from this install yet.",
+                    f"The proxy this install wrote ({proxy}) is in the folder "
+                    f"and logging is on, so either the game has not been run "
+                    f"since installing, or OptiScaler did not load - check "
+                    f"that {proxy} sits next to the executable the game "
+                    f"actually launches.")
+            rep.verdict = "Not run yet, or OptiScaler did not load."
+        else:
+            rep.add(BAD, "No OptiScaler log, and no proxy in the folder.",
+                    (f"The proxy this install wrote ({proxy}) is not beside "
+                     if proxy else "The proxy this install wrote is not beside ")
+                    + "the executable - check that it is next to the .exe the "
+                      "game actually launches, and that antivirus did not "
+                      "quarantine it.")
+            rep.verdict = "OptiScaler is not in the game folder - install again."
         return rep
     rep.ran = True
     try:
@@ -1451,6 +1504,9 @@ def analyse(install_dir: Path) -> Report:
     if drv and re.search(r"D3D12Core\.dll\s*<-\s*nvngx_dlssnr\.dll\s*<-\s*_nvngx\.dll\s*<-\s*renodx-dlss5", joined):
         have = str((man.get("components") or {}).get("renodx") or "")
         pinned = have.startswith("4.5")
+        _m = man or {}
+        _sa = _dlss_mod().standalone_fits(str(_m.get("api") or ""),
+                                          _m.get("bitness"))
         rep.add(BAD, "Every DLSS evaluate faults inside NVIDIA's NGX runtime "
                      "(D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- "
                      "renodx-dlss5).",
@@ -1465,13 +1521,27 @@ def analyse(install_dir: Path) -> Report:
                    if pinned else
                    "Install again: the tool pins the add-on to 4.55 on these "
                    "drivers, which passes on most games. ")
-                + "Rolling the driver back to 616.56 works; the bridge route "
-                  "works around it in memory, for games that ship DLSS.")
+                + ("Worth trying before the driver: the standalone route, "
+                   "which runs its own feed and never goes through "
+                   "renodx-dlss5, and for games that ship DLSS the bridge "
+                   "route, which works around the fault in memory. Rolling "
+                   "the driver back to 616.56 is the surer test."
+                   if _sa else
+                   "The bridge route works around it in memory for games that "
+                   "ship DLSS; otherwise rolling the driver back to 616.56 is "
+                   "the answer."))
+        # The shared results are what put standalone first here: the same
+        # game failed three times on the feeder route on 616.92 and then
+        # worked twice on standalone, from the same person. The fault lives
+        # in renodx-dlss5's path through the driver, and standalone does not
+        # take that path - so it is the answer that needs no rollback.
+        _alt = "try the standalone route, or " if _sa else ""
         rep.verdict = (f"Driver 616.64+ faults inside NGX even with renodx-dlss5 "
-                       f"{have} - roll the driver back to 616.56."
+                       f"{have} - {_alt}roll the driver back to 616.56."
                        if pinned else
                        "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install "
-                       "again; the tool pins 4.55.")
+                       "again (the tool pins 4.55)"
+                       + (", or try the standalone route." if _sa else "."))
         return rep
     # An external frame pacer between the feed and the screen. The feeder
     # measures it (presents against frames fed) and NVIDIA Smooth Motion is
@@ -1521,6 +1591,9 @@ def analyse(install_dir: Path) -> Report:
             rep.verdict = ("The crash is in the game's own code - no add-on "
                            "in the stack.")
         elif chain and _in(inner, _NGX_IN_STACK):
+            _m = man or {}
+            _sa = _dlss_mod().standalone_fits(str(_m.get("api") or ""),
+                                              _m.get("bitness"))
             rep.add(BAD, f"The crash ({rec.group(1)}) is inside the "
                          f"Direct3D 12 / NGX runtime ({inner}), reached "
                          f"through "
@@ -1529,7 +1602,10 @@ def analyse(install_dir: Path) -> Report:
                     "asked the runtime for a neural frame and the runtime "
                     "faulted, so no feeder build changes it. Try another "
                     "'DLSS 5 add-on' build from the install page, and if the "
-                    "driver is 616.64 or newer, roll it back to 616.56.")
+                    "driver is 616.64 or newer, "
+                    + ("try the standalone route (it does not load "
+                       "renodx-dlss5), or " if _sa else "")
+                    + "roll it back to 616.56.")
             rep.verdict = ("The crash is in the graphics runtime, not in the "
                            "feed - try another DLSS 5 add-on build.")
         else:
@@ -1566,35 +1642,73 @@ def analyse(install_dir: Path) -> Report:
                 "Usually a driver too old for this NGX runtime, or the game "
                 "running on the wrong GPU.")
 
-    # The add-on hooks NVSDK_NGX_D3D12_EvaluateFeature_C inside the driver's
-    # own NGX runtime. A driver that does not export it is a driver from
-    # before DLSS 5, and everything after this point is downstream of that:
-    # the video player report on driver 610.60 (#75) reached "Inconclusive"
-    # with this error sitting in its log twice.
+    # A failed hook of NVSDK_NGX_..._EvaluateFeature. What it means depends on
+    # the driver first and on the line second, and it took three readings to
+    # get that order right:
+    #  - #75, driver 610.60: a driver from before DLSS 5, and the verdict
+    #    "update the driver" was right.
+    #  - #127, driver 616.92: the same line was answered "update", on a
+    #    driver newer than the one asked for.
+    #  - On 616.64 the add-on hooks the plain EvaluateFeature and logs
+    #    "Failed to find ..._C" for the variant beside it, in sessions that
+    #    then deliver frames (the owner's own video-player and mirror logs).
+    #    So on a driver that carries DLSS 5 the line is not a driver verdict.
+    # The driver's age is therefore read whenever the line is there, and it
+    # decides; the line only decides when the driver cannot be read.
     hookfail = re.search(
         r"vtable::Hook\(Failed to find (NVSDK_NGX_\w+_EvaluateFeature\w*)",
         rtext or "")
-    # ...and only when nothing else worked: one failed hook on a D3D11
-    # variant, while the D3D12 path ran fine and delivered frames, would
-    # otherwise turn "Working." into "update your driver".
-    if hookfail and not delivered and not ready and not crash:
-        drv = ""
+    # "hooked" directly after the name today; tolerate a space in case a
+    # later add-on build logs it that way.
+    plain_hooked = re.search(
+        r"vtable::Hook\(NVSDK_NGX_\w+_EvaluateFeature\w*\s*hooked", rtext or "")
+    drv = ""
+    old_driver = None
+    if hookfail:
         try:
             from . import gpu as _gpu
             drv = _gpu.driver_version() or ""
+            if drv:
+                ok = _gpu.driver_at_least("616.56", drv)
+                old_driver = None if ok is None else not ok
         except Exception:
             pass
-        rep.add(BAD, "The driver's NGX runtime does not export the call the "
-                     "add-on hooks.",
-                f"'Failed to find {hookfail.group(1)}' means the "
-                "neural-rendering entry point was not in the driver the game "
-                "ran with. 616.56 is the first driver documented to carry it"
-                + (f"; this machine reports {drv}" if drv else "") + ". "
-                "Update the graphics driver and install again - nothing else "
-                "in this folder can make up for it.")
+    too_old = old_driver is True or (old_driver is None and not plain_hooked)
+    # ...and only when nothing else worked: one failed hook on a D3D11
+    # variant, while the D3D12 path ran fine and delivered frames, would
+    # otherwise turn "Working." into "update your driver".
+    if hookfail and too_old and not delivered and not ready and not crash:
+        rep.add(BAD, (f"This machine's driver, {drv}, is older than DLSS 5 "
+                      f"itself."
+                      if old_driver else
+                      "The driver's NGX runtime does not export the call the "
+                      "add-on hooks."),
+                f"The add-on logged 'Failed to find {hookfail.group(1)}'. "
+                "616.56 is the first driver documented to carry the "
+                "neural-rendering runtime"
+                + (f", and this machine reports {drv} - if that is the "
+                   f"driver the game ran with, nothing else in this folder "
+                   f"can make up for it. Update the graphics driver and "
+                   f"install again." if old_driver else
+                   ", and this machine's driver version could not be read - "
+                   "if it is older than that, nothing else in this folder can "
+                   "make up for it. Check the driver is 616.56 or newer."))
         rep.verdict = ("The driver has no DLSS 5 entry point - update the "
-                       "graphics driver.")
+                       "graphics driver." if old_driver else
+                       "The add-on found no DLSS 5 entry point to hook - check "
+                       "the driver is 616.56 or newer.")
         return rep
+    if hookfail and old_driver is False and not plain_hooked \
+            and not delivered and not ready and not crash:
+        # A driver that carries DLSS 5, and nothing of this entry point was
+        # hooked at all: that is a real inability to intercept, just not a
+        # question of the driver's age. Said as what it is, and the rules
+        # below still get their turn.
+        rep.add(WARN, f"The add-on could not hook {hookfail.group(1)}.",
+                f"On driver {drv} this is not the driver being too old. No "
+                f"other EvaluateFeature call shows as hooked either, so this "
+                f"session may have had nothing to run the model on - the "
+                f"add-on's panel in the game says for certain.")
 
     if crash:
         rep.add(BAD, f"Creating the DLSS feature crashed ({crash.group(1)}).",
@@ -1650,6 +1764,31 @@ def analyse(install_dir: Path) -> Report:
                     "native route runs after the game's own tone mapping.")
         rep.verdict = (f"Add-ons loaded. Confirm in the {panel} - this "
                        f"route does not log frames.")
+        if rep.route == "bridge" and man.get("native_dlss") is False:
+            # #127: an unstamped settings file is replaced by the bridge with
+            # its defaults, substitute off - and a game with no DLSS of its
+            # own then gives the bridge nothing to work on.
+            try:
+                from . import feedcfg as _fc
+                cfgp = Path(install_dir) / _fc.BRIDGE_NAME
+                first = cfgp.read_text(encoding="utf8",
+                                       errors="replace").split("\n", 1)[0].strip()
+                vals = _fc.read(cfgp)
+                on = (int(_fc.number(vals.get("synth", 0))) != 0
+                      or int(_fc.number(vals.get("synth_after", 0))) > 0)
+            except (OSError, ValueError, OverflowError):
+                first, on = _fc.BRIDGE_STAMP, True
+            if first != _fc.BRIDGE_STAMP and not on:
+                rep.add(BAD, "The bridge replaced the settings this install "
+                             "wrote.",
+                        "This game has no DLSS of its own, so the bridge needs "
+                        "its substitute contract, which the install switches "
+                        f"on in {_fc.BRIDGE_NAME}. That file does not start "
+                        f"with '{_fc.BRIDGE_STAMP}', so the bridge replaced it "
+                        "with its defaults, where the substitute is off. "
+                        "Install the bridge route again.")
+                rep.verdict = ("The bridge's substitute is off - install the "
+                               "bridge route again.")
     else:
         rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 
@@ -1924,8 +2063,44 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
 # the bug report body
 # ---------------------------------------------------------------------------
 
+# "EvaluateFeature": the hook lines are DEBUG, and the driver rule reads
+# them - a report without them cannot be replayed to the same answer.
 _RESHADE_KEEP = ("WARN", "ERROR", "Registered add-on", "CreateSwapChain",
-                 "Direct3DCreate9", "Exiting")
+                 "Direct3DCreate9", "Exiting", "EvaluateFeature")
+# What a report's ReShade.log excerpt gives up last when it is over budget:
+# the lines the diagnosis itself reads, then which add-ons loaded.
+_RESHADE_FIRM = ("EvaluateFeature",)
+_RESHADE_ALSO = ("Registered add-on",)
+_HOOK_ADDRESSES = re.compile(r" with 0x[0-9A-Fa-f]+ => 0x[0-9A-Fa-f]+")
+
+
+def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
+    """The ReShade.log lines a report carries, fitted to its budget.
+
+    The excerpt used to lose its oldest lines first, and the hook lines are
+    written at the start of a session - so the "hooked" line went and the
+    "Failed to find" beside it stayed, which replays to the opposite answer.
+    Over budget, the lines nothing reads go first.
+    """
+    kept = [ln for ln in text.splitlines() if any(k in ln for k in _RESHADE_KEEP)]
+    # A 250 KB tail can hold thousands of these; only the newest of each
+    # kind can end up in the excerpt, so the rest are not looked at twice.
+    firm = set(sorted(i for i, ln in enumerate(kept)
+                      if any(k in ln for k in _RESHADE_FIRM))[-8:])
+    firm |= set(sorted(i for i, ln in enumerate(kept)
+                       if any(k in ln for k in _RESHADE_ALSO))[-8:])
+    rest = [i for i in range(len(kept)) if i not in firm][-n:]
+    lines = [_HOOK_ADDRESSES.sub("", kept[i].rstrip())[:200]
+             for i in sorted(firm | set(rest))]
+    for spare in (lambda ln: not any(k in ln for k in _RESHADE_FIRM + _RESHADE_ALSO),
+                  lambda ln: not any(k in ln for k in _RESHADE_FIRM),
+                  lambda ln: True):
+        while len(lines) > n or len("\n".join(lines)) > budget:
+            i = next((i for i, ln in enumerate(lines) if spare(ln)), None)
+            if i is None:
+                break
+            del lines[i]
+    return lines
 
 
 def _last_lines(text: str, n: int, keep=None, width: int = 200) -> list[str]:
@@ -2059,6 +2234,34 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     return out
 
 
+# What the library scan writes about every game on the machine. In a report
+# about one game these lines were the whole excerpt - "Minecraft for
+# Windows ... is not readable yet" in a report about Enshrouded (#130), RPCS3
+# search budgets in one about Remember Me (#134).
+_SCAN_NOISE = re.compile(
+    r"scan \S+: \d+ found|is not readable yet|an earlier install is recorded "
+    r"in|the store names|could not read |no executable under|inspected .+ in "
+    r"[\d.]+s|checked .+ in [\d.]+s|scan: .+ is the same executable|stopped "
+    r"looking for")
+
+
+def _tool_log_lines(tail: str, game, install_dir, n: int = 15) -> list[str]:
+    """The tool's own log for a report: this run, and not the other games."""
+    text = tail or ""
+    cut = text.rfind("=" * 70)
+    if cut >= 0:
+        text = text[cut:]
+    marks = [m.lower() for m in (getattr(game, "name", "") or "",
+                                 str(install_dir or "")) if m]
+
+    def keep(ln: str) -> bool:
+        if not _SCAN_NOISE.search(ln):
+            return True
+        low = ln.lower()
+        return any(m in low for m in marks)
+    return _last_lines(text, n, keep)
+
+
 def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
                last_diag, autopilot_tail: str, autopilot_log_path,
                install_dir, last_error: str = "",
@@ -2122,8 +2325,11 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
             opti = _tail(p, 100_000) if p else ""
 
     parts = [head, files]
-    parts.append(_block("ReShade.log", _last_lines(
-        reshade, 25, lambda ln: any(k in ln for k in _RESHADE_KEEP)), 1500))
+    # The last session only, as analyse() reads it: ReShade.log is never
+    # truncated, and the excerpt's priorities pulled hook lines and add-on
+    # builds out of older sessions over the last one's own errors.
+    parts.append(_block("ReShade.log",
+                        _reshade_excerpt(_last_session(reshade)), 1500))
     parts.append(_block("dlss5-feed.log", _last_lines(feed, 20), 1400))
     if route == "optiscaler":
         parts.append(_block("OptiScaler.log", _last_lines(opti, 20), 900))
@@ -2142,7 +2348,6 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         parts.append(f"\n**Last error**\n```\n{last_error[-900:]}\n```\n")
     parts.append(_block(
         f"autopilot.log (`{autopilot_log_path}`)",
-        _last_lines(autopilot_tail or "", 15,
-                    lambda ln: not re.search(r"scan \S+: \d+ found", ln)), 900))
+        _tool_log_lines(autopilot_tail or "", game, install_dir), 900))
     body = "".join(parts)
     return body[:6000]

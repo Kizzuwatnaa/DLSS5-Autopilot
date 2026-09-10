@@ -1,12 +1,13 @@
 """Terminal-styled tkinter interface.
 
 Monospace throughout, amber on near-black, bracket markers, square edges. A
-persistent left rail carries the three steps so you can always see where you
-are and click back.
+persistent left rail holds the places, so you can always see where you are:
 
-Step 1: architecture filter
-Step 2: pick a game from the scan
-Step 3: settings, install, diagnose
+games    the library, where the app opens once there is one
+install  settings, install, diagnose, for the game picked
+video    the portable player, fed like a game
+remix    RTX Remix mods, and which of your games have one
+start    the welcome before a first scan, reached from the name in the corner
 """
 from __future__ import annotations
 
@@ -187,12 +188,12 @@ class Scroller(tk.Frame):
                                                anchor="nw")
         self.inner.bind("<Configure>", self._resized)
         self._canvas.bind("<Configure>", self._canvas_resized)
-        # The wheel is bound while the pointer is over this frame only, so
-        # the game list and the log keep their own wheels.
-        self._canvas.bind("<Enter>", lambda e: self._canvas.bind_all(
-            "<MouseWheel>", self._wheel))
-        self._canvas.bind("<Leave>", lambda e: self._canvas.unbind_all(
-            "<MouseWheel>"))
+        # Nothing is bound here. The window binds the wheel once and asks
+        # which widget the pointer is actually over - see App._wheel_anywhere.
+        # Binding on this canvas's own Enter/Leave did not work: the content
+        # frame is a child window laid over the canvas, and Tk hands the
+        # canvas a Leave as soon as the pointer crosses into a child, so the
+        # binding disappeared the moment the pointer touched a control.
 
     def content_height(self) -> int:
         return self.inner.winfo_reqheight()
@@ -231,17 +232,105 @@ class Scroller(tk.Frame):
     def _on_scroll(self, first: str, last: str) -> None:
         self._bar.set(first, last)
 
-    def _wheel(self, e) -> None:
-        if self._bar.winfo_ismapped():
-            self._canvas.yview_scroll(int(-e.delta / 120), "units")
+    def wheel(self, e) -> bool:
+        """Scroll if there is anywhere to scroll. True when it was used."""
+        if not self._bar.winfo_ismapped():
+            return False
+        self._canvas.yview_scroll(int(-e.delta / 120), "units")
+        return True
+
+
+def _wrap_to_width(lbl: tk.Label, floor: int = 200) -> None:
+    """Make a label wrap at whatever width it is given.
+
+    A label with no wraplength asks for its whole text on one line, and a
+    grid cell narrower than that simply cuts it off - which is what the
+    feeder build note did at 150% and 200% (found by _tools/gui_lint.py).
+    """
+    def fit(e) -> None:
+        want = max(px(floor), e.width - px(4))
+        try:
+            if int(str(lbl.cget("wraplength") or 0)) != want:
+                lbl.configure(wraplength=want)
+        except (tk.TclError, ValueError):
+            pass
+    lbl.bind("<Configure>", fit, add="+")
+
+
+class Prose(tk.Text):
+    """Read-only text that is as tall as what it says, with styled lines.
+
+    The route description under the dropdown was one grey Label: fourteen
+    lines of the same colour, where the warnings wrapped back to the left
+    edge and could not be told from the description. This keeps the text
+    and gives each kind of line its own look - and a hanging indent, so a
+    wrapped warning stays under its own "!".
+    """
+
+    def __init__(self, parent: tk.Misc, **kw) -> None:
+        super().__init__(parent, bg=PANEL, fg=DIM, font=font(8), wrap="word",
+                         insertbackground=PANEL,
+                         borderwidth=0, highlightthickness=0, relief="flat",
+                         cursor="arrow", takefocus=0, height=1,
+                         padx=0, pady=0, **kw)
+        ind = px(26)
+        self.tag_configure("blurb", foreground=DIM)
+        self.tag_configure("note", foreground=DIM, spacing1=px(3))
+        self.tag_configure("warn", foreground=BODY, lmargin1=px(6),
+                           lmargin2=ind, spacing1=px(2))
+        self.tag_configure("mark", foreground=AMBER)
+        self.tag_configure("driver", foreground=AMBER, lmargin1=px(6),
+                           lmargin2=ind, spacing1=px(2))
+        self.tag_configure("bad", foreground=RUST, spacing3=px(3))
+        self.configure(state="disabled")
+        self.bind("<Configure>", lambda _e: self.after_idle(self._fit))
+
+    def show(self, parts: list[tuple[str, str]]) -> None:
+        """parts: (tag, text) pairs, one per line."""
+        self.configure(state="normal")
+        self.delete("1.0", "end")
+        for i, (tag, text) in enumerate(parts):
+            if i:
+                self.insert("end", "\n")
+            if tag in ("warn", "driver"):
+                self.insert("end", "!  ", ("mark", tag))
+            self.insert("end", text, tag)
+        self.configure(state="disabled")
+        self.after_idle(self._fit)
+
+    def _fit(self) -> None:
+        # By pixels, not by display lines: `height` is counted in lines of
+        # the base font, but the spacing above each warning adds pixels that
+        # a line count does not see - and the last wrapped row of the driver
+        # warning came out two pixels tall.
+        try:
+            from tkinter import font as _tkfont
+            n = self.count("1.0", "end", "ypixels")
+            need = (n[0] if isinstance(n, tuple) else n) or 0
+            step = _tkfont.Font(font=self.cget("font")).metrics("linespace") or 1
+            lines_ = max(1, -(-int(need) // int(step)))
+            if int(self.cget("height")) != lines_:
+                self.configure(height=lines_)
+        except tk.TclError:
+            pass
 
 
 FEEDER_CHOICES = ("stable - newest release",
                   "newest pre-release")
 
-STEPS = (("architecture", "what to install for"),
-         ("game", "pick from your library"),
-         ("install", "settings and go"))
+# The rail holds places, not steps. It used to read "1 architecture, 2 game,
+# 3 install" - a wizard - while the app opened on step 2, and video and RTX
+# Remix were two cards under the architecture question that most people
+# never saw once the library became the home screen. Page 1 is only the
+# welcome before a first scan; it is reached from the name in the corner.
+PAGES = {1: ("start", "find your games"),
+         2: ("games", "your library"),
+         3: ("install", "settings and go"),
+         4: ("video and youtube", "any file or a youtube link"),
+         5: ("rtx remix", "path-traced classics")}
+NAV = (2, 3, None, 4, 5)           # None: a rule between the two groups
+ARCH_CHOICES = (("all", "every architecture"), ("64", "64-bit only"),
+                ("32", "32-bit only (experimental)"))
 
 
 class App:
@@ -294,14 +383,24 @@ class App:
         self._noted_routes: set[str] = set()
 
         self._build()
+        # One wheel binding for the whole window, which then asks what the
+        # pointer is over. Anything that scrolls itself - the log, the game
+        # list - is left to its own class binding; everything else looks up
+        # its parents for a Scroller and scrolls that.
+        self.root.bind_all("<MouseWheel>", self._wheel_anywhere, add="+")
+        # ttk's class binding changes a dropdown's selection on a wheel turn,
+        # and it runs before the handler above - so the only way to stop a
+        # scroll from picking a different route is to take the binding away.
+        # The open drop-down list is a Listbox and keeps its own wheel.
+        for cls in ("TCombobox",):
+            self.root.unbind_class(cls, "<MouseWheel>")
         self.search.trace_add("write", self._search_changed)
         # The library is the home screen, not the third thing you reach.
         # Every launch used to open on the architecture question - a filter
         # most people answer once - and the games were not even read until
         # you pressed past it, so coming back to a game you had installed
         # meant walking the whole wizard again. When there is a library from
-        # last time, open on it; the architecture page stays one click away
-        # on the rail, where a filter belongs.
+        # last time, open on it; the architecture is a filter on that page.
         self._show(1)
         opened_on_library = False
         try:
@@ -313,6 +412,18 @@ class App:
                 opened_on_library = True
         except Exception:
             log.exception("opening on the saved library")
+        # The saved library is version-gated, so after every update - and
+        # this tool updates itself - it came back unusable and the app opened
+        # on the architecture page as if it had never been run. Someone who
+        # has scanned before goes to the library, and it is read again there.
+        if not opened_on_library and self.scan_on_start.get() \
+                and library.FILE.is_file():
+            try:
+                self._show(2)
+                self._scan()
+                opened_on_library = True
+            except Exception:
+                log.exception("rescanning the library at start")
         if not opened_on_library:
             self._show(1)
         self.root.after(60, self._pump)
@@ -364,8 +475,47 @@ class App:
                      ("selectBackground", AMBER), ("selectForeground", BG)):
             self.root.option_add(f"*TCombobox*Listbox.{k}", v)
         self.root.option_add("*TCombobox*Listbox.font", font(10))
+        # The field itself, not only its drop-down list: ttk takes no font
+        # from the style for this widget, so every dropdown on the page was
+        # in Segoe UI while the rest of the window is monospaced.
+        self.root.option_add("*TCombobox.font", font(10))
+        # Classic Tk widgets read these from the option database when they
+        # are made, so one line here covers every widget that does not set
+        # its own. Without them a checkbox drew Windows' light-grey focus
+        # frame round itself, and the fps box's arrows flashed white.
+        for pattern, value in (("*highlightBackground", PANEL),
+                               ("*highlightColor", EDGE),
+                               ("*Checkbutton.highlightThickness", 0),
+                               ("*Radiobutton.highlightThickness", 0),
+                               ("*Spinbox.activeBackground", FIELD),
+                               ("*Spinbox.disabledBackground", PANEL),
+                               ("*Spinbox.disabledForeground", FAINT),
+                               ("*Spinbox.readonlyBackground", FIELD),
+                               ("*Entry.disabledBackground", PANEL),
+                               ("*Entry.disabledForeground", FAINT),
+                               ("*Entry.readonlyBackground", FIELD),
+                               ("*Spinbox.highlightThickness", 0)):
+            self.root.option_add(pattern, value)
         st.configure("TProgressbar", background=AMBER, troughcolor=FIELD,
                      borderwidth=0, thickness=px(4))
+        # Trough and thumb only: clam draws arrows and a three-line grip on
+        # the thumb, in light grey, and on this ground that looked like a
+        # scrollbar that had broken in the middle.
+        for orient in ("Vertical", "Horizontal"):
+            st.layout(f"{orient}.TScrollbar", [
+                (f"{orient}.Scrollbar.trough", {
+                    "sticky": "ns" if orient == "Vertical" else "we",
+                    "children": [(f"{orient}.Scrollbar.thumb",
+                                  {"expand": "1", "sticky": "nswe"})]})])
+            st.configure(f"{orient}.TScrollbar", troughcolor=PANEL,
+                         background=FAINT, bordercolor=PANEL,
+                         lightcolor=FAINT, darkcolor=FAINT,
+                         gripcount=0, borderwidth=0, relief="flat",
+                         width=px(10), arrowsize=px(10))
+            st.map(f"{orient}.TScrollbar",
+                   background=[("pressed", AMBER), ("active", DIM)],
+                   lightcolor=[("pressed", AMBER), ("active", DIM)],
+                   darkcolor=[("pressed", AMBER), ("active", DIM)])
 
     # ---------------------------------------------------------------- chrome
     def _build(self) -> None:
@@ -438,13 +588,27 @@ class App:
         words.pack(side="left", anchor="w")
         tk.Label(words, text="dlss5", bg=RAIL, fg=AMBER, anchor="w",
                  font=(MONO[0], 15, "bold")).pack(anchor="w")
-        tk.Label(words, text="autopilot", bg=RAIL, fg=TXT, anchor="w",
-                 font=(MONO[0], 15)).pack(anchor="w")
+        self.brandname = tk.Label(words, text="autopilot", bg=RAIL, fg=TXT,
+                                  anchor="w", font=(MONO[0], 15))
+        self.brandname.pack(anchor="w")
+        # The name in the corner goes home, as it does on every website:
+        # the library when there is one, the first page when there is not.
+        for w in (brand, words, *brand.winfo_children(),
+                  *words.winfo_children()):
+            w.configure(cursor="hand2")
+            w.bind("<Button-1>", lambda e: self._go_home())
+            w.bind("<Enter>", lambda e: self.brandname.configure(fg=AMBER))
+            w.bind("<Leave>", lambda e: self.brandname.configure(fg=TXT))
         tk.Frame(rail, bg=LINE, height=px(1)).pack(fill="x", padx=20,
                                                    pady=(0, px(10)))
 
         self.rail_rows: list[dict] = []
-        for i, (title, sub) in enumerate(STEPS, start=1):
+        for i in NAV:
+            if i is None:
+                tk.Frame(rail, bg=LINE, height=px(1)).pack(
+                    fill="x", padx=20, pady=px(8))
+                continue
+            title, sub = PAGES[i]
             row = tk.Frame(rail, bg=RAIL, cursor="hand2")
             row.pack(fill="x")
             marker = tk.Frame(row, bg=RAIL, width=px(3))
@@ -492,7 +656,7 @@ class App:
                                 anchor="w", cursor="hand2", font=font(8))
         self.howlink.pack(fill="x", padx=20, pady=(0, 18))
         self.howlink.bind("<Button-1>", lambda e: webbrowser.open(
-            f"https://github.com/{update.REPO}#who-does-what-the-seven-routes"))
+            f"https://github.com/{update.REPO}#which-route-a-game-gets"))
 
         right = tk.Frame(r, bg=BG)
         right.pack(side="left", fill="both", expand=True)
@@ -517,9 +681,12 @@ class App:
         self.body = tk.Frame(right, bg=BG)
         self.body.pack(fill="both", expand=True, padx=28, pady=(20, 10))
 
-        self.p1 = self._page_arch()
+        self.p1 = self._page_start()
         self.p2 = self._page_games()
         self.p3 = self._page_install()
+        self.p4 = self._page_video()
+        self.p5 = self._page_remix()
+        self.pages = (self.p1, self.p2, self.p3, self.p4, self.p5)
 
         self.status = tk.Label(bar, text="ready", bg=BG, fg=DIM,
                                font=font(9), anchor="w")
@@ -530,46 +697,90 @@ class App:
                                    command=self._next)
         self.btn_next.pack(side="right")
 
-        r.bind("<Escape>", lambda e: self._jump(1))
-        r.bind("<Control-h>", lambda e: self._jump(1))
+        r.bind("<Escape>", lambda e: self._go_home())
+        # Not from a text box: Ctrl+H is backspace there, in Tk as in Windows.
+        r.bind("<Control-h>", lambda e: None if isinstance(
+            e.widget, (tk.Entry, tk.Text, tk.Spinbox, ttk.Entry))
+            else self._go_home())
+
+    def _go_home(self) -> None:
+        """The library is the home screen; before any scan, the first page."""
+        self._jump(2 if self._have_library() else 1)
+
+    def _can_install_page(self) -> bool:
+        """A game is picked, and one the tool can set up: 'continue' is off
+        for an Xbox game without mods enabled, and the rail must not be the
+        way round it."""
+        if not self.game:
+            return False
+        try:
+            return bool(installer.check_supported(self.game)[0])
+        except Exception:
+            return False
+
+    def _have_library(self) -> bool:
+        """Games have been found. The video player on its own is not a
+        library: set up before any scan, it made every "is there a library"
+        check true, and nothing ever scanned again."""
+        return any(getattr(g, "kind", "game") != "video" for g in self.all_games)
 
     def _jump(self, n: int) -> None:
         if self.busy or n == self.step:
             return
-        if n < self.step:
+        if n in (1, 4, 5):
             self._show(n)
-        elif n == 2 and self.all_games:
+        elif n == 2:
             self._show(2)
-        elif n == 3 and self.game:
+            if not self._have_library():
+                self._enter_library()
+        elif n == 3 and self._can_install_page():
             self._show(3)
             self._enter_install()
 
     def _paint_rail(self) -> None:
         for e in self.rail_rows:
             active = e["n"] == self.step
-            done = e["n"] < self.step
+            # The install page needs a game; until one is picked its row
+            # says so by being dimmer, and a click on it does nothing.
+            off = e["n"] == 3 and not self._can_install_page()
             bg = PANEL if active else RAIL
             e["marker"].configure(bg=AMBER if active else RAIL)
             for k in ("row", "pad", "box"):
                 e[k].configure(bg=bg)
-            e["mark"].configure(bg=bg, text="[x]" if done else ("[>]" if active else "[ ]"),
-                                fg=GREEN if done else (AMBER if active else FAINT))
-            e["t1"].configure(bg=bg, fg=TXT if active else (BODY if done else DIM))
+            e["mark"].configure(bg=bg, text="[>]" if active else "[ ]",
+                                fg=AMBER if active else FAINT)
+            e["t1"].configure(bg=bg, fg=TXT if active else (FAINT if off else BODY))
             e["t2"].configure(bg=bg, fg=FAINT)
+            e["row"].configure(cursor="arrow" if off else "hand2")
 
     def _show(self, step: int) -> None:
         self.step = step
-        for p in (self.p1, self.p2, self.p3):
+        for p in self.pages:
             p.pack_forget()
-        [self.p1, self.p2, self.p3][step - 1].pack(fill="both", expand=True)
+        self.pages[step - 1].pack(fill="both", expand=True)
         self._paint_rail()
-        self.btn_back.config(state="normal" if step > 1 else "disabled")
+        if step == 5:
+            self._remix_mine()
+        self.btn_back.config(state="normal" if step >= 3 else "disabled")
+        # Video and Remix have their own buttons on the page; "continue"
+        # under them would lead nowhere.
+        if step in (4, 5):
+            self.btn_next.pack_forget()
+        elif not self.btn_next.winfo_manager():
+            self.btn_next.pack(side="right")
         if step == 1:
             self.btn_next.config(text="scan games", state="normal")
         elif step == 2:
+            # The selected row has to BE the game: after the video player was
+            # set up, another game's row stayed selected under it.
+            sel = self.tree.selection()
+            try:
+                picked = bool(sel) and self.shown[int(sel[0])] is self.game
+            except (ValueError, IndexError, TypeError):
+                picked = False
             self.btn_next.config(text="continue",
-                                 state="normal" if self.game else "disabled")
-        else:
+                                 state="normal" if picked else "disabled")
+        elif step == 3:
             self.btn_next.config(text="INSTALL", state="normal")
 
     def _card(self, parent, pad=(16, 14), hover: bool = False) -> tk.Frame:
@@ -672,15 +883,14 @@ class App:
 
 
     def _eyebrow(self, parent, step: int) -> tk.Label:
-        """"step 2 of 3" over a page title, tying it back to the rail."""
-        lbl = tk.Label(parent, text=f"step {step} of {len(STEPS)}   ::   "
-                                    f"{STEPS[step - 1][1]}",
+        """The rail's name for this page over its title, tying the two."""
+        lbl = tk.Label(parent, text=f"{PAGES[step][0]}   ::   {PAGES[step][1]}",
                        bg=BG, fg=FAINT, anchor="w", font=font(8))
         lbl.pack(anchor="w", pady=(0, px(4)))
         return lbl
 
-    # ---------------------------------------------------------------- step 1
-    def _page_arch(self) -> tk.Frame:
+    # ---------------------------------------------------------------- start
+    def _page_start(self) -> tk.Frame:
         outer = tk.Frame(self.body, bg=BG)
         # The first page anyone sees, and at 200% scaling it was 448
         # pixels taller than the window with the bottom of it simply
@@ -689,87 +899,18 @@ class App:
         scroll.pack(fill="both", expand=True)
         f = scroll.inner
         self._eyebrow(f, 1)
-        ttk.Label(f, text="what are you installing for?", style="H1.TLabel")\
+        ttk.Label(f, text="dlss 5 for the games you have", style="H1.TLabel")\
             .pack(anchor="w")
-        ttk.Label(f, text="not sure if a game is 32- or 64-bit? leave it on "
-                          "everything - the architecture is read from each "
-                          "executable.", style="Dim.TLabel")\
-            .pack(anchor="w", pady=(6, 18))
-
-        opts = [
-            ("all", "everything", "reliable + experimental",
-             "list every game with its architecture and outlook shown"),
-            ("64", "64-bit only", "the reliable path",
-             "reshade and the dlss5 add-on install straight next to the game"),
-            ("32", "32-bit only", "experimental",
-             "a 32-bit process cannot load 64-bit ngx, so a host64 helper runs "
-             "alongside. it often fails to start."),
-        ]
-        for val, title, tag, desc in opts:
-            card = self._card(f, pad=(16, 4), hover=True)
-            card.pack(fill="x", pady=3)
-            top = tk.Frame(card.inner, bg=PANEL)
-            top.pack(fill="x", pady=(9, 0))
-            ttk.Radiobutton(top, text=title, value=val, variable=self.arch)\
-                .pack(side="left")
-            tk.Label(top, text=tag, bg=PANEL,
-                     fg=RUST if "experimental" in tag else FAINT,
-                     font=font(8)).pack(side="left", padx=10)
-            tk.Label(card.inner, text=desc, bg=PANEL, fg=DIM, anchor="w",
-                     justify="left", wraplength=px(660), font=font(9))\
-                .pack(anchor="w", padx=22, pady=(2, 11))
-
-        # Video is the same feed with no depth buffer: a D3D11 player set up
-        # once, after which any file or a YouTube link plays through DLSS 5.
-        vcard = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
-        vcard.pack(fill="x", pady=(10, 0))
-        vi = tk.Frame(vcard, bg=PANEL)
-        vi.pack(fill="x", padx=16, pady=12)
-        vtop = tk.Frame(vi, bg=PANEL)
-        vtop.pack(fill="x")
-        tk.Label(vtop, text="video and youtube", bg=PANEL, fg=TXT,
-                 font=font(10, "bold")).pack(side="left")
-        ttk.Button(vtop, text="set up the video player",
-                   command=self._video_setup).pack(side="right")
-        self.videolbl = tk.Label(
-            vi, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
-            wraplength=px(660),
-            text="a portable MPC-HC in a folder of your choice, with dlss5 fed "
-                 "into it. play any file, or File > Open URL with a youtube "
-                 "link - it streams live, nothing is downloaded. F6 switches "
-                 "neural rendering on and off while it plays. tested: 60 fps, "
-                 "the feed costs about 5% of the frame.")
-        self.videolbl.pack(anchor="w", pady=(4, 0))
-        vi.bind("<Configure>",
-                lambda e: self.videolbl.configure(wraplength=max(px(380), e.width - px(10))))
-
-        # Old games rebuilt with path tracing: DLSS 5 goes inside the Remix
-        # runtime there, so it is a route of its own rather than an add-on.
-        rcard = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
-        rcard.pack(fill="x", pady=(8, 0))
-        ri = tk.Frame(rcard, bg=PANEL)
-        ri.pack(fill="x", padx=16, pady=12)
-        rtop = tk.Frame(ri, bg=PANEL)
-        rtop.pack(fill="x")
-        tk.Label(rtop, text="rtx remix", bg=PANEL, fg=TXT,
-                 font=font(10, "bold")).pack(side="left")
-        ttk.Button(rtop, text="which of my games have a remix mod?",
-                   command=self._show_remix).pack(side="right")
-        self.remixlbl = tk.Label(
-            ri, bg=PANEL, fg=DIM, font=font(9), justify="left", anchor="w",
-            wraplength=px(660),
-            text="RTX Remix is a separate, free NVIDIA mod that rebuilds an old "
-                 "game (2000s-era, fixed-function DirectX - GTA IV, Portal, Deus "
-                 "Ex, Vampire Bloodlines...) with real-time ray tracing: a full "
-                 "graphics overhaul, not a filter. A handful of those mods "
-                 "run DLSS 5 inside that engine.\n\n"
-                 "install the mod yourself (see the list below), then rescan: "
-                 "this tool finds its .trex runtime and switches DLSS 5 on in "
-                 "it. no reshade, no feeder, nothing else changes. proven on "
-                 "GTA IV: path tracing and DLSS 5 running together.")
-        self.remixlbl.pack(anchor="w", pady=(4, 0))
-        ri.bind("<Configure>",
-                lambda e: self.remixlbl.configure(wraplength=max(px(380), e.width - px(10))))
+        self.startlbl = tk.Label(
+            f, bg=BG, fg=DIM, font=font(9), justify="left", anchor="w",
+            wraplength=px(680),
+            text="[ scan games ] (bottom right) finds the games your stores "
+                 "know about and the usual game folders, reads each executable "
+                 "for its architecture and renderer, and picks the route that "
+                 "fits it. for one game, use [ choose folder ] on the games "
+                 "page. video and rtx remix are on the "
+                 "left.")
+        self.startlbl.pack(anchor="w", pady=(6, 0))
 
         # What the publishers ship right now - the tool always fetches these.
         self.boardlbl = tk.Label(f, text="", bg=BG, fg=DIM, font=font(8),
@@ -796,9 +937,94 @@ class App:
         self.realitylbl.pack(anchor="w", pady=(6, 0))
         wi.bind("<Configure>",
                 lambda e: self.realitylbl.configure(wraplength=max(px(380), e.width - px(10))))
+        f.bind("<Configure>",
+               lambda e: (self.startlbl.configure(wraplength=max(px(380), e.width - px(10))),
+                          self.boardlbl.configure(wraplength=max(px(380), e.width - px(10)))),
+               add="+")
         return outer
 
-    # ---------------------------------------------------------------- step 2
+    def _page_side(self, n: int, title: str, button: str, command,
+                   text: str) -> tuple[tk.Frame, tk.Label, tk.Frame]:
+        """A page of its own for video or Remix: what it is, and one button."""
+        outer = tk.Frame(self.body, bg=BG)
+        scroll = Scroller(outer)
+        scroll.pack(fill="both", expand=True)
+        f = scroll.inner
+        self._eyebrow(f, n)
+        top = tk.Frame(f, bg=BG)
+        top.pack(fill="x")
+        ttk.Label(top, text=title, style="H1.TLabel").pack(side="left")
+        ttk.Button(top, text=button, style="Accent.TButton",
+                   command=command).pack(side="right")
+        card = tk.Frame(f, bg=PANEL, highlightbackground=EDGE, highlightthickness=1)
+        card.pack(fill="x", pady=(14, 0))
+        ci = tk.Frame(card, bg=PANEL)
+        ci.pack(fill="x", padx=16, pady=12)
+        lbl = tk.Label(ci, bg=PANEL, fg=DIM, font=font(9), justify="left",
+                       anchor="w", wraplength=px(660), text=text)
+        lbl.pack(anchor="w")
+        ci.bind("<Configure>",
+                lambda e: lbl.configure(wraplength=max(px(380), e.width - px(10))))
+        return outer, lbl, f
+
+    # Video is the same feed with no depth buffer: a D3D11 player set up
+    # once, after which any file or a YouTube link plays through DLSS 5.
+    def _page_video(self) -> tk.Frame:
+        page, self.videolbl, _f = self._page_side(
+            4, "video and youtube", "set up the video player", self._video_setup,
+            "a portable MPC-HC in a folder of your choice, with dlss5 fed "
+            "into it. play any file, or File > Open URL with a youtube "
+            "link - it streams live, nothing is downloaded. F6 switches "
+            "neural rendering on and off while it plays. tested: 60 fps, "
+            "the feed costs about 5% of the frame.")
+        return page
+
+    # Old games rebuilt with path tracing: DLSS 5 goes inside the Remix
+    # runtime there, so it is a route of its own rather than an add-on.
+    def _page_remix(self) -> tk.Frame:
+        page, self.remixlbl, f = self._page_side(
+            5, "rtx remix", "every remix project", self._show_remix,
+            "RTX Remix is a separate, free NVIDIA mod that rebuilds an old "
+            "game (2000s-era, fixed-function DirectX - GTA IV, Portal, Deus "
+            "Ex, Vampire Bloodlines...) with real-time ray tracing: a full "
+            "graphics overhaul, not a filter. A handful of those mods "
+            "run DLSS 5 inside that engine.\n\n"
+            "1. get the mod: for GTA IV and Need for Speed: Underground 2, "
+            "once the game is in your library, the list behind the button "
+            "has download & install, which puts it in for you; for the "
+            "rest, install it from its own page.\n"
+            "2. rescan on the games page: the game comes up on the remix "
+            "route.\n"
+            "3. INSTALL: this tool finds the mod's .trex runtime and switches "
+            "DLSS 5 on in it. no reshade, no feeder, nothing else changes. "
+            "proven on GTA IV: path tracing and DLSS 5 running together.")
+        # Which of the games in the library have a mod, on the page itself:
+        # "download & install" was two clicks away and nobody found it.
+        self.remixmine = tk.Label(f, text="", bg=BG, fg=GREEN, font=font(9),
+                                  anchor="w", justify="left", wraplength=px(680))
+        self.remixmine.pack(fill="x", pady=(12, 0))
+        f.bind("<Configure>", lambda e: self.remixmine.configure(
+            wraplength=max(px(380), e.width - px(10))), add="+")
+        return page
+
+    def _remix_mine(self) -> None:
+        """Name the library's games that have a Remix mod, on the remix page."""
+        try:
+            from . import remixlist
+            found = remixlist.for_library(self.all_games)
+        except Exception:
+            found = []
+        if not self._have_library():
+            text = "scan your games first to see which of them have a mod."
+        elif not found:
+            text = "none of the games in your library has a remix mod listed."
+        else:
+            text = "in your library: " + ", ".join(
+                g.name + (" (download & install)" if m.installable else "")
+                for g, m in found)
+        self.remixmine.config(text=text, fg=GREEN if found else DIM)
+
+    # ---------------------------------------------------------------- games
     def _page_games(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
         self._eyebrow(f, 2)
@@ -838,12 +1064,30 @@ class App:
                        activebackground=BG, activeforeground=TXT,
                        font=font(9), borderwidth=0)\
             .pack(side="right", padx=(0, 16))
+        # The 32/64-bit filter was a page of its own in front of the list;
+        # a filter belongs beside the other filters.
+        self.archbox = ttk.Combobox(srow, state="readonly", font=font(9),
+                                    width=max(len(t) for _v, t in ARCH_CHOICES),
+                                    values=[t for _v, t in ARCH_CHOICES])
+        self.archbox.set(dict(ARCH_CHOICES)[self.arch.get()])
+
+        def _arch_picked(_e=None) -> None:
+            label = self.archbox.get()
+            self.arch.set(next(v for v, t in ARCH_CHOICES if t == label))
+            self._fill()
+        self.archbox.bind("<<ComboboxSelected>>", _arch_picked)
+        # ...and the other way, when something else sets the filter.
+        self.arch.trace_add("write", lambda *_a: self.archbox.set(
+            dict(ARCH_CHOICES).get(self.arch.get(), ARCH_CHOICES[0][1])))
+        self.archbox.pack(side="right", padx=(0, 16))
         ent = tk.Entry(srow, textvariable=self.search, bg=FIELD, fg=TXT,
                        insertbackground=AMBER, relief="flat", font=font(10),
                        highlightthickness=1, highlightbackground=LINE,
                        highlightcolor=EDGE)
         ent.pack(side="left", fill="x", expand=True, padx=(10, 0), ipady=3)
-        ent.bind("<Escape>", lambda e: self.search.set(""))
+        # "break": Esc here clears the box and stops there, instead of
+        # also taking the window home.
+        ent.bind("<Escape>", lambda e: (self.search.set(""), "break")[1])
         ent.bind("<Return>", lambda e: self._focus_first())
         ent.bind("<Down>", lambda e: self._focus_first())
         self.searchbox = ent
@@ -859,12 +1103,14 @@ class App:
         cols = ("source", "arch", "api", "route", "outlook", "status")
         self.tree = ttk.Treeview(wrap, columns=cols, show="tree headings",
                                  height=lines(13, 4))
-        self.tree.heading("#0", text="  game")
+        self.tree.heading("#0", text="  game", anchor="w")
         self.tree.column("#0", width=px(250), anchor="w")
         for c, t, w in (("source", "source", 76), ("arch", "arch", 62),
                         ("api", "api", 80), ("route", "route", 74),
                         ("outlook", "outlook", 96), ("status", "status", 92)):
-            self.tree.heading(c, text=t)
+            # Headings on the same edge as what is under them: centred
+            # over left-aligned text, every column looked out of line.
+            self.tree.heading(c, text=t, anchor="w")
             self.tree.column(c, width=px(w), anchor="w")
         sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
@@ -1328,7 +1574,7 @@ class App:
             return
         # Never write an empty set of rows over a full one: that would cost
         # the next launch the whole compatibility pass.
-        if self.all_games and (self._rows or not library.FILE.is_file()):
+        if self._have_library() and (self._rows or not library.FILE.is_file()):
             library.save(self.all_games, self._rows, update.VERSION, self._sm())
 
     def _load_cached(self) -> bool:
@@ -1644,9 +1890,14 @@ class App:
                 listed = len([g for g in self.all_games if g.exe])
                 msg = (f'nothing matches "{q}"  ::  clear the search box for '
                        f'all {listed} games')
+            elif self.all_games and a != "all":
+                msg = (f"no {a}-bit games  ::  set the filter to 'every "
+                       f"architecture', or use [choose folder]")
+            elif self.all_games and only and only.get():
+                msg = "nothing installed yet  ::  untick 'installed only'"
             elif self.all_games:
-                msg = ("no games match this filter  ::  set architecture to "
-                       "'all', or use [choose folder]")
+                msg = ("no games to list  ::  use [choose folder] and point "
+                       "at the game's own folder")
             else:
                 msg = ("no games found  ::  use [choose folder] and point at "
                        "the game's own folder - see the log for what each "
@@ -1655,6 +1906,7 @@ class App:
         self.game = None
         self.detail.config(text="select a game for details", fg=FAINT)
         self.btn_next.config(state="disabled")
+        self._paint_rail()
 
     def _on_pick(self, _evt=None) -> None:
         sel = self.tree.selection()
@@ -1664,6 +1916,7 @@ class App:
         if g is not self.game:
             self._forget_last_session()
         self.game = g
+        self._paint_rail()
         ok, why = installer.check_supported(g)
         sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm())
         level, why_rel = installer.reliability(g, sup.recommended)
@@ -1713,7 +1966,7 @@ class App:
         if hasattr(self, "btn_rm2"):
             self.btn_rm2.config(state="normal" if g.installed else "disabled")
 
-    # ---------------------------------------------------------------- step 3
+    # ---------------------------------------------------------------- install
     def _page_install(self) -> tk.Frame:
         f = tk.Frame(self.body, bg=BG)
         # Everything above the buttons goes in here: the settings are taller
@@ -1747,12 +2000,9 @@ class App:
         self.cb_route.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
         self.cb_route.bind("<<ComboboxSelected>>", self._on_route)
 
-        self.routelbl = tk.Label(inner, bg=PANEL, fg=DIM, font=font(8),
-                                 justify="left", anchor="w", wraplength=px(680))
-        self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 8))
-        inner.bind("<Configure>",
-                   lambda e: self.routelbl.configure(wraplength=max(px(360), e.width - px(8))),
-                   add="+")
+        self.routelbl = Prose(inner)
+        self.routelbl.grid(row=2, column=0, columnspan=3, sticky="ew",
+                           pady=(px(2), px(10)))
 
         self.lbl_mv = row(3, "motion vectors")
         self.cb_prov = ttk.Combobox(inner, state="readonly",
@@ -1946,6 +2196,7 @@ class App:
                  "before 0.8 pair with DLSS 5 add-on 4.55 and have a settings "
                  "tab; 0.10 and later use add-on 4.7 and take preset and work "
                  "area from here")
+        _wrap_to_width(self.feederhint)
 
         # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
         # DXVK they render on Vulkan and ReShade loads as a layer instead.
@@ -2378,6 +2629,34 @@ class App:
                 self.q.put(("wincrash", (where, c, said)))
         threading.Thread(target=work, daemon=True).start()
 
+    def _wheel_anywhere(self, e):
+        """Send the wheel to the scrolling area the pointer is inside."""
+        try:
+            w = self.root.winfo_containing(e.x_root, e.y_root)
+        except Exception:
+            w = None
+        if w is None:
+            # winfo_containing answers from the real stacking on screen, and
+            # returns nothing when another program's window covers that
+            # point. The event itself still says which widget it reached.
+            w = getattr(e, "widget", None)
+        while w is not None:
+            # These scroll themselves, and taking the wheel from them would
+            # freeze the log and the game list.
+            if isinstance(w, (tk.Text, tk.Listbox, ttk.Treeview,
+                              ttk.Scrollbar, tk.Scrollbar)) \
+                    and not isinstance(w, Prose):
+                return None
+            if isinstance(w, Scroller):
+                # A dropdown does NOT keep the wheel: ttk.Combobox changes
+                # its selection on a wheel turn, so scrolling a page whose
+                # pointer passed over "route" or "add-on build" silently
+                # picked a different one. A scroll must never be a choice.
+                w.wheel(e)
+                return "break"
+            w = getattr(w, "master", None)
+        return None
+
     def _target_typed(self) -> None:
         """A keystroke in the box. Save a moment after the typing stops.
 
@@ -2653,7 +2932,10 @@ class App:
             self.sc_work.configure(state="disabled", fg=DIM, bg=FAINT,
                                    troughcolor=LINE)
             # The target frame rate sets this same dial, so it goes with it.
-            self.sp_target.configure(state="disabled", fg=DIM, bg=FAINT)
+            # A disabled Spinbox paints with its disabled pair, not fg/bg.
+            self.sp_target.configure(state="disabled",
+                                     disabledbackground=PANEL,
+                                     disabledforeground=FAINT)
             if route != dlss.FEEDER:
                 self.workhint.config(
                     text="n/a on this route - the game's own dlss quality mode "
@@ -2704,26 +2986,30 @@ class App:
         """Show only the settings this route actually uses."""
         self.route = path
         usable, note = self.route_fit.get(path, (True, ""))
-        text = dlss.BLURB[path]
+        parts: list[tuple[str, str]] = []
         if not usable:
-            text = f"NOT FOR THIS PC - {note}.\n{text}"
-        elif note:
-            text = f"{text}\n({note})"
+            parts.append(("bad", f"NOT FOR THIS PC - {note}."))
+        parts.append(("blurb", dlss.BLURB[path]))
+        if usable and note:
+            parts.append(("note", note))
         # What this route will not tolerate, in plain words, before INSTALL.
         for line in getattr(dlss, "CONFLICTS", {}).get(path, ()):
-            text += "\n  !  " + line
+            parts.append(("warn", line))
         for line in dlss.quirks(self.game.exe if self.game else None,
                                 self.game.api if self.game else ""):
-            text += "\n  !  " + line
+            parts.append(("warn", line))
         # The driver, before the install rather than in the diagnosis after
-        # it: 616.64 is behind 31 of the first 87 reports.
+        # it: 616.64 is behind 31 of the first 87 reports. Its own colour,
+        # because it is the warning most likely to decide the evening.
         try:
-            warn = dlss.driver_warning(path, gpu.driver_version())
+            warn = dlss.driver_warning(path, gpu.driver_version(),
+                                       offered=getattr(self.support, "options",
+                                                       None))
         except Exception:
             warn = None
         if warn:
-            text += "\n  !  " + warn
-        self.routelbl.config(text=text, fg=RUST if not usable else DIM)
+            parts.append(("driver", warn))
+        self.routelbl.show(parts)
         feeder = path == dlss.FEEDER
         opti = path == dlss.OPTI
         # The add-on dropdown lists the family this route installs.
@@ -2756,7 +3042,7 @@ class App:
         if feeder:
             self.lbl_feederver.grid(row=11, column=0, sticky="w", padx=(0, 14), pady=5)
             self.cb_feederver.grid(row=11, column=1, columnspan=2, sticky="ew", pady=5)
-            self.feederhint.grid(row=12, column=0, columnspan=3, sticky="w")
+            self.feederhint.grid(row=12, column=0, columnspan=3, sticky="ew")
 
         # OptiScaler is loaded by the game under one of several names; the
         # feeder's motion-vector provider sits in the same place on screen.
@@ -2946,8 +3232,17 @@ class App:
             answers, asked = None, False
         if asked and answers is None:
             return                  # cancelled on purpose
+        # The route on the install page is the one being looked at; from
+        # anywhere else it was whatever that page last showed, or "-" (#134).
+        # The install record in the folder says what is actually there.
+        route = getattr(self, "route", "-") if self.step == 3 else "-"
+        if route == "-" and install_dir:
+            try:
+                route = diagnose._manifest(Path(install_dir)).get("path") or "-"
+            except Exception:
+                pass
         body = diagnose.issue_body(
-            update.VERSION, name, sm, drv, g, getattr(self, "route", "-"),
+            update.VERSION, name, sm, drv, g, route,
             self._last_diag, log.tail(60, 6000), log.path(), install_dir,
             last_error=log.last_error(), answers=answers,
             crash=getattr(self, "_last_crash", None))
@@ -3459,43 +3754,57 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     def _back(self) -> None:
-        if self.busy:
+        if self.busy or self.step < 3:
             return
-        self._show(max(1, self.step - 1))
+        self._jump(2)
+
+    def _enter_library(self, asked: bool = False) -> None:
+        """The games page with nothing on it yet: fill it the way asked.
+
+        `asked` is a press of "scan games": the setting is about scanning at
+        START, and a button that says scan and then does not was the one
+        thing it must never do.
+        """
+        if self._have_library():
+            self._fill()
+            return
+        if self.scan_on_start.get() and self._load_cached():
+            return
+        # Once per run unless asked: a scan that found nothing would
+        # otherwise run again on every visit to the games page.
+        if asked or (self.scan_on_start.get()
+                     and not getattr(self, "_scanned_once", False)):
+            self._scan()
+            return
+        # "scan library at start" off means no library at start, cache or
+        # not: someone who unticked it asked for an empty list, and handing
+        # them one anyway would make the box mean nothing. The line below
+        # tells them the fast path exists - after _fill, which writes its
+        # own line and used to hide this one.
+        kp = video.known()
+        if kp and not any(getattr(x, "install_dir", None) == kp.install_dir
+                          for x in self.all_games):
+            self.all_games.insert(0, kp)
+        self._fill()
+        self.scanlbl.config(
+            text="library scan is off - press rescan, or choose folder "
+                 "for one game"
+            + (" (there is a saved library from last time: tick 'scan "
+               "library at start' and it opens straight away)"
+               if library.FILE.is_file() else ""))
 
     def _next(self) -> None:
         if self.busy:
             return
         if self.step == 1:
             self._show(2)
-            # "scan library at start" off means no library at start, cache or
-            # not: someone who unticked it asked for an empty list, and
-            # handing them one anyway would make the box mean nothing. The
-            # line below tells them the fast path exists.
-            if not self.all_games and self.scan_on_start.get() \
-                    and self._load_cached():
-                pass
-            elif not self.all_games and self.scan_on_start.get():
-                self._scan()
-            elif not self.all_games:
-                self.scanlbl.config(
-                    text="library scan is off - press rescan, or choose folder "
-                         "for one game"
-                    + (" (there is a saved library from last time: tick 'scan "
-                       "library at start' and it opens straight away)"
-                       if library.FILE.is_file() else ""))
-                kp = video.known()
-                if kp:
-                    self.all_games.insert(0, kp)
-                self._fill()
-            else:
-                self._fill()
+            self._enter_library(asked=True)
         elif self.step == 2:
             if not self.game:
                 return
             self._show(3)
             self._enter_install()
-        else:
+        elif self.step == 3:
             self._install()
 
     # ---------------------------------------------------------------- queue
@@ -3518,7 +3827,7 @@ class App:
             state="normal",
             text="INSTALL" if self.step == 3
             else ("continue" if self.step == 2 else "scan games"))
-        self.btn_back.config(state="normal" if self.step > 1 else "disabled")
+        self.btn_back.config(state="normal" if self.step >= 3 else "disabled")
 
     def _pump(self) -> None:
         try:
@@ -3560,23 +3869,29 @@ class App:
                         continue
                     self._rows.update(rows)
                     self._recheck = set()
-                    if self.step == 2:
+                    # _fill lets go of the picked game: not on the install
+                    # page, and not under someone who picked one and went
+                    # to look at video or remix.
+                    if self.step == 2 or (self.step != 3 and self.game is None):
                         self._fill()
                         self.scanlbl.config(
                             text=f"{len(self.shown)} games  ::  from the last "
-                                 f"scan  ::  {len(payload)} changed and were "
+                                 f"scan  ::  {len(rows)} changed and were "
                                  f"read again  ::  press rescan to look for "
                                  f"new ones")
                     self._remember_library()
                 elif kind == "scanned":
                     payload, rows = payload
                     self.busy = False
+                    self._scanned_once = True
                     # A folder chosen while the scan was still running used
                     # to vanish when the scan finished (issue #18).
                     found = {str(g.folder).lower() for g in payload}
                     kept = [g for g in self.all_games
                             if g.source == "Manual" and str(g.folder).lower() not in found]
-                    self.all_games = kept + payload
+                    # ...but a folder picked by hand that a store also
+                    # reports under another folder is the same game twice.
+                    self.all_games = games.same_exe_once(kept + payload)
                     kp = video.known()
                     if kp and not any(x.install_dir == kp.install_dir
                                       for x in payload):
@@ -3587,13 +3902,16 @@ class App:
                     self._remember_library()
                     self.status.config(text="scan complete")
                     self._check_stale()
+                    if self.step == 5:
+                        self._remix_mine()
                 elif kind == "update":
                     self._show_banner(*payload)
                 elif kind == "update_ready":
                     self._update_ready(*payload)
                 elif kind == "stale":
                     self.stale = payload
-                    if self.step == 2 and self.all_games:
+                    if self.all_games and (self.step == 2 or (
+                            self.step != 3 and self.game is None)):
                         self._fill()
                 elif kind == "board":
                     self.boardlbl.config(text=payload)
@@ -3601,7 +3919,6 @@ class App:
                     self.busy = False
                     self._rows.clear()
                     self._fill()
-                    self.btn_next.config(state="normal")
                     self.scanlbl.config(text=f"updated {payload} game(s)")
                     self._check_stale()
                 elif kind == "swap":
@@ -3686,6 +4003,10 @@ class App:
                         self._fill()
                 elif kind in ("fail", "error"):
                     self._idle()
+                    # A video setup that failed left an install page with
+                    # nothing on it and an INSTALL that did nothing.
+                    if self.step == 3 and self.game is None:
+                        self._show(4)
                     self._log(payload, "err")
                     self.pblbl.config(text="")
                     self.status.config(text="failed")
@@ -3869,6 +4190,22 @@ class App:
         self.status.config(text="install complete")
 
 
+def _own_icon(win) -> None:
+    """Our icon on a window of our own.
+
+    The main window sets it as the default, but a Toplevel opened later - the
+    Remix list, the report dialog - came up with Tk's blank one. Every window
+    of ours comes through _dark_titlebar, so it is set there, from the .ico
+    the main window wrote.
+    """
+    try:
+        ico = prefs.FILE.parent / "dlss5-autopilot.ico"
+        if ico.is_file():
+            win.iconbitmap(str(ico))
+    except Exception:
+        pass
+
+
 def _dark_titlebar(win) -> None:
     """Paint the Windows title bar in the app's own colours.
 
@@ -3877,6 +4214,7 @@ def _dark_titlebar(win) -> None:
     since Windows 10 20H1 (dark mode) and Windows 11 (caption / text
     colour) fix that; on anything older the calls fail and nothing changes.
     """
+    _own_icon(win)
     try:
         import ctypes
         win.update_idletasks()

@@ -177,6 +177,11 @@ def load(version: str, sm) -> tuple[list, dict, list] | None:
             r = raw.get(_key(g))
             if r is not None:
                 rows[(str(g.folder), str(g.exe))] = False if r is False else tuple(r)
+        # One entry per executable here too: a folder picked by hand is
+        # saved beside the store's entry for the same game.
+        from .games import same_exe_once
+        out = same_exe_once(out)
+        changed = [g for g in changed if any(g is k for k in out)]
         return (out, rows, changed) if out else None
     except Exception:
         from . import log

@@ -378,6 +378,16 @@ _NOT_THE_GAME = set(_RUNTIME_API) | {
     "ffx_fsr2_api_x64.dll", "ffx_fsr2_api_dx12_x64.dll", "ffx_fsr2_api_vk_x64.dll",
     "ffx_fsr3upscaler_x64.dll", "ffx_backend_dx12_x64.dll", "ffx_backend_vk_x64.dll",
 }
+# Middleware that names every graphics API it instruments, whichever one the
+# game uses. NVIDIA's Aftermath crash library names d3d12.dll and dxgi.dll in
+# every build - Vulkan games and the Remix runtime included - and made
+# Enshrouded, a Vulkan game, "DX12": OptiScaler went in as dxgi.dll and never
+# loaded (#130). AMD's AGS and Epic's online services SDK do the same.
+_NAMES_EVERY_API = {
+    "gfsdk_aftermath_lib.x64.dll", "gfsdk_aftermath_lib.dll",
+    "amd_ags_x64.dll", "amd_ags_x86.dll", "eossdk-win64-shipping.dll",
+    "eossdk-win32-shipping.dll",
+}
 
 
 def _ours_in(folder: Path) -> set[str]:
@@ -483,7 +493,7 @@ def _runtime_graphics(exe: Path) -> tuple[str, str]:
     seen: dict[str, str] = {}
     if own:
         seen[own] = "named in the exe"
-    ours = _NOT_THE_GAME | _ours_in(exe.parent)
+    ours = _NOT_THE_GAME | _NAMES_EVERY_API | _ours_in(exe.parent)
     sibs = sorted((p for n, p in names.items() if n not in ours
                    and p.is_file()), key=lambda p: p.name.lower())[:60]
     for dll in sibs:
@@ -606,6 +616,9 @@ def _score(exe: Path, folder: Path) -> float:
     return s
 
 
+_TRIAL = re.compile(r"[\s._-]*(trial|demo)$")
+
+
 def find_game_exes(folder: Path) -> list[Path]:
     """Candidate game executables, most likely first."""
     folder = Path(folder)
@@ -615,6 +628,16 @@ def find_game_exes(folder: Path) -> list[Path]:
     if not cands:
         return []
     score = {p: _score(p, folder) for p in cands}
+    # A trial or demo build beside the full game's executable matches the
+    # folder name just as well and is often as large, so it won: Need for
+    # Speed Heat opened on NeedForSpeedHeatTrial.exe (#131). Only when the
+    # full one is right beside it - a demo-only install keeps its exe, and
+    # the trial stays in the list for whoever plays it.
+    stems = {(p.parent, p.stem.lower()) for p in cands}
+    for p in cands:
+        base = _TRIAL.sub("", p.stem.lower())
+        if base != p.stem.lower() and (p.parent, base) in stems:
+            score[p] -= 600
     scored = sorted(cands, key=lambda p: score[p], reverse=True)
     # Drop obvious helpers, but never return nothing if that is all there is.
     good = [p for p in scored if score[p] > -500]

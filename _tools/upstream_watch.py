@@ -45,7 +45,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from core import optiscaler, prefs, sources, video   # noqa: E402
+from core import dxvk, mfg, optiscaler, prefs, refw, sources, video   # noqa: E402
 
 SEEN = prefs.FILE.parent / "upstream-seen.json"
 
@@ -66,6 +66,14 @@ INSTALLED = {
     "OptiScaler fork (wilsjo2)": (optiscaler.PRESR_API, ()),
     "dxvk-remix-plus-dlssnr": (sources.REMIX_RUNTIME_API, sources.REMIX_RUNTIME_ASSETS),
     "ffmpeg (BtbN)": (video.FFMPEG_API, (video.FFMPEG_ASSET,)),
+    # The unlock resolves by prefix across its release list and skips a
+    # release of another shape, so an exact name here would cry every run
+    # since v1.3.2; the tag moving is the signal to look (#141).
+    "RTX40MFG-Unlock (dashdogy)": (mfg.API, ()),
+    "Ultimate ASI Loader": (mfg.LOADER_API, (mfg.LOADER_ASSET,)),
+    "REFramework nightly": (refw.API, ("REFramework.zip",)),
+    "DXVK": (dxvk.API, ()),
+    "neural-upstream": (sources.UPSTREAM_API, (sources.UPSTREAM_ASSET,)),
 }
 
 # Watched, deliberately not installed. The note says why, so a future

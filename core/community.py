@@ -195,8 +195,9 @@ def issue_url(rec: dict, note: str = "") -> str:
             f"- gpu: {rec.get('gpu') or '-'} ({rec.get('sm') or '-'}), "
             f"driver {rec.get('driver') or '-'}\n"
             f"- tool: {rec.get('tool') or '-'}\n"
-            "\nThe block below is what the compatibility list reads, so "
-            "the next person with this game is told what happened here. "
+            "\nThe block below is what the compatibility list reads; once "
+            "a game has five results, the next person with it is told what "
+            "happened on other machines. "
             "Delete it if you would rather not share it - the rest of the "
             "report still stands."
             + block(rec))

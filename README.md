@@ -23,7 +23,7 @@ current version of every part each time it runs.
 
 ## Using it
 
-1. Run `dlss5-autopilot.exe`. It scans Steam, Epic, GOG, EA, Ubisoft,
+1. Run `dlss5-autopilot.exe` and press **scan games**. It reads Steam, Epic, GOG, EA, Ubisoft,
    Battle.net, Rockstar, Amazon, itch, Heroic, Xbox/Game Pass, `D:\Games\*`
    folders and 19 emulators. Anything else: **choose folder**. With **scan
    library at start** on - the default - later runs open straight on that
@@ -59,9 +59,8 @@ backends names all of them and draws with Direct3D on Windows. A Unity game
 (UnityPlayer.dll beside the exe) is Direct3D 11 unless started with
 -force-d3d12, -force-vulkan or -force-glcore. An import table can also lie
 - R.U.S.E. links D3D11 and renders with Direct3D 9 - so the install page
-has a **graphics api**
-dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan / OpenGL); the choice
-is remembered for that folder.
+has a **graphics api** dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan /
+OpenGL); the choice is remembered for that folder.
 
 | Route | What it is | For | FPS dial |
 |---|---|---|---|
@@ -223,8 +222,8 @@ matters.
 
 ## Video, YouTube, webcam
 
-The feed does not care what draws the frame. The **video and youtube** card
-fetches a portable MPC-HC into a folder of your choice, sets its renderer
+The feed does not care what draws the frame. The **video and youtube** page
+(on the left) fetches a portable MPC-HC into a folder of your choice, sets its renderer
 to D3D11 and installs DLSS 5 into it like a game. Open a file, paste a
 YouTube link (played live via yt-dlp, or downloaded first), render a clip
 through DLSS 5 offline with **process a file**, or point a webcam at it.
@@ -252,10 +251,12 @@ things: the matching `nvngx_dlssnr.dll` into `.trex`, one line in
 DLSS 5-capable community runtime in place of one that has no neural pass
 (original backed up; experimental, it can undo a mod's own fixes).
 
-The **rtx remix** card lists every project the tool knows about, marks the
-ones in your library, and for the two that publish a complete install as a
-plain zip on their own releases page - **GTA IV** and **NFS Underground 2** -
-offers **download & install** from that page. Nothing is mirrored; every
+The **rtx remix** page on the left names the games in your library that
+have a mod. Its button opens a list of every project the tool knows about;
+for the two that publish a complete install as a plain zip on their own
+releases page - **GTA IV** and **NFS Underground 2** - the list offers
+**download & install** when the game is in your library. Nothing is
+mirrored; every
 other project is a link.
 
 <details>
@@ -320,10 +321,17 @@ itself, and the `renodx-dlss5` 4.6/4.7 add-on faults on every evaluate
 there (measured by the feeder's author: 4.7 passes 0/300, 4.55 passes
 300/300). With the add-on dropdown on *auto* the tool installs 4.55 on
 these drivers; a build picked from the list is used as picked. That is a
-way round it and not a fix - some games fault on 4.55 too - so rolling the
-driver back to 616.56 is the surer test. The bridge route is unaffected
-(dlss5-bridge 1.4.9 works around it in memory), and driver 616.56 works
-with every build.
+way round it and not a fix - some games fault on 4.55 too.
+
+For a 64-bit D3D11 or D3D12 game, the **standalone** route is worth trying
+before the driver: it runs its own feed and does not load `renodx-dlss5`.
+It is experimental; the compatibility list is where the evidence for it
+builds up. The bridge
+route works around the fault in memory (dlss5-bridge 1.4.9). Rolling the
+driver back to 616.56 is the surer test, and 616.56 works with every build.
+On these drivers `Failed to find NVSDK_NGX_..._EvaluateFeature` in
+ReShade.log does not mean the driver is too old - updating is not the
+answer there.
 </details>
 
 <details>
@@ -404,9 +412,11 @@ by itself - you see it in the browser and decide.
 **share the result** does the same for the compatibility list: the game's
 name and executable, the route and build, the graphics API, the card and
 driver, this tool's version, whether it worked, and the one-line verdict
-the diagnosis reached. No paths, no user name, nothing else. Those results are
-added up into one file the tool reads before an install, so the next person
-with the same game is told what happened on other machines.
+the diagnosis reached. No paths, no user name, nothing else. Those results
+are added up into one file the tool reads before an install; once a game has
+five results, the next person with it is told which route worked most often,
+and whether the one they picked did worse. The issue is closed as soon as it
+is read - it is a record, not a bug report - and still counts.
 
 ## Command line
 

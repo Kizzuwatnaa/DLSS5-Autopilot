@@ -5,13 +5,20 @@
 # "it worked" / "it did not" in the tool; that opens an issue in their own
 # browser, carrying one machine-readable block and nothing that identifies
 # them - executable name, route, build, API, card architecture, driver, the
-# tool's version, and the outcome. This workflow reads those blocks off the
-# issues labelled `result` and writes the totals into one static file.
+# tool's version, and the outcome. This workflow reads those blocks off every
+# issue that carries one, labelled or not, and writes the totals into one
+# static file.
 #
 # Only the block is read. The prose around it is for people; if somebody
 # edits the JSON by hand into something that is not a record, `parse()`
-# drops it rather than guessing. Nothing here writes to a game's issue, and
-# nothing here posts anywhere.
+# drops it rather than guessing.
+#
+# A result that has been read is then labelled `result` and closed, with a
+# short note saying where it went. It is data, not a bug report, and left
+# open it buried the reports that do need someone - sixteen of them arrived
+# in the first four hours of 1.8.0. Closed results are still counted: the
+# build below reads state=all. Nothing else is written, and only issues
+# whose body parses as a record are touched.
 name: compatibility
 
 on:
@@ -23,15 +30,58 @@ on:
 
 permissions:
   contents: write
-  issues: read
-
-concurrency:
-  group: compatibility
-  cancel-in-progress: true
+  issues: write
 
 jobs:
+  # Its own job and its own concurrency group: the build below cancels a
+  # run in progress when the next result lands, and a burst of results
+  # would otherwise leave some of them open for good.
+  file:
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: file-${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this a shared result?
+        id: check
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, ".")
+          from core.community import parse
+          event = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf8"))
+          body = (event.get("issue") or {}).get("body") or ""
+          rec = parse(body)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf8") as out:
+              out.write(f"record={'yes' if rec else 'no'}\n")
+          PY
+
+      - name: Label it, say where it went, and close it
+        if: steps.check.outputs.record == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh label create result --repo "$REPO" --color 0E8A16 \
+            --description "a shared compatibility result, read into docs/compatibility.json" \
+            2>/dev/null || true
+          gh issue edit "$NUMBER" --repo "$REPO" --add-label result || true
+          gh issue close "$NUMBER" --repo "$REPO" --reason completed --comment \
+          "Thank you - this result goes into [the compatibility list](https://github.com/$REPO/blob/main/docs/compatibility.json). Once a game has five results, the tool tells anyone who picks that game in it which route worked most often and whether the one they picked did worse, before they install.
+
+          Closed because it is a record rather than a bug report, so the issue list keeps showing the things that still need someone. It still counts. If you want to add what you saw - a setting that changed it, a driver that fixed it - reply here."
+
   build:
     runs-on: ubuntu-latest
+    # Only the rebuild: two of them at once would race on the same commit,
+    # and the newest one has read every issue anyway. The `file` job above
+    # must never be cancelled, or a result it was about to close stays open.
+    concurrency:
+      group: compatibility
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 

@@ -229,10 +229,31 @@ def swap_script(current: Path, new_exe: Path) -> str:
             'del /q "%SOURCE%" >nul 2>&1',
         ]
     lines += [
+        # The new build must start as a fresh top-level process, not as a
+        # child of the onefile bootloader we were: without this its own
+        # bootloader sees our _PYI_* variables and dies with "failed to
+        # obtain executable path for parent process" (#136).
+        'set "PYINSTALLER_RESET_ENVIRONMENT=1"',
         'start "" "%TARGET%"',
         'del /q "%~f0" >nul 2>&1',
     ]
     return "\r\n".join(lines) + "\r\n"
+
+
+def clean_env() -> dict[str, str]:
+    """Our environment minus PyInstaller's onefile bookkeeping.
+
+    The onefile bootloader passes _PYI_* variables to the Python process it
+    unpacks. Inherited by the swap script and then by the new exe, they made
+    the new bootloader believe it was our child, and it quit with "Security
+    validation failure: failed to obtain executable path for parent process"
+    - every self-update relaunch died (#136). PYINSTALLER_RESET_ENVIRONMENT
+    is PyInstaller's own switch for "start as a new top-level instance".
+    """
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith("_PYI_")}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
 
 
 def apply_and_restart(new_exe: Path) -> None:
@@ -247,5 +268,6 @@ def apply_and_restart(new_exe: Path) -> None:
 
     creation = 0x00000008 | 0x08000000        # DETACHED_PROCESS | NO_WINDOW
     subprocess.Popen(["cmd", "/c", str(bat)], creationflags=creation,
-                     close_fds=True, cwd=str(Path(tempfile.gettempdir())))
+                     close_fds=True, cwd=str(Path(tempfile.gettempdir())),
+                     env=clean_env())
     os._exit(0)

@@ -92,6 +92,14 @@ _SKIP_DIRS = {"content", "paks", "saved", "logs", "movies", "sounds", "music",
               "textures", "maps", "levels", "audio", "data", "assets", "mods",
               "screenshots", "steamapps", "redist", "_commonredist", "host64",
               "reshade-shaders"}
+# ...but a content folder is skipped for its size, not because a runtime
+# cannot be under it: NBA 2K27 keeps Streamline in `data\streamline` (#119),
+# and "data" is as generic a folder name as there is. So a skipped folder is
+# still entered when one of its own children is named like a place runtimes
+# live. One scandir per skipped folder, against a walk that would otherwise
+# miss the game's DLSS entirely.
+_RUNTIME_HOMES = {"streamline", "dlss", "nvidia", "ngx", "nvngx",
+                  "binaries", "plugins", "win64", "x64", "bin"}
 _WALK_DEPTH = 9
 _WALK_DIRS = 6000
 _WALK_SECONDS = 6.0
@@ -163,6 +171,25 @@ def walked(folder: Path, skip_dir: Path | None = None) -> list[str]:
     return list(hit)          # never the cached list itself
 
 
+def _holds_runtime(d: Path) -> bool:
+    r"""Does this folder have a child named like a place runtimes live?
+
+    The skip list exists so a walk does not crawl a game's whole asset
+    tree. It is a size heuristic, and a game that keeps its runtimes under
+    one of those names (`data\streamline`, #119) was being read as a game
+    with no DLSS at all. Looking one level in costs a single scandir.
+    """
+    import os as _os
+    try:
+        with _os.scandir(d) as it:
+            for e in it:
+                if e.is_dir() and e.name.lower() in _RUNTIME_HOMES:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def find_dlss_files(folder: Path, skip_dir: Path | None = None,
                     names: tuple[str, ...] = DLSS_FILES,
                     extra_skip: tuple[str, ...] = ()) -> list[str]:
@@ -183,6 +210,11 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None,
         return out
     base_depth = len(folder.parts)
     deadline = time.monotonic() + _WALK_SECONDS
+    # Skipped folders that were entered only because a runtime-named child
+    # is in them: inside one, only those children are followed. Walking all
+    # of a big `data` for the sake of its `streamline` cost the budget the
+    # rest of the game needed.
+    narrow: set[str] = set()
     for seen, (root, dirs, files) in enumerate(os.walk(folder), 1):
         # A depth limit and a match limit do not bound trees with thousands
         # of directories and no runtime DLLs. Check even in the skipped root.
@@ -194,10 +226,20 @@ def find_dlss_files(folder: Path, skip_dir: Path | None = None,
         depth = len(rp.parts) - base_depth
         if depth >= _WALK_DEPTH:
             dirs[:] = []
+        elif root in narrow:
+            dirs[:] = [d for d in dirs if d.lower() in _RUNTIME_HOMES]
         else:
-            dirs[:] = [d for d in dirs if d.lower() not in _SKIP_DIRS
-                       and d.lower() not in extra_skip
-                       and not d.startswith(".")]
+            keep = []
+            for d in dirs:
+                low = d.lower()
+                if low in extra_skip or d.startswith("."):
+                    continue
+                if low in _SKIP_DIRS:
+                    if not _holds_runtime(rp / d):
+                        continue
+                    narrow.add(os.path.join(root, d))
+                keep.append(d)
+            dirs[:] = keep
         if rp == skip_dir:
             continue
         for f in files:
@@ -242,7 +284,7 @@ class Support:
     why_not: str = ""
     # "fsr" / "xess" / "": the upscaler the game ships when it has no DLSS.
     # OptiScaler can take those calls as its input and run DLSS instead; the
-    # GUI passes this into fit() and Options.upscaler (wired in a follow-up).
+    # GUI passes this into fit() and Options.upscaler.
     upscaler: str = ""
     upscaler_evidence: list[str] = None   # type: ignore[assignment]
     # Where DLSS comes from on the OPTI route, for the reason texts.
@@ -305,8 +347,10 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int,
         s.recommended = OPTI
         s.reason = (f"This game has no DLSS but ships {UPSCALER_NAMES[s.upscaler]} "
                     f"({', '.join(s.upscaler_evidence[:3])}). OptiScaler takes "
-                    f"those calls as its input, runs DLSS in their place and "
-                    f"then neural rendering, with the model-resolution dial. "
+                    f"those calls as its input - once FSR/XeSS is switched on "
+                    f"in the game's own settings; with no such setting it has "
+                    f"nothing to hook - runs DLSS in their place and then "
+                    f"neural rendering, with the model-resolution dial. "
                     f"Works in many games, not all - the feeder is the proven "
                     f"fallback.")
     return s
@@ -320,19 +364,31 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
     the route's own rules add to it, so the dropdown can label each entry.
 
     `upscaler` is Support.upscaler: with no DLSS in the game, OptiScaler is
-    usable only when there is an FSR/XeSS call for it to redirect. The GUI
-    still calls this positionally without it (a follow-up wires it in), so
-    the default must keep the old answers for every other route.
+    usable only when there is an FSR/XeSS call for it to redirect. The
+    default keeps the old answers for callers that do not pass it.
     """
     if route == OPTI:
         if not native_dlss and not upscaler:
             return False, "the game must already use DLSS, FSR 2/3 or XeSS"
         note = "model resolution dial: the fps lever"
         if not native_dlss:
-            note = (f"the game's {'FSR' if upscaler == 'fsr' else 'XeSS'} calls "
-                    f"are redirected into DLSS, then neural rendering; " + note)
+            # The evidence for this route is a runtime DLL on disk, and a
+            # DLL on disk is not an upscaler the player can switch on: Risk
+            # of Rain 2 ships one and exposes no setting, so the route was
+            # recommended and then had nothing to hook (#116). The
+            # diagnosis said so afterwards; it belongs here, before the
+            # install, where the choice is still being made.
+            kind = "FSR" if upscaler == "fsr" else "XeSS"
+            note = (f"the game's {kind} calls are redirected into DLSS, then "
+                    f"neural rendering - so {kind} has to be on in the game's "
+                    f"own settings, and if it has no such setting this route "
+                    f"has nothing to hook and the feeder route is the one to "
+                    f"use; " + note)
         if api == "DX11":
-            note = "on D3D11 the upscaler becomes FSR on D3D12"
+            # Added to, not replaced: a D3D11 game offered this route for its
+            # FSR or XeSS still needs to hear that the upscaler has to be on.
+            note = ("on D3D11 the upscaler becomes FSR on D3D12"
+                    + ("; " + note if not native_dlss else ""))
         if api == "Vulkan":
             # Said before the install now, not only in the diagnosis after
             # it. OptiScaler replaces the game's upscaler through NGX, a
@@ -711,7 +767,21 @@ _RENODX_ROUTES = (NATIVE, BRIDGE, FEEDER, RENODX)
 _DRIVER_KNOWN_GOOD = "616.56"
 
 
-def driver_warning(route: str, driver: str | None) -> str | None:
+def standalone_fits(api: str, bitness: int | None) -> bool:
+    """Is the standalone route one this game is offered at all?
+
+    The same test the route list uses: 64-bit, and D3D11 or D3D12 (or not
+    yet known). Anything that suggests standalone asks this first - it was
+    being suggested to 32-bit and Vulkan games whose dropdown has no such
+    entry. A bitness that is not known is not 64: the route list does not
+    offer standalone then either.
+    """
+    return bitness == 64 and str(api or "").upper() in (
+        "DX11", "DX12", "UNKNOWN", "", "?")
+
+
+def driver_warning(route: str, driver: str | None,
+                   offered: list[str] | tuple[str, ...] | None = None) -> str | None:
     """What to say about this driver BEFORE the install, or None.
 
     616.64 is behind 31 of the first 87 reports - by a distance the largest
@@ -742,12 +812,43 @@ def driver_warning(route: str, driver: str | None) -> str | None:
             "driver is the first thing to roll back - 616.56 is the newest "
             "one with no reports of this fault.")
     if route in _RENODX_ROUTES:
+        # The fault lives in renodx-dlss5's path through the driver. The
+        # shared results showed a game fail three times on the feeder route
+        # on 616.92 and then work on standalone, reported by the same person - so
+        # for a game without DLSS there is a way round that needs no
+        # rollback, and it was never mentioned here. Said as the mechanism,
+        # not as a count: the counts belong to the compatibility note,
+        # which is per game and keeps itself current.
+        # Only where standalone is actually on offer: 32-bit, DX9, Vulkan
+        # and OpenGL games are not given it, and naming a route that is not
+        # in the dropdown is worse than naming none.
+        # Every route here loads renodx-dlss5, so every one of them has the
+        # same way round; the evidence is one game on the feeder route.
+        sa = (STANDALONE in offered) if offered is not None else route == FEEDER
+        other = ("The standalone route does not load renodx-dlss5 at all, and "
+                 "is worth trying before the driver. If that crashes too the "
+                 "moment neural rendering comes on, roll the driver back - "
+                 "616.56 is the newest one with no reports of this fault."
+                 if sa else tail)
         return (f"driver {driver}: the 4.6/4.7 renodx-dlss5 builds fault "
                 f"inside the driver's NGX runtime on "
                 f"{sources.DRIVER_FAULT_MIN} and newer, on every evaluate - "
                 f"the tool pins {sources.DRIVER_FAULT_RENODX_PIN} here "
                 f"instead. That is a way round it, not a fix: some games "
-                f"fault on {sources.DRIVER_FAULT_RENODX_PIN} too. " + tail)
+                f"fault on {sources.DRIVER_FAULT_RENODX_PIN} too. " + other)
+    if route == STANDALONE:
+        # This route was being warned off with the renodx fault's record,
+        # which is not its own: it does not load that add-on, and the one
+        # game in the shared results that failed on feeder on 616.92 worked
+        # here. It still runs NVIDIA's runtime on this driver, so the tail
+        # stays - but the scare does not.
+        return (f"driver {driver}: the fault known on "
+                f"{sources.DRIVER_FAULT_MIN} and newer is reached through the "
+                f"renodx-dlss5 add-on, which this route does not load - so on "
+                f"these drivers this is the route to try when a route that "
+                f"loads it (native, bridge, feeder) faults. It still runs NVIDIA's runtime: if the game crashes "
+                f"the moment neural rendering comes on, roll the driver back "
+                f"to 616.56.")
     return (f"driver {driver}: {sources.DRIVER_FAULT_MIN} and newer fault "
             f"inside the driver's own NGX runtime in a good number of games, "
             f"and {sources.DRIVER_FAULT_MIN} itself is named in more "

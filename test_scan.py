@@ -195,10 +195,15 @@ class ScanTests(unittest.TestCase):
         app.detail = Mock()
         app._sm = Mock(return_value=120)
         app._check_stale = Mock()
+        app.rail_rows = []
         stack = ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(patch.object(gui.video, "known", return_value=None))
         stack.enter_context(patch.object(log, "crashed", return_value=False))
+        # The real worker saves the library; this machine's saved library is
+        # not the test's to overwrite.
+        stack.enter_context(patch.object(gui.library, "FILE",
+                                         self.root / "library.json"))
         return app
 
     def test_scan_checks_compatibility_off_ui_thread_and_renders_cached_rows(self):

@@ -397,6 +397,10 @@ installer.uninstall(g, on_log=lambda t: None)
 
 section("6c. the interface survives bad data")
 import tkinter as _tk  # noqa: E402
+# A window that finds a saved library from another version rescans the
+# disks at start; the one on the machine running this is not the test's.
+from core import library as _library_iso  # noqa: E402
+_library_iso.FILE = Path(tempfile.mkdtemp(prefix="lib_iso_")) / "library.json"
 from core import gui as _gui  # noqa: E402
 _r = _tk.Tk()
 _app = _gui.App(_r)
@@ -623,7 +627,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.8.0", update.VERSION == "1.8.0", update.VERSION)
+check("version is 1.8.1", update.VERSION == "1.8.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -4490,13 +4494,14 @@ def _fits(scale: float, w: int, h: int) -> list[str]:
             root.geometry(f"{w}x{h}")
             root.update_idletasks()
             root.update()
-        for n, name in ((1, "architecture"), (2, "game list"), (3, "install")):
+        for n, name in ((1, "start"), (2, "game list"), (3, "install"),
+                        (4, "video"), (5, "rtx remix")):
             app.step = n
             app._show(n)
             for _ in range(3):
                 root.update_idletasks()
                 root.update()
-            page = (app.p1, app.p2, app.p3)[n - 1]
+            page = app.pages[n - 1]
             # Every action the page offers has to be inside the window.
             for w_ in page.winfo_children():
                 if w_.winfo_ismapped() and w_.winfo_height() <= 1 < w_.winfo_reqheight():
@@ -4517,6 +4522,27 @@ check("no page loses a widget off the window, at any scale", not _bad, _bad)
 
 
 section("56. issue #67: the library found last time, without walking the disks again")
+
+# The owner's GTA IV came up twice: Steam reports the library folder, the
+# Rockstar launcher the GTAIV subfolder in it - two folders, one executable.
+_dup = Path(tempfile.mkdtemp(prefix="dupexe_"))
+(_dup / "GTAIV").mkdir()
+(_dup / "GTAIV" / "GTAIV.exe").write_bytes(b"MZ")
+_ga = games.Game(name="Grand Theft Auto IV: The Complete Edition", folder=_dup,
+                 exe=_dup / "GTAIV" / "GTAIV.exe", source="Steam")
+_gb = games.Game(name="Grand Theft Auto IV", folder=_dup / "GTAIV",
+                 exe=_dup / "GTAIV" / "GTAIV.exe", source="Rockstar")
+_one = games.same_exe_once([_ga, _gb])
+check("one executable reported by two stores is listed once, the first store's",
+      _one == [_ga], [g.source for g in _one])
+_e1 = games.Game(name="Game A", folder=_dup, exe=_dup / "GTAIV" / "GTAIV.exe",
+                 source="Emulator")
+_e2 = games.Game(name="Game B", folder=_dup, exe=_dup / "GTAIV" / "GTAIV.exe",
+                 source="Emulator")
+_e1.emu = _e2.emu = object()
+check("...but games that share an emulator's executable are all kept",
+      len(games.same_exe_once([_e1, _e2])) == 2)
+shutil.rmtree(_dup, ignore_errors=True)
 
 from core import library as _lib  # noqa: E402
 
@@ -5537,14 +5563,82 @@ _d = _diag_dir("ngx_export_", reshade=(
     "11:25:54:684 [19864] | ERROR | [DLSS 5 Neural Rendering] "
     "vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)\n"
     "11:27:18:762 [ 4892] | INFO  | Exiting ...\n"))
-_r = diagnose.analyse(_d)
-check("a driver with no DLSS 5 entry point is the verdict, not a footnote",
-      "no DLSS 5 entry point" in _r.verdict, _r.verdict)
-check("...and it says which driver first carried it",
-      any("616.56" in f.detail for f in _r.findings),
-      [f.detail[:70] for f in _r.findings])
-check("...without claiming the machine's current driver is the one that ran",
-      any("the driver the game ran with" in f.detail for f in _r.findings))
+# The same log line means opposite things on an old driver and a new one,
+# so the driver is pinned rather than read from the machine running this.
+from core import gpu as _gpu_drv                                  # noqa: E402
+_drv_saved = _gpu_drv.driver_version
+try:
+    _gpu_drv.driver_version = lambda: "610.60"        # #75's own driver
+    _r = diagnose.analyse(_d)
+    check("a driver with no DLSS 5 entry point is the verdict, not a footnote",
+          "no DLSS 5 entry point" in _r.verdict, _r.verdict)
+    check("...and it says which driver first carried it",
+          any("616.56" in f.detail for f in _r.findings),
+          [f.detail[:70] for f in _r.findings])
+    check("...without claiming the machine's current driver is the one that ran",
+          any("the driver the game ran with" in f.detail for f in _r.findings))
+
+    # Issue #127: the same line on driver 616.92 was answered "update the
+    # graphics driver". On a driver that carries DLSS 5 the line appears in
+    # working sessions too, so it is not a driver verdict there.
+    _gpu_drv.driver_version = lambda: "616.92"
+    _r = diagnose.analyse(_d)
+    check("on a new driver the missing call is not 'update your driver'",
+          "update the graphics driver" not in _r.verdict, _r.verdict)
+    check("...and is not made into a driver verdict of any kind",
+          not any("does not export" in f.title for f in _r.findings),
+          [f.title for f in _r.findings])
+
+    # The owner's own 616.64 logs, from sessions that delivered frames: the
+    # plain EvaluateFeature IS hooked, and only the _C variant beside it is
+    # missing. On a driver that carries DLSS 5 that pair is not a verdict;
+    # on one older than DLSS 5 the driver's age decides, whatever the line.
+    _gpu_drv.driver_version = lambda: "616.64"
+    _dh = _diag_dir("hook_plain_", reshade=(
+        "22:29:22:384 [44208] | DEBUG | [DLSS 5 Neural Rendering] "
+        "vtable::Hook(NVSDK_NGX_D3D12_EvaluateFeaturehooked with "
+        "0x00007fff55ee8740 => 0x00007fff36671430)\n"
+        "22:29:22:384 [44208] | ERROR | [DLSS 5 Neural Rendering] "
+        "vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)\n"))
+    _rh = diagnose.analyse(_dh)
+    check("on 616.64 a failed _C beside a successful plain hook is no verdict",
+          "update the graphics driver" not in _rh.verdict, _rh.verdict)
+    _gpu_drv.driver_version = lambda: "610.60"
+    _rh = diagnose.analyse(_dh)
+    check("...but on a driver older than DLSS 5 the driver still decides",
+          "update the graphics driver" in _rh.verdict
+          and any("610.60" in f.title for f in _rh.findings), _rh.verdict)
+
+    # The hook lines are DEBUG; a report that drops them replays to a
+    # different answer than the machine gave (#127's excerpt had none).
+    check("a report keeps the add-on's hook lines the driver rule reads",
+          all(any(k in ln for k in diagnose._RESHADE_KEEP)
+              for ln in (_dh / "ReShade.log").read_text().splitlines()))
+
+    # A driver that cannot be read: the line decides, and only on its own.
+    # A malformed version string is unread too, not "new".
+    for _unread in (None, "32.0.16.16xx"):
+        _gpu_drv.driver_version = lambda _v=_unread: _v
+        check(f"driver {_unread!r}: a plain hook beside it is no verdict",
+              "update the graphics driver" not in diagnose.analyse(_dh).verdict)
+        _r = diagnose.analyse(_d)
+        check(f"driver {_unread!r}: the failed hook alone still is",
+              "no DLSS 5 entry point" in _r.verdict
+              and not any("not the driver being too old" in f.detail
+                          or "older than DLSS 5" in f.title
+                          for f in _r.findings), _r.verdict)
+    _gpu_drv.driver_version = lambda: None
+    check("...and the detail does not ask about a driver it never named",
+          not any("the driver the game ran with" in f.detail
+                  for f in diagnose.analyse(_d).findings))
+    _gpu_drv.driver_version = lambda: "616.92"
+    check("on a new driver with nothing hooked it is said as a warning",
+          any(f.title.startswith("The add-on could not hook")
+              for f in diagnose.analyse(_d).findings),
+          [f.title for f in diagnose.analyse(_d).findings])
+    shutil.rmtree(_dh, ignore_errors=True)
+finally:
+    _gpu_drv.driver_version = _drv_saved
 shutil.rmtree(_d, ignore_errors=True)
 
 # Issue #79: every path this tool writes comes out of a file somebody else
@@ -5603,7 +5697,7 @@ section("61. what the 1.8.0 release gate found")
 # "one session is not enough" and only the third could solve.
 _gsrc = src_of(_gui.App._autotune)
 check("the measurement is recorded before the suggestion is worked out",
-      _gsrc.index("autotune.remember") < _gsrc.index("autotune.suggest"))
+      0 <= _gsrc.find("autotune.remember") < _gsrc.find("autotune.suggest"))
 check("...and the session's own resolution comes from the config, not the slider",
       "autotune.ran_at" in _gsrc)
 _d = Path(tempfile.mkdtemp(prefix="ranat_"))
@@ -5702,10 +5796,19 @@ check("one failed hook does not undo the frames that were delivered",
 shutil.rmtree(_d, ignore_errors=True)
 
 # TEXTS: quote the line the person actually has.
+# The rule only reads this line as a driver verdict on a driver older than
+# DLSS 5, so the driver is pinned: read from the machine running the suite,
+# the check passed or failed with whatever that machine had installed.
 _d = _diag_dir("ngx_vk_", reshade=(
     "11:25:54 | ERROR | [DLSS 5 Neural Rendering] "
     "vtable::Hook(Failed to find NVSDK_NGX_VULKAN_EvaluateFeature)\n"))
-_r = diagnose.analyse(_d)
+from core import gpu as _gpu_vk                                   # noqa: E402
+_vk_drv_saved = _gpu_vk.driver_version
+_gpu_vk.driver_version = lambda: "610.60"
+try:
+    _r = diagnose.analyse(_d)
+finally:
+    _gpu_vk.driver_version = _vk_drv_saved
 check("the entry point named in the answer is the one in the log",
       any("NVSDK_NGX_VULKAN_EvaluateFeature" in f.detail for f in _r.findings),
       [f.detail[:60] for f in _r.findings])
@@ -5722,8 +5825,8 @@ check("the compatibility workflow does not filter on the label",
       "labels=result" not in _wf and "state=all" in _wf)
 
 # FEATURES: the version is the delivery mechanism for the library rescan.
-check("the version is 1.8.0 in the file the build reads too",
-      "1.8.0.0" in (Path(__file__).resolve().parent
+check("the version is 1.8.1 in the file the build reads too",
+      "1.8.1.0" in (Path(__file__).resolve().parent
                     / "version_info.txt").read_text(encoding="utf8"))
 check("...and the release notes the workflow publishes exist",
       (Path(__file__).resolve().parent / "docs" / "releases"
@@ -6087,6 +6190,520 @@ _first.append("POISON")
 check("the remembered walk hands out a copy, never the cache itself",
       "POISON" not in dlss.walked(_wc), dlss.walked(_wc))
 shutil.rmtree(_wc, ignore_errors=True)
+
+section("64. what the first day of 1.8.0 reported: a runtime under a "
+        "skipped folder, an OptiScaler build that writes no log, and a "
+        "route recommended from a DLL nobody can switch on")
+
+# Issue #119, NBA 2K27: the game keeps Streamline in data\streamline, and
+# "data" is on the walk's skip list - so a game that ships its own DLSS was
+# read as a game with no DLSS at all, and offered the feeder route.
+_nba = Path(tempfile.mkdtemp(prefix="nba2k_"))
+(_nba / "NBA2K27.exe").write_bytes(b"MZ" + b"\0" * 300)
+_sl = _nba / "data" / "streamline"
+_sl.mkdir(parents=True)
+for _n in ("sl.interposer.dll", "sl.dlss.dll"):
+    (_sl / _n).write_bytes(b"MZ")
+dlss.forget_walk(_nba)
+_nsup = dlss.detect(_nba, _nba, "DX12", 64, sm=120)
+check("a runtime under a skipped content folder is still found",
+      _nsup.native_dlss, _nsup.evidence)
+check("...so the route offered is not the one for games without DLSS",
+      _nsup.recommended != dlss.FEEDER, _nsup.recommended)
+
+# ...and the skip list still does its job: a content folder with nothing
+# runtime-shaped under it is not descended into.
+_big = Path(tempfile.mkdtemp(prefix="bigcontent_"))
+(_big / "Game.exe").write_bytes(b"MZ" + b"\0" * 300)
+(_big / "data" / "textures").mkdir(parents=True)
+(_big / "data" / "textures" / "nvngx_dlss.dll").write_bytes(b"MZ")
+dlss.forget_walk(_big)
+check("...and a plain content folder is still skipped",
+      not dlss.detect(_big, _big, "DX12", 64).native_dlss)
+for _d in (_nba, _big):
+    shutil.rmtree(_d, ignore_errors=True)
+
+# Issue #110: y4my4my4m's build ships [Log] LogToFile=auto, which is false,
+# so OptiScaler wrote nothing and a working install was told it had never
+# loaded. The install turns the log on, and the verdict no longer claims
+# more than an absent file can support.
+_ol = Path(tempfile.mkdtemp(prefix="optilog_"))
+(_ol / "OptiScaler.ini").write_text(
+    "[Log]\n; kept\nLogToFile=auto\nLogLevel=auto\n\n[DlssNr]\nEnabled=false\n",
+    encoding="utf8")
+optiscaler.enable_nr(_ol, settings={"WorkingScale": 0.75})
+_oltxt = (_ol / "OptiScaler.ini").read_text(encoding="utf8")
+check("the install switches OptiScaler's log on, whatever the build ships",
+      "LogToFile=true" in _oltxt and "LogToFile=auto" not in _oltxt)
+check("...without throwing away what the person had in the file",
+      "; kept" in _oltxt and "WorkingScale=0.75" in _oltxt)
+
+(_ol / "dxgi.dll").write_bytes(b"MZ")
+(_ol / "dlss5-autopilot.json").write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+     "api": "DX12", "proxy": "dxgi.dll", "path": "optiscaler",
+     "files": ["dxgi.dll", "OptiScaler.ini"]}), encoding="utf8")
+# Logging on (the install above set it) and still no log: that is the old
+# question again, and it is asked as a question.
+_olrep = diagnose.analyse(_ol)
+check("no log with the proxy in place is not 'it never loaded'",
+      "never loaded" not in _olrep.verdict, _olrep.verdict)
+check("...with logging on, it asks whether the game has run since",
+      "not run yet" in _olrep.verdict.lower(), _olrep.verdict)
+# Logging off - the y4my4my4m default - is its own answer: a missing log
+# then says nothing about whether OptiScaler loaded.
+(_ol / "OptiScaler.ini").write_text(
+    "[Log]\nLogToFile=auto\n\n[DlssNr]\nEnabled=true\n", encoding="utf8")
+_olrep = diagnose.analyse(_ol)
+check("...with logging off, it says the log is off and how to switch it on",
+      "log is off" in _olrep.verdict.lower()
+      and "not run yet" not in _olrep.verdict.lower(), _olrep.verdict)
+check("...and names the proxy it checked, and the button, not 'this button'",
+      any("(dxgi.dll)" in f.detail and "did it work?" in f.detail
+          for f in _olrep.findings),
+      [f.detail[:80] for f in _olrep.findings])
+(_ol / "OptiScaler.ini").unlink()
+check("...and with OptiScaler.ini gone altogether it says the ini is missing",
+      "missing" in diagnose.analyse(_ol).verdict.lower(),
+      diagnose.analyse(_ol).verdict)
+(_ol / "dxgi.dll").unlink()
+check("...but with nothing of ours in the folder it does say so",
+      "not in the game folder" in diagnose.analyse(_ol).verdict,
+      diagnose.analyse(_ol).verdict)
+shutil.rmtree(_ol, ignore_errors=True)
+
+# Issue #116, Risk of Rain 2: an FSR runtime on disk is not an upscaler the
+# player can switch on. The route was recommended, had nothing to hook, and
+# only the diagnosis afterwards said why.
+_ok116, _note116 = dlss.fit(dlss.OPTI, "DX12", False, 120, upscaler="fsr")
+check("the optiscaler route says the game's own upscaler has to be on",
+      "has to be on in the game's own settings" in _note116, _note116)
+check("...and names the route to use when the game has no such setting",
+      "feeder" in _note116, _note116)
+
+# #127: from 1.4.0 the bridge replaces, before reading it, a settings file
+# whose first line is not its version or "keep" - with its defaults, which
+# leave the substitute contract off. Ours had no such line, so a game with
+# no DLSS of its own never got the synth_after this install wrote.
+from core import feedcfg as _fc127                                # noqa: E402
+_bd = Path(tempfile.mkdtemp(prefix="bridgecfg_"))
+(_bd / _fc127.BRIDGE_NAME).write_text(
+    "# dlss5-bridge 1.4.12\nsynth=0\nsynth_after=0\nofa_perf=5\nofa_grid=2\n"
+    "source=auto\nflags=107\nunwrap=1\n", encoding="utf8")
+# What 1.8.0 left behind on a game without DLSS: the bridge's own dump.
+(_bd / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+     "api": "DX11", "path": "bridge", "native_dlss": False,
+     "files": ["dxgi.dll", _fc127.BRIDGE_NAME]}), encoding="utf8")
+(_bd / "dxgi.dll").write_bytes(b"MZ")
+(_bd / "ReShade.log").write_text(
+    "12:00:00:000 [1] | INFO  | Registered add-on \"DLSS 5 Bridge 1.4.12\" "
+    "v1.4.12.0 using ReShade API version 18.\n", encoding="utf8")
+_rb = diagnose.analyse(_bd)
+check("'did it work?' names a bridge file that turned its substitute off",
+      "install the bridge route again" in _rb.verdict, _rb.verdict)
+_fc127.write_bridge(_bd, _fc127.bridge_defaults(False))
+_bl = (_bd / _fc127.BRIDGE_NAME).read_bytes().decode("utf8").splitlines()
+check("the bridge settings file starts with the line that keeps it",
+      _bl[0] == "# dlss5-bridge keep", _bl[:2])
+check("...carries the substitute switch for a game without DLSS",
+      "synth_after=3" in _bl, _bl)
+check("...keeps what the person chose in the bridge's panel",
+      "ofa_perf=5" in _bl and _bl.count("# dlss5-bridge keep") == 1, _bl)
+check("...but not the rest of a version's defaults, which 'keep' would freeze",
+      "flags=107" not in _bl and "unwrap=1" not in _bl
+      and "ofa_grid=2" not in _bl and "source=auto" not in _bl
+      and "synth=0" not in _bl, _bl)
+check("...and 'did it work?' no longer says so",
+      "install the bridge route again" not in diagnose.analyse(_bd).verdict)
+_fc127.write_bridge(_bd, {"ofa_grid": 4})
+_bt = (_bd / _fc127.BRIDGE_NAME).read_text(encoding="utf8")
+check("...and a second write does not stack the line, and keeps our own file",
+      _bt.count("dlss5-bridge keep") == 1 and "ofa_grid=4" in _bt
+      and "synth_after=3" in _bt, _bt)
+_fc127.write_bridge(_bd, _fc127.bridge_defaults(True))
+check("a later install that found the game's DLSS turns the substitute off",
+      "synth_after=0" in (_bd / _fc127.BRIDGE_NAME).read_text(encoding="utf8"))
+shutil.rmtree(_bd, ignore_errors=True)
+
+# The report's ReShade.log excerpt lost its oldest lines first, and the hook
+# lines are written at the start of a session: the "hooked" line went, the
+# "Failed to find" beside it stayed, and the excerpt replayed to "update the
+# driver". Over budget, the lines nothing reads go first.
+_ex_log = ("12:00:00:000 [1] | INFO  | Registered add-on \"DLSS 5 Neural "
+           "Rendering\" v0.2026.828.517 using ReShade API version 18.\n"
+           "12:00:01:000 [1] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook("
+           "NVSDK_NGX_D3D12_EvaluateFeaturehooked with 0x00007fff55ee8740 => "
+           "0x00007fff36671430)\n"
+           "12:00:01:000 [1] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook("
+           "Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)\n"
+           + "12:00:02:000 [1] | INFO  | Redirecting Direct3DCreate9(SDKVersion "
+             "= 0x20) ...\n" * 40)
+_ex = diagnose._reshade_excerpt(_ex_log)
+check("an over-budget excerpt keeps the hook lines the driver rule reads",
+      any("EvaluateFeaturehooked" in ln for ln in _ex)
+      and any("Failed to find" in ln for ln in _ex)
+      and len("\n".join(_ex)) <= 1500, _ex[:3])
+check("...and which add-ons loaded, before the lines nothing reads",
+      any("Registered add-on" in ln for ln in _ex))
+check("...and the excerpt still reads as a plain hook",
+      re.search(r"vtable::Hook\(NVSDK_NGX_\w+_EvaluateFeature\w*\s*hooked",
+                "\n".join(_ex)) is not None)
+
+# The 1.8.1 gate: "try the standalone route" was said to games that are
+# never offered it - 32-bit, DX9, Vulkan and OpenGL get feeder and bridge
+# only, and were sent looking for an entry their dropdown does not have.
+_sa_mismatch = []
+for _api in ("DX9", "DX10", "DX11", "DX12", "Vulkan", "OpenGL", "Unknown"):
+    for _bits in (32, 64):
+        _sd = Path(tempfile.mkdtemp(prefix="safit_"))
+        (_sd / "g.exe").write_bytes(b"MZ" + b"\0" * 200)
+        dlss.forget_walk(_sd)
+        _offered = dlss.STANDALONE in dlss.detect(_sd, _sd, _api, _bits, sm=89).options
+        if _offered != dlss.standalone_fits(_api, _bits):
+            _sa_mismatch.append((_api, _bits))
+        shutil.rmtree(_sd, ignore_errors=True)
+check("standalone_fits agrees with the route list for every api and bitness",
+      not _sa_mismatch, _sa_mismatch)
+check("the feeder warning names standalone only where it is offered",
+      "standalone" in (dlss.driver_warning("feeder", "616.92",
+                                           offered=["feeder", "standalone"]) or "")
+      and "standalone" not in (dlss.driver_warning("feeder", "616.92",
+                                                   offered=["feeder", "bridge"]) or ""))
+
+_CHAIN = ("12:00:00.000  [feed] evaluate raised 0xC0000005 (reading address "
+          "FFFFFFFFFFFFFFFF) (caught; nothing submitted)\n"
+          "12:00:00.000  [feed] evaluate fault stack, by module (innermost "
+          "first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- "
+          "renodx-dlss5.addon64 <- dlss5-feed.addon64 <- ReShade64.dll\n")
+_d32 = _diag_dir("chain32_", feed=_FEED_OK + _CHAIN, bitness=32, api="DX9",
+                 reshade='INFO | Registered add-on "DLSS 5 Feed" v0.14\n',
+                 components={"renodx": "4.55"})
+_r32 = diagnose.analyse(_d32)
+check("...and a 32-bit game with the 616.64 fault is not sent to standalone",
+      "616.64" in _r32.verdict and "standalone" not in _r32.verdict,
+      _r32.verdict)
+shutil.rmtree(_d32, ignore_errors=True)
+_d64 = _diag_dir("chain64_", feed=_FEED_OK + _CHAIN, bitness=64, api="DX12",
+                 reshade='INFO | Registered add-on "DLSS 5 Feed" v0.14\n',
+                 components={"renodx": "4.55"})
+_r64 = diagnose.analyse(_d64)
+check("...while a 64-bit D3D12 game with it is",
+      "standalone" in _r64.verdict, _r64.verdict)
+shutil.rmtree(_d64, ignore_errors=True)
+
+# #116 on D3D11: the D3D11 note used to replace the upscaler warning.
+check("a D3D11 game offered optiscaler for its FSR still hears it must be on",
+      "has to be on" in dlss.fit(dlss.OPTI, "DX11", False, 89, upscaler="fsr")[1])
+
+# #130: NVIDIA's Aftermath library beside a Vulkan exe names d3d12.dll, and
+# the game was read as DX12. Middleware that names every API is not evidence.
+_af = Path(tempfile.mkdtemp(prefix="aftermath_"))
+_sysd = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+shutil.copy(_sysd / "cmd.exe", _af / "enshrouded.exe")
+with open(_af / "enshrouded.exe", "ab") as _fh:
+    _fh.write(b"\0vulkan-1.dll\0")
+shutil.copy(_sysd / "cmd.exe", _af / "GFSDK_Aftermath_Lib.x64.dll")
+with open(_af / "GFSDK_Aftermath_Lib.x64.dll", "ab") as _fh:
+    _fh.write(b"\0d3d12.dll\0dxgi.dll\0" + b"\0" * (2 * 1024 * 1024))
+_api = pe.runtime_graphics(_af / "enshrouded.exe") if hasattr(pe, "runtime_graphics") \
+    else pe._runtime_graphics(_af / "enshrouded.exe")
+check("a crash library that names every API does not make a Vulkan game DX12",
+      "d3d12" not in str(_api).lower() and "dx12" not in str(_api).lower(), _api)
+shutil.rmtree(_af, ignore_errors=True)
+
+# #131: the trial exe beside the full game's matched the folder name as well
+# and was bigger, so it was picked.
+_tr = Path(tempfile.mkdtemp(prefix="Need for Speed Heat_"))
+(_tr / "NeedForSpeedHeat.exe").write_bytes(b"MZ" + b"\0" * 1000)
+(_tr / "NeedForSpeedHeatTrial.exe").write_bytes(b"MZ" + b"\0" * 400000)
+(_tr / "NFS16.exe").write_bytes(b"MZ" + b"\0" * 1000)
+(_tr / "NFS16_trial.exe").write_bytes(b"MZ" + b"\0" * 400000)
+_ex = [p.name for p in pe.find_game_exes(_tr)]
+check("the full game's exe is ranked above its trial beside it",
+      _ex.index("NeedForSpeedHeat.exe") < _ex.index("NeedForSpeedHeatTrial.exe")
+      and _ex.index("NFS16.exe") < _ex.index("NFS16_trial.exe"), _ex)
+check("...and the trial is still in the list for whoever plays it",
+      "NeedForSpeedHeatTrial.exe" in _ex, _ex)
+shutil.rmtree(_tr, ignore_errors=True)
+_dm = Path(tempfile.mkdtemp(prefix="SomeGame_"))
+(_dm / "SomeGameDemo.exe").write_bytes(b"MZ" + b"\0" * 1000)
+check("a demo-only install still gets its demo exe",
+      [p.name for p in pe.find_game_exes(_dm)] == ["SomeGameDemo.exe"])
+shutil.rmtree(_dm, ignore_errors=True)
+
+# #130/#134: the report's tool-log excerpt was other games' scan lines.
+_tail = ("2026-09-10 10:00:00 info  " + "=" * 70 + "\n"
+         "2026-09-10 10:00:01 info  Minecraft for Windows: C:\\x\\m.exe is not "
+         "readable yet - enable mods\n"
+         "2026-09-10 10:00:02 warn  stopped looking for runtime DLLs under "
+         "D:\\RPCS3 after 900 folders - search budget reached\n"
+         "2026-09-10 10:00:03 info  scan Steam: 12 found\n"
+         "2026-09-10 10:00:04 info  inspected Enshrouded in 1.2s\n"
+         "2026-09-10 10:00:05 error install failed: something real\n")
+import types as _types  # noqa: E402
+_tl = diagnose._tool_log_lines(_tail, _types.SimpleNamespace(name="Enshrouded"),
+                               r"D:\Games\Enshrouded")
+check("the report's tool log leaves out the other games' scan lines",
+      not any("Minecraft" in ln or "RPCS3" in ln or "Steam: 12" in ln
+              for ln in _tl), _tl)
+check("...keeps the reported game's own and the errors",
+      any("inspected Enshrouded" in ln for ln in _tl)
+      and any("something real" in ln for ln in _tl), _tl)
+
+# ...and the ReShade.log excerpt is the last session's, as analyse reads it.
+_two = ("12:00:00:000 [1] | INFO  | Initializing crosire's ReShade version '6.8.0'\n"
+        "12:00:01:000 [1] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook("
+        "NVSDK_NGX_D3D12_EvaluateFeaturehooked with 0x1 => 0x2)\n"
+        "13:00:00:000 [2] | INFO  | Initializing crosire's ReShade version '6.8.0'\n"
+        "13:00:01:000 [2] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook("
+        "Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)\n")
+_ex2 = diagnose._reshade_excerpt(diagnose._last_session(_two))
+check("the report's ReShade.log excerpt does not pull hook lines from an "
+      "older session", not any("EvaluateFeaturehooked" in ln for ln in _ex2)
+      and any("Failed to find" in ln for ln in _ex2), _ex2)
+
+# The window takes the wheel from every dropdown, because ttk's class
+# binding changes the selection before any window-level handler runs.
+_gsrc_w = src_of(_gui.App.__init__)
+check("the dropdown class binding for the wheel is taken away",
+      'unbind_class(cls, "<MouseWheel>")' in _gsrc_w
+      or "unbind_class" in _gsrc_w, "no unbind_class in App.__init__")
+
+section("1.8.1: self-update relaunch, the MFG unlock's new shape, a bad cached "
+        "archive, OptiScaler's update nag (#136 #141 #140 #51)")
+import io as _io141
+import zipfile as _zf141
+from core import mfg as _m141  # noqa: E402
+from core import selfupdate as _su136  # noqa: E402
+
+# #136: the relaunched exe inherited the onefile child's _PYI_* variables and
+# its bootloader quit with "failed to obtain executable path for parent
+# process". The swap script and the Popen env both reset that.
+_sw = _su136.swap_script(Path(r"C:\Games\Tool\dlss5-autopilot.exe"),
+                         Path(r"C:\Temp\upd\dlss5-autopilot.exe"))
+_rst = 'set "PYINSTALLER_RESET_ENVIRONMENT=1"'
+check("the swap script resets PyInstaller's environment before it starts the new exe (#136)",
+      _rst in _sw and 'start ""' in _sw and _sw.index(_rst) < _sw.index('start ""'), _sw[-200:])
+
+
+class _Exit136(Exception):
+    pass
+
+
+_seen136: dict = {}
+_saved136 = (_su136.running_exe, _su136.subprocess.Popen, _su136.os._exit)
+_had_pyi = os.environ.get("_PYI_APPLICATION_HOME_DIR")
+os.environ["_PYI_APPLICATION_HOME_DIR"] = r"C:\Temp\_MEI12345"
+os.environ["_PYI_PARENT_PROCESS_LEVEL"] = "1"
+_su136.running_exe = lambda: Path(r"C:\Games\Tool\dlss5-autopilot.exe")
+_su136.subprocess.Popen = lambda *a, **k: _seen136.update(args=a, kw=k)
+
+
+def _fake_exit(code):
+    raise _Exit136(code)
+
+
+_su136.os._exit = _fake_exit
+try:
+    try:
+        _su136.apply_and_restart(Path(r"C:\Temp\upd\dlss5-autopilot.exe"))
+    except _Exit136:
+        pass
+finally:
+    _su136.running_exe, _su136.subprocess.Popen, _su136.os._exit = _saved136
+    os.environ.pop("_PYI_PARENT_PROCESS_LEVEL", None)
+    if _had_pyi is None:
+        os.environ.pop("_PYI_APPLICATION_HOME_DIR", None)
+    else:
+        os.environ["_PYI_APPLICATION_HOME_DIR"] = _had_pyi
+    Path(tempfile.gettempdir(), "dlss5-autopilot-update.bat").unlink(missing_ok=True)
+_env136 = (_seen136.get("kw") or {}).get("env")
+check("apply_and_restart hands the swap an environment with no _PYI_* key (#136)",
+      isinstance(_env136, dict) and not any(k.upper().startswith("_PYI_") for k in _env136)
+      and _env136.get("PYINSTALLER_RESET_ENVIRONMENT") == "1"
+      and "PATH" in {k.upper() for k in _env136},
+      str(sorted(k for k in (_env136 or {}) if "PYI" in k.upper())))
+
+# #141: v1.3.2 ships one RTXMFG.dll in RTXMFG-v1.3.2.zip. The resolver walks
+# the release list for the universal zip, and a zip of another shape stops
+# before anything lands in the game folder.
+_rels141 = [
+    {"tag_name": "v1.3.2", "published_at": "2026-09-10T00:00:00Z",
+     "assets": [{"name": "RTXMFG-v1.3.2.zip", "browser_download_url": "u132"},
+                {"name": "SHA256SUMS.txt", "browser_download_url": "s132"}]},
+    {"tag_name": "v1.2.1", "published_at": "2026-08-20T00:00:00Z",
+     "assets": [{"name": "Universal-RTX-40-MFG-Unlock-v1.2.1.zip",
+                 "browser_download_url": "u121"},
+                {"name": "Universal-RTX-40-MFG-Unlock-v1.2.1.zip.sha256",
+                 "browser_download_url": "h121"}]},
+]
+_saved141 = (net.json_get, net.download, _m141.resolve, _m141.resolve_loader)
+_asked141: list = []
+try:
+    net.json_get = lambda url: (_asked141.append(url), _rels141)[1]
+    check("a v1.3.2 of the new shape above v1.2.1 resolves to v1.2.1, from the release list (#141)",
+          _m141.resolve() == ("v1.2.1", "u121") and _asked141
+          and "/releases?" in _asked141[0] and "latest" not in _asked141[0], str(_asked141))
+    net.json_get = lambda url: _rels141[:1]
+    try:
+        _m141.resolve()
+        _ok141 = False
+    except _m141.ShapeChanged as e:
+        _ok141 = "v1.3.2" in str(e)
+    check("...and with only the new shape published, resolve() raises ShapeChanged", _ok141)
+    net.json_get = _saved141[0]
+
+    _d141 = Path(tempfile.mkdtemp(prefix="mfg141_"))
+    _new141 = _d141 / "new.zip"
+    with _zf141.ZipFile(_new141, "w") as z:
+        z.writestr("RTXMFG.dll", b"MZ-new-shape")
+    _ual141 = _d141 / "ual.zip"
+    with _zf141.ZipFile(_ual141, "w") as z:
+        z.writestr("dinput8.dll", b"MZ" + b"Ultimate ASI Loader" + b"\0" * (1 << 18))
+    _g141 = _d141 / "game"
+    _g141.mkdir()
+    shutil.copyfile(X64, _g141 / "Game.exe")
+    _before141 = sorted(p.name for p in _g141.iterdir())
+    _m141.resolve = lambda: ("v1.3.2", "new")
+    _m141.resolve_loader = lambda: ("v1", "ual")
+    net.download = lambda url, name, **k: _new141 if url == "new" else _ual141
+    try:
+        _m141.install(_g141, _g141 / "Game.exe")
+        _ok141 = False
+    except _m141.ShapeChanged as e:
+        _ok141 = "RTX40MFGCore.dll" in str(e)
+    check("a release zip holding only RTXMFG.dll raises ShapeChanged and writes nothing (#141)",
+          _ok141 and sorted(p.name for p in _g141.iterdir()) == _before141,
+          str(sorted(p.name for p in _g141.iterdir())))
+    # A loader zip without its dll is found out before the unlock's files land.
+    _full141 = _d141 / "full.zip"
+    with _zf141.ZipFile(_full141, "w") as z:
+        for n in _m141.FILES:
+            z.writestr(n, b"MZ" + n.encode())
+    _noual141 = _d141 / "noual.zip"
+    with _zf141.ZipFile(_noual141, "w") as z:
+        z.writestr("readme.txt", b"x")
+    net.download = lambda url, name, **k: _full141 if url == "new" else _noual141
+    try:
+        _m141.install(_g141, _g141 / "Game.exe")
+        _ok141 = False
+    except _m141.ShapeChanged:
+        _ok141 = True
+    check("...and a loader zip without dinput8.dll stops before the three files land",
+          _ok141 and sorted(p.name for p in _g141.iterdir()) == _before141,
+          str(sorted(p.name for p in _g141.iterdir())))
+    shutil.rmtree(_d141, ignore_errors=True)
+finally:
+    net.json_get, net.download, _m141.resolve, _m141.resolve_loader = _saved141
+check("the installer turns ShapeChanged into a warning, like NoLoaderName (#141)",
+      re.search(r"except \(mfg\.NoLoaderName, mfg\.ShapeChanged, "
+                r"sources\.RateLimited,\s+sources\.Unavailable, "
+                r"net\.WrongContent\) as e:", src_of(installer)) is not None)
+
+# #140: a proxy page or a cut zip in the cache was served on every retry and
+# every install died with "File is not a zip file".
+_c140 = Path(tempfile.mkdtemp(prefix="cache140_"))
+_buf140 = _io141.BytesIO()
+with _zf141.ZipFile(_buf140, "w") as z:
+    z.writestr("a.txt", b"hello")
+_realzip140 = _buf140.getvalue()
+_serve140 = {"body": b"", "n": 0}
+
+
+class _Resp140:
+    def __init__(self, body):
+        self._b = _io141.BytesIO(body)
+        self.status = 200
+        self.headers = {"Content-Length": str(len(body))}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self, n=-1):
+        return self._b.read(n)
+
+
+def _urlopen140(req, timeout=0, **kw):
+    _serve140["n"] += 1
+    return _Resp140(_serve140["body"])
+
+
+_saved140 = (net.CACHE, net.urllib.request.urlopen, net.time.sleep)
+net.CACHE = _c140
+net.urllib.request.urlopen = _urlopen140
+net.time.sleep = lambda s: None
+try:
+    _serve140.update(body=b"<!DOCTYPE html><html>Blocked by your provider</html>", n=0)
+    try:
+        net.download("https://github.com/x/y/releases/download/v1/a.zip", "bad140.zip")
+        _msg140 = ""
+    except RuntimeError as e:
+        _msg140 = str(e)
+    check("an HTML page served for a .zip raises, names the host and leaves no cache file (#140)",
+          "github.com" in _msg140 and "Nothing was written" in _msg140
+          and "DOCTYPE" in _msg140 and not (_c140 / "bad140.zip").exists()
+          and not (_c140 / "bad140.zip.part").exists() and _serve140["n"] == 1, _msg140)
+    try:
+        net.download("https://example.com/x.dll", "bad140.dll")
+        _ok140 = False
+    except net.WrongContent:
+        _ok140 = True
+    check("...the same for a .dll that is not a Windows binary", _ok140)
+    (_c140 / "cached140.zip").write_bytes(b"<html>a cached error page</html>")
+    _serve140.update(body=_realzip140, n=0)
+    _got140 = net.download("https://example.com/c.zip", "cached140.zip")
+    check("a bad .zip already in the cache is fetched again, exactly once (#140)",
+          _serve140["n"] == 1 and _zf141.is_zipfile(_got140), str(_serve140["n"]))
+    _serve140.update(n=0)
+    _got140 = net.download("https://example.com/c.zip", "cached140.zip")
+    check("...and a real zip in the cache is served without a download",
+          _serve140["n"] == 0 and _got140.read_bytes() == _realzip140)
+    _serve140.update(body=b"plain text is fine", n=0)
+    check("...while a suffix outside the checked set passes as it is",
+          net.download("https://example.com/n.txt", "notes140.txt").read_bytes()
+          == b"plain text is fine")
+finally:
+    net.CACHE, net.urllib.request.urlopen, net.time.sleep = _saved140
+    shutil.rmtree(_c140, ignore_errors=True)
+
+# #51: OptiScaler compares the fork with mainline OptiScaler and nags about
+# an "update" that has no neural rendering. And enable_nr runs on every
+# autotune step, so it may only switch the log on, not overwrite a level.
+_o51 = Path(tempfile.mkdtemp(prefix="opti51_"))
+(_o51 / "OptiScaler.ini").write_text(
+    "[Log]\nLogToFile=auto\nLogLevel=0\n\n[Hotfix]\n; Enables checking for "
+    "latest version from Github\nCheckForUpdate=auto\n\n[DlssNr]\nEnabled=false\n",
+    encoding="utf8")
+optiscaler.enable_nr(_o51, settings={"WorkingScale": 0.75})
+_t51 = (_o51 / "OptiScaler.ini").read_text(encoding="utf8")
+check("enable_nr leaves exactly one CheckForUpdate=false, under [Hotfix] (#51)",
+      _t51.count("CheckForUpdate=") == 1
+      and optiscaler._ini_get(_t51, "Hotfix", "CheckForUpdate") == "false", _t51)
+check("...keeps a LogLevel the person set (0) and turns LogToFile=auto into true",
+      optiscaler._ini_get(_t51, "Log", "LogLevel") == "0"
+      and optiscaler._ini_get(_t51, "Log", "LogToFile") == "true", _t51)
+optiscaler.enable_nr(_o51, settings={"WorkingScale": 0.75})
+check("...and a second call (an autotune step) changes nothing",
+      (_o51 / "OptiScaler.ini").read_text(encoding="utf8") == _t51)
+(_o51 / "OptiScaler.ini").unlink()
+optiscaler.enable_nr(_o51)
+_t51 = (_o51 / "OptiScaler.ini").read_text(encoding="utf8")
+check("a fresh ini ends with LogToFile=true, LogLevel=2 and CheckForUpdate=false (#110, #51)",
+      optiscaler._ini_get(_t51, "Log", "LogToFile") == "true"
+      and optiscaler._ini_get(_t51, "Log", "LogLevel") == "2"
+      and optiscaler._ini_get(_t51, "Hotfix", "CheckForUpdate") == "false", _t51)
+(_o51 / "OptiScaler.ini").write_text("[Log]\nLogToFile=false\nLogLevel=auto\n",
+                                     encoding="utf8")
+optiscaler.enable_nr(_o51)
+_t51 = (_o51 / "OptiScaler.ini").read_text(encoding="utf8")
+check("...and LogToFile=false / LogLevel=auto become true / 2",
+      optiscaler._ini_get(_t51, "Log", "LogToFile") == "true"
+      and optiscaler._ini_get(_t51, "Log", "LogLevel") == "2", _t51)
+shutil.rmtree(_o51, ignore_errors=True)
 
 section("RESULT")
 if FAILS:

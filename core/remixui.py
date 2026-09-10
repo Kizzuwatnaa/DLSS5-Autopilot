@@ -1,10 +1,10 @@
 """The RTX Remix window: which of your games have a mod, and where it is.
 
-Kept out of gui.py because it is a side trip, not part of the three-step
-install. It answers one question - "can I try this, and with what?" - and
-then gets out of the way. Nothing here installs a mod: the projects listed
-are other people's work with their own instructions, and the honest thing
-is a link, not a download button.
+Kept out of gui.py because it is a side trip, not part of installing a
+game. It answers one question - "can I try this, and with what?" - and then
+gets out of the way. The projects listed are other people's work with their
+own instructions, so most rows are a link; a mod is fetched only where its
+project publishes a complete install and the game is in the library.
 """
 from __future__ import annotations
 
@@ -34,8 +34,24 @@ class RemixWindow:
 
         head = tk.Frame(self.win, bg=BG)
         head.pack(fill="x", padx=22, pady=(18, 6))
-        tk.Label(head, text="RTX Remix + DLSS 5", bg=BG, fg=TXT,
-                 font=font(15)).pack(anchor="w")
+        # The mark beside the title, as in the main window's corner: this is
+        # a window of the same tool, not a browser page it opened.
+        titlerow = tk.Frame(head, bg=BG)
+        titlerow.pack(anchor="w")
+        try:
+            import base64
+            from .icon_png import ICON_PNG_B64
+            img = tk.PhotoImage(master=self.win,
+                                data=base64.b64decode(ICON_PNG_B64)).subsample(2)
+            # Tk drops an image nobody holds, and this object is let go of
+            # once the window is up; the Toplevel lives as long as it shows.
+            self.win._logo = img
+            tk.Label(titlerow, image=img, bg=BG, borderwidth=0)\
+                .pack(side="left", padx=(0, px(12)))
+        except Exception:
+            pass
+        tk.Label(titlerow, text="RTX Remix + DLSS 5", bg=BG, fg=TXT,
+                 font=font(15)).pack(side="left")
         tk.Label(head, bg=BG, fg=DIM, font=font(9), justify="left", anchor="w",
                  wraplength=int(sw * 0.55),
                  text="What RTX Remix is: a free NVIDIA tool that replaces an old "
@@ -48,11 +64,14 @@ class RemixWindow:
                       "Remix builds carry DLSS 5 inside their own renderer already - "
                       "this tool just switches that on. Nothing of ours goes into "
                       "the game folder except one small file and one line of text.\n\n"
-                      "1. Pick a game below and install ITS mod, from its own page - "
-                      "that part is not this tool's job.\n"
-                      "2. Press rescan here. The game shows up with the remix route "
-                      "chosen for you.\n"
-                      "3. Press INSTALL like any other game."
+                      "1. Get the game's mod. Where its project publishes a complete "
+                      "install and the game is in your library (GTA IV, Need for "
+                      "Speed: Underground 2), [ download & install ] below puts it "
+                      "in for you. For the rest, install it from its own page.\n"
+                      "2. Press rescan on the games page. The game shows up with "
+                      "the remix route chosen for you.\n"
+                      "3. Press INSTALL like any other game: that is the step that "
+                      "switches DLSS 5 on inside the mod."
                  ).pack(anchor="w", pady=(6, 0))
         tk.Label(head, bg=BG, fg=FAINT, font=font(8), justify="left", anchor="w",
                  wraplength=int(sw * 0.55), text=remixlist.RULE_OF_THUMB)\
@@ -74,33 +93,31 @@ class RemixWindow:
         # it used to steal scrolling from the main window's own log and game
         # list the moment this window opened, and kept doing it (against a
         # destroyed canvas, raising an error on every scroll) after the
-        # window was closed, because nothing ever unbound it. Bind only
-        # while the pointer is actually over this window, and clean up when
-        # it leaves or the window closes.
+        # window was closed, because nothing ever unbound it.
         def _wheel(e):
             try:
                 canvas.yview_scroll(int(-e.delta / 120), "units")
             except tk.TclError:
                 pass
 
-        def _grab(_e=None):
-            self.win.bind_all("<MouseWheel>", _wheel)
-
-        def _release(_e=None):
-            try:
-                self.win.unbind_all("<MouseWheel>")
-            except tk.TclError:
-                pass
-
-        self.win.bind("<Enter>", _grab)
-        self.win.bind("<Leave>", _release)
-        self.win.bind("<Destroy>", _release)
+        # On this window's own toplevel, which every widget inside it
+        # passes events through - never bind_all/unbind_all. Those are
+        # process-wide: closing this window used to unbind the main
+        # window's wheel as well, and the settings page stopped scrolling
+        # for the rest of the session.
+        self.win.bind("<MouseWheel>", _wheel)
         self._canvas = canvas
 
         owned = {id(m) for _g, m in remixlist.for_library(library or [])}
         if owned:
             self._heading(f"in your library ({len(owned)})", AMBER)
+            shown: set = set()
+            # One row per mod: a game listed twice (a store and a folder
+            # picked by hand) showed its mod twice.
             for g, m in remixlist.for_library(library or []):
+                if id(m) in shown:
+                    continue
+                shown.add(id(m))
                 self._row(m, mine=g.name, game=g)
         self._heading("already Remix, nothing to install", TXT)
         for m in remixlist.BUILT_IN:
@@ -208,7 +225,7 @@ class RemixWindow:
                                           log=lambda t: ui(self._say, t.strip()),
                                           progress=prog)
                 ui(self._say, f"{mod.game}: installed, {len(written)} files. "
-                              f"Press rescan in the main window - the game "
+                              f"Press rescan on the games page - the game "
                               f"should come up on the remix route now.", GREEN)
                 ui(button.config, {"text": "[ installed ]"})
             except remixdl.NotAModError as e:

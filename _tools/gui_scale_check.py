@@ -41,6 +41,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import gui   # noqa: E402
+import tempfile   # noqa: E402
+# A window that finds a saved library from another version rescans the
+# disks at start; the one on the machine running this is not the test's.
+from core import library as _library_iso  # noqa: E402
+_library_iso.FILE = Path(tempfile.mkdtemp(prefix="lib_iso_")) / "library.json"
 
 # (scaling, window width, window height, what machine this is).
 #
@@ -103,11 +108,12 @@ def check(scale: float, w: int, h: int, shot: str = "",
         print(f"\n--- {what or 'a display'}: everything drawn {scale:.2f}x "
               f"in a {root.winfo_width()}x{win_h} window ---")
 
-        for n, name in ((1, "architecture"), (2, "game list"), (3, "install")):
+        for n, name in ((1, "start"), (2, "game list"), (3, "install"),
+                        (4, "video"), (5, "rtx remix")):
             app.step = n
             app._show(n)
             _pump(root)
-            page = (app.p1, app.p2, app.p3)[n - 1]
+            page = app.pages[n - 1]
             squeezed = [f"{c.winfo_class()}" for c in page.winfo_children()
                         if c.winfo_ismapped() and c.winfo_height() <= 1
                         < c.winfo_reqheight()]

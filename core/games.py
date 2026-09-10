@@ -865,8 +865,52 @@ def scan_all(progress=None) -> list[Game]:
         enrich(g)
         if time.monotonic() - started >= 1:
             log.write(f"inspected {g.name} in {time.monotonic() - started:.1f}s")
+    games = same_exe_once(games)
     games.sort(key=lambda g: g.name.lower())
     return games
+
+
+def same_exe_once(games: list) -> list:
+    """One entry per game executable, the first store's.
+
+    Two stores can report one install under different folders - Steam gives
+    the library folder, the Rockstar launcher the GTAIV subfolder inside it -
+    and the folder check above passes both. The executable is only known
+    after enrich(), so this runs after it. Emulators are left alone: several
+    games of one system can share an emulator's executable.
+    """
+    def weight(g) -> tuple:
+        # The entry that carries something wins over the first one: an
+        # install recorded against it, or a graphics API set by hand - both
+        # are keyed by that entry's folder and would be lost with it.
+        try:
+            forced = bool(api_override(g.folder))
+        except Exception:
+            forced = False
+        return (bool(getattr(g, "installed", False)), forced)
+
+    at: dict = {}
+    out = []
+    for g in games:
+        exe = getattr(g, "exe", None)
+        if exe is None or getattr(g, "emu", None) is not None \
+                or getattr(g, "kind", "game") != "game":
+            out.append(g)
+            continue
+        try:
+            key = str(Path(exe).resolve()).lower()
+        except OSError:
+            key = str(exe).lower()
+        if key in at:
+            i = at[key]
+            if weight(g) > weight(out[i]):
+                g, out[i] = out[i], g
+            log.write(f"scan: {g.name} ({g.source}) is the same executable as "
+                      f"{out[i].name} ({out[i].source}) - listed once")
+            continue
+        at[key] = len(out)
+        out.append(g)
+    return out
 
 
 def manual(path: Path) -> Game:

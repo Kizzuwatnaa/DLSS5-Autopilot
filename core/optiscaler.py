@@ -406,6 +406,19 @@ def install(exe_dir: Path, proxy: str = DEFAULT_PROXY, dl=None, log=None,
 # The fork's [DlssNr] section (Config.cpp reads it case-insensitively). Only
 # the handful worth a control are surfaced; the rest stay on the overlay.
 NR_SECTION = "DlssNr"
+# The diagnosis reads OptiScaler.log, and whether one exists is a setting
+# that differs between builds: y4my4my4m ships `LogToFile=auto`, which is
+# false, so a working install had no evidence at all and was answered "it
+# never loaded" (#110). Level 2 is Info - enough for the rules here, and
+# not the trace-level firehose that costs frames.
+LOG_SECTION = "Log"
+LOG_VALUES = {"LogToFile": "true", "LogLevel": "2"}
+# OptiScaler's own update check compares the fork's version with mainline
+# OptiScaler's releases, which have no neural rendering at all, and nags
+# "Update available: v0.9.4 (current 0.7.6)" - following it would remove
+# the very thing this route installs (#51).
+HOTFIX_SECTION = "Hotfix"
+HOTFIX_VALUES = {"CheckForUpdate": "false"}
 NR_PRESETS = {0: "Default", 1: "Preset 1", 2: "Preset 2", 3: "Preset 3"}
 NR_STYLES = {0: "Standard", 1: "Natural", 2: "Cinematic"}
 NR_SCALE_MIN, NR_SCALE_MAX = 25, 100
@@ -456,6 +469,42 @@ def _ini_set(text: str, section: str, values: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _ini_get(text: str, section: str, key: str) -> str | None:
+    """The value of `key` in `section`, or None when it is not there.
+
+    Case-insensitive on both names, the way OptiScaler reads its ini.
+    """
+    inside = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            inside = s[1:-1].lower() == section.lower()
+            continue
+        if not inside or not s or s[0] in ";#" or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        if k.strip().lower() == key.lower():
+            return v.strip()
+    return None
+
+
+def _log_values(text: str) -> dict[str, str]:
+    """The [Log] keys to write: only what is needed to get a log at all.
+
+    enable_nr runs on every install and every autotune step. Forcing
+    LogLevel=2 each time undid a person who had set it (0 to save frames,
+    or a trace level for a bug report). LogToFile has to end up true - the
+    diagnosis has nothing to read otherwise (#110) - and LogLevel is only
+    given a value where there is none, or where the build left it on auto.
+    """
+    out: dict[str, str] = {}
+    if (_ini_get(text, LOG_SECTION, "LogToFile") or "").lower() != "true":
+        out["LogToFile"] = LOG_VALUES["LogToFile"]
+    if (_ini_get(text, LOG_SECTION, "LogLevel") or "auto").lower() == "auto":
+        out["LogLevel"] = LOG_VALUES["LogLevel"]
+    return out
+
+
 def _fmt(v) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
@@ -481,9 +530,23 @@ def enable_nr(exe_dir: Path, log=None, settings: dict | None = None) -> None:
         # An older release of this tool wrote the section in capitals. The
         # reader does not mind, but two spellings in one file are confusing.
         text = text.replace("[DLSSNR]", f"[{NR_SECTION}]")
-        p.write_text(_ini_set(text, NR_SECTION, values), encoding="utf8")
+        text = _ini_set(text, NR_SECTION, values)
+        # Without this the diagnosis has nothing to read on the builds that
+        # default it off, and says the install never loaded (#110).
+        logv = _log_values(text)
+        if logv:
+            text = _ini_set(text, LOG_SECTION, logv)
+        text = _ini_set(text, HOTFIX_SECTION, dict(HOTFIX_VALUES))
+        p.write_text(text, encoding="utf8")
         log(f"      OptiScaler.ini: [{NR_SECTION}] "
             + ", ".join(f"{k}={v}" for k, v in values.items()))
+        if logv:
+            log(f"      OptiScaler.ini: [{LOG_SECTION}] "
+                + ", ".join(f"{k}={v}" for k, v in logv.items())
+                + " - 'did it work?' reads that log")
+        log(f"      OptiScaler.ini: [{HOTFIX_SECTION}] CheckForUpdate=false - "
+            f"its update notice compares with mainline OptiScaler, which "
+            f"has no neural rendering")
         from . import reshade_ini
         key = reshade_ini.overlay_key_name(OVERLAY_KEY)
         log(f"      if it does not come on, press {key} in game and "

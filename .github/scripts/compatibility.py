@@ -1,4 +1,4 @@
-"""Turn the issues labelled `result` into docs/compatibility.json.
+"""Turn the shared results into docs/compatibility.json.
 
 Run by .github/workflows/compatibility.yml. It reads the machine-readable
 block the tool writes into each shared result (core/community.py owns the

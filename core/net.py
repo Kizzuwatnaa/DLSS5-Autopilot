@@ -87,6 +87,53 @@ RETRIES = 3
 RETRY_WAIT = 2.0
 
 
+# What a file saved under these suffixes starts with. Deliberately a small
+# set where the answer is certain: every other suffix passes unchecked.
+_MAGIC = {
+    ".zip": (b"PK\x03\x04", b"PK\x05\x06"),
+    ".7z": (b"7z\xbc\xaf\x27\x1c",),
+    ".exe": (b"MZ",),
+    ".dll": (b"MZ",),
+    ".addon64": (b"MZ",),
+    ".addon32": (b"MZ",),
+}
+
+
+class WrongContent(RuntimeError):
+    """The server answered, but not with the file that was asked for."""
+
+
+def _looks_right(path: Path, suffix: str) -> bool:
+    """Does the file start the way a `suffix` file must?
+
+    A captive portal, a DNS filter or an antivirus answers 200 with an HTML
+    page, and a cut connection can leave a zip without its directory. Either
+    one used to be cached and served again on every retry, so the install
+    failed with "File is not a zip file" however often it was run (#140).
+    """
+    magic = _MAGIC.get(suffix.lower())
+    if magic is None:
+        return True
+    try:
+        with open(path, "rb") as f:
+            head = f.read(8)
+    except OSError:
+        return False
+    if not head.startswith(magic):
+        return False
+    if suffix.lower() == ".zip":
+        return zipfile.is_zipfile(path)
+    return True
+
+
+def _head(path: Path, n: int = 24) -> bytes:
+    try:
+        with open(path, "rb") as f:
+            return f.read(n)
+    except OSError:
+        return b""
+
+
 def download(url: str, name: str, progress=None, force: bool = False,
              attempts: int = 4) -> Path:
     """Download to the cache and return the path. progress(done, total).
@@ -97,9 +144,15 @@ def download(url: str, name: str, progress=None, force: bool = False,
     """
     dest = cache_dir() / name
     if dest.is_file() and dest.stat().st_size > 0 and not force:
-        if progress:
-            progress(dest.stat().st_size, dest.stat().st_size)
-        return dest
+        if _looks_right(dest, dest.suffix):
+            if progress:
+                progress(dest.stat().st_size, dest.stat().st_size)
+            return dest
+        # A bad file in the cache is fetched again, not served forever (#140).
+        try:
+            dest.unlink()
+        except OSError:
+            pass
 
     tmp = dest.with_suffix(dest.suffix + ".part")
     last: Exception | None = None
@@ -131,8 +184,20 @@ def download(url: str, name: str, progress=None, force: bool = False,
                 raise RuntimeError(
                     f"{name}: incomplete download "
                     f"({tmp.stat().st_size}/{total} bytes).")
+            if not _looks_right(tmp, dest.suffix):
+                head = _head(tmp)
+                tmp.unlink(missing_ok=True)
+                host = url.split("/")[2] if "//" in url else url
+                raise WrongContent(
+                    f"{name}: {host} answered with something that is not a "
+                    f"{dest.suffix} file (it starts with {head!r}). That is "
+                    f"usually a proxy, DNS filter or antivirus page standing "
+                    f"in for the download. Nothing was written; try again "
+                    f"or from another network.")
             tmp.replace(dest)
             return dest
+        except WrongContent:
+            raise                                # the same page comes back
         except urllib.error.HTTPError as e:
             tmp.unlink(missing_ok=True)          # 4xx/5xx: resuming won't help
             # ...but a 5xx is the server having a bad second, not a wrong

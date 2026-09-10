@@ -29,11 +29,18 @@ from __future__ import annotations
 
 import json
 import shutil
+import zipfile
 from pathlib import Path
 
 from . import net, pe
 
-API = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases/latest"
+# The release LIST, not /releases/latest: v1.3.2 turned the three files into
+# a single RTXMFG.dll in RTXMFG-v1.3.2.zip, and "latest" plus an any-zip
+# fallback picked that zip and failed on its first missing file (#141).
+API = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases?per_page=20"
+# The asset name of the releases this module knows how to place
+# (Universal-RTX-40-MFG-Unlock-v1.2.1.zip, the last of them so far).
+ASSET_PREFIX = "universal-rtx-40-mfg-unlock"
 LOADER_API = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest"
 LOADER_ASSET = "Ultimate-ASI-Loader_x64.zip"
 # What the release zip carries and where it goes: beside the executable.
@@ -124,18 +131,38 @@ def loader_name(exe: Path | None, taken: set[str] = frozenset()) -> str | None:
     return None
 
 
+class ShapeChanged(RuntimeError):
+    """The release no longer carries the files this module places.
+
+    Raised instead of guessing: the unlock is an opt-in extra, and the
+    installer turns this into a warning rather than failing the install.
+    """
+
+
 def resolve() -> tuple[str, str]:
-    """(tag, download url) of the newest universal release zip."""
-    r = net.json_get(API)
-    tag = r.get("tag_name", "?")
-    for a in r.get("assets", []):
-        n = a.get("name", "").lower()
-        if n.endswith(".zip") and "universal" in n:
-            return tag, a["browser_download_url"]
-    for a in r.get("assets", []):
-        if a.get("name", "").lower().endswith(".zip"):
-            return tag, a["browser_download_url"]
-    raise RuntimeError("Could not find the RTX40MFG-Unlock release zip.")
+    """(tag, download url) of the newest release with the universal zip.
+
+    Newest first through the list, skipping releases of another shape - a
+    newer layout is not taken on trust (#141); the installer places FILES
+    and nothing else.
+    """
+    rels = net.json_get(API)
+    if not isinstance(rels, list):
+        rels = [rels] if isinstance(rels, dict) else []
+    rels = [r for r in rels if isinstance(r, dict)
+            and not r.get("draft") and not r.get("prerelease")]
+    rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    for r in rels:
+        for a in r.get("assets") or []:
+            n = str(a.get("name", "")).lower()
+            if (n.startswith(ASSET_PREFIX) and n.endswith(".zip")
+                    and a.get("browser_download_url")):
+                return r.get("tag_name", "?"), a["browser_download_url"]
+    newest = rels[0].get("tag_name", "?") if rels else "none"
+    raise ShapeChanged(
+        f"no RTX40MFG-Unlock release carries the Universal-RTX-40-MFG-Unlock "
+        f"zip this tool knows how to place (newest: {newest}) - the project "
+        f"changed its layout; the rest of the install is unaffected")
 
 
 def resolve_loader() -> tuple[str, str]:
@@ -169,6 +196,26 @@ class NoLoaderName(RuntimeError):
     """The executable imports none of the names the loader can take."""
 
 
+def _check_zip(zpath: Path, names, what: str) -> None:
+    """Raise ShapeChanged unless the zip holds every one of `names`.
+
+    Matched the way net.extract_one finds them: a file member whose name
+    ends with the wanted one, case-insensitive.
+    """
+    try:
+        members = [m.lower() for m in net.zip_members(zpath)
+                   if not m.endswith("/")]
+    except (OSError, zipfile.BadZipFile) as e:
+        raise ShapeChanged(f"{what}: {zpath.name} is not a readable zip "
+                           f"({e}) - nothing was placed") from e
+    missing = [n for n in names
+               if not any(m.endswith(n.lower()) for m in members)]
+    if missing:
+        raise ShapeChanged(
+            f"{what} does not carry {', '.join(missing)} - the release "
+            f"changed its layout; nothing was placed")
+
+
 def install(exe_dir: Path, exe: Path | None, log=None,
             taken: set[str] = frozenset(),
             preinstalled=()) -> tuple[str, list[str]]:
@@ -192,6 +239,12 @@ def install(exe_dir: Path, exe: Path | None, log=None,
     z = net.download(url, f"RTX40MFG-Unlock-{tag}.zip")
     ltag, lurl = resolve_loader()
     lz = net.download(lurl, f"Ultimate-ASI-Loader-{ltag}_x64.zip")
+    # Both archives are downloaded and checked before the first file lands:
+    # a zip missing one file used to fail half way, after the others were
+    # already beside the game and before any of them was recorded, so an
+    # uninstall could not take them back out (#141).
+    _check_zip(z, FILES, f"RTX40MFG-Unlock {tag}")
+    _check_zip(lz, (LOADER_DLL,), f"Ultimate ASI Loader {ltag}")
 
     ours = {str(p).replace("\\", "/").lower() for p in preinstalled}
     written: list[str] = []

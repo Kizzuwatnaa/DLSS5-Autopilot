@@ -2785,7 +2785,12 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 try:
                     mtag, mfiles = mfg.install(root, g.exe, log, taken=taken,
                                                preinstalled=rep.preinstalled)
-                except mfg.NoLoaderName as e:
+                # An opt-in extra: whatever stops it - a project that changed
+                # shape (#141), GitHub's rate limit, a proxy page - is a
+                # warning, not the end of an install that is otherwise done.
+                # mfg.install checks both archives before it writes a file.
+                except (mfg.NoLoaderName, mfg.ShapeChanged, sources.RateLimited,
+                        sources.Unavailable, net.WrongContent) as e:
                     log(f"      multi-frame generation skipped: {e}")
                     rep.warnings.append(f"multi-frame generation not enabled: {e}")
                     mtag, mfiles = "", []

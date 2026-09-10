@@ -99,7 +99,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         # The same warning the install page shows, for the route that will
         # actually be installed. A command-line install on a driver that
         # cannot run any of this used to proceed in silence.
-        warn = dlss.driver_warning(sup.recommended, gpu.driver_version())
+        warn = dlss.driver_warning(sup.recommended, gpu.driver_version(),
+                                   offered=sup.options)
         if warn:
             print(f"driver  : {warn}")
     print(f"route   : {dlss.LABELS[sup.recommended]}")
