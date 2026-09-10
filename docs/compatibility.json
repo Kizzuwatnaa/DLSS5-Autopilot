@@ -29,8 +29,23 @@
      "worked": 0
     }
    }
+  },
+  "gowr.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "God of War Ragnar\u00f6k",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
   }
  },
- "generated": "2026-09-10T02:34:31Z",
- "reports": 2
+ "generated": "2026-09-10T02:39:49Z",
+ "reports": 3
 }
