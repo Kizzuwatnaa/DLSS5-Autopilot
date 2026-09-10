@@ -213,8 +213,23 @@
      "worked": 0
     }
    }
+  },
+  "uboat launcher.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "UBOAT",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
   }
  },
- "generated": "2026-09-10T08:56:56Z",
- "reports": 16
+ "generated": "2026-09-10T10:07:34Z",
+ "reports": 17
 }
