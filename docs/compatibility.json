@@ -89,8 +89,23 @@
      "worked": 0
     }
    }
+  },
+  "sottr.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Shadow of the Tomb Raider",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
   }
  },
- "generated": "2026-09-10T03:03:03Z",
- "reports": 6
+ "generated": "2026-09-10T03:12:11Z",
+ "reports": 7
 }
