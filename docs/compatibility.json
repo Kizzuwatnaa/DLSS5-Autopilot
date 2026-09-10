@@ -30,6 +30,21 @@
     }
    }
   },
+  "flatout.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "FlatOut",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "goat2-win64-shipping.exe": {
    "drivers": {
     "616.64": {
@@ -151,6 +166,6 @@
    }
   }
  },
- "generated": "2026-09-10T03:21:45Z",
- "reports": 10
+ "generated": "2026-09-10T03:25:39Z",
+ "reports": 11
 }
