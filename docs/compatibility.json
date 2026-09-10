@@ -60,6 +60,21 @@
     }
    }
   },
+  "enshrouded.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Enshrouded",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "flatout.exe": {
    "drivers": {
     "616.64": {
@@ -279,6 +294,6 @@
    }
   }
  },
- "generated": "2026-09-10T14:45:58Z",
- "reports": 24
+ "generated": "2026-09-10T15:19:31Z",
+ "reports": 25
 }
