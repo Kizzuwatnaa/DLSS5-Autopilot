@@ -180,6 +180,21 @@
     }
    }
   },
+  "halfswordue5-win64-shipping.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Half Sword Demo",
+   "routes": {
+    "native": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "lostplanetdx10.exe": {
    "drivers": {
     "616.64": {
@@ -339,6 +354,6 @@
    }
   }
  },
- "generated": "2026-09-10T22:32:32Z",
- "reports": 28
+ "generated": "2026-09-10T22:34:10Z",
+ "reports": 29
 }
