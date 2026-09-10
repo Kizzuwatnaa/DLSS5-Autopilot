@@ -104,8 +104,23 @@
      "worked": 0
     }
    }
+  },
+  "supremecommander2.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Supreme Commander 2",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
   }
  },
- "generated": "2026-09-10T03:12:11Z",
- "reports": 7
+ "generated": "2026-09-10T03:18:55Z",
+ "reports": 8
 }
