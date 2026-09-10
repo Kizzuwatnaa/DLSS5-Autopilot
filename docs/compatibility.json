@@ -30,6 +30,21 @@
     }
    }
   },
+  "goat2-win64-shipping.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Goat Simulator 3",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "gowr.exe": {
    "drivers": {
     "616.64": {
@@ -61,6 +76,6 @@
    }
   }
  },
- "generated": "2026-09-10T02:50:16Z",
- "reports": 4
+ "generated": "2026-09-10T02:50:44Z",
+ "reports": 5
 }
