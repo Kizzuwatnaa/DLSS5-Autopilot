@@ -304,6 +304,21 @@
     }
    }
   },
+  "teardown.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Teardown",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "uboat launcher.exe": {
    "drivers": {
     "616.92": {
@@ -324,6 +339,6 @@
    }
   }
  },
- "generated": "2026-09-10T18:56:41Z",
- "reports": 27
+ "generated": "2026-09-10T20:31:32Z",
+ "reports": 28
 }
