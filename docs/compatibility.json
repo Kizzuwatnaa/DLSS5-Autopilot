@@ -330,6 +330,21 @@
     }
    }
   },
+  "nms.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "No Man's Sky",
+   "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "painkiller.exe": {
    "drivers": {
     "616.64": {
@@ -469,6 +484,6 @@
    }
   }
  },
- "generated": "2026-09-11T18:53:55Z",
- "reports": 41
+ "generated": "2026-09-11T19:39:59Z",
+ "reports": 42
 }
