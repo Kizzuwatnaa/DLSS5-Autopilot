@@ -334,6 +334,21 @@
     }
    }
   },
+  "nfsc.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Need for Speed Carbon",
+   "routes": {
+    "remix": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "nms.exe": {
    "drivers": {
     "616.92": {
@@ -488,6 +503,6 @@
    }
   }
  },
- "generated": "2026-09-11T20:37:56Z",
- "reports": 43
+ "generated": "2026-09-11T22:35:14Z",
+ "reports": 44
 }
