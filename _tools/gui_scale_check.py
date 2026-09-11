@@ -123,6 +123,53 @@ def check(scale: float, w: int, h: int, shot: str = "",
             print(f"  {name:<13} got {page.winfo_height():>4} px"
                   + ("   OK" if not squeezed else "   !! " + ", ".join(squeezed)))
 
+        # Blocks that only appear for one kind of game are never drawn by
+        # the page loop above. The protected-Xbox dropdowns (#157) went off
+        # the card at 200% and nothing here saw it.
+        app.step = 2
+        app._show(2)
+        app.protected_details.pack(fill="x")
+        _pump(root)
+        pd = app.protected_details
+        widest = max(c.winfo_reqwidth() for c in pd.winfo_children())
+        print(f"  xbox choices  {widest:>4} px of {pd.winfo_width()}")
+        if widest > pd.winfo_width():
+            bad.append(f"{scale:.0%}: the protected-Xbox choices need {widest} px, "
+                       f"the card has {pd.winfo_width()}")
+        pd.pack_forget()
+        _pump(root)
+
+        # Every button on the games page, whole and inside the window. Five
+        # packed side by side ran off it from 200% up (four had from 250%),
+        # and the page loop above only ever measured heights (#144).
+        def _buttons(w):
+            out = [w] if w.winfo_class() == "TButton" else []
+            for c in w.winfo_children():
+                out += _buttons(c)
+            return out
+        left = app.pages[1].winfo_rootx()
+        right = left + app.pages[1].winfo_width()
+        cut = [str(b.cget("text")) for b in _buttons(app.pages[1])
+               if b.winfo_ismapped() and (
+                   b.winfo_rootx() < left - 1
+                   or b.winfo_rootx() + b.winfo_width() > right + 1
+                   or b.winfo_width() < b.winfo_reqwidth() - 2)]
+        print(f"  games buttons {'all whole' if not cut else 'cut: ' + ', '.join(cut)}")
+        if cut:
+            bad.append(f"{scale:.0%}: games-page buttons cut off: {', '.join(cut)}")
+        # The list itself. The page loop only counts widgets squeezed to one
+        # pixel, and a list pushed off the page is not squeezed - it is not
+        # drawn at all. The first try at #144's buttons did that at 350%.
+        rows = app.tree.winfo_height() / gui.px(26) if app.tree.winfo_ismapped() else 0
+        print(f"  game list     {rows:.1f} rows")
+        if rows < 3:
+            bad.append(f"{scale:.0%}: the game list shows {rows:.1f} rows")
+        # The filters beside it squeezed the search box to nothing at 250%.
+        sw = app.searchbox.winfo_width()
+        print(f"  search box    {sw} px")
+        if sw < gui.px(150):
+            bad.append(f"{scale:.0%}: the search box is {sw} px wide")
+
         # the install page in detail - it is the one that has to share
         app.step = 3
         app._show(3)

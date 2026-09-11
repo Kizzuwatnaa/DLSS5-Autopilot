@@ -81,6 +81,13 @@ REMIX_RUNTIME_API = ("https://api.github.com/repos/lunks/"
 REMIX_RUNTIME_ASSETS = ("d3d9.dll", "remix_nvngx.dll")
 REMIX_RUNTIME_LATEST = ("https://github.com/lunks/dxvk-remix-plus-dlssnr/"
                         "releases/latest/download/")
+# 7-Zip's one-file console build, fetched only when neither 7-Zip nor
+# Windows' tar.exe can open a .7z (#87, #93: tar.exe is built without LZMA
+# on some Windows builds). Pinned by version and hash: it is unsigned, and
+# it runs. 7-zip.org's own link always serves the newest build, whose hash
+# would stop matching at the next release, so only the versioned one is used.
+SEVEN_ZR = (("https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe",),
+            "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d")
 
 # None = take the newest build from the mirror. On the feeder route the pick
 # is narrowed by renodx_for_feeder(): the feeder's stable release only works

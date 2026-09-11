@@ -750,6 +750,11 @@ QUIRKS: dict[str, str] = {
     "openmw.exe": ("OpenGL: the renodx-dlss5 add-on is pinned to 4.60 here "
                    "(4.70 stalls after four frames on GL) and motion vectors "
                    "come from VORT - LumeniteFX reads none on OpenGL"),
+    "forspoken.exe": ("Forspoken checks the signature of the dxgi.dll in its "
+                      "folder and closes on ReShade's. Not tried on Forspoken "
+                      "yet: on a ReShade route set 'reshade loads as' to "
+                      "d3d12.dll; if it refuses that too, the optiscaler route "
+                      "with 'loads as' winmm.dll goes through a different file"),
 }
 
 

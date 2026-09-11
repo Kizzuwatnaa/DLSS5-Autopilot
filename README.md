@@ -27,8 +27,9 @@ current version of every part each time it runs.
    Battle.net, Rockstar, Amazon, itch, Heroic, Xbox/Game Pass, `D:\Games\*`
    folders and 19 emulators. Anything else: **choose folder**. With **scan
    library at start** on - the default - later runs open straight on that
-   library; **rescan** walks the disks again when you have installed or
-   removed a game.
+   library; **rescan** picks up games installed or removed since the last scan, and
+   **full rescan** reads every launcher, game folder and emulator location
+   again, as the first scan does.
 2. Pick the game. The card shows what was read - executable, 32/64-bit,
    graphics API, whether it ships DLSS - and the route it will take.
 3. Press **INSTALL**. The log says what went where. Then start the game and
@@ -197,7 +198,9 @@ matters.
   like, emulator locations) and skips removable drives. What it finds is
   kept in `%LOCALAPPDATA%\dlss5-autopilot\library.json`, so later launches
   show the list at once; a game that has changed on disk since is read
-  again, and **rescan** always does the full walk.
+  again. **rescan** asks the launchers what is installed and reads only the
+  games it has not seen; **full rescan** walks everything, emulators
+  included.
 - **aim for _ fps** (optiscaler, and the feeder's 64-bit D3D11 path - the
   same places the work-area slider applies): put in the frame rate you want
   and the tool works out the work area to reach it, from what the last runs
@@ -386,12 +389,13 @@ antivirus or VPN inside the HTTPS connection; turn that off for the tool.
 Not every launcher is in the registry, and an executable locked at scan
 time (antivirus, an updater, OneDrive placeholders) cannot be read.
 **open log file** shows what each store returned; **choose folder** always
-works. Xbox/Game Pass can protect the executable while allowing files beside
-it. For a protected EXE, choose **architecture** in the game details and
-check **graphics api** (both choices are remembered for that folder). The
-protection warning stays visible; installation still tests actual directory
-write access and stops if Windows refuses it. No ownership or ACL changes
-are made. An Xbox app "Enable mods" toggle is not required or assumed.
+works. Xbox/Game Pass: some games protect only the executable and let files
+beside it be written. For those, choose **architecture** in the game's
+details and check **graphics api** there (both are remembered for that
+folder). Where Windows refuses writes into the folder itself, only games
+whose publisher allows modding have *Enable mods* (or *Manage > Files >
+Browse*) in the Xbox app - turn it on and press **rescan**. Without it the
+folder cannot be changed, and the Steam version of the game can be set up.
 </details>
 
 <details>

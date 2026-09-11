@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -63,8 +65,41 @@ def _is_win64_pe(p: Path) -> bool:
         return False
 
 
+PREFIX = "dlss5-autopilot-update-"
+
+
 def fetch(progress=None) -> Path:
-    """Download the latest release and return the extracted .exe."""
+    """Download the latest release and return the extracted .exe.
+
+    The staging folder goes if anything fails; one from an update that
+    finished is emptied by the swap script and removed on the next fetch.
+    Nothing removed them before, and a failed or refused download left one
+    in %TEMP% each time.
+    """
+    _prune_old_staging()
+    workdir = Path(tempfile.mkdtemp(prefix=PREFIX))
+    try:
+        return _fetch(workdir, progress)
+    except BaseException:
+        shutil.rmtree(workdir, ignore_errors=True)
+        raise
+
+
+def _prune_old_staging(max_age: float = 24 * 3600) -> None:
+    """Staging folders of ours older than a day: a finished or failed update."""
+    now = time.time()
+    try:
+        for d in Path(tempfile.gettempdir()).glob(PREFIX + "*"):
+            try:
+                if d.is_dir() and now - d.stat().st_mtime > max_age:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                continue
+    except OSError:
+        pass
+
+
+def _fetch(workdir: Path, progress=None) -> Path:
     rel = net.json_get(update.API)
     assets = rel.get("assets", [])
     zip_url = next((a["browser_download_url"] for a in assets
@@ -75,7 +110,6 @@ def fetch(progress=None) -> Path:
                      if a["name"] == "SHA256SUMS.txt"), None)
     tag = (rel.get("tag_name") or "new").lstrip("vV")
 
-    workdir = Path(tempfile.mkdtemp(prefix="dlss5-autopilot-update-"))
     if zip_url:
         z = net.download(zip_url, f"update-{tag}.zip", progress=progress)
         with zipfile.ZipFile(z) as arc:
@@ -228,6 +262,10 @@ def swap_script(current: Path, new_exe: Path) -> str:
             'if not exist "%TARGET%" move /y "%BACKUP%" "%TARGET%" >nul 2>&1',
             'del /q "%SOURCE%" >nul 2>&1',
         ]
+    if new_exe.parent.name.startswith(PREFIX):
+        # Our own staging folder, now empty: rmdir without /s removes
+        # nothing else, so a folder that still holds anything stays.
+        lines.append(f'rmdir "{new_exe.parent}" >nul 2>&1')
     lines += [
         # The new build must start as a fresh top-level process, not as a
         # child of the onefile bootloader we were: without this its own
@@ -262,6 +300,12 @@ def apply_and_restart(new_exe: Path) -> None:
     if current is None:
         raise UpdateError("Running from source, not a built executable - "
                           "nothing to replace.")
+    if not Path(new_exe).is_file():
+        # Staged more than a day ago and cleared since by another copy of
+        # the tool (_prune_old_staging): say so, rather than restart into the
+        # old build without a word.
+        raise UpdateError("The downloaded update is no longer there - press "
+                          "update again to fetch it.")
 
     bat = Path(tempfile.gettempdir()) / "dlss5-autopilot-update.bat"
     bat.write_text(swap_script(current, new_exe), encoding="utf8")

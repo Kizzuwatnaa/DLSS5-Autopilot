@@ -409,6 +409,44 @@ _r = _tk.Tk()
 _app = _gui.App(_r)
 _r.update()
 
+
+def _ticked_names() -> set[str]:
+    """Every "tick 'X'" / "untick 'X'" the tool says, joined across lines."""
+    import ast as _ast
+    import re as _re_t
+    out = set()
+    pat = _re_t.compile(r"\b(?:un)?tick(?:ed)? '([^'{}]+)'", _re_t.I)
+    for _f in sorted((SRC_DIR / "core").glob("*.py")):
+        for _n in _ast.walk(_ast.parse(_f.read_text(encoding="utf8"))):
+            if isinstance(_n, _ast.JoinedStr):
+                _s = "".join(v.value if isinstance(v, _ast.Constant) else "{}"
+                             for v in _n.values)
+            elif isinstance(_n, _ast.Constant) and isinstance(_n.value, str):
+                _s = _n.value
+            else:
+                continue
+            out.update(m.group(1) for m in pat.finditer(_s))
+    return out
+
+
+def _checkbox_texts(w) -> list[str]:
+    out = [str(w.cget("text")).lower()] if w.winfo_class() == "Checkbutton" else []
+    for c in w.winfo_children():
+        out += _checkbox_texts(c)
+    return out
+
+
+# Names in someone else's window (Remix's developer menu, ReShade's overlay).
+_FOREIGN_TICKS = {"Enable Neural Uplift (DLSS-NR)",
+                  # ReShade's own Generic Depth tab
+                  "Copy depth buffer before clear operations"}
+_boxes = _checkbox_texts(_r)
+_dead = sorted(n for n in _ticked_names() - _FOREIGN_TICKS
+               if not any(t.startswith(n.lower()) for t in _boxes))
+# Five messages sent people to tick 'swap the Remix runtime' and the window
+# never had that box (#148); 'feeder pre-release' was a dropdown entry.
+check("every 'tick X' the tool says names a checkbox that exists", not _dead, _dead)
+
 # a folder that has gone away must not abandon the whole list
 _ghost = games.Game(name="Ghost", folder=Path("Z:/gone"))
 _ghost.exe = Path("Z:/gone/x.exe")
@@ -630,7 +668,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.8.1", update.VERSION == "1.8.1", update.VERSION)
+check("version is 1.8.2", update.VERSION == "1.8.2", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1375,7 +1413,7 @@ with patch("builtins.open", side_effect=_protected_read):
     check("...the game keeps its executable so it stays listed", _g.exe == _exe)
     _ok, _why = installer.check_supported(_g)
     check("...and check_supported requests missing metadata",
-          not _ok and "select its architecture and graphics API" in _why, repr(_why))
+          not _ok and "architecture and graphics API" in _why, repr(_why))
     installer.preflight(_g)
     check("writing beside a protected EXE is allowed", True)
 check("the executable was not changed", _exe.read_bytes()[:2] == b"MZ")
@@ -1417,8 +1455,8 @@ try:
         check("preflight under XboxGames raises on a refused write", False)
     except installer.InstallError as e:
         check("preflight under XboxGames reports the actual write restriction",
-              games.XBOX_HINT in str(e) and "Permission denied" in str(e)
-              and "Enable mods" not in str(e) and "administrator" not in str(e), str(e)[:80])
+              games.XBOX_HINT in str(e) and "Permission denied" not in str(e)
+              and "administrator" not in str(e), str(e)[:80])
     try:
         installer.preflight(_gp)
         check("preflight elsewhere raises on a refused write", False)
@@ -3020,6 +3058,93 @@ _end = {p.relative_to(_d).as_posix(): p.read_bytes()
         for p in _d.rglob("*") if p.is_file()}
 check("uninstall returns the Remix install byte for byte", _end == _before,
       str(sorted(set(_end) ^ set(_before))))
+
+# The swap, end to end: a runtime without the pass, swapped in; "update all"
+# (options_from_manifest) renews the one we put there instead of skipping it
+# because it now has the pass; uninstall brings the mod's own back (#148).
+_ds = _fake_remix("remix_swap_")
+(_ds / ".trex" / "d3d9.dll").write_bytes(b"MZ MOD'S OWN RUNTIME, NO PASS" + b"\x00" * 400)
+_orig_rt = (_ds / ".trex" / "d3d9.dll").read_bytes()
+_gs = games.manual(_ds)
+_gs.api = "DX9"
+_tag = {"v": "dlssnr-v1"}
+_saved_sw = (installer.sources.resolve_remix_runtime, net.download)
+installer.sources.resolve_remix_runtime = lambda: (
+    _tag["v"], {n: f"https://x/{_tag['v']}/{n}" for n in sources.REMIX_RUNTIME_ASSETS})
+
+
+def _dl_sw(url, name, **k):
+    if not name.startswith("remix-runtime-"):
+        return _saved_sw[1](url, name, **k)
+    p = Path(tempfile.mkdtemp(prefix="rtdl_")) / name
+    p.write_bytes(b"MZ COMMUNITY RUNTIME " + _tag["v"].encode()
+                  + b" rtx.neuralUplift" + b"\x00" * 400)
+    return p
+
+
+net.download = _dl_sw
+try:
+    installer.install(_gs, installer.Options(path=dlss.REMIX, remix_swap=True),
+                      on_log=lambda t: None)
+    check("the swap puts the community runtime in",
+          b"dlssnr-v1" in (_ds / ".trex" / "d3d9.dll").read_bytes())
+    _tag["v"] = "dlssnr-v2"
+    _opt_up = installer.options_from_manifest(_ds)
+    installer.install(_gs, _opt_up, on_log=lambda t: None)
+    _man_sw = json.loads((_ds / installer.MANIFEST).read_text(encoding="utf8"))
+    check("'update all' renews a runtime this tool swapped in, and keeps it in the record",
+          b"dlssnr-v2" in (_ds / ".trex" / "d3d9.dll").read_bytes()
+          and (_man_sw.get("components") or {}).get("remix_runtime") == "dlssnr-v2",
+          (_man_sw.get("components"), (_ds / ".trex" / "d3d9.dll").read_bytes()[:40]))
+    installer.uninstall(_gs, on_log=lambda t: None)
+    check("...and uninstall brings the mod's own runtime back after both",
+          (_ds / ".trex" / "d3d9.dll").read_bytes() == _orig_rt,
+          (_ds / ".trex" / "d3d9.dll").read_bytes()[:40])
+    # After our swap the mod updates its own runtime. With the pass, it is
+    # the mod's and stays; without it, the swap backs up THAT one, and
+    # uninstall brings back the mod's newer runtime, not the old one.
+    _tag["v"] = "dlssnr-v1"
+    installer.install(_gs, installer.Options(path=dlss.REMIX, remix_swap=True),
+                      on_log=lambda t: None)
+    (_ds / ".trex" / "d3d9.dll").write_bytes(b"MZ MOD V2 WITH PASS rtx.neuralUplift" + b"\x00" * 400)
+    check("a runtime the mod updated since our swap is not taken for ours",
+          installer.remix_state(_gs, installer.options_from_manifest(_ds))[2] is False)
+    _mod_v3 = b"MZ MOD V3 NO PASS" + b"\x00" * 400
+    (_ds / ".trex" / "d3d9.dll").write_bytes(_mod_v3)
+    installer.install(_gs, installer.options_from_manifest(_ds), on_log=lambda t: None)
+    installer.uninstall(_gs, on_log=lambda t: None)
+    check("...and one the mod replaced with a runtime without the pass comes back on uninstall",
+          (_ds / ".trex" / "d3d9.dll").read_bytes() == _mod_v3,
+          (_ds / ".trex" / "d3d9.dll").read_bytes()[:30])
+    # A record from before the stamp (a command-line swap by 1.8.1), and a
+    # reinstall with the box left unticked: neither may lose the backup or
+    # the swap from the record.
+    installer.install(_gs, installer.Options(path=dlss.REMIX, remix_swap=True),
+                      on_log=lambda t: None)
+    _m = json.loads((_ds / installer.MANIFEST).read_text(encoding="utf8"))
+    _m["components"].pop("remix_runtime_stamp", None)
+    (_ds / installer.MANIFEST).write_text(json.dumps(_m), encoding="utf8")
+    installer.install(_gs, installer.Options(path=dlss.REMIX), on_log=lambda t: None)
+    _m2 = json.loads((_ds / installer.MANIFEST).read_text(encoding="utf8"))
+    check("a reinstall without the box keeps the swap and the backup on the record",
+          (_m2.get("components") or {}).get("remix_runtime")
+          and any(f.replace("\\", "/").endswith(".trex/d3d9.dll" + installer.BACKUP_SUFFIX)
+                  for f in _m2.get("files", [])),
+          (_m2.get("components"), _m2.get("files")))
+    installer.uninstall(_gs, on_log=lambda t: None)
+    check("...and uninstall still brings the mod's runtime back",
+          (_ds / ".trex" / "d3d9.dll").read_bytes() == _mod_v3,
+          (_ds / ".trex" / "d3d9.dll").read_bytes()[:30])
+finally:
+    installer.sources.resolve_remix_runtime, net.download = _saved_sw
+# A mod whose own runtime HAS the pass is never replaced, box ticked or not.
+_dk = _fake_remix("remix_keep_")
+_keep_rt = (_dk / ".trex" / "d3d9.dll").read_bytes()
+check("a mod's own runtime with the pass is not swapped even with the box ticked",
+      installer.remix_state(games.manual(_dk),
+                            installer.Options(path=dlss.REMIX, remix_swap=True))[2] is False)
+shutil.rmtree(_ds, ignore_errors=True)
+shutil.rmtree(_dk, ignore_errors=True)
 shutil.rmtree(_d, ignore_errors=True)
 
 # the same, for a conf that DID end with a newline: it must keep it
@@ -3837,9 +3962,10 @@ try:
 finally:
     sources.urllib.request.urlopen, sources.time.sleep = _saved
 
-check("the Xbox hint distinguishes protection from write access without a mods toggle",
-      "separate" in games.XBOX_HINT and "installation cannot continue" in games.XBOX_HINT
-      and "Enable mods" not in games.XBOX_HINT)
+check("the locked-folder hint names the Xbox app's switch and the way out without it",
+      "Enable mods" in games.XBOX_HINT and "Steam version" in games.XBOX_HINT)
+check("the protected-exe hint says what to choose, in words (#157)",
+      "64-bit or 32-bit" in games.XBOX_EXE_HINT and "EXE" not in games.XBOX_EXE_HINT)
 
 _d = Path(tempfile.mkdtemp(prefix="apiov_"))
 shutil.copyfile(X64, _d / "Game.exe")
@@ -5794,8 +5920,8 @@ check("the compatibility workflow does not filter on the label",
       "labels=result" not in _wf and "state=all" in _wf)
 
 # FEATURES: the version is the delivery mechanism for the library rescan.
-check("the version is 1.8.1 in the file the build reads too",
-      "1.8.1.0" in (Path(__file__).resolve().parent
+check("the version is 1.8.2 in the file the build reads too",
+      "1.8.2.0" in (Path(__file__).resolve().parent
                     / "version_info.txt").read_text(encoding="utf8"))
 check("...and the release notes the workflow publishes exist",
       (Path(__file__).resolve().parent / "docs" / "releases"
@@ -6474,9 +6600,12 @@ def _fake_exit(code):
 
 
 _su136.os._exit = _fake_exit
+# apply_and_restart refuses a staged build that is gone, so this one exists.
+_staged136 = Path(tempfile.mkdtemp(prefix=_su136.PREFIX)) / "dlss5-autopilot.exe"
+_staged136.write_bytes(b"MZ")
 try:
     try:
-        _su136.apply_and_restart(Path(r"C:\Temp\upd\dlss5-autopilot.exe"))
+        _su136.apply_and_restart(_staged136)
     except _Exit136:
         pass
 finally:
@@ -6487,6 +6616,18 @@ finally:
     else:
         os.environ["_PYI_APPLICATION_HOME_DIR"] = _had_pyi
     Path(tempfile.gettempdir(), "dlss5-autopilot-update.bat").unlink(missing_ok=True)
+    shutil.rmtree(_staged136.parent, ignore_errors=True)
+_saved_re = _su136.running_exe
+_su136.running_exe = lambda: Path(r"C:\Games\Tool\dlss5-autopilot.exe")
+try:
+    _su136.apply_and_restart(_staged136)
+    _gone_ok = False
+except _su136.UpdateError:
+    _gone_ok = True
+finally:
+    _su136.running_exe = _saved_re
+check("a staged update that is gone is refused in words, not restarted into the old build",
+      _gone_ok)
 _env136 = (_seen136.get("kw") or {}).get("env")
 check("apply_and_restart hands the swap an environment with no _PYI_* key (#136)",
       isinstance(_env136, dict) and not any(k.upper().startswith("_PYI_") for k in _env136)
@@ -6673,6 +6814,266 @@ check("...and LogToFile=false / LogLevel=auto become true / 2",
       optiscaler._ini_get(_t51, "Log", "LogToFile") == "true"
       and optiscaler._ini_get(_t51, "Log", "LogLevel") == "2", _t51)
 shutil.rmtree(_o51, ignore_errors=True)
+
+section("1.8.2: a full drive, the missing Remix box, update leftovers (#148 #157)")
+from core import library as _lib148  # noqa: E402
+from core import selfupdate as _su148  # noqa: E402
+
+_full = OSError(28, "No space left on device", r"C:\Users\x\AppData\Local\dlss5-autopilot\cache\big.zip")
+_wrapped = RuntimeError("could not unpack")
+_wrapped.__cause__ = _full
+_win = OSError(None, "There is not enough space on the disk")
+_win.winerror = 112
+check("a full drive is recognised as errno 28, as Windows' 112, and wrapped in another error",
+      net.is_disk_full(_full) and net.is_disk_full(_win) and net.is_disk_full(_wrapped)
+      and not net.is_disk_full(OSError(13, "Permission denied"))
+      and not net.is_disk_full(RuntimeError("x")))
+_msg148 = net.disk_full_message(_wrapped, Path(r"D:\Games\X"), net.CACHE)
+check("...and the message names the drive and says to free space, without a traceback",
+      _msg148.startswith("Out of disk space on C:") and "beside the game (D:" in _msg148
+      and "free some up" in _msg148 and "Traceback" not in _msg148
+      and "Errno" not in _msg148, _msg148)
+
+# The install stops on a full drive: it says so, records it, and the
+# diagnosis reads that record instead of "install again" (#148).
+_d148 = Path(tempfile.mkdtemp(prefix="full148_"))
+shutil.copyfile(X64, _d148 / "Game.exe")
+_g148 = games.manual(_d148)
+_saved148 = (installer.reengine.detected, installer.refw.install)
+installer.reengine.detected = lambda root: True
+
+
+def _refw_full(root, log):
+    raise OSError(28, "No space left on device", str(root / "dinput8.dll"))
+
+
+installer.refw.install = _refw_full
+try:
+    try:
+        installer.install(_g148, installer.Options(), on_log=lambda t: None)
+        check("an install on a full drive stops with words, not a traceback", False)
+    except installer.InstallError as e:
+        check("an install on a full drive stops with words, not a traceback",
+              "Out of disk space" in str(e) and "Errno" not in str(e), str(e)[:120])
+finally:
+    installer.reengine.detected, installer.refw.install = _saved148
+_man148 = json.loads((_d148 / installer.MANIFEST).read_text(encoding="utf8"))
+check("...the record says the drive was full",
+      _man148.get("complete") is False and net.DISK_FULL_NOTE in _man148.get("notes", []))
+_rep148 = diagnose.analyse(_d148)
+check("...and the diagnosis says to free up space first",
+      "full" in _rep148.verdict.lower() and "install again" in _rep148.verdict.lower()
+      and "never finished" not in _rep148.verdict, _rep148.verdict)
+shutil.rmtree(_d148, ignore_errors=True)
+
+# library.save on a full drive left its .tmp behind every time.
+_lf = Path(tempfile.mkdtemp(prefix="lib148_"))
+_saved_file = _lib148.FILE
+_lib148.FILE = _lf / "library.json"
+_real_wt = Path.write_text
+
+
+def _wt_full(self, *a, **k):
+    if self.suffix == ".tmp":
+        _real_wt(self, "{\"half", encoding="utf8")
+        raise OSError(28, "No space left on device", str(self))
+    return _real_wt(self, *a, **k)
+
+
+Path.write_text = _wt_full
+try:
+    _lib148.save([], {}, "0", 89)
+finally:
+    Path.write_text = _real_wt
+    _lib148.FILE = _saved_file
+check("a library save that hits a full drive leaves no .tmp behind",
+      not list(_lf.glob("*.tmp")), [p.name for p in _lf.iterdir()])
+shutil.rmtree(_lf, ignore_errors=True)
+
+# A refused update download left its staging folder in %TEMP%: 838 of them
+# on the machine these tests run on.
+_before = set(Path(tempfile.gettempdir()).glob(_su148.PREFIX + "*"))
+_saved_su = net.json_get
+net.json_get = lambda url: {"tag_name": "v9.9", "assets": []}
+try:
+    try:
+        _su148.fetch()
+    except _su148.UpdateError:
+        pass
+finally:
+    net.json_get = _saved_su
+_after = set(Path(tempfile.gettempdir()).glob(_su148.PREFIX + "*"))
+check("a failed update fetch removes its staging folder", not (_after - _before),
+      [p.name for p in _after - _before])
+_sw148 = _su148.swap_script(Path(r"C:\Tools\dlss5-autopilot.exe"),
+                            Path(tempfile.gettempdir()) / (_su148.PREFIX + "abc") / "dlss5-autopilot.exe")
+# without /s: rmdir then removes the folder only if it is empty
+check("...and the swap script removes the emptied one after an update",
+      f'rmdir "{Path(tempfile.gettempdir()) / (_su148.PREFIX + "abc")}" >nul' in _sw148,
+      _sw148[-300:])
+
+# #87/#93: tar.exe without LZMA, no 7-Zip installed. The answer was "install
+# 7-Zip"; now 7-Zip's own one-file unpacker is fetched, pinned by hash.
+import subprocess as _sp87  # noqa: E402
+_d87 = Path(tempfile.mkdtemp(prefix="sz87_"))
+(_d87 / "in").mkdir()
+(_d87 / "in" / "OptiScaler.dll").write_bytes(b"MZ" + b"\1" * 5000)
+try:
+    _zr = net.download(sources.SEVEN_ZR[0][0], "7zr.exe")
+    _sp87.run([str(_zr), "a", str(_d87 / "t.7z"), str(_d87 / "in" / "OptiScaler.dll")],
+              capture_output=True)
+    _saved87 = (optiscaler._seven_zip, optiscaler._tar_exe)
+    optiscaler._seven_zip = lambda: None
+    optiscaler._tar_exe = lambda: _d87 / "no-tar.exe"
+    try:
+        optiscaler.extract_7z(_d87 / "t.7z", _d87 / "out")
+        check("with no 7-Zip and no working tar.exe, the pinned 7zr.exe unpacks a .7z (#87)",
+              (_d87 / "out" / "OptiScaler.dll").is_file())
+        _saved_pin = sources.SEVEN_ZR
+        sources.SEVEN_ZR = (_saved_pin[0], "0" * 64)
+        try:
+            _ran = optiscaler._seven_zr_extract(_d87 / "t.7z", _d87 / "out2", 0)
+        finally:
+            sources.SEVEN_ZR = _saved_pin
+        check("...and a 7zr.exe that is not the pinned build is never run",
+              _ran is False and not (_d87 / "out2" / "OptiScaler.dll").exists())
+    finally:
+        optiscaler._seven_zip, optiscaler._tar_exe = _saved87
+except (sources.RateLimited, sources.Unavailable, OSError) as e:
+    check("with no 7-Zip and no working tar.exe, the pinned 7zr.exe unpacks a .7z (#87)",
+          False, f"could not fetch 7zr.exe: {e}")
+shutil.rmtree(_d87, ignore_errors=True)
+
+# Three reports replayed against the code, each with its own log lines.
+def _feeder_dir(prefix, api, bitness, reshade, feed):
+    _d = Path(tempfile.mkdtemp(prefix=prefix))
+    shutil.copyfile(X64, _d / "Game.exe")
+    _files = ["dlss5-feed.addon64", "renodx-dlss5.addon64", "ReShade.ini",
+              "reshade-shaders/Shaders/DLSS5_Feed.fx",
+              "reshade-shaders/Shaders/lumenite_Kernel.fx",
+              "reshade-shaders/Shaders/vort_Motion.fx"]
+    for _f in _files:
+        (_d / _f).parent.mkdir(parents=True, exist_ok=True)
+        (_d / _f).write_bytes(b"MZ")
+    (_d / "dlss5-autopilot.json").write_text(json.dumps(
+        {"version": 1, "complete": True, "exe": "Game.exe", "bitness": bitness,
+         "api": api, "proxy": "dxgi.dll", "path": "feeder", "files": _files}),
+        encoding="utf8")
+    (_d / "ReShade.log").write_text(reshade, encoding="utf8")
+    (_d / "dlss5-feed.log").write_text(feed, encoding="utf8")
+    return _d
+
+
+# #156 Octowow, 32-bit OpenGL: frames delivered, then the helper died. It was
+# called "closed before it drew a single frame" (OpenGL has no swap-chain
+# line), and with no helper log in the folder the verdict was "Working."
+_d156 = _feeder_dir("oct156_", "OpenGL", 32, (
+    '11:18:26:359 [25448] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.\n'
+    "11:18:38:663 [25448] | WARN  | [DLSS 5 Feed (32-bit) 0.15.1] [DLSS 5 Feed 32] stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\\) names the reason. The game renders normally\n"
+    "11:21:16:610 [25448] | INFO  | Exiting ...\n"), (
+    "11:18:34.900  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=2 (VORT) -> vort_MotionEffects (enabled), depth reversed=1\n"
+    "11:18:35.043  [feed32] frame 2 delivered (3440x1440, reset=0, OpenGL)\n"
+    "11:18:35.060  [feed32] frame 3 delivered (3440x1440, reset=0, OpenGL)\n"
+    "11:18:38.625  [feed32] host lost: frame message failed (exit code 3765269347)\n"
+    "11:18:38.663  stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\\) names the reason. The game renders normally. See dlss5-feed.log for the detail.\n"
+    "11:21:16.514  shut down cleanly.\n"))
+_r156 = diagnose.analyse(_d156)
+_t156 = [f.title for f in _r156.findings]
+check("frames delivered on OpenGL are not 'closed before it drew a single frame' (#156)",
+      not any("closed before it drew" in t for t in _t156), _t156)
+check("...and a feed that stopped after them is not 'Working.' (#156)",
+      _r156.verdict != "Working." and any("stopped after" in t for t in _t156),
+      (_r156.verdict, _t156))
+shutil.rmtree(_d156, ignore_errors=True)
+
+# #142 Half Sword: the game died one second in, while the feed was still
+# waiting for ReShade to compile. "Never loaded" and "not installed" were
+# said over a file list with both shaders in place.
+_d142 = _feeder_dir("hs142_", "DX12", 64, (
+    '18:29:10:426 [21916] | INFO  | Registered add-on "DLSS 5 Feed 0.15.1" v0.15.1.0 using ReShade API version 20.\n'
+    "18:29:11:068 [21916] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000001FA2374E1A0) ...\n"), (
+    "18:29:11.331  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> none (not installed)\n"
+    "18:29:11.331  [feed] DLSS5_Feed.fx has not resolved yet (ReShade may still be compiling); waiting 10 s before calling it missing\n"
+    "18:29:11.335  [feed] effect runtime 000001FA283BAE00 destroyed -- it was the bound one (0 runtimes left)\n"))
+_t142 = [f.title for f in diagnose.analyse(_d142).findings]
+check("a game that closed while the effects compiled is not told the shader never loaded (#142)",
+      any("still compiling" in t for t in _t142)
+      and not any("never loaded" in t or "not installed" in t for t in _t142), _t142)
+shutil.rmtree(_d142, ignore_errors=True)
+
+# #155: a ReShade.log with none of the lines the excerpt keeps was printed
+# as "(none)" - read as "ReShade never loaded", the opposite.
+_ex155 = diagnose._reshade_excerpt(
+    "11:59:40:001 [ 100] | INFO  | Initializing crosire's ReShade version '6.8.0.0' (64-bit)\n"
+    "11:59:40:002 [ 100] | INFO  | Loading add-ons from C:\\Games\\Sleeping Dogs\n")
+check("a ReShade.log with none of the kept lines still reaches the report (#155)",
+      len(_ex155) == 2 and "Initializing" in _ex155[0], _ex155)
+
+check("Forspoken's dxgi.dll signature check is said before the install (#154)",
+      any("signature" in q for q in dlss.quirks(Path("FORSPOKEN.exe"), "DX12")))
+
+# Gate findings, 1.8.2.
+# A quick rescan only ever added: a game removed in Steam that left its
+# folder behind stayed. What no store lists in the first place stays.
+_qs = Path(tempfile.mkdtemp(prefix="qs_"))
+for _n in ("Gone", "Kept", "Mine"):
+    (_qs / _n).mkdir()
+_known = [games.Game(name="Gone", folder=_qs / "Gone", source="Steam"),
+          games.Game(name="Kept", folder=_qs / "Kept", source="Steam"),
+          games.Game(name="Mine", folder=_qs / "Mine", source="Manual")]
+_saved_lg = games.list_games
+games.list_games = lambda progress=None, emulators=True: [
+    games.Game(name="Kept", folder=_qs / "Kept", source="Steam")]
+try:
+    _qout, _qfresh = games.quick_scan(_known)
+finally:
+    games.list_games = _saved_lg
+check("a quick rescan drops a store game no store lists any more, keeps a hand-picked one",
+      sorted(g.name for g in _qout) == ["Kept", "Mine"] and not _qfresh,
+      [g.name for g in _qout])
+shutil.rmtree(_qs, ignore_errors=True)
+
+# The install's own refusal, raised part way, was recorded as an unfinished
+# install and diagnosed as "install again" - which is refused again (#148).
+_dr = _fake_remix("remix_refuse_")
+(_dr / ".trex" / "d3d9.dll").write_bytes(b"MZ MOD RUNTIME, NO PASS" + b"\x00" * 400)
+_gr = games.manual(_dr)
+_gr.api = "DX9"
+try:
+    installer.install(_gr, installer.Options(path=dlss.REMIX), on_log=lambda t: None)
+except installer.InstallError:
+    pass
+_rr = diagnose.analyse(_dr)
+check("a refused install is diagnosed by its reason, not 'install again' (#148)",
+      "never finished" not in _rr.verdict
+      and any("swap the Remix runtime" in f.detail for f in _rr.findings),
+      (_rr.verdict, [f.detail[:80] for f in _rr.findings]))
+shutil.rmtree(_dr, ignore_errors=True)
+
+
+class _R7:
+    returncode = 2
+    stdout = "ERROR: There is not enough space on the disk : C:\\x\\OptiScaler.dll"
+    stderr = ""
+
+
+try:
+    optiscaler._raise_if_full(_R7(), Path("C:/x"))
+    _full7 = False
+except OSError as e:
+    _full7 = net.is_disk_full(e)
+check("a full drive while unpacking a .7z is a full drive, not 'install 7-Zip'", _full7)
+
+# #152: UBOAT was installed for "UBOAT Launcher.exe" - the launcher is
+# bigger than Unity's player stub, and both match the folder's name.
+_ub = Path(tempfile.mkdtemp(prefix="uboat152_")) / "UBOAT"
+(_ub / "UBOAT_Data").mkdir(parents=True)
+shutil.copyfile(X64, _ub / "UBOAT.exe")
+(_ub / "UBOAT Launcher.exe").write_bytes((_ub / "UBOAT.exe").read_bytes() + b"\0" * (8 << 20))
+check("a launcher beside the game it starts is not taken for the game (#152)",
+      pe.find_game_exes(_ub)[0].name == "UBOAT.exe",
+      [p.name for p in pe.find_game_exes(_ub)])
+shutil.rmtree(_ub.parent, ignore_errors=True)
 
 section("RESULT")
 if FAILS:

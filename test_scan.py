@@ -332,7 +332,7 @@ class ProtectedXboxTests(unittest.TestCase):
         self.assertIsNone(g.bitness)
         ok, why = installer.check_supported(g)
         self.assertFalse(ok)
-        self.assertIn("select its architecture and graphics API", why)
+        self.assertIn("architecture and graphics API", why)
         games.set_bitness_override(self.folder, 64)
         games.enrich(g)
         self.assertFalse(installer.check_supported(g)[0], "unknown API must not be assumed")
@@ -340,7 +340,7 @@ class ProtectedXboxTests(unittest.TestCase):
         games.enrich(g)
         self.assertEqual((g.bitness, g.api), (64, "DX12"))
         self.assertTrue(installer.check_supported(g)[0])
-        self.assertIn(g.exe_warning, installer.preview(g, installer.Options()).warnings)
+        self.assertIn(games.XBOX_EXE_CHOSEN, installer.preview(g, installer.Options()).warnings)
 
     def test_api_detection_can_use_adjacent_files(self):
         self.protect()
@@ -375,8 +375,9 @@ class ProtectedXboxTests(unittest.TestCase):
                 with self.assertRaises(installer.InstallError) as cm:
                     action()
                 self.assertIn(str(g.install_dir), str(cm.exception))
-                self.assertIn("installation cannot continue", str(cm.exception))
-                self.assertNotIn("Enable mods", str(cm.exception))
+                self.assertIn("Enable mods", str(cm.exception))
+                # the reason is said in words; the raw exception goes to the log
+                self.assertNotIn("Permission denied", str(cm.exception))
         self.assertEqual(set(self.folder.iterdir()), before)
 
     def test_invalid_architecture_overrides_are_rejected_and_ignored(self):
@@ -446,7 +447,7 @@ class ProtectedXboxTests(unittest.TestCase):
         app.tree.selection_set("0")
         app._on_pick()
         self.assertEqual(app.protected_details.winfo_manager(), "pack")
-        self.assertEqual(app.tree.item("0", "values")[-1], "needs metadata")
+        self.assertEqual(app.tree.item("0", "values")[-1], "choose architecture / api")
         app._next()   # double-click cannot bypass the disabled button
         self.assertEqual(app.step, 2)
         app.cb_bitness.current(1)

@@ -38,6 +38,76 @@ def clear_cache() -> None:
         shutil.rmtree(CACHE, ignore_errors=True)
 
 
+# errno 28 is what Python says; ERROR_DISK_FULL (112) and
+# ERROR_HANDLE_DISK_FULL (39) are what Windows says underneath it.
+_FULL_ERRNO = 28
+_FULL_WINERROR = (112, 39)
+# The note an install that stopped on a full drive leaves in its record,
+# for the diagnosis to read.
+STOP_NOTE = "install stopped: "
+DISK_FULL_NOTE = STOP_NOTE + "the drive ran out of space"
+
+
+def is_disk_full(e: BaseException | None) -> bool:
+    """Did this fail because a drive ran out of space - here or underneath?
+
+    The OSError is often wrapped (a zip that could not be written comes up
+    as something else), so the chain it was raised from is followed too.
+    """
+    seen = 0
+    while e is not None and seen < 8:
+        if isinstance(e, OSError) and (
+                e.errno == _FULL_ERRNO
+                or getattr(e, "winerror", None) in _FULL_WINERROR):
+            return True
+        e = e.__cause__ or e.__context__
+        seen += 1
+    return False
+
+
+def _drive_of(p) -> str:
+    try:
+        return Path(p).drive or Path(os.path.abspath(p)).drive
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
+def _free_on(drive: str) -> str:
+    try:
+        return human(shutil.disk_usage(drive + "\\").free) + " free"
+    except OSError:
+        return "free space unknown"
+
+
+def disk_full_message(e: BaseException, game_dir=None, cache_dir=None) -> str:
+    """What to tell someone whose drive is full: which drive, how much is free.
+
+    #148's drive was full, and the report carried a Python traceback where
+    "free up space" belonged. The drive named as full is the one the failed
+    write was on; the game's drive and the cache's are listed for what they
+    are, not as full as well.
+    """
+    full = ""
+    cur: BaseException | None = e
+    while cur is not None and not full:
+        name = getattr(cur, "filename", None)
+        if name:
+            full = _drive_of(str(name))
+        cur = cur.__cause__ or cur.__context__
+    head = (f"Out of disk space on {full} ({_free_on(full)})." if full
+            else "A drive ran out of space.")
+    g, c = _drive_of(game_dir) if game_dir else "", _drive_of(cache_dir) if cache_dir else ""
+    where = []
+    if g:
+        where.append(f"beside the game ({g}, {_free_on(g)})")
+    if c:
+        where.append(f"in the tool's download cache (%LOCALAPPDATA%\\dlss5-autopilot, "
+                     f"{c}, {_free_on(c)})")
+    need = " and ".join(where) if where else "beside the game and in the tool's cache"
+    return (f"{head} The install needs a few hundred MB {need} - free some "
+            f"up, then install again.")
+
+
 _SSL: ssl.SSLContext | None = None
 
 
@@ -238,6 +308,11 @@ def download(url: str, name: str, progress=None, force: bool = False,
                     f"download resumes where it stopped.") from e
             time.sleep(1.5 * (attempt + 1))
         except Exception as e:                   # network hiccup - retry
+            if is_disk_full(e):
+                # Asking again fills the same drive again; the partial file
+                # goes, so the space it took comes back (#148).
+                tmp.unlink(missing_ok=True)
+                raise
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)

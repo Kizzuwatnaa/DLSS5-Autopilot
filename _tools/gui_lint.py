@@ -194,10 +194,21 @@ def check(root: tk.Tk, where: str) -> int:
                                  c.winfo_width(), c.winfo_height()))
             except tk.TclError:
                 pass
+        def _inside(x, y) -> bool:
+            """Is x gridded INTO sibling y (grid's in_)? Then it sits on y
+            by design - the games page's filter lines are laid out that way."""
+            try:
+                return x.winfo_manager() == "grid" and \
+                    str(x.grid_info().get("in")) == str(y)
+            except tk.TclError:
+                return False
+
         for i in range(len(kids)):
             for j in range(i + 1, len(kids)):
                 a, ax, ay, aw, ah = kids[i]
                 b, bx, by, bw, bh = kids[j]
+                if _inside(a, b) or _inside(b, a):
+                    continue
                 if ax < bx + bw - 3 and bx < ax + aw - 3 \
                         and ay < by + bh - 3 and by < ay + ah - 3:
                     ISSUES.append(f"{where}: overlap   {label(a)} and {label(b)}")

@@ -42,6 +42,7 @@ import os
 import shutil
 import struct
 import tempfile
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -171,6 +172,9 @@ BRIDGE_ADDON = "dlss5-bridge.addon64"
 BRIDGE_CFG = "dlss5-bridge.cfg"
 
 BACKUP_SUFFIX = ".dlss5-autopilot-backup"
+# A backup of a runtime a mod has since replaced with its own: kept, but
+# under a name uninstall does not restore (it would put the older one back).
+SUPERSEDED_SUFFIX = ".dlss5-autopilot-superseded"
 
 # Files a game ships that break the neural pass when Windows loads them in
 # preference to System32's copy. They are renamed, not deleted, and the
@@ -492,8 +496,9 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
     if g.error:
         return False, g.error
     if g.exe_warning and (g.bitness not in (32, 64) or g.api not in games.APIS):
-        return False, ("Protected Xbox executable: select its architecture and "
-                       "graphics API in the game details before continuing.")
+        return False, ("Choose this game's architecture and graphics API in "
+                       "its details on the games page - Windows protects its "
+                       "executable, so they cannot be read from it.")
     if g.bitness not in (32, 64):
         return False, "Could not read the architecture."
     if g.api == "Vulkan":
@@ -518,16 +523,32 @@ def _backup(dst: Path, rep: Report, root: Path) -> None:
     """
     if not dst.is_file():
         return
-    try:
-        if str(dst.relative_to(root)).replace("\\", "/") in rep.preinstalled:
-            return
-    except ValueError:
-        pass
     bak = dst.with_name(dst.name + BACKUP_SUFFIX)
     try:
         rel = str(bak.relative_to(root))
     except ValueError:
         rel = str(bak)
+    try:
+        key = str(dst.relative_to(root))
+    except ValueError:
+        # A .trex outside the install folder is recorded by absolute path;
+        # asked only relative, a file of ours there was backed up as if it
+        # were the game's own.
+        key = str(dst)
+    try:
+        if key.replace("\\", "/") in rep.preinstalled:
+            # Ours from last time, so not backed up again - but the game's
+            # original may already sit beside it from the FIRST install, and
+            # the new record has to carry it. Returning without that dropped
+            # the backup from every reinstall ("update all"), and uninstall
+            # then deleted our file and left the game's own unrestored: the
+            # swapped Remix runtime came out of an uninstall missing (#148).
+            if bak.is_file() and rel.replace("\\", "/") not in \
+                    {w.replace("\\", "/") for w in rep.written}:
+                rep.written.append(rel)
+            return
+    except ValueError:
+        pass
     # A backup left by an older release sits under a different suffix; adopt
     # it so this manifest can restore it, instead of orphaning a 50+ MB file.
     for old_s in LEGACY_BACKUP_SUFFIXES:
@@ -768,7 +789,69 @@ def remix_state(g: games.Game, opt: Options) -> tuple[Path | None, str, bool]:
     if trex is None:
         return None, "", False
     flavour = remix.runtime_flavour(trex)
-    return trex, flavour, bool(opt.remix_swap) and not flavour
+    if not opt.remix_swap:
+        return trex, flavour, False
+    # A runtime this tool swapped in has the pass, so "has none" alone would
+    # skip it on every later install: "update all" cleared the update mark,
+    # kept the old runtime, and dropped the swap from the record. One we put
+    # there is ours to renew; a mod's own runtime with the pass is never
+    # replaced.
+    return trex, flavour, not flavour or _remix_runtime_is_ours(g, trex)
+
+
+def _runtime_stamp(p: Path) -> list | None:
+    """Size and modification time: cheap, and enough to see a file replaced.
+
+    A hash would read 150-230 MB, and this is asked on the Tk thread when a
+    route is drawn.
+    """
+    try:
+        st = p.stat()
+        return [st.st_size, st.st_mtime_ns]
+    except OSError:
+        return None
+
+
+def _remix_swap_record(g: games.Game) -> dict:
+    try:
+        prev = _previous_manifest(g.install_dir) or {}
+        comp = prev.get("components") or {}
+        return comp if comp.get("remix_runtime") else {}
+    except Exception:
+        return {}
+
+
+def _remix_runtime_is_ours(g: games.Game, trex: Path) -> bool:
+    """Is the runtime in .trex the one this tool swapped in?
+
+    The record alone is not enough: a mod can update its own runtime after
+    our swap, and the record would still say "ours" - "update all" would
+    then replace the mod's new runtime. So the swapped file's size and time
+    are recorded, and it is ours while it still matches. A record from
+    before that stamp existed has only the record to go on.
+    """
+    rec = _remix_swap_record(g)
+    if not rec:
+        return False
+    return not _remix_runtime_replaced(g, trex)
+
+
+def _remix_runtime_replaced(g: games.Game, trex: Path) -> bool:
+    """We swapped it once, and the mod has put its own runtime there since.
+
+    By size alone: the time moves without the file changing (FAT32 across
+    daylight saving, a folder moved or restored), and a wrong "replaced"
+    costs the backup of the mod's original. Two different 150-230 MB
+    runtimes of the same size to the byte is not the case to design for.
+    """
+    rec = _remix_swap_record(g)
+    want = rec.get("remix_runtime_stamp")
+    # A stamp that is not [size, time] - an edited or damaged record - is no
+    # stamp at all, as in a record from before stamps.
+    if not (isinstance(want, list) and want and isinstance(want[0], int)):
+        return False
+    now = _runtime_stamp(trex / remix.RUNTIME_DLL)
+    return now is not None and now[0] != want[0]
 
 
 def plan(g: games.Game, opt: Options) -> list[str]:
@@ -903,7 +986,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
     pv = Preview()
     root = g.install_dir
     if g.exe_warning:
-        pv.warnings.append(g.exe_warning)
+        pv.warnings.append(games.XBOX_EXE_CHOSEN)
 
     ok, why = check_supported(g)
     if not ok:
@@ -1699,14 +1782,30 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
     # Without this the record only covers the LAST install, so a file written
     # the first time and merely left alone the second - nvngx_dlss.dll, say -
     # was orphaned and no uninstall could ever remove it.
+    # Compared with one separator: _copy records "a\b", the old record
+    # read back as "a/b", and the same file went into the record twice.
+    have = {w.replace("\\", "/") for w in rep.written}
     for rel in sorted(rep.preinstalled):
-        if rel in rep.written:
+        if rel.replace("\\", "/") in have:
             continue
         if (root / rel).exists():
             rep.written.append(rel)
+    # And the game's original beside any file on the record: whichever path
+    # skipped _backup this time (a file of ours from last time, a step not
+    # taken), the backup an earlier install made stays on the record, so
+    # uninstall puts the original back. Losing it here is how a reinstall
+    # left the swapped Remix runtime unrestored.
+    have = {w.replace("\\", "/") for w in rep.written}
+    for w in list(rep.written):
+        if any(w.endswith(s) for s in (BACKUP_SUFFIX,) + LEGACY_BACKUP_SUFFIXES):
+            continue
+        b = w + BACKUP_SUFFIX
+        if b.replace("\\", "/") not in have and (root / b).is_file():
+            rep.written.append(b)
+            have.add(b.replace("\\", "/"))
 
     try:
-        (root / MANIFEST).write_text(json.dumps({
+        _write_atomic(root / MANIFEST, json.dumps({
             "version": 1,
             "complete": complete,
             "exe": g.exe.name if g.exe else None,
@@ -1736,9 +1835,37 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "kind": g.kind,
             "sidelined": rep.sidelined,
             "remix": rep.remix,
-        }, ensure_ascii=False, indent=2), encoding="utf8")
+        }, ensure_ascii=False, indent=2))
     except OSError:
         pass
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Write beside, then replace: a failed write leaves the old file whole.
+
+    write_text() empties the file first. On a full drive that lost the
+    previous install's record - the list uninstall reads - and the note
+    saying the drive was full was never written either.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf8")
+        # An antivirus or the indexer holding the old file for a moment
+        # makes the replace fail; a moment later it goes through.
+        for attempt in range(3):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.1)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def options_from_manifest(root: Path) -> Options | None:
@@ -1811,9 +1938,13 @@ def preflight(g: games.Game) -> None:
             probe.write(b"x")
     except PermissionError as e:
         if games.is_locked_store_path(root):
+            # Xbox / Game Pass: the folder is owned by the system, and
+            # elevation does not help - the Xbox app has the switch for it.
+            from . import log
+            log.write(f"preflight: cannot write into {root}: {e}", "warn")
             raise InstallError(
-                f"Cannot create/remove a temporary file in:\n{root}\n\n"
-                f"{games.XBOX_HINT}\n\n{e}") from None
+                f"No permission to write into:\n{root}\n\n"
+                f"{games.XBOX_HINT}") from None
         raise InstallError(
             f"No permission to write into:\n{root}\n\n"
             f"Close the game if it is running, then try again. If that is not "
@@ -1821,6 +1952,8 @@ def preflight(g: games.Game) -> None:
             f"administrator' - some games installed outside Steam or Epic sit "
             f"in folders only an administrator can write to.") from None
     except OSError as e:
+        if net.is_disk_full(e):
+            raise InstallError(net.disk_full_message(e, root, net.CACHE)) from None
         raise InstallError(f"Cannot write into {root}: {e}") from None
 
     if g.exe and g.exe.name.lower() in _running_processes():
@@ -2152,9 +2285,82 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 except ValueError:
                     return str(p)
 
+            rec = _remix_swap_record(g)
+            if not swap and rec:
+                rt0 = trex / remix.RUNTIME_DLL
+                try:
+                    key0 = str(rt0.relative_to(root)).replace("\\", "/")
+                except ValueError:
+                    key0 = str(rt0).replace("\\", "/")
+                if _remix_runtime_replaced(g, trex):
+                    # The mod updated its own runtime, with the pass, since
+                    # our swap: it is the mod's again, and so is whatever it
+                    # brought beside it. Not ours to delete on uninstall.
+                    # The backup of the older runtime would only put that
+                    # one back - moved aside under a name uninstall does not
+                    # restore, rather than deleted, in case this is wrong.
+                    for name in sources.REMIX_RUNTIME_ASSETS:
+                        p = trex / name
+                        try:
+                            k = str(p.relative_to(root)).replace("\\", "/")
+                        except ValueError:
+                            k = str(p).replace("\\", "/")
+                        rep.preinstalled.discard(k)
+                    stale = rt0.with_name(rt0.name + BACKUP_SUFFIX)
+                    aside = stale.with_name(rt0.name + SUPERSEDED_SUFFIX)
+                    if stale.is_file():
+                        try:
+                            os.replace(stale, aside)
+                            rep.notes.append(
+                                f"{_rel(aside)} is the runtime this mod had "
+                                f"before it updated - delete it if you do not "
+                                f"need it")
+                        except OSError:
+                            # Left under the backup name, uninstall would
+                            # put the older runtime back over the mod's.
+                            try:
+                                stale.unlink()
+                            except OSError as e:
+                                rep.warnings.append(
+                                    f"{_rel(stale)} could not be moved aside "
+                                    f"({e}) - rename or delete it before "
+                                    f"uninstalling, or uninstall puts an older "
+                                    f"runtime back")
+                    log("      the mod has its own DLSS 5 runtime now - "
+                        "left as it is")
+                else:
+                    # Still the runtime we swapped in: the record keeps
+                    # saying so, or the next update would not renew it.
+                    rep.components["remix_runtime"] = rec["remix_runtime"]
+                    if rec.get("remix_runtime_stamp"):
+                        rep.components["remix_runtime_stamp"] = rec["remix_runtime_stamp"]
+
             if swap:
                 begin("RTX Remix runtime (DLSS 5 build)")
                 rtag, rurls = sources.resolve_remix_runtime()
+                rt = trex / remix.RUNTIME_DLL
+                if _remix_runtime_replaced(g, trex) and rt.is_file():
+                    # The mod put its own runtime there after our swap. That
+                    # one is now the game's own: it replaces the backup of
+                    # the older one - written beside first and then moved
+                    # over it, so a full drive never leaves neither. Only the
+                    # runtime itself: a mod whose own runtime has no pass
+                    # ships no remix_nvngx.dll, so ours stays ours here.
+                    old_bak = rt.with_name(rt.name + BACKUP_SUFFIX)
+                    tmp_bak = old_bak.with_name(old_bak.name + ".tmp")
+                    try:
+                        shutil.copy2(rt, tmp_bak)
+                        os.replace(tmp_bak, old_bak)
+                    except OSError as e:
+                        try:
+                            tmp_bak.unlink()
+                        except OSError:
+                            pass
+                        raise InstallError(
+                            f"Could not back up the mod's own runtime before "
+                            f"replacing it ({e}). Nothing was replaced.") from e
+                    log("      the mod updated its own runtime since the last "
+                        "swap - that one is kept as the backup")
                 for name in sources.REMIX_RUNTIME_ASSETS:
                     f_ = dl(rurls[name], f"remix-runtime-{rtag}-{name}")
                     _copy(f_, trex / name, rep, root)
@@ -2164,6 +2370,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                     log("      (GitHub's API was out of reach; took the "
                         "newest release by its download redirect)")
                 rep.components["remix_runtime"] = rtag
+                stamp = _runtime_stamp(rt)
+                if stamp:
+                    rep.components["remix_runtime_stamp"] = stamp
                 rep.notes.append(f"remix runtime version: {rtag}")
                 rep.notes.append(
                     "the mod's own Remix runtime was replaced with a "
@@ -2600,7 +2809,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                     if want:
                         log(f"      DLSS5-Feeder {rep.components.get('feeder')} accepts "
                             f"renodx-dlss5 up to {want} - pinning to it (newer builds "
-                            f"conflict; tick 'feeder pre-release' to use them)")
+                            f"conflict; pick 'newest pre-release' under 'feeder build' "
+                            f"to use them)")
                         rep.notes.append(f"renodx-dlss5 pinned to {want} for this "
                                          f"feeder release - newer builds conflict "
                                          f"with it")
@@ -2953,7 +3163,23 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         log("")
         log(str(e))
         raise InstallError(str(e)) from e
-    except Exception:
+    except Exception as e:
+        if net.is_disk_full(e):
+            # Said in words, and recorded: the diagnosis reads this note
+            # instead of telling someone with a full drive to install again.
+            rep.notes.append(net.DISK_FULL_NOTE)
+            _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+            raise InstallError(net.disk_full_message(e, root, net.CACHE)) from e
+        if isinstance(e, InstallError):
+            # The install's own refusal, raised part way through (the Remix
+            # runtime without the neural pass, #148). Recorded as the reason,
+            # or the diagnosis reads an unfinished install and says to
+            # install again - which is refused again for the same reason.
+            # All of it, not the first line: the Remix refusal says what is
+            # wrong in its first paragraph and what to tick in its second.
+            said = " ".join(ln.strip() for ln in str(e).splitlines() if ln.strip())
+            if said:
+                rep.notes.append(net.STOP_NOTE + said[:400])
         _write_manifest(root, g, opt, rep, proxy, level, complete=False)
         log("")
         log(f"Install did not finish. {len(rep.written)} files were already "

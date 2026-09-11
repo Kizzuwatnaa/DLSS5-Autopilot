@@ -193,6 +193,53 @@ def _tar_exe() -> Path:
     return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
 
 
+def _seven_zr_extract(archive: Path, dest: Path, flags: int) -> bool:
+    """Unpack with 7-Zip's one-file 7zr.exe, fetched for this. True if it did.
+
+    The last resort after an installed 7-Zip and tar.exe. "Install 7-Zip"
+    was the answer to #93 and #87 alike - a second program to find and set
+    up, for a tool whose point is that it does that part itself.
+    """
+    urls, want = sources.SEVEN_ZR
+    for url in urls:
+        try:
+            exe = net.download(url, "7zr.exe")
+            if net.sha256(exe) != want:
+                # Not the build that was pinned: never run it, and do not
+                # keep it for next time either.
+                exe.unlink(missing_ok=True)
+                continue
+            r = subprocess.run([str(exe), "x", str(archive), f"-o{dest}", "-y"],
+                               capture_output=True, text=True, creationflags=flags)
+            _raise_if_full(r, dest)
+            return r.returncode == 0
+        except Exception as e:
+            if net.is_disk_full(e):
+                raise
+            continue
+    return False
+
+
+# What 7-Zip and bsdtar print when the drive is full. They report it in a
+# return code, so nothing upstream could tell it from a broken archive, and
+# the advice given was "install 7-Zip" to someone out of space.
+_FULL_WORDS = ("not enough space on the disk", "no space left on device")
+
+
+def _raise_if_full(r, dest: Path) -> None:
+    if r.returncode == 0:
+        return
+    text = ((r.stdout or "") + (r.stderr or "")).lower()
+    # 7-Zip prints Windows' own message, in the language Windows is in, so
+    # the words alone miss most of the world: a nearly empty drive says it.
+    try:
+        low = shutil.disk_usage(dest if dest.exists() else dest.parent).free < (64 << 20)
+    except OSError:
+        low = False
+    if low or any(w in text for w in _FULL_WORDS):
+        raise OSError(28, "No space left on device", str(dest))
+
+
 def _seven_zip() -> Path | None:
     """7-Zip, if this machine has it. Issue #93.
 
@@ -219,6 +266,7 @@ def extract_7z(archive: Path, dest: Path) -> None:
     if sz is not None:
         r = subprocess.run([str(sz), "x", str(archive), f"-o{dest}", "-y"],
                            capture_output=True, text=True, creationflags=flags)
+        _raise_if_full(r, dest)
         if r.returncode == 0:
             return
         seven_err = (r.stderr or r.stdout).strip()[-300:]
@@ -227,6 +275,8 @@ def extract_7z(archive: Path, dest: Path) -> None:
 
     tar = _tar_exe()
     if not tar.is_file():
+        if _seven_zr_extract(archive, dest, flags):
+            return
         raise RuntimeError(
             f"{archive.name} is a .7z archive and there is nothing here to "
             f"open it: no 7-Zip, and this Windows has no tar.exe either "
@@ -235,6 +285,9 @@ def extract_7z(archive: Path, dest: Path) -> None:
             + (f"\n\n7-Zip said: {seven_err}" if seven_err else ""))
     r = subprocess.run([str(tar), "-xf", str(archive), "-C", str(dest)],
                        capture_output=True, text=True, creationflags=flags)
+    _raise_if_full(r, dest)
+    if r.returncode != 0 and _seven_zr_extract(archive, dest, flags):
+        return
     if r.returncode != 0:
         err = (r.stderr or r.stdout).strip()[-300:]
         hint = ""
@@ -242,7 +295,8 @@ def extract_7z(archive: Path, dest: Path) -> None:
             # The exact failure #93 reported, and the answer is not obvious
             # from the message Windows gives.
             hint = ("\n\nWindows' own tar.exe is built without LZMA, so it "
-                    "cannot open a .7z on this machine. Install 7-Zip "
+                    "cannot open a .7z on this machine, and 7-Zip's own small "
+                    "unpacker could not be fetched either. Install 7-Zip "
                     "(7-zip.org) and run the install again - it is used "
                     "first when it is there.")
         raise RuntimeError(f"tar.exe could not unpack {archive.name}: "

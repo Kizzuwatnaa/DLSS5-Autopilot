@@ -613,10 +613,21 @@ def _score(exe: Path, folder: Path) -> float:
         pass
     # Very deep = probably a helper
     s -= rel.count("/") * 15
+    # Unity keeps the game's data in <exe name>_Data beside the player, and
+    # nothing else has one. The player exe itself is small - under a
+    # megabyte - so size alone ranked the launcher beside it higher (#152).
+    try:
+        if (exe.parent / f"{exe.stem}_Data").is_dir():
+            s += 300
+    except OSError:
+        pass
     return s
 
 
 _TRIAL = re.compile(r"[\s._-]*(trial|demo)$")
+# "UBOAT Launcher.exe" beside "UBOAT.exe": the launcher is the settings box
+# that starts the game, and ReShade in front of it hooks nothing (#152).
+_LAUNCHER = re.compile(r"[\s._-]*launcher$")
 
 
 def find_game_exes(folder: Path) -> list[Path]:
@@ -635,9 +646,10 @@ def find_game_exes(folder: Path) -> list[Path]:
     # the trial stays in the list for whoever plays it.
     stems = {(p.parent, p.stem.lower()) for p in cands}
     for p in cands:
-        base = _TRIAL.sub("", p.stem.lower())
-        if base != p.stem.lower() and (p.parent, base) in stems:
-            score[p] -= 600
+        for pat in (_TRIAL, _LAUNCHER):
+            base = pat.sub("", p.stem.lower())
+            if base != p.stem.lower() and (p.parent, base) in stems:
+                score[p] -= 600
     scored = sorted(cands, key=lambda p: score[p], reverse=True)
     # Drop obvious helpers, but never return nothing if that is all there is.
     good = [p for p in scored if score[p] > -500]

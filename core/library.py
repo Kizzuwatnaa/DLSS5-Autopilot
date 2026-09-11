@@ -141,11 +141,24 @@ def save(all_games: list, rows: dict, version: str, sm) -> None:
         }
         FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = FILE.with_suffix(f".{os.getpid()}-{threading.get_ident()}.tmp")
-        tmp.write_text(json.dumps(data), encoding="utf8")
-        os.replace(tmp, FILE)
-    except Exception:
-        from . import log
-        log.exception("saving the library cache")
+        try:
+            tmp.write_text(json.dumps(data), encoding="utf8")
+            os.replace(tmp, FILE)
+        finally:
+            # A write that failed half way (a full drive, #148) left its
+            # .tmp behind on every save, taking more of the space it lacked.
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+    except Exception as e:
+        from . import log, net
+        if net.is_disk_full(e):
+            log.write("the library cache was not saved: the drive is full",
+                      "warn")
+        else:
+            log.exception("saving the library cache")
 
 
 def load(version: str, sm) -> tuple[list, dict, list] | None:

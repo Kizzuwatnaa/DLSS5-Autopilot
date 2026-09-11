@@ -132,7 +132,7 @@ def overlaps(app_):
 
 
 for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
-              dlss.UPSTREAM, dlss.STANDALONE):
+              dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
     try:
         app._apply_route(route)
         root.update()
@@ -141,6 +141,21 @@ for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
         ok(f"...no two controls share a cell on {route}", not bad, bad[:3])
     except Exception as e:
         ok(f"the {route} route renders its page", False, f"{type(e).__name__}: {e}")
+
+# The Remix route's one control. Every message about a runtime without the
+# neural pass said "tick 'swap the Remix runtime'", and the page never had
+# it - REMIX was not even in the route loop above (#148).
+app._apply_route(dlss.REMIX)
+root.update()
+ok("the Remix route shows 'swap the Remix runtime'",
+   app.ck_remixswap.winfo_ismapped())
+app.ck_remixswap.invoke()             # a click, through Tk's own handler
+root.update()
+ok("...a click reaches the install options", app._opts().remix_swap is True)
+app._apply_route(dlss.FEEDER)
+root.update()
+ok("...another route hides it and drops the choice",
+   not app.ck_remixswap.winfo_ismapped() and app._opts().remix_swap is False)
 
 app._apply_route(dlss.FEEDER)
 app.target_fps.set("60")
@@ -436,6 +451,62 @@ try:
     games.scan_all = _scan_all
 except Exception as e:
     ok("after an update it opens on the library, not the first page", False,
+       f"{type(e).__name__}: {e}")
+
+# #144: "rescan" reads what the stores list and inspects only the game it has
+# not seen; "full rescan" is the walk over every drive. Both through the
+# buttons themselves.
+try:
+    from core import library as _lib, update as _upd
+    _new = Path(tempfile.mkdtemp(prefix="walk_new_"))
+    (_new / "New.exe").write_bytes(b"MZ" + b"\0" * 200)
+    _saved = (games.scan_all, games.list_games, games.enrich)
+    _full, _inspected = [], []
+    games.scan_all = lambda progress=None: _full.append(1) or []
+    games.list_games = lambda progress=None, emulators=True: [
+        games.Game(name="Walkthrough Game", folder=d, source="Manual"),
+        games.Game(name="A New Game", folder=_new, source="Steam")]
+    games.enrich = lambda g, chosen=False: (_inspected.append(g.name),
+                                            _saved[2](g, chosen))[1]
+    root = tk.Tk()
+    app = gui.App(root)
+    root.update()
+    _lib.save([g], {}, _upd.VERSION, app._sm())
+
+    def _press(text):
+        def find(w):
+            try:
+                if str(w.cget("text")) == text:
+                    return w
+            except tk.TclError:
+                pass
+            for c in w.winfo_children():
+                r = find(c)
+                if r is not None:
+                    return r
+        find(app.pages[1]).invoke()
+        for _ in range(200):
+            root.after(20)
+            root.update()
+            if not app.busy:
+                break
+
+    app._show(2)
+    root.update()
+    _press("rescan")
+    names = sorted(x.name for x in app.all_games)
+    ok("'rescan' adds the new game without the full walk",
+       "A New Game" in names and "Walkthrough Game" in names and not _full,
+       (names, _full))
+    ok("...and inspects only the game it had not seen",
+       _inspected == ["A New Game"], _inspected)
+    _press("full rescan")
+    ok("'full rescan' walks everything", _full == [1], _full)
+    close(root)
+    games.scan_all, games.list_games, games.enrich = _saved
+    _lib.FILE.unlink(missing_ok=True)
+except Exception as e:
+    ok("'rescan' adds the new game without the full walk", False,
        f"{type(e).__name__}: {e}")
 
 print()

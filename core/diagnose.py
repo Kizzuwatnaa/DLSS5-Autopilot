@@ -84,7 +84,9 @@ _DEPTH_HINT = (
     "buffer list: one has to be selected. If none is, or it switches when "
     "you change display mode, try 'Use aspect ratio heuristics' set to off "
     "there. Borderless, display scaling and an in-game render scale below "
-    "100% are the usual reason the buffer stops matching.")
+    "100% are the usual reason the buffer stops matching. If one is selected "
+    "and the depth is still flat, tick 'Copy depth buffer before clear "
+    "operations' on the same tab - Mass Effect Legendary Edition needs it.")
 
 _COMPILER_FIX = (
     "The game ships its own d3dcompiler_47.dll and it predates Shader Model "
@@ -1045,6 +1047,23 @@ def analyse(install_dir: Path) -> Report:
     # downloaded reported as "MISSING" as if antivirus had eaten them.
     # Nothing below this can mean anything until the install is finished.
     if man.get("complete") is False:
+        from . import net as _net
+        if _net.DISK_FULL_NOTE in (man.get("notes") or []):
+            rep.add(BAD, "The install stopped because the drive was full.",
+                    "Whatever had not been written yet is missing, which is "
+                    "why files are listed as gone. Free up a few hundred MB "
+                    "on the game's drive and on the one %LOCALAPPDATA% is on, "
+                    "then press INSTALL again.")
+            rep.verdict = "The drive was full - free up space and install again."
+            return rep
+        stopped = next((n[len(_net.STOP_NOTE):] for n in (man.get("notes") or [])
+                        if isinstance(n, str) and n.startswith(_net.STOP_NOTE)), "")
+        if stopped:
+            rep.add(BAD, "The install was stopped before it finished.",
+                    f"It said: {stopped} Whatever came before that step is in "
+                    f"place; nothing after it was written.")
+            rep.verdict = "The install stopped for a reason of its own - see below."
+            return rep
         # An uninstall that could not remove everything records itself the
         # same way, and telling that person to install again is the opposite
         # of what they need. Its own note says which it was.
@@ -1300,10 +1319,15 @@ def analyse(install_dir: Path) -> Report:
         # vkCreateSwapchainKHR instead, so looking only for the DXGI ones
         # called every Vulkan session a game that never drew a frame, right
         # next to "frames are being processed". Seen on Bayonetta via DXVK.
+        # And whatever the API: a frame the feed delivered was drawn. OpenGL
+        # has no swap-chain line of either kind, and Octowow (#156) - running,
+        # frames delivered at 3440x1440 - was told it closed before it drew
+        # anything, above the finding that said frames were processed.
+        drew = bool(re.search(r"frame \d+ (?:delivered|evaluated)", text or ""))
         if "Registered add-on" in rtext and "Exiting" in rtext \
                 and "CreateSwapChain" not in rtext and "Presenting" not in rtext \
                 and "vkCreateSwapchainKHR" not in rtext \
-                and not d3d9_only:
+                and not d3d9_only and not drew:
             rep.add(BAD, "The game closed before it drew a single frame.",
                     "ReShade attached and the device was created, but no swap "
                     "chain ever was, so the game quit during start-up. That "
@@ -1358,14 +1382,38 @@ def analyse(install_dir: Path) -> Report:
             found = False
         else:
             found = None
+        # "MISSING" right after a runtime starts is often just "not compiled
+        # yet": the feed says so ("has not resolved yet ... waiting 10 s")
+        # and decides later. A game that closes inside those ten seconds
+        # never got the later answer - Half Sword (#142) died of "out of
+        # video memory" one second in and was told the shader never loaded,
+        # and that its motion-vector shader was not installed, over a file
+        # list showing both in place.
+        last_missing = max((m.end() for m in re.finditer(
+            r"DLSS5_Feed\.fx technique MISSING", text)), default=-1)
+        tail = text[last_missing:] if last_missing >= 0 else ""
+        pending = found is False and "DLSS5_Feed.fx has not resolved yet" in tail \
+            and "is not loaded" not in tail and "technique found" not in tail \
+            and not re.search(r"frame \d+ (?:delivered|evaluated)", tail)
         if found:
             rep.add(OK, "DLSS5_Feed.fx loaded and its textures were found.")
+        elif pending:
+            rep.add(WARN, "The game closed while ReShade was still compiling "
+                          "the effects.",
+                    "The feed waits a few seconds for DLSS5_Feed.fx to compile "
+                    "before it calls it missing, and the session ended inside "
+                    "that wait - so nothing here says the shader is broken. "
+                    + ("Start" if re.search(r"frame \d+ (?:delivered|evaluated)", text) else
+                       "If the game closed on its own, it closed before the "
+                       "feed handed DLSS 5 a single frame: start")
+                    + " it again and give it that time, and check it "
+                    "starts without the install if it closes again.")
         elif found is False:
             rep.add(BAD, "DLSS5_Feed.fx never loaded.",
                     "Check the ReShade overlay for a compile error and that "
                     "reshade-shaders\\Shaders holds DLSS5_Feed.fx.")
 
-        if prov:
+        if prov and not pending:
             _n, name, _t, state = prov[-1]
             if "enabled" in state:
                 rep.add(OK, f"Motion vectors: {name} is enabled.")
@@ -1723,11 +1771,33 @@ def analyse(install_dir: Path) -> Report:
         if perf:
             rep.add(INFO, f"{perf.group(1)} frames at {perf.group(3)} fps, "
                           f"{perf.group(2)} ms/frame spent on the feed.")
+        # Frames came, and then the feed said it stopped - "the 64-bit host
+        # went away" on a 32-bit game, and the game carries on without the
+        # pass. Octowow (#156) was called "Working." on exactly that log
+        # whenever the helper's own log was not in the folder to name the
+        # fault.
+        last_frame = max((m.end() for m in re.finditer(
+            r"frame \d+ (?:delivered|evaluated)", text or "")), default=-1)
+        stop = None
+        for m in re.finditer(r"stopped: ([^\n]+)", text or ""):
+            if m.start() > last_frame:
+                stop = m
         if old_compiler:
             rep.add(BAD, "The game's own d3dcompiler_47.dll is too old for "
                          "the neural pass.", _COMPILER_FIX)
             rep.verdict = ("Frames flow, but neural rendering is silently doing "
                            "nothing - old d3dcompiler_47.dll in the game folder.")
+        elif stop is not None:
+            why = stop.group(1).split(" -- ")[0].strip().rstrip(".")
+            rep.add(BAD, f"The feed stopped after frame {delivered[-1]}: {why}.",
+                    "The game kept running without the pass from that point. "
+                    + ("On a 32-bit game the pass runs in a 64-bit helper; "
+                       "host64\\dlss5-feed-host.log, when it is there, says why "
+                       "it ended. If that is a crash inside NVIDIA's runtime "
+                       "on driver 616.64 or newer, 616.56 is the test."
+                       if "host" in why else
+                       "dlss5-feed.log has the lines just before it."))
+            rep.verdict = "It started, then the feed stopped - see why below."
         else:
             rep.verdict = "Working."
     elif ready:
@@ -2083,6 +2153,13 @@ def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
     Over budget, the lines nothing reads go first.
     """
     kept = [ln for ln in text.splitlines() if any(k in ln for k in _RESHADE_KEEP)]
+    if not kept and text.strip():
+        # A log with none of those lines is still a log: ReShade started and
+        # stopped before any add-on registered. The report printed "(none)"
+        # for it (#155), which reads as "ReShade never loaded" - the opposite
+        # - and left nothing to replay.
+        return [_HOOK_ADDRESSES.sub("", ln.rstrip())[:200]
+                for ln in text.splitlines() if ln.strip()][-min(n, 12):]
     # A 250 KB tail can hold thousands of these; only the newest of each
     # kind can end up in the excerpt, so the rest are not looked at twice.
     firm = set(sorted(i for i, ln in enumerate(kept)
@@ -2341,9 +2418,16 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         # log is enormous and the rest of it is path-tracing chatter.
         from . import remix as _remix
         rtx_log = _tail(_remix.log_path(d), 300_000)
-        parts.append(_block("remix-dxvk.log", _last_lines(
+        nr_lines = _last_lines(
             rtx_log, 20, lambda ln: "DLSS-NR" in ln or "dlssnr" in ln.lower()
-            or "Neural" in ln), 1200))
+            or "Neural" in ln)
+        # A log with no such line is itself the answer (the runtime never
+        # tried the pass) - say so, with its last lines, rather than "(none)",
+        # which reads as no log at all (#155 had the same shape).
+        if not nr_lines and rtx_log.strip():
+            nr_lines = (["(no DLSS-NR line in this log - its last lines:)"]
+                        + _last_lines(rtx_log, 8))
+        parts.append(_block("remix-dxvk.log", nr_lines, 1200))
     if last_error:
         parts.append(f"\n**Last error**\n```\n{last_error[-900:]}\n```\n")
     parts.append(_block(

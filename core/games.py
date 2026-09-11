@@ -37,14 +37,28 @@ def _isdir(p) -> bool:
     except OSError:
         return False
 
-XBOX_HINT = ("Windows does not allow creating and removing the files needed "
-             "for the mod in this Xbox / Game Pass install directory. "
-             "Executable protection and directory write access are separate; "
-             "installation cannot continue here.")
-XBOX_EXE_HINT = ("Executable header cannot be read because this Xbox title "
-                 "protects the EXE. Architecture must be set by hand; graphics "
-                 "API evidence comes from other files or your override. "
-                 "The installer still checks directory write access.")
+# What to tell someone whose Xbox / Game Pass folder cannot be written to.
+# One sentence, shared with the installer so both places say the same thing.
+XBOX_HINT = ("Windows does not let anything write into this Xbox / Game Pass "
+             "folder. Only games whose publisher allows modding have 'Enable "
+             "mods' (or 'Manage > Files > Browse') in the Xbox app; if yours "
+             "has it, turn it on and press rescan. If it does not - Microsoft "
+             "Flight Simulator, most Store titles - no tool can change this "
+             "folder, and the Steam version of the game is the one that can "
+             "be set up.")
+# A protected executable is a different thing from a locked folder (#157,
+# Forza Horizon 6): the exe cannot be opened, the folder beside it can be
+# written. What is lost is what the exe would have told us.
+XBOX_EXE_HINT = ("Windows protects this Xbox game's executable, so the tool "
+                 "cannot read it. Choose 64-bit or 32-bit in the game's "
+                 "details (almost every Game Pass game is 64-bit) and check "
+                 "the graphics API there - that guess comes from the files "
+                 "beside the game, not from the game itself.")
+# ...and on the install page, where the choice has already been made.
+XBOX_EXE_CHOSEN = ("Windows protects this executable: the architecture is "
+                   "the one chosen on the games page, and the graphics API is "
+                   "chosen there or guessed from the files beside the game - "
+                   "neither is read from the game.")
 
 # Folder names Windows keeps under its own ownership for store games. Exact
 # segment match on purpose: ModifiableWindowsApps is the one that IS meant
@@ -827,14 +841,100 @@ def enrich(g: Game, chosen: bool = False) -> Game:
 
 def scan_all(progress=None) -> list[Game]:
     """Scan every source, resolve executables, sort by name."""
+    games = list_games(progress)
+    total = len(games)
+    for i, g in enumerate(games, 1):
+        if progress:
+            progress(f"Inspecting games... {i}/{total}: {g.name}")
+        started = time.monotonic()
+        enrich(g)
+        if time.monotonic() - started >= 1:
+            log.write(f"inspected {g.name} in {time.monotonic() - started:.1f}s")
+    games = same_exe_once(games)
+    games.sort(key=lambda g: g.name.lower())
+    return games
+
+
+def quick_scan(known: list, progress=None) -> tuple[list, list]:
+    """The library as it stands, reading only what is new: (games, fresh).
+
+    #144: six drives, one of them an old USB disk, and every new game meant
+    walking all of them again. The stores' own lists are cheap to read - it
+    is the per-game inspection and the emulator search across drives that
+    take the time. So the stores are asked what they have, a game already
+    in `known` is kept as it was read, and only folders not seen before are
+    inspected. `fresh` are those, for the caller to check. Emulators are not
+    searched for again; "full rescan" does that.
+    """
+    have: dict = {}
+    for g in known:
+        try:
+            have[g.folder.resolve()] = g
+        except OSError:
+            continue
+    fresh = []
+    listed = list_games(progress, emulators=False)
+    seen = set()
+    for g in listed:
+        try:
+            seen.add(g.folder.resolve())
+        except OSError:
+            continue
+
+    def still_here(g) -> bool:
+        """Kept unless a store listed it before and lists it no more.
+
+        A game removed in Steam often leaves its folder behind, and a quick
+        rescan that only ever added would keep it forever. What no store
+        lists in the first place stays: a folder chosen by hand, an emulator
+        (not searched for here), and anything this tool set up, so it can
+        still be uninstalled.
+        """
+        if not g.folder.exists():
+            return False
+        if g.source in ("Manual", "Emulator") or getattr(g, "kind", "") == "video":
+            return True
+        try:
+            if g.folder.resolve() in seen:
+                return True
+        except OSError:
+            return True
+        try:
+            return bool(g.installed)
+        except Exception:
+            return True
+
+    out = [g for g in known if still_here(g)]
+    for g in listed:
+        try:
+            key = g.folder.resolve()
+        except OSError:
+            continue
+        if key in have:
+            continue
+        if progress:
+            progress(f"Inspecting a new game: {g.name}")
+        enrich(g)
+        have[key] = g
+        out.append(g)
+        fresh.append(g)
+    out = same_exe_once(out)
+    out.sort(key=lambda g: g.name.lower())
+    return out, [g for g in fresh if g in out]
+
+
+def list_games(progress=None, emulators: bool = True) -> list[Game]:
+    """What every store says is installed, before anything is inspected."""
     games: list[Game] = []
-    for label, fn in (("Steam", scan_steam), ("Epic", scan_epic),
-                      ("GOG", scan_gog), ("EA", scan_ea),
-                      ("Ubisoft", scan_ubisoft), ("Battle.net", scan_battlenet),
-                      ("Rockstar", scan_rockstar), ("Amazon", scan_amazon),
-                      ("itch", scan_itch), ("Heroic", scan_heroic),
-                      ("Xbox", scan_xbox), ("Folders", scan_folders),
-                      ("Emulator", scan_emulators)):
+    sources_ = [("Steam", scan_steam), ("Epic", scan_epic),
+                ("GOG", scan_gog), ("EA", scan_ea),
+                ("Ubisoft", scan_ubisoft), ("Battle.net", scan_battlenet),
+                ("Rockstar", scan_rockstar), ("Amazon", scan_amazon),
+                ("itch", scan_itch), ("Heroic", scan_heroic),
+                ("Xbox", scan_xbox), ("Folders", scan_folders)]
+    if emulators:
+        sources_.append(("Emulator", scan_emulators))
+    for label, fn in sources_:
         if progress:
             progress(f"Scanning {label}...")
         try:
@@ -863,20 +963,8 @@ def scan_all(progress=None) -> list[Game]:
     junk = ("steamlibrary", "steamapps", "epic games", "gog galaxy", "ea games",
             "ubisoft", "xboxgames", "amazon games", "battle.net", "common",
             "riot games", "rockstar games")
-    games = [g for g in games
-             if not (g.source == "Folder" and g.folder.name.lower() in junk)]
-
-    total = len(games)
-    for i, g in enumerate(games, 1):
-        if progress:
-            progress(f"Inspecting games... {i}/{total}: {g.name}")
-        started = time.monotonic()
-        enrich(g)
-        if time.monotonic() - started >= 1:
-            log.write(f"inspected {g.name} in {time.monotonic() - started:.1f}s")
-    games = same_exe_once(games)
-    games.sort(key=lambda g: g.name.lower())
-    return games
+    return [g for g in games
+            if not (g.source == "Folder" and g.folder.name.lower() in junk)]
 
 
 def same_exe_once(games: list) -> list:
