@@ -225,6 +225,21 @@
     }
    }
   },
+  "masseffect1.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Mass Effect\u2122 Legendary Edition",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "needforspeedheat.exe": {
    "drivers": {
     "616.64": {
@@ -394,6 +409,6 @@
    }
   }
  },
- "generated": "2026-09-11T04:22:27Z",
- "reports": 32
+ "generated": "2026-09-11T05:23:40Z",
+ "reports": 33
 }
