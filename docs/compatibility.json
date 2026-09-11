@@ -344,6 +344,21 @@
     }
    }
   },
+  "skyrimse.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "The Elder Scrolls V: Skyrim Special Edition",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "sottr.exe": {
    "drivers": {
     "616.92": {
@@ -409,6 +424,6 @@
    }
   }
  },
- "generated": "2026-09-11T09:28:49Z",
- "reports": 36
+ "generated": "2026-09-11T12:30:03Z",
+ "reports": 37
 }
