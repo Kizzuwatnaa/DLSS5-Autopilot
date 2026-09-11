@@ -37,7 +37,7 @@ from pathlib import Path
 
 from . import prefs
 
-SCHEMA = 1
+SCHEMA = 2
 # Beside settings.json in %LOCALAPPDATA%, not beside the executable: the
 # exe is run from Downloads, from a USB stick, from a folder Defender
 # has taken an interest in - none of them a place to keep state.
@@ -73,6 +73,7 @@ def _to_json(g) -> dict:
         "source": g.source,
         "candidates": [str(c) for c in (g.candidates or [])],
         "error": g.error,
+        "exe_warning": g.exe_warning,
         "install_root": str(g.install_root) if g.install_root else None,
         "kind": g.kind,
         "stamp": _stamp(g),
@@ -93,9 +94,13 @@ def _from_json(d: dict):
         source=d.get("source") or "Manual",
         candidates=[Path(c) for c in d.get("candidates") or []],
         error=d.get("error") or "",
+        exe_warning=d.get("exe_warning") or "",
         install_root=Path(d["install_root"]) if d.get("install_root") else None,
         kind=d.get("kind") or "game",
     )
+    if g.exe_warning:
+        g.bitness = games.bitness_override(g.folder)
+        g.api = g.api_detected or "?"
     # A graphics API set by hand on the install page lives in the settings,
     # not in the library, and it has to win here exactly as it wins in
     # games.enrich(): a cached game that came back with its DETECTED renderer
@@ -171,7 +176,9 @@ def load(version: str, sm) -> tuple[list, dict, list] | None:
             if not g.folder.exists():
                 continue                      # the game (or its drive) is gone
             out.append(g)
-            if _stamp(g) != [list(x) if x else None for x in (d.get("stamp") or [])]:
+            # Protection can change without an EXE timestamp change; also
+            # recheck manual metadata rather than reuse a compatibility row.
+            if g.exe_warning or _stamp(g) != [list(x) if x else None for x in (d.get("stamp") or [])]:
                 changed.append(g)             # changed on disk: read it again
                 continue
             r = raw.get(_key(g))

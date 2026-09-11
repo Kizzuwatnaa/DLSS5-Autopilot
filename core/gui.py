@@ -708,9 +708,7 @@ class App:
         self._jump(2 if self._have_library() else 1)
 
     def _can_install_page(self) -> bool:
-        """A game is picked, and one the tool can set up: 'continue' is off
-        for an Xbox game without mods enabled, and the rail must not be the
-        way round it."""
+        """A game is picked and has the metadata needed to install."""
         if not self.game:
             return False
         try:
@@ -1130,6 +1128,21 @@ class App:
                                bg=PANEL, fg=FAINT, font=font(9),
                                anchor="w", justify="left")
         self.detail.pack(fill="x")
+        self.protected_details = tk.Frame(det.inner, bg=PANEL)
+        tk.Label(self.protected_details, text=games.XBOX_EXE_HINT, bg=PANEL,
+                 fg=RUST, font=font(9), anchor="w", justify="left",
+                 wraplength=px(800)).pack(fill="x", pady=(6, 0))
+        choices = tk.Frame(self.protected_details, bg=PANEL)
+        choices.pack(anchor="w", pady=(6, 0))
+        ttk.Label(choices, text="architecture").pack(side="left")
+        self.cb_bitness = ttk.Combobox(choices, state="readonly", width=31,
+                                      values=["auto - protected EXE", "64-bit", "32-bit"])
+        self.cb_bitness.pack(side="left", padx=(8, 16))
+        self.cb_bitness.bind("<<ComboboxSelected>>", self._on_bitness)
+        ttk.Label(choices, text="graphics api").pack(side="left")
+        self.cb_protected_api = ttk.Combobox(choices, state="readonly", width=25)
+        self.cb_protected_api.pack(side="left", padx=(8, 0))
+        self.cb_protected_api.bind("<<ComboboxSelected>>", self._on_api)
         return f
 
     def _pick_folder(self) -> None:
@@ -1779,8 +1792,7 @@ class App:
         try:
             ok, _ = installer.check_supported(g)
             if not ok:
-                # A locked Xbox executable already has a useful error; a
-                # second search cannot make it readable.
+                # Missing metadata or a fatal scan error: show its reason.
                 return False, "-", installer.EXPERIMENTAL, "-", False, ""
             sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
             level, _ = installer.reliability(g, sup.recommended)
@@ -1841,7 +1853,8 @@ class App:
                 continue
             ok, route, level, outlook, ac_present, ac_summary = row
             if not ok:
-                status, tag, outlook = "unsupported", "unsupported", "-"
+                status = "needs metadata" if g.exe_warning and not g.error else "unsupported"
+                tag, outlook = "unsupported", "-"
             elif ac_present:
                 # Not refused - it is their machine - but said up front, and
                 # asked again before INSTALL.
@@ -1904,6 +1917,7 @@ class App:
                        "store returned")
         self.scanlbl.config(text=msg)
         self.game = None
+        self.protected_details.pack_forget()
         self.detail.config(text="select a game for details", fg=FAINT)
         self.btn_next.config(state="disabled")
         self._paint_rail()
@@ -1918,6 +1932,13 @@ class App:
         self.game = g
         self._paint_rail()
         ok, why = installer.check_supported(g)
+        self.protected_details.pack_forget()
+        if g.exe_warning:
+            self.cb_bitness.current({64: 1, 32: 2}.get(g.bitness, 0))
+            self.cb_protected_api["values"] = [f"auto - {g.api_detected}"] + list(games.APIS)
+            forced = games.api_override(g.folder)
+            self.cb_protected_api.current(games.APIS.index(forced) + 1 if forced in games.APIS else 0)
+            self.protected_details.pack(fill="x")
         sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm())
         level, why_rel = installer.reliability(g, sup.recommended)
         proxy = installer._proxy_name(g.api, self._opts().reshade_proxy)
@@ -2987,6 +3008,8 @@ class App:
         self.route = path
         usable, note = self.route_fit.get(path, (True, ""))
         parts: list[tuple[str, str]] = []
+        if self.game and self.game.exe_warning:
+            parts.append(("warn", self.game.exe_warning))
         if not usable:
             parts.append(("bad", f"NOT FOR THIS PC - {note}."))
         parts.append(("blurb", dlss.BLURB[path]))
@@ -3343,10 +3366,10 @@ class App:
         g = self.game
         if not g or not hasattr(self, "cb_api"):
             return
-        i = self.cb_api.current()
+        cb = _e.widget if _e is not None else self.cb_api
+        i = cb.current()
         chosen = "" if i <= 0 else games.APIS[i - 1]
         games.set_api_override(g.folder, chosen or None)
-        self.root.after(1, self._remember_library)
         detected = getattr(g, "api_detected", "") or g.api
         if chosen:
             g.api, g.api_why = chosen, f"set by hand (detected {detected})"
@@ -3359,14 +3382,37 @@ class App:
             except Exception:
                 g.api, g.api_why = detected, "detected from the executable"
         self._log(f"> graphics api: {g.api}" + ("" if chosen else " (auto)"))
+        if cb is self.cb_protected_api:
+            self._refresh_metadata()
+            return
+        self.root.after(1, self._remember_library)
+        self._forget_row(g)
         self._enter_install()
+
+    def _on_bitness(self, _e=None) -> None:
+        if not self.game or not self.game.exe_warning:
+            return
+        chosen = {1: 64, 2: 32}.get(self.cb_bitness.current())
+        games.set_bitness_override(self.game.folder, chosen)
+        self.game.bitness = chosen
+        self._refresh_metadata()
+
+    def _refresh_metadata(self) -> None:
+        g = self.game
+        self._forget_row(g)
+        self._fill()
+        if g in self.shown:
+            self.tree.selection_set(str(self.shown.index(g)))
+            self._on_pick()
+        self._remember_library()
 
     def _enter_install(self) -> None:
         g = self.game
         self.gamelbl.config(text=g.name)
         if getattr(g, "kind", "") != "video":
             detected = getattr(g, "api_detected", "") or g.api
-            self.cb_api["values"] = [f"auto  -  {detected} from the executable"] + \
+            origin = "other files (protected EXE)" if g.exe_warning else "the executable"
+            self.cb_api["values"] = [f"auto  -  {detected} from {origin}"] + \
                 [{"DX9": "DirectX 9", "DX10": "DirectX 10", "DX11": "DirectX 11",
                   "DX12": "DirectX 12"}.get(a, a) for a in games.APIS]
             forced = games.api_override(g.folder)
@@ -3800,7 +3846,7 @@ class App:
             self._show(2)
             self._enter_library(asked=True)
         elif self.step == 2:
-            if not self.game:
+            if not self._can_install_page():
                 return
             self._show(3)
             self._enter_install()

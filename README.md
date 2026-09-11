@@ -386,10 +386,12 @@ antivirus or VPN inside the HTTPS connection; turn that off for the tool.
 Not every launcher is in the registry, and an executable locked at scan
 time (antivirus, an updater, OneDrive placeholders) cannot be read.
 **open log file** shows what each store returned; **choose folder** always
-works. Xbox/Game Pass: only games whose publisher allows modding show
-*Manage > Files > Browse* (or *Enable mods*) in the Xbox app - use it and
-rescan; without it the folder cannot be modified by anything, and the
-Steam version can.
+works. Xbox/Game Pass can protect the executable while allowing files beside
+it. For a protected EXE, choose **architecture** in the game details and
+check **graphics api** (both choices are remembered for that folder). The
+protection warning stays visible; installation still tests actual directory
+write access and stops if Windows refuses it. No ownership or ACL changes
+are made. An Xbox app "Enable mods" toggle is not required or assumed.
 </details>
 
 <details>

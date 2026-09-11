@@ -37,14 +37,14 @@ def _isdir(p) -> bool:
     except OSError:
         return False
 
-# What to tell someone whose Xbox / Game Pass game we cannot even read.
-# One sentence, shared with the installer so both places say the same thing.
-XBOX_HINT = ("Windows keeps this Store/Game Pass folder locked. Only games "
-             "whose publisher allows modding show 'Manage > Files > Browse' "
-             "(or 'Enable mods') in the Xbox app; if that entry is there, "
-             "use it and rescan. If it is not - Microsoft Flight Simulator, "
-             "most Store titles - the folder cannot be modified by anything, "
-             "and the Steam version of the game is the one that can be.")
+XBOX_HINT = ("Windows does not allow creating and removing the files needed "
+             "for the mod in this Xbox / Game Pass install directory. "
+             "Executable protection and directory write access are separate; "
+             "installation cannot continue here.")
+XBOX_EXE_HINT = ("Executable header cannot be read because this Xbox title "
+                 "protects the EXE. Architecture must be set by hand; graphics "
+                 "API evidence comes from other files or your override. "
+                 "The installer still checks directory write access.")
 
 # Folder names Windows keeps under its own ownership for store games. Exact
 # segment match on purpose: ModifiableWindowsApps is the one that IS meant
@@ -55,9 +55,7 @@ _LOCKED_STORE_DIRS = ("xboxgames", "windowsapps")
 def is_locked_store_path(path: Path) -> bool:
     r"""Is this path inside C:\XboxGames or a WindowsApps folder?
 
-    Says nothing about whether it is readable - a game that has had "Enable
-    mods" applied stays under XboxGames and works fine. It only tells the
-    caller that a permission failure here has a known, non-admin fix.
+    Says nothing about read or write access; callers must probe separately.
     """
     try:
         parts = Path(path).parts
@@ -67,24 +65,15 @@ def is_locked_store_path(path: Path) -> bool:
 
 
 def _xbox_locked(g: "Game") -> bool:
-    r"""Sets the Enable-mods error when a store-owned executable is unreadable.
-
-    Game Pass installs under C:\XboxGames\<Game>\Content belong to the system:
-    a normal user cannot open the exe for reading, so every scan logged
-    "Permission denied" as a warning and the game showed a cryptic header
-    error. The fix is a switch in the Xbox app, not "run as administrator",
-    and taking ownership of the folder for the person is not our business.
-    os.access() is not used because on Windows it only looks at the read-only
-    attribute, not the ACL that is actually in the way.
-    """
+    """Warn about EXE protection without inferring directory write access."""
     if g.exe is None or not is_locked_store_path(g.exe):
         return False
     try:
         with open(g.exe, "rb") as f:
             f.read(1)
     except PermissionError:
-        g.error = XBOX_HINT
-        log.write(f"{g.name}: {g.exe} is not readable yet - {XBOX_HINT}")
+        g.exe_warning = XBOX_EXE_HINT
+        log.write(f"{g.name}: {g.exe} is protected - {XBOX_EXE_HINT}")
         return True
     except OSError:
         return False
@@ -106,6 +95,7 @@ class Game:
     emu: object | None = None    # emulators.Profile, when applicable
     install_root: Path | None = None   # folder an earlier install wrote to
     kind: str = "game"             # "game" or "video" (a player, no depth)
+    exe_warning: str = ""          # protected Xbox EXE; not a write-access verdict
 
     @property
     def install_dir(self) -> Path:
@@ -458,15 +448,8 @@ XBOX_NOT_GAMES = {"gamesave", "minecraft launcher"}
 def scan_xbox() -> list[Game]:
     r"""Xbox / Game Pass.
 
-    Only ModifiableWindowsApps is readable and writable; the protected
-    WindowsApps copy cannot be modified at all, so listing it would offer
-    installs that can never work.
-
-    XboxGames is listed even though its Content folders are system-owned
-    until the person flips "Enable mods" in the Xbox app: `enrich` turns the
-    resulting permission error into that instruction, and after the switch
-    (or when the game moved to a folder of their choosing) the same entry
-    reads and installs like any other.
+    Discover the usual library folders. Executable read access is checked
+    by enrich(); directory write access is checked by installer.preflight().
     """
     out: list[Game] = []
     roots = []
@@ -759,6 +742,30 @@ def set_api_override(folder: Path, api: str | None) -> None:
     prefs.set_("api_override", d)
 
 
+def bitness_override(folder: Path) -> int | None:
+    """Architecture chosen for a protected Xbox executable, or None."""
+    from . import prefs
+    try:
+        value = (prefs.get("bitness_override") or {}).get(str(folder).lower())
+        return value if type(value) is int and value in (32, 64) else None
+    except (AttributeError, TypeError):
+        return None
+
+
+def set_bitness_override(folder: Path, bitness: int | None) -> None:
+    """Remember an explicit architecture; None restores automatic detection."""
+    if bitness is not None and (type(bitness) is not int or bitness not in (32, 64)):
+        raise ValueError("Architecture must be 32 or 64.")
+    from . import prefs
+    d = dict(prefs.get("bitness_override") or {})
+    key = str(folder).lower()
+    if bitness is None:
+        d.pop(key, None)
+    else:
+        d[key] = bitness
+    prefs.set_("bitness_override", d)
+
+
 def enrich(g: Game, chosen: bool = False) -> Game:
     """Pick the executable and detect its architecture / graphics API.
 
@@ -769,6 +776,9 @@ def enrich(g: Game, chosen: bool = False) -> Game:
     """
     if chosen:
         g.install_root = None
+    g.error = g.exe_warning = ""
+    g.bitness = None
+    g.api, g.api_why, g.api_detected = "?", "", ""
     try:
         if g.exe is None or not g.exe.is_file():
             cands = pe.find_game_exes(g.folder)
@@ -784,10 +794,9 @@ def enrich(g: Game, chosen: bool = False) -> Game:
             _prefer_real_exe(g)
             adopt_previous_install(g)
         if _xbox_locked(g):
-            # Keep the game in the list with its executable, so the detail
-            # card can show the fix; there is nothing else to read here.
-            return g
-        g.bitness = pe.exe_bitness(g.exe)
+            g.bitness = bitness_override(g.folder)
+        else:
+            g.bitness = pe.exe_bitness(g.exe)
         g.api, g.api_why = pe.detect_api(g.exe)
         g.api_detected = g.api
         forced = api_override(g.folder)
@@ -884,7 +893,7 @@ def same_exe_once(games: list) -> list:
         # install recorded against it, or a graphics API set by hand - both
         # are keyed by that entry's folder and would be lost with it.
         try:
-            forced = bool(api_override(g.folder))
+            forced = bool(api_override(g.folder) or bitness_override(g.folder))
         except Exception:
             forced = False
         return (bool(getattr(g, "installed", False)), forced)

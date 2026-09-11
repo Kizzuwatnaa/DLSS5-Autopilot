@@ -5,6 +5,7 @@ Run this before cutting a release.
 """
 import inspect
 import json
+import os
 import shutil
 import ssl
 import subprocess
@@ -13,6 +14,7 @@ import tempfile
 import time
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 try:
@@ -21,7 +23,8 @@ except Exception:
     pass
 
 FAILS: list[str] = []
-X64 = Path(r"C:\Users\Mustafa\Downloads\dlss5-feed-host64.exe")
+X64 = Path(os.environ.get("DLSS5_TEST_X64",
+                          r"C:\Users\Mustafa\Downloads\dlss5-feed-host64.exe"))
 SRC_DIR = Path(__file__).resolve().parent
 
 
@@ -1337,7 +1340,7 @@ check("ModifiableWindowsApps is not",
       not games.is_locked_store_path(Path(r"C:\Program Files\ModifiableWindowsApps\X")))
 check("a plain folder is not", not games.is_locked_store_path(Path(r"D:\Games\X")))
 
-# A readable game under XboxGames (after Enable mods) is a normal game.
+# A readable game under XboxGames is a normal game.
 _d = Path(tempfile.mkdtemp(prefix="xbox_ok_"))
 _content = _d / "XboxGames" / "Fake" / "Content"
 _content.mkdir(parents=True)
@@ -1350,37 +1353,13 @@ check("...and is supported", installer.check_supported(_g)[0])
 shutil.rmtree(_d, ignore_errors=True)
 
 
-def _deny_read(exe: Path) -> bool:
-    """Take the current user's read right away with icacls; False if that
-    cannot be done here (no icacls, elevated token that ignores it, ...)."""
-    if not _os.environ.get("USERNAME"):
-        return False
-    try:
-        who = subprocess.run(["whoami"], capture_output=True, text=True,
-                             timeout=15).stdout.strip() or _os.environ["USERNAME"]
-        # (RD) only: a full (R) deny also takes READ_CONTROL away, after
-        # which icacls itself can no longer read the ACL to undo it.
-        r = subprocess.run(["icacls", str(exe), "/deny", f"{who}:(RD)"],
-                           capture_output=True, text=True, timeout=15)
-        if r.returncode != 0:
-            return False
-        with open(exe, "rb") as f:
-            f.read(1)
-        return False    # the deny did not bite - do not test on top of it
-    except PermissionError:
-        return True
-    except Exception:
-        return False
+_real_open = open
 
 
-def _allow_read(exe: Path) -> None:
-    try:
-        who = subprocess.run(["whoami"], capture_output=True, text=True,
-                             timeout=15).stdout.strip() or _os.environ.get("USERNAME", "")
-        subprocess.run(["icacls", str(exe), "/remove:d", who],
-                       capture_output=True, text=True, timeout=15)
-    except Exception:
-        pass
+def _protected_read(path, mode="r", *args, **kwargs):
+    if Path(path) == _exe and mode == "rb":
+        raise PermissionError(13, "Permission denied", str(path))
+    return _real_open(path, mode, *args, **kwargs)
 
 
 # The real failure: an exe under XboxGames the user cannot read.
@@ -1389,24 +1368,17 @@ _content = _d / "XboxGames" / "Fake" / "Content"
 _content.mkdir(parents=True)
 _exe = _content / "Game.exe"
 shutil.copyfile(X64, _exe)
-if _deny_read(_exe):
-    try:
-        _g = games.manual(_content)
-        check("an unreadable XboxGames exe gets the Enable-mods sentence",
-              _g.error == games.XBOX_HINT, repr(_g.error))
-        check("...the game keeps its executable so it stays listed",
-              _g.exe == _exe)
-        _ok, _why = installer.check_supported(_g)
-        check("...and check_supported hands that sentence to the GUI",
-              not _ok and _why == games.XBOX_HINT, repr(_why))
-        # preflight on the real denied folder: writing next to the exe is
-        # allowed here (only the file's read was denied), so use the
-        # monkeypatch below for the write failure instead.
-    finally:
-        _allow_read(_exe)
-    check("read right restored", _exe.read_bytes()[:2] == b"MZ")
-else:
-    check("icacls deny not available here - unreadable-exe checks skipped", True)
+with patch("builtins.open", side_effect=_protected_read):
+    _g = games.manual(_content)
+    check("an unreadable XboxGames exe gets a warning, not a fatal error",
+          not _g.error and _g.exe_warning == games.XBOX_EXE_HINT, repr(_g.exe_warning))
+    check("...the game keeps its executable so it stays listed", _g.exe == _exe)
+    _ok, _why = installer.check_supported(_g)
+    check("...and check_supported requests missing metadata",
+          not _ok and "select its architecture and graphics API" in _why, repr(_why))
+    installer.preflight(_g)
+    check("writing beside a protected EXE is allowed", True)
+check("the executable was not changed", _exe.read_bytes()[:2] == b"MZ")
 shutil.rmtree(_d, ignore_errors=True)
 
 # The same unreadable exe outside a store folder keeps the plain error: the
@@ -1415,19 +1387,14 @@ shutil.rmtree(_d, ignore_errors=True)
 _d = Path(tempfile.mkdtemp(prefix="plain_locked_"))
 _exe = _d / "Game.exe"
 shutil.copyfile(X64, _exe)
-if _deny_read(_exe):
-    try:
-        _g = games.manual(_d)
-        check("an unreadable exe elsewhere does not mention the Xbox app",
-              _g.error and "Xbox" not in _g.error, repr(_g.error))
-    finally:
-        _allow_read(_exe)
-else:
-    check("icacls deny not available here - plain unreadable check skipped", True)
+with patch("builtins.open", side_effect=_protected_read):
+    _g = games.manual(_d)
+    check("an unreadable exe elsewhere stays fatal without an Xbox warning",
+          _g.error and not _g.exe_warning and not installer.check_supported(_g)[0],
+          repr(_g.error))
 shutil.rmtree(_d, ignore_errors=True)
 
-# preflight: a write refused under XboxGames says Enable mods, anywhere else
-# it says run as administrator.
+# preflight distinguishes a refused directory write from EXE protection.
 _d = Path(tempfile.mkdtemp(prefix="xbox_pre_"))
 _content = _d / "XboxGames" / "Fake" / "Content"
 _content.mkdir(parents=True)
@@ -1436,21 +1403,22 @@ _gx = games.manual(_content)
 _plain = Path(tempfile.mkdtemp(prefix="plain_pre_"))
 shutil.copyfile(X64, _plain / "Game.exe")
 _gp = games.manual(_plain)
-_orig_wb = Path.write_bytes
+_orig_probe = tempfile.NamedTemporaryFile
 
 
-def _refuse(self, data):
-    raise PermissionError(13, "Permission denied", str(self))
+def _refuse(*args, **kwargs):
+    raise PermissionError(13, "Permission denied", str(kwargs.get("dir")))
 
 
-Path.write_bytes = _refuse
+tempfile.NamedTemporaryFile = _refuse
 try:
     try:
         installer.preflight(_gx)
         check("preflight under XboxGames raises on a refused write", False)
     except installer.InstallError as e:
-        check("preflight under XboxGames names Enable mods, not administrator",
-              "Enable mods" in str(e) and "administrator" not in str(e), str(e)[:80])
+        check("preflight under XboxGames reports the actual write restriction",
+              games.XBOX_HINT in str(e) and "Permission denied" in str(e)
+              and "Enable mods" not in str(e) and "administrator" not in str(e), str(e)[:80])
     try:
         installer.preflight(_gp)
         check("preflight elsewhere raises on a refused write", False)
@@ -1458,7 +1426,7 @@ try:
         check("preflight elsewhere still says run as administrator",
               "administrator" in str(e) and "Xbox" not in str(e), str(e)[:80])
 finally:
-    Path.write_bytes = _orig_wb
+    tempfile.NamedTemporaryFile = _orig_probe
 try:
     installer.preflight(_gp)
     check("preflight passes again once writes work", True)
@@ -3665,7 +3633,7 @@ with _zf2.ZipFile(_dir, "w") as z:
     z.writestr("dlss5-autopilot/_internal/core/gui.pyc", b"pyc")
     z.writestr("dlss5-autopilot/README.md", "x")
 _saved = (net.json_get, net.download, net.fetch_text, selfupdate.MIN_BYTES)
-selfupdate.MIN_BYTES = 70000         # the fixture exe (65 KB) alone is below this; exe + _internal is above
+selfupdate.MIN_BYTES = len(_pe) + 4000   # exe alone is below; exe + _internal is above
 _sha = hashlib.sha256(_pe).hexdigest()
 net.fetch_text = lambda url: f"{_sha}  dist/dlss5-autopilot.exe\n".encode()
 net.json_get = lambda url: {"tag_name": "v9.9", "assets": [
@@ -3681,13 +3649,13 @@ try:
     check("the size floor applies to the exe alone for a one-file release", _raised)
     selfupdate.MIN_BYTES = 1024
     _exe1 = selfupdate.fetch()
-    selfupdate.MIN_BYTES = 70000
+    selfupdate.MIN_BYTES = len(_pe) + 4000
     check("a one-file release yields the exe alone",
           _exe1.name == "dlss5-autopilot.exe" and not (_exe1.parent / "_internal").exists())
     net.download = lambda url, name, **k: _dir
     _exe2 = selfupdate.fetch()
     check("...but for a one-folder release the whole download is measured (exe alone would fail)",
-          _exe2.stat().st_size < 70000)
+          _exe2.stat().st_size < selfupdate.MIN_BYTES)
     check("a one-folder release yields the exe WITH its _internal folder beside it",
           _exe2.name == "dlss5-autopilot.exe"
           and (_exe2.parent / "_internal" / "python313.dll").is_file()
@@ -3869,8 +3837,9 @@ try:
 finally:
     sources.urllib.request.urlopen, sources.time.sleep = _saved
 
-check("the Xbox hint no longer claims every Store game has an 'Enable mods' switch",
-      "Only games whose publisher" in games.XBOX_HINT and "Steam version" in games.XBOX_HINT)
+check("the Xbox hint distinguishes protection from write access without a mods toggle",
+      "separate" in games.XBOX_HINT and "installation cannot continue" in games.XBOX_HINT
+      and "Enable mods" not in games.XBOX_HINT)
 
 _d = Path(tempfile.mkdtemp(prefix="apiov_"))
 shutil.copyfile(X64, _d / "Game.exe")

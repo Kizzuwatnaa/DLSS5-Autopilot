@@ -41,6 +41,7 @@ import json
 import os
 import shutil
 import struct
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -489,10 +490,10 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
     if not g.exe:
         return False, "No game executable found."
     if g.error:
-        # The scan already knows why this one cannot be set up (an Xbox game
-        # that has not had "Enable mods" yet, an unreadable header). The GUI
-        # shows this reason in the detail card, so it must come from here.
         return False, g.error
+    if g.exe_warning and (g.bitness not in (32, 64) or g.api not in games.APIS):
+        return False, ("Protected Xbox executable: select its architecture and "
+                       "graphics API in the game details before continuing.")
     if g.bitness not in (32, 64):
         return False, "Could not read the architecture."
     if g.api == "Vulkan":
@@ -901,6 +902,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
     """
     pv = Preview()
     root = g.install_dir
+    if g.exe_warning:
+        pv.warnings.append(g.exe_warning)
 
     ok, why = check_supported(g)
     if not ok:
@@ -1802,17 +1805,15 @@ def preflight(g: games.Game) -> None:
     if not games._isdir(root):
         raise InstallError(f"{root} does not exist.")
 
-    probe = root / ".dlss5-autopilot-write-test"
     try:
-        probe.write_bytes(b"x")
-        probe.unlink()
-    except PermissionError:
+        with tempfile.NamedTemporaryFile(prefix=".dlss5-autopilot-write-test-",
+                                         dir=root) as probe:
+            probe.write(b"x")
+    except PermissionError as e:
         if games.is_locked_store_path(root):
-            # Xbox / Game Pass: the folder is owned by the system, and
-            # elevation does not help - the Xbox app has the switch for it.
             raise InstallError(
-                f"No permission to write into:\n{root}\n\n"
-                f"This is an Xbox / Game Pass game. {games.XBOX_HINT}") from None
+                f"Cannot create/remove a temporary file in:\n{root}\n\n"
+                f"{games.XBOX_HINT}\n\n{e}") from None
         raise InstallError(
             f"No permission to write into:\n{root}\n\n"
             f"Close the game if it is running, then try again. If that is not "

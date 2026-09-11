@@ -1,6 +1,7 @@
 """Offline scan regressions: python -m unittest -v test_scan."""
 import json
 import queue
+import struct
 import tempfile
 import threading
 import unittest
@@ -8,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core import dlss, games, gui, installer, log
+from core import dlss, games, gui, installer, library, log, pe, prefs
 
 
 class ScanTests(unittest.TestCase):
@@ -193,6 +194,7 @@ class ScanTests(unittest.TestCase):
         app.btn_next = Mock()
         app.status = Mock()
         app.detail = Mock()
+        app.protected_details = Mock()
         app._sm = Mock(return_value=120)
         app._check_stale = Mock()
         app.rail_rows = []
@@ -276,6 +278,200 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(app.tree.insert.call_count, 2)
         self.assertEqual(app.tree.insert.call_args.kwargs["values"][-1], "unreadable")
         self.assertFalse(app.busy)
+
+
+class ProtectedXboxTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="autopilot_xbox_")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.folder = self.root / "XboxGames/Fake/Content"
+        self.folder.mkdir(parents=True)
+        self.exe = self.folder / "Game.exe"
+        # A real minimal x64 COFF header, not a mocked architecture result.
+        data = bytearray(128)
+        data[:2] = b"MZ"
+        struct.pack_into("<I", data, 0x3c, 64)
+        data[64:70] = b"PE\0\0" + struct.pack("<H", pe.PE_X64)
+        self.exe.write_bytes(data)
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(prefs, "FILE", self.root / "settings.json"))
+        self.stack.enter_context(patch.object(library, "FILE", self.root / "library.json"))
+        self.stack.enter_context(patch.object(log, "write"))
+        self.stack.enter_context(patch.object(installer, "_running_processes", return_value=set()))
+
+    def protect(self):
+        read = open
+
+        def guarded(path, mode="r", *args, **kwargs):
+            if Path(path) == self.exe and mode == "rb":
+                raise PermissionError(13, "Permission denied", str(path))
+            return read(path, mode, *args, **kwargs)
+
+        self.stack.enter_context(patch("builtins.open", side_effect=guarded))
+
+    def test_readable_x64_ignores_architecture_override_and_clears_stale_metadata(self):
+        games.set_bitness_override(self.folder, 32)
+        g = games.manual(self.folder)
+        self.assertEqual(g.bitness, 64)
+        self.assertFalse(g.error or g.exe_warning)
+        self.assertTrue(installer.check_supported(g)[0])
+        g.error, g.exe_warning = "old error", games.XBOX_EXE_HINT
+        g.bitness, g.api = 32, "DX9"
+        games.enrich(g)
+        self.assertFalse(g.error or g.exe_warning)
+        self.assertEqual((g.bitness, g.api), (64, pe.detect_api(self.exe)[0]))
+
+    def test_protected_executable_needs_both_overrides_to_be_supported(self):
+        self.protect()
+        g = games.manual(self.folder)
+        self.assertEqual(g.exe, self.exe)
+        self.assertEqual(g.exe_warning, games.XBOX_EXE_HINT)
+        self.assertFalse(g.error)
+        self.assertIsNone(g.bitness)
+        ok, why = installer.check_supported(g)
+        self.assertFalse(ok)
+        self.assertIn("select its architecture and graphics API", why)
+        games.set_bitness_override(self.folder, 64)
+        games.enrich(g)
+        self.assertFalse(installer.check_supported(g)[0], "unknown API must not be assumed")
+        games.set_api_override(self.folder, "DX12")
+        games.enrich(g)
+        self.assertEqual((g.bitness, g.api), (64, "DX12"))
+        self.assertTrue(installer.check_supported(g)[0])
+        self.assertIn(g.exe_warning, installer.preview(g, installer.Options()).warnings)
+
+    def test_api_detection_can_use_adjacent_files(self):
+        self.protect()
+        games.set_bitness_override(self.folder, 64)
+        sdk = self.folder / "D3D12/D3D12Core.dll"
+        sdk.parent.mkdir()
+        sdk.touch()
+        g = games.manual(self.folder)
+        self.assertEqual((g.bitness, g.api), (64, "DX12"))
+        self.assertIn("Agility", g.api_why)
+        self.assertTrue(installer.check_supported(g)[0])
+
+    def test_preflight_writes_beside_protected_exe_and_preserves_existing_file(self):
+        self.protect()
+        existing = self.folder / ".dlss5-autopilot-write-test"
+        existing.write_bytes(b"keep me")
+        before = set(self.folder.iterdir())
+        installer.preflight(games.manual(self.folder))
+        self.assertEqual(set(self.folder.iterdir()), before)
+        self.assertEqual(existing.read_bytes(), b"keep me")
+
+    def test_denied_directory_blocks_preflight_and_install(self):
+        self.protect()
+        games.set_bitness_override(self.folder, 64)
+        games.set_api_override(self.folder, "DX12")
+        g = games.manual(self.folder)
+        before = set(self.folder.iterdir())
+        with patch.object(installer.tempfile, "NamedTemporaryFile",
+                          side_effect=PermissionError(13, "Permission denied")):
+            for action in (lambda: installer.preflight(g),
+                           lambda: installer.install(g, installer.Options())):
+                with self.assertRaises(installer.InstallError) as cm:
+                    action()
+                self.assertIn(str(g.install_dir), str(cm.exception))
+                self.assertIn("installation cannot continue", str(cm.exception))
+                self.assertNotIn("Enable mods", str(cm.exception))
+        self.assertEqual(set(self.folder.iterdir()), before)
+
+    def test_invalid_architecture_overrides_are_rejected_and_ignored(self):
+        for value in (0, 16, 128, "64", 64.0, True, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    games.set_bitness_override(self.folder, value)
+                prefs.set_("bitness_override", {str(self.folder).lower(): value})
+                self.assertIsNone(games.bitness_override(self.folder))
+        prefs.set_("bitness_override", [64])
+        self.assertIsNone(games.bitness_override(self.folder))
+
+    def test_preferences_and_cache_round_trip_and_override_removal(self):
+        self.protect()
+        games.set_bitness_override(self.folder, 64)
+        games.set_api_override(self.folder, "DX12")
+        g = games.manual(self.folder)
+        key = (str(g.folder), str(g.exe))
+        library.save([g], {key: gui.App._inspect_row(g, 89)}, "test", 89)
+        cached, rows, changed = library.load("test", 89)
+        self.assertEqual((cached[0].bitness, cached[0].api), (64, "DX12"))
+        self.assertEqual(cached[0].exe_warning, games.XBOX_EXE_HINT)
+        self.assertFalse(cached[0].error)
+        self.assertEqual(changed, cached)
+        self.assertNotIn(key, rows)
+        games.set_bitness_override(self.folder, None)
+        games.set_api_override(self.folder, None)
+        cached, _, _ = library.load("test", 89)
+        self.assertIsNone(cached[0].bitness)
+        self.assertEqual(cached[0].api, g.api_detected)
+        self.assertFalse(installer.check_supported(cached[0])[0])
+
+    def test_non_xbox_permission_error_stays_fatal_despite_overrides(self):
+        plain = self.root / "Plain"
+        plain.mkdir()
+        self.exe = self.exe.rename(plain / "Game.exe")
+        self.protect()
+        games.set_bitness_override(plain, 64)
+        games.set_api_override(plain, "DX12")
+        g = games.manual(plain)
+        self.assertTrue(g.error)
+        self.assertFalse(g.exe_warning)
+        self.assertFalse(installer.check_supported(g)[0])
+
+    def test_corrupt_readable_xbox_exe_stays_fatal(self):
+        self.exe.write_bytes(b"not a PE")
+        games.set_bitness_override(self.folder, 64)
+        games.set_api_override(self.folder, "DX12")
+        g = games.manual(self.folder)
+        self.assertTrue(g.error)
+        self.assertFalse(g.exe_warning)
+        self.assertFalse(installer.check_supported(g)[0])
+
+    def test_gui_metadata_choices_refresh_status_and_navigation(self):
+        self.protect()
+        with patch.object(gui.App, "_check_update"):
+            root = gui.tk.Tk()
+            self.addCleanup(root.destroy)
+            root.withdraw()
+            app = gui.App(root)
+        failures = []
+        root.report_callback_exception = lambda *args: failures.append(args)
+        g = games.manual(self.folder)
+        app.all_games = [g]
+        app._show(2)
+        app._fill()
+        app.tree.selection_set("0")
+        app._on_pick()
+        self.assertEqual(app.protected_details.winfo_manager(), "pack")
+        self.assertEqual(app.tree.item("0", "values")[-1], "needs metadata")
+        app._next()   # double-click cannot bypass the disabled button
+        self.assertEqual(app.step, 2)
+        app.cb_bitness.current(1)
+        app.cb_bitness.event_generate("<<ComboboxSelected>>")
+        self.assertEqual(g.bitness, 64)
+        self.assertEqual(str(app.btn_next["state"]), "disabled")
+        app.cb_protected_api.current(games.APIS.index("DX12") + 1)
+        app.cb_protected_api.event_generate("<<ComboboxSelected>>")
+        self.assertEqual(g.api, "DX12")
+        self.assertEqual(app.tree.item("0", "values")[-1], "ready")
+        self.assertEqual(str(app.btn_next["state"]), "normal")
+        with patch.object(app, "_enter_install") as enter:
+            app._next()
+            enter.assert_called_once()
+        self.assertEqual(app.step, 3)
+        app._show(2)
+        app.cb_bitness.current(0)
+        app.cb_bitness.event_generate("<<ComboboxSelected>>")
+        self.assertIsNone(g.bitness)
+        self.assertFalse(app._can_install_page())
+        g.exe_warning = ""
+        g.bitness = 64
+        app._on_pick()
+        self.assertEqual(app.protected_details.winfo_manager(), "")
+        self.assertEqual(failures, [])
 
 
 if __name__ == "__main__":
