@@ -392,14 +392,14 @@
   "uboat launcher.exe": {
    "drivers": {
     "616.92": {
-     "failed": 4,
+     "failed": 5,
      "worked": 2
     }
    },
    "name": "UBOAT",
    "routes": {
     "feeder": {
-     "failed": 4,
+     "failed": 5,
      "worked": 0
     },
     "standalone": {
@@ -409,6 +409,6 @@
    }
   }
  },
- "generated": "2026-09-11T07:15:25Z",
- "reports": 34
+ "generated": "2026-09-11T07:21:52Z",
+ "reports": 35
 }
