@@ -270,6 +270,16 @@
     }
    }
   },
+  "playrdr2.exe": {
+   "drivers": {},
+   "name": "Red Dead Redemption 2",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "rememberme.exe": {
    "drivers": {
     "616.56": {
@@ -369,6 +379,6 @@
    }
   }
  },
- "generated": "2026-09-11T01:27:59Z",
- "reports": 30
+ "generated": "2026-09-11T03:26:49Z",
+ "reports": 31
 }
