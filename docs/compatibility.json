@@ -30,17 +30,32 @@
     }
    }
   },
-  "cyberpunk2077.exe": {
+  "blackops.exe": {
    "drivers": {
     "616.56": {
      "failed": 0,
      "worked": 1
     }
    },
+   "name": "Call of Duty: Black Ops",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "cyberpunk2077.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 1,
+     "worked": 1
+    }
+   },
    "name": "Cyberpunk 2077",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -454,6 +469,6 @@
    }
   }
  },
- "generated": "2026-09-11T17:52:59Z",
- "reports": 39
+ "generated": "2026-09-11T18:53:55Z",
+ "reports": 41
 }
