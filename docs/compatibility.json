@@ -15,6 +15,21 @@
     }
    }
   },
+  "bh6.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Resident Evil 6",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "cyberpunk2077.exe": {
    "drivers": {
     "616.56": {
@@ -379,6 +394,6 @@
    }
   }
  },
- "generated": "2026-09-11T03:56:07Z",
- "reports": 31
+ "generated": "2026-09-11T04:22:27Z",
+ "reports": 32
 }
