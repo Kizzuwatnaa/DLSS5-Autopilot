@@ -352,8 +352,23 @@
      "worked": 2
     }
    }
+  },
+  "xrengine.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "S.T.A.L.K.E.R.: Call of Pripyat",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
   }
  },
- "generated": "2026-09-10T23:29:51Z",
- "reports": 29
+ "generated": "2026-09-11T00:11:50Z",
+ "reports": 30
 }
