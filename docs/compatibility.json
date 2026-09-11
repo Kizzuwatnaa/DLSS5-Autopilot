@@ -270,6 +270,21 @@
     }
    }
   },
+  "rememberme.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Remember Me",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "risk of rain 2.exe": {
    "drivers": {
     "616.92": {
@@ -354,6 +369,6 @@
    }
   }
  },
- "generated": "2026-09-11T00:19:42Z",
- "reports": 29
+ "generated": "2026-09-11T01:27:59Z",
+ "reports": 30
 }
