@@ -21,6 +21,10 @@ NVIDIA RTX 20 or newer
   your architecture, ReShade with add-on support, motion-vector shaders,
   DXVK for DirectX 9, a 64-bit helper for 32-bit games, frame generation
   where the card has it.
+- **It reads what happened to everyone else.** Results people choose to
+  share are pooled into one list the tool reads before an install: once a
+  game has five, you are told which route worked most often on it, and
+  whether the one you picked did worse.
 - **It takes itself back out.** Uninstall restores every file it replaced
   and removes only what it wrote.
 - **Nothing is bundled.** Each component is fetched from its own
