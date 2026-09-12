@@ -6189,6 +6189,9 @@ class _FakeApp:
     def _log(self, text, tag=None):
         self.said.append(text)
 
+    # The real one: what it prints is the thing being checked.
+    _reprint_verdict = _gui.App._reprint_verdict
+
 
 _c171 = _wc.Crash(when="2026-09-12 00:54:33", exe="GTA5.exe", module="GTA5.exe",
                   code="0xC0000005", provider="Application Error")
@@ -6329,9 +6332,33 @@ _r = _opti_log(_FWD + "[I] DlssNr_Dx12::Dispatch DLSS-NR elapsed: 6.72 ms "
                       "total, 6.60 ms model\n")
 check("...while a real dispatch is, still", _r.verdict.startswith("Working"),
       _r.verdict)
-_r = _opti_log("", files=["dxgi.dll", "OptiScaler.ini"])
+_dopt = Path(tempfile.mkdtemp(prefix="diag_opti_nolog_"))
+(_dopt / "dlss5-autopilot.json").write_text(json.dumps(
+    {"version": 1, "complete": True, "path": "optiscaler", "proxy": "dxgi.dll",
+     "api": "DX12", "bitness": 64, "exe": "Game.exe",
+     "files": ["dxgi.dll", "OptiScaler.ini"]}), encoding="utf8")
+(_dopt / "dxgi.dll").write_bytes(b"MZ")
+(_dopt / "OptiScaler.ini").write_text("[Log]\nLogToFile = true\n", encoding="utf8")
+_r = diagnose.analyse(_dopt)
 check("the optiscaler 'not run yet' verdict rests on the absent log too",
-      _r.never_ran is True or _r.verdict.startswith("OptiScaler"), _r.verdict)
+      _r.verdict.startswith("Not run yet") and _r.never_ran is True, _r.verdict)
+# ...and so does every other verdict read off a log that is not there. A fault
+# record for the game outranks all of them, so each has to say so.
+(_dopt / "OptiScaler.ini").write_text("[Log]\nLogToFile = false\n", encoding="utf8")
+_r = diagnose.analyse(_dopt)
+check("...and the one about the log being switched off",
+      _r.verdict.startswith("OptiScaler's log is off") and _r.never_ran is True,
+      _r.verdict)
+shutil.rmtree(_dopt, ignore_errors=True)
+_dstale = _diag_dir("diag_stale_reshade_flag_",
+                    reshade="INFO | Initializing crosire's ReShade\n"
+                            'INFO | Registered add-on "DLSS 5 Feed" v0.1\n')
+_oldt = _time.time() - 7200
+_os.utime(_dstale / "ReShade.log", (_oldt, _oldt))
+_r = diagnose.analyse(_dstale)
+check("...and the one about a log older than the install",
+      _r.never_ran is True, _r.verdict)
+shutil.rmtree(_dstale, ignore_errors=True)
 
 # The feed log proving the add-on loaded must speak for THIS launch, and the
 # "never got an effect runtime" answer must rest on more than one build's
@@ -6409,6 +6436,63 @@ _rep = _override("dxgi.dll", _here)
 check("...and a bare module name, which names no folder, still counts",
       "started and crashed" in _rep.verdict, _rep.verdict)
 shutil.rmtree(_here, ignore_errors=True)
+
+
+# The fault record arrives after the diagnosis has been printed. Rewriting the
+# verdict alone left the person reading "run the game once" while the report
+# and the shared record said it had crashed.
+def _override_said(module, where, route="renodx"):
+    rep = diagnose.Report(route=route)
+    rep.verdict = "Not started since the install - run it once."
+    rep.never_ran = True
+    rep.add(diagnose.WARN, "The game has not been started since the install.")
+    app = _FakeApp(rep)
+    app.game = type("G", (), {"install_dir": where})()
+    _gui.App._crash_overrides(app, _wc.Crash(
+        when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
+        code="0xC0000005", provider="Application Error"))
+    return rep, "\n".join(app.said)
+
+
+_here2 = Path(tempfile.mkdtemp(prefix="diag_fault_screen_"))
+_rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2)
+check("the corrected verdict is printed on screen, not only in the report",
+      _rep.verdict in _said, _said[:200])
+check("...and the fault finding is printed with it",
+      "faulting" in _said, _said[:200])
+# The install page names that dropdown differently per route, and on the
+# feeder route it is not on the page at all.
+_rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="optiscaler")
+check("...the optiscaler route is told about 'loads as'",
+      "'loads as'" in _said and "reshade loads as" not in _said, _said[-200:])
+_rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="feeder")
+check("...and the feeder route, which has no such dropdown, is told neither",
+      "loads as" not in _said, _said[-200:])
+shutil.rmtree(_here2, ignore_errors=True)
+
+
+# The standalone route keeps its own add-on log, so the same cut ReShade tail
+# must not tell that route "ReShade loaded no add-ons" either.
+_dsa = _diag_dir("diag_standalone_tail_", path="standalone", provider=0,
+                 reshade="21:11:43:914 [24200] | WARN  | Successfully "
+                         "compiled 'a.fx'\n")
+# That log lives in LOCALAPPDATA, one file for every game: point the module at
+# a temporary one rather than writing over the machine's own.
+_sa_saved = diagnose.STANDALONE_LOG
+_sa_dir = Path(tempfile.mkdtemp(prefix="diag_salog_tail_"))
+diagnose.STANDALONE_LOG = _sa_dir / "standalone-dlssnr.log"
+try:
+    diagnose.STANDALONE_LOG.write_text(
+        "11:00:00 Standalone DLSS-NR + SR 1.7.17"
+        + diagnose._STANDALONE_SESSION + "quality\n", encoding="utf8")
+    _r = diagnose.analyse(_dsa)
+    check("the standalone add-on's own log answers for the cut ReShade tail",
+          not any("loaded no add-ons" in t for t in _levels(_r, "bad")),
+          str(_levels(_r, "bad")))
+finally:
+    diagnose.STANDALONE_LOG = _sa_saved
+    shutil.rmtree(_sa_dir, ignore_errors=True)
+shutil.rmtree(_dsa, ignore_errors=True)
 
 # The install's own proxy is in the manifest's file list, and the event
 # names a module rather than a path - so "it is in our list" is not proof

@@ -471,6 +471,8 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
                     f"works.")
             rep.verdict = ("OptiScaler's log is off - install again to switch it "
                            "on, then play once.")
+            # Also read off an absent log (#171).
+            rep.never_ran = True
         elif proxy_there:
             rep.add(WARN, "No OptiScaler log from this install yet.",
                     f"The proxy this install wrote ({proxy}) is in the folder "
@@ -974,6 +976,7 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 f"The {app} was last run before this install, so nothing "
                 f"has loaded the new files yet. Play once and check again.")
         rep.verdict = "Installed after the last run - play once and check again."
+        rep.never_ran = True
         return rep
 
     # DXVK writes its own log beside the game the moment it loads. One of
@@ -1418,6 +1421,17 @@ def analyse(install_dir: Path) -> Report:
             attached = False
         if attached and not _same_launch(feed, reshade):
             attached = False
+        # The standalone route has no feed log; its add-on keeps one of its own,
+        # in LOCALAPPDATA, and ReShade is equally the only thing that loads it.
+        # Without this the same cut tail says "no add-ons" to that route.
+        if not attached and rep.route == "standalone":
+            try:
+                stext = _tail(STANDALONE_LOG, 150_000)
+            except OSError:
+                stext = ""
+            attached = _STANDALONE_SESSION in stext
+            if attached and since and not _fresh(STANDALONE_LOG, since):
+                attached = False
         if "Registered add-on" not in rtext and not wrote and attached:
             rep.add(OK, "The add-on loaded - it wrote its own log in the "
                         "session this report reads.",
@@ -2149,6 +2163,7 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
                 f"once and check again.")
         rep.verdict = ("Add-on loaded, but its own log has nothing yet - play "
                        "once and check again.")
+        rep.never_ran = True
         return rep
     try:
         rep.log_time = datetime.fromtimestamp(p.stat().st_mtime).strftime("%d %b %H:%M")
@@ -2159,6 +2174,7 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
                 "It is one file for every game the add-on ran in, and it was "
                 "last written before this install. Play once and check again.")
         rep.verdict = "Installed after the last run - play once and check again."
+        rep.never_ran = True
         return rep
     # One log for every game: only the last session can describe this one.
     cut = text.rfind(_STANDALONE_SESSION)

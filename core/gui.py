@@ -2856,6 +2856,24 @@ class App:
         g = self.game
         return g is None or _crash_is_this_session_impl(crash, g.install_dir)
 
+    def _reprint_verdict(self, rep) -> None:
+        """Say the new verdict on screen, where the old one is still standing.
+
+        The fault record arrives after the diagnosis has been printed, so
+        rewriting rep.verdict alone changed the bug report and the shared
+        record and left the person reading the opposite. Nothing re-runs the
+        printing, so the corrected verdict is printed again here, with the
+        finding that carries the evidence.
+        """
+        self._log("")
+        self._log(f"> {rep.verdict}",
+                  "ok" if str(rep.verdict).startswith("Working") else "err")
+        for f_ in getattr(rep, "findings", [])[-1:]:
+            if f_.level == diagnose.BAD and "faulting" in f_.title:
+                self._log(f"[fail] {f_.title}", "err")
+                if f_.detail:
+                    self._log(f"        {f_.detail}")
+
     def _crash_overrides(self, crash) -> None:
         """A recorded fault outranks a log that stopped in a good place.
 
@@ -2909,20 +2927,29 @@ class App:
                   "So it was started. Nothing here had a chance to write a "
                   "line, which is what an empty set of logs means when a "
                   "fault is on record.")
-            self._log("")
-            # The dropdown has two names, one per family of routes; naming
-            # the wrong one is the #148 mistake all over again.
-            drop = ("'loads as'" if str(getattr(d, "route", "")) == "optiscaler"
+            # After the finding exists: the reprint carries it.
+            self._reprint_verdict(d)
+            # The dropdown is named differently per route - and on the feeder
+            # route _refresh takes it off the page altogether (the row carries
+            # the motion-vector dropdown there), so telling that person to
+            # change it would name a control they cannot see (#148's mistake).
+            route = str(getattr(d, "route", ""))
+            drop = ("'loads as'" if route == "optiscaler"
+                    else "" if route in ("feeder", "remix")
                     else "'reshade loads as'")
+            after = (f"and if it faults the same way, try another name in the "
+                     f"{drop} dropdown on the install page." if drop else
+                     "and if it faults the same way, say so in an issue with "
+                     "this report - a game that dies before anything loads is "
+                     "worth a look.")
             self._log("> so it WAS started: the logs are empty because the "
                       "game faulted before the add-ons could write anything. "
                       "Uninstall, check the game starts on its own, then "
-                      f"install again - and if it faults the same way, try "
-                      f"another name in the {drop} dropdown on the install "
-                      f"page.", "warn")
+                      f"install again - {after}", "warn")
             return
         d.verdict = ("It ran, and then the game crashed - Windows recorded "
                      "the fault" + (f" in {mod}." if mod else "."))
+        self._reprint_verdict(d)
         self._log("")
         self._log("> the neural pass did run, so the install is right - but "
                   "Windows recorded this game faulting afterwards, and a "
