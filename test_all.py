@@ -7485,6 +7485,32 @@ check("the fallback tells the user the list came from somewhere else",
       "last_fallback" in src_of(sources.rhi_catalog)
       and "last_fallback" in src_of(sources.resolve_feeder))
 
+# 616.64+ steers off every route that loads renodx-dlss5, where a route
+# that does not is on offer. The shared results: standalone has not failed
+# yet where a renodx route did - on a handful of reports, which is what the
+# reason says.
+_sd = Path(tempfile.mkdtemp(prefix="steer_"))
+_steer = {drv: dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver=drv).recommended
+          for drv in (None, "616.56", "616.64", "616.92")}
+check("no driver given, nothing steers - every existing caller is unchanged",
+      _steer[None] == dlss.FEEDER and _steer["616.56"] == dlss.FEEDER, _steer)
+check("616.64 and newer recommend the route that does not load renodx-dlss5",
+      _steer["616.64"] == dlss.STANDALONE and _steer["616.92"] == dlss.STANDALONE,
+      _steer)
+check("...and the reason says which route it moved off, and what it costs",
+      all(w in dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").reason
+          for w in ("feeder", "616.56", "windowed", "handful")))
+check("a game whose dropdown has no standalone entry is not steered to it",
+      dlss.detect(_sd, _sd, "DX9", 32, sm=120, driver="616.92").recommended
+      != dlss.STANDALONE)
+(_sd / "nvngx_dlss.dll").write_bytes(b"MZ")
+check("a game that ships its own DLSS keeps OptiScaler - it never loads the add-on",
+      dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").recommended
+      == dlss.OPTI)
+check("the window passes the driver in, or the steer never runs",
+      "driver=gpu.driver_version()" in _gsrc)
+shutil.rmtree(_sd, ignore_errors=True)
+
 # #98: "It ran, and then the game crashed" was the end of the answer. The
 # reporter found the next step himself, and it is the one test that splits
 # the neural pass from everything else.

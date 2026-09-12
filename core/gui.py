@@ -2036,7 +2036,8 @@ class App:
             if not ok:
                 # Missing metadata or a fatal scan error: show its reason.
                 return False, "-", installer.EXPERIMENTAL, "-", False, ""
-            sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
+            sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm,
+                              driver=gpu.driver_version())
             level, _ = installer.reliability(g, sup.recommended)
             outlook = {installer.STABLE: "reliable",
                        installer.BETA: "beta",
@@ -2197,7 +2198,8 @@ class App:
             forced = games.api_override(g.folder)
             self.cb_protected_api.current(games.APIS.index(forced) + 1 if forced in games.APIS else 0)
             self.protected_details.pack(fill="x")
-        sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm())
+        sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm(),
+                          driver=gpu.driver_version())
         level, why_rel = installer.reliability(g, sup.recommended)
         proxy = installer._proxy_name(g.api, self._opts().reshade_proxy)
         lines = [f"exe    {g.exe}",
@@ -3877,7 +3879,10 @@ class App:
         # Work out which routes exist for this game, which of them fit this
         # card, and preselect the best. The dropdown says so on every line,
         # and the choice stays the user's.
-        self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
+        # The driver decides part of the recommendation: on 616.64+ every
+        # route that loads renodx-dlss5 goes through the path that faults.
+        self.support = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm,
+                                   driver=gpu.driver_version())
         self.route_fit = {o: dlss.fit(o, g.api, self.support.native_dlss, sm,
                                        upscaler=getattr(self.support, 'upscaler', ''))
                           for o in self.support.options}

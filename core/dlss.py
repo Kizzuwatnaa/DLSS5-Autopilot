@@ -316,7 +316,7 @@ def _ours(folder: Path, name: str) -> bool:
 
 
 def detect(install_dir: Path, folder: Path, api: str, bitness: int,
-           sm: int | None = None) -> Support:
+           sm: int | None = None, driver: str | None = None) -> Support:
     """Work out what the game supports and which path to recommend.
 
     `sm` is the card's CUDA architecture when known (gpu.detect). On any RTX
@@ -353,7 +353,54 @@ def detect(install_dir: Path, folder: Path, api: str, bitness: int,
                     f"neural rendering, with the model-resolution dial. "
                     f"Works in many games, not all - the feeder is the proven "
                     f"fallback.")
+    _driver_steer(s, driver)
     return s
+
+
+def _driver_steer(s: Support, driver: str | None) -> None:
+    """On 616.64 and newer, off the routes that load renodx-dlss5.
+
+    Every route in _RENODX_ROUTES reaches NVIDIA's runtime through the
+    renodx-dlss5 add-on, and on these drivers that path faults inside
+    D3D12Core.dll on every evaluate in a good number of games. The tool pins
+    the add-on to 4.55, which passes on most of them and not on all (#37,
+    #92, #107, #173). The standalone add-on does not load renodx-dlss5 at
+    all, so it does not take that path.
+
+    The shared results say the same thing so far - standalone has not failed
+    yet where a renodx route did - but on a handful of reports, so the
+    reason below says that rather than implying a measured rate. Only where
+    the route is actually on offer (64-bit D3D11/D3D12): naming a route the
+    dropdown does not have is worse than naming none.
+
+    Nothing steers a game that ships its own DLSS: OptiScaler and the native
+    route are recommended there, and OptiScaler does not load the add-on.
+    """
+    from . import gpu, sources
+    if not driver or s.recommended not in _RENODX_ROUTES:
+        return
+    if STANDALONE not in s.options:
+        return
+    if not gpu.driver_at_least(sources.DRIVER_FAULT_MIN, driver):
+        return
+    was = LABELS.get(s.recommended, s.recommended).split(" - ")[0]
+    s.recommended = STANDALONE
+    s.reason = (f"Driver {driver} is one of the {sources.DRIVER_FAULT_MIN}+ "
+                f"builds that fault inside NVIDIA's own NGX runtime on every "
+                f"evaluate, and every route that loads the renodx-dlss5 "
+                f"add-on - {was} included - goes through the path that "
+                f"faults. The tool pins that add-on to "
+                f"{sources.DRIVER_FAULT_RENODX_PIN} on this driver, which "
+                f"gets most games through and not all. standalone-dlssnr does "
+                f"not load it at all, so it never takes that path: it brings "
+                f"its own feed and presents through a window of its own. At "
+                f"native resolution that needs nothing from you; its real "
+                f"upscaling below native wants the game in windowed mode, "
+                f"which is the add-on's own instruction. It is the less "
+                f"tested of the two and the reports behind this are a "
+                f"handful, so if it does not suit the game, {was} is one "
+                f"dropdown away - and rolling the driver back to 616.56 is "
+                f"the other answer.")
 
 
 def fit(route: str, api: str, native_dlss: bool, sm: int | None,
