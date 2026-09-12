@@ -229,6 +229,21 @@
     }
    }
   },
+  "gow.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "God of War",
+   "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "gowr.exe": {
    "drivers": {
     "616.64": {
@@ -567,6 +582,6 @@
    }
   }
  },
- "generated": "2026-09-12T12:03:43Z",
- "reports": 49
+ "generated": "2026-09-12T12:12:37Z",
+ "reports": 50
 }
