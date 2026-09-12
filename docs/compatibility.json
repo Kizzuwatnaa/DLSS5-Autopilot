@@ -45,6 +45,21 @@
     }
    }
   },
+  "control_dx12.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Control Ultimate Edition",
+   "routes": {
+    "upstream": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "cyberpunk2077.exe": {
    "drivers": {
     "616.56": {
@@ -56,6 +71,21 @@
    "routes": {
     "optiscaler": {
      "failed": 1,
+     "worked": 1
+    }
+   }
+  },
+  "darksoulsiii.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "DARK SOULS\u2122 III",
+   "routes": {
+    "feeder": {
+     "failed": 0,
      "worked": 1
     }
    }
@@ -169,6 +199,36 @@
     }
    }
   },
+  "fallout4.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Fallout 4",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "falloutnv.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Fallout: New Vegas PCR",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "flatout.exe": {
    "drivers": {
     "616.64": {
@@ -214,6 +274,21 @@
     }
    }
   },
+  "gow.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "God of War",
+   "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "gowr.exe": {
    "drivers": {
     "616.64": {
@@ -256,6 +331,36 @@
     "native": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "horizonzerodawnremastered.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Horizon Zero Dawn\u2122 Remastered",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "jdm-win64-shipping.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "JDM: Japanese Drift Master",
+   "routes": {
+    "upstream": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -438,6 +543,21 @@
     }
    }
   },
+  "s2_sp64_ship.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Call of Duty: WWII - Multiplayer",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "skyrimse.exe": {
    "drivers": {
     "616.92": {
@@ -465,6 +585,21 @@
     "optiscaler": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "sparkingzero-win64-shipping.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "DRAGON BALL: Sparking! ZERO",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -520,8 +655,23 @@
      "worked": 3
     }
    }
+  },
+  "yakuzakiwami2_r.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Yakuza Kiwami 2",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
   }
  },
- "generated": "2026-09-12T08:38:02Z",
- "reports": 46
+ "generated": "2026-09-12T20:27:59Z",
+ "reports": 56
 }
