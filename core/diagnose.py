@@ -1078,10 +1078,10 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
     elif proxy:
         alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
         # The same mapping the crash override uses (gui._crash_overrides):
-        # optiscaler calls it 'loads as', and the feeder and remix routes
-        # take that row off the page altogether (the feeder puts the
-        # motion-vector dropdown there). Naming a control that is not on
-        # the screen is #148's shape.
+        # optiscaler calls it 'loads as'; the feeder carries its
+        # motion-vector provider on that row and the ReShade name on one of
+        # its own; Remix installs no ReShade, so there is nothing to name.
+        # Naming a control that is not on the screen is #148's shape.
         _drop = ("'loads as'" if rep.route == "optiscaler"
                  else "" if rep.route == "remix"
                  else "'reshade loads as'")

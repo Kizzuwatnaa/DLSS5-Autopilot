@@ -213,6 +213,13 @@ def main() -> int:
     else:
         print("\n  (offline: run with --online to ask the tracker what is new)")
 
+    rc, out = _run([sys.executable, str(HERE / "memory_check.py")], 120)
+    first = [ln for ln in out.splitlines() if "memories," in ln]
+    if first:
+        print("\n  the notes: " + first[0].strip()
+              + ("" if rc == 0 else " - SOME NAME THINGS THAT ARE GONE, run "
+                                   "python _tools/memory_check.py"))
+
     print("\n  guard rails: " + ("all wired and present" if not g
                                  else "\n    !! " + "\n    !! ".join(g)))
     print(f"  repo: {r.get('branch')}, {r.get('since_tag', '?')} commit(s) "

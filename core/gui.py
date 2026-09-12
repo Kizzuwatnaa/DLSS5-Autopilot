@@ -2941,41 +2941,43 @@ class App:
             # The findings under it were written on the strength of the absent
             # log and now contradict the verdict - and they go into the report
             # and the shared record verbatim.
+            # Matched on fragments, not on whole sentences: one of these
+            # prunes was written against a title that had been renamed in
+            # the same commit and silently stopped removing anything. And
+            # matched against the DETAIL as well as the title - three of the
+            # never_ran branches put "the game has not been run since
+            # installing" / "play once and check again" in the detail, so a
+            # title-only prune left the contradiction on the screen.
+            _gone = ("has not been started since the install",
+                     "own files changed after",
+                     "is older than the install",
+                     "predates this install",
+                     "has not been run since installing",
+                     "play once and check again")
             d.findings = [f for f in d.findings
-                          if "has not been started since the install" not in f.title
-                          and not f.title.startswith("If you DID start it")
-                          # ...and the one that replaced it when the game's
-                          # own files showed it HAD run: "the likeliest
-                          # reason is another executable" reads badly under
-                          # proof that this one faulted.
+                          # "If you DID start it" and "The likeliest reason:
+                          # another executable" both read badly under proof
+                          # that this executable faulted.
+                          if not f.title.startswith("If you DID start it")
                           and not f.title.startswith("The likeliest reason:")
-                          # Matched on a fragment, not the sentence: this
-                          # prune was written against a title that had been
-                          # renamed in the same commit, and silently stopped
-                          # removing anything.
-                          and "own files changed after" not in f.title
-                          # ...and the other never_ran branches, which all
-                          # end in "play once and check again" - unreadable
-                          # under a fault record for this very session.
-                          and "is older than the install" not in f.title
-                          and "predates this install" not in f.title
-                          and "has not been run since installing" not in f.title]
+                          and not any(s in f"{f.title} {f.detail}"
+                                      for s in _gone)]
             d.add(diagnose.BAD,
                   f"Windows recorded {getattr(crash, 'exe', 'the game')} "
                   f"faulting" + (f" in {mod}." if mod else "."),
-                  "So it was started. Nothing here had a chance to write a "
-                  "line that describes this session, which is what a "
-                  "fault on record and no session of our own in the logs "
-                  "means.")
+                  "So it was started. Nothing here wrote a line that "
+                  "describes this session - a fault on record, and no "
+                  "session of our own in the logs.")
             # After the finding exists: the reprint carries it.
             self._reprint_verdict(d)
-            # The dropdown is named differently per route - and on the feeder
-            # route _refresh takes it off the page altogether (the row carries
-            # the motion-vector dropdown there), so telling that person to
-            # change it would name a control they cannot see (#148's mistake).
+            # The dropdown is named differently per route: OptiScaler
+            # calls it 'loads as'. The feeder has both - row 3 carries its
+            # motion-vector provider and the ReShade name has a row of its
+            # own. Remix installs no ReShade, so there is nothing to name.
+            # Naming a control that is not on the screen is #148's shape.
             route = str(getattr(d, "route", ""))
             drop = ("'loads as'" if route == "optiscaler"
-                    else "" if route in ("feeder", "remix")
+                    else "" if route == "remix"
                     else "'reshade loads as'")
             after = (f"and if it faults the same way, try another name in the "
                      f"{drop} dropdown on the install page." if drop else

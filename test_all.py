@@ -6509,13 +6509,17 @@ check("the corrected verdict is printed on screen, not only in the report",
       _rep.verdict in _said, _said[:200])
 check("...and the fault finding is printed with it",
       "faulting" in _said, _said[:200])
-# The install page names that dropdown differently per route, and on the
-# feeder route it is not on the page at all.
+# The install page names that dropdown differently per route; the feeder
+# route has it on a row of its own (gui._apply_route, row 21).
 _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="optiscaler")
 check("...the optiscaler route is told about 'loads as'",
       "'loads as'" in _said and "reshade loads as" not in _said, _said[-200:])
 _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="feeder")
-check("...and the feeder route, which has no such dropdown, is told neither",
+check("...and the feeder route, which has its own row for it, is told "
+      "'reshade loads as'",
+      "'reshade loads as'" in _said, _said[-200:])
+_rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="remix")
+check("...and the remix route, which installs no ReShade, is told neither",
       "loads as" not in _said, _said[-200:])
 shutil.rmtree(_here2, ignore_errors=True)
 
