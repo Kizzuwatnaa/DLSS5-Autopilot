@@ -7551,6 +7551,96 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# 34 of the first 84 reports are "no log at all", and the answer to them
+# opened with "the game has not been started since the install" - a guess,
+# and the one sentence that makes a person who DID start it give up. The
+# game's own files answer it.
+def _no_log_verdict(make=None, exe="Game.exe"):
+    d = _rr182.build("feeder", "DX12", exe, {}, 64)
+    try:
+        if make:
+            make(d)
+        r = diagnose.analyse(d)
+        return r.verdict, [f.title for f in r.findings]
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _later(p, seconds=120):
+    t = time.time() + seconds
+    os.utime(p, (t, t))
+
+
+_v, _f = _no_log_verdict()
+check("a fresh install nothing has run still says exactly that",
+      "Not started since the install" in _v
+      and any("has not been started" in t for t in _f), _v)
+
+
+def _save(d):
+    sav = d / "Saved" / "SaveGames"
+    sav.mkdir(parents=True)
+    (sav / "PlayerProgress.sav").write_bytes(b"x")
+    _later(sav / "PlayerProgress.sav")
+
+
+_v, _f = _no_log_verdict(_save)
+check("the game's own save, written after the install, says it DID run",
+      "It ran, and nothing this install wrote was loaded" in _v
+      and any("ran, and nothing this install wrote" in t for t in _f), _v)
+
+
+def _dll(d):
+    (d / "somemod.dll").write_bytes(b"MZ")
+    _later(d / "somemod.dll")
+
+
+_v, _f = _no_log_verdict(_dll)
+check("a DLL that appeared afterwards is not a game leaving a trace",
+      "Not started since the install" in _v, _v)
+
+
+def _ours(d):
+    # dxgi.dll is in the manifest the replay builds: our own file, never
+    # evidence about the game.
+    _later(d / "dxgi.dll")
+
+
+_v, _f = _no_log_verdict(_ours)
+check("...and neither is a file our own manifest says we wrote",
+      "Not started since the install" in _v, _v)
+
+
+def _within_the_minute(d):
+    sav = d / "Saved"
+    sav.mkdir()
+    (sav / "settings.cfg").write_bytes(b"x")
+    _later(sav / "settings.cfg", seconds=5)
+
+
+_v, _f = _no_log_verdict(_within_the_minute)
+check("a file written seconds after the install is the install, not a session",
+      "Not started since the install" in _v, _v)
+
+_ud = Path(tempfile.mkdtemp(prefix="userdata_"))
+(_ud / "Wardogs" / "Saved" / "Logs").mkdir(parents=True)
+_ulog = _ud / "Wardogs" / "Saved" / "Logs" / "Wardogs.log"
+_ulog.write_bytes(b"x")
+_later(_ulog)
+with patch.object(diagnose, "_user_data_roots", lambda: [_ud]):
+    _v, _f = _no_log_verdict(exe="WardogsClient-Win64-Shipping.exe")
+check("an Unreal game writes under LOCALAPPDATA, and that counts too",
+      "It ran, and nothing this install wrote was loaded" in _v, _v)
+check("...the folder name is worked out from the executable",
+      "Wardogs" in diagnose._user_data_names(Path("C:/g/Binaries/Win64"),
+                                             "WardogsClient-Win64-Shipping.exe"),
+      diagnose._user_data_names(Path("C:/g/Binaries/Win64"),
+                                "WardogsClient-Win64-Shipping.exe"))
+shutil.rmtree(_ud, ignore_errors=True)
+check("the look is bounded - entries and a clock, never a walk",
+      diagnose._RAN_ENTRIES <= 8000 and diagnose._RAN_SECONDS <= 2.0
+      and "os.walk" not in src_of(diagnose._game_ran))
+
 # The owner's own machine, found by detect_check: an Unreal game whose
 # shipping exe imports no graphics DLL at all was read as OpenGL, because
 # the only renderer name in the file is Unreal's unused OpenGL RHI string.

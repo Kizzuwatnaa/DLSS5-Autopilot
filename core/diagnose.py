@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -1029,11 +1030,31 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                        f"rewrite the {bits}-bit Vulkan layer.")
         return rep
 
-    rep.add(WARN, f"The {app} has not been started since the install.",
-            "ReShade writes ReShade.log the moment it loads, and there is "
-            "none in the folder. All the files are still in place.")
-    rep.add(INFO, f"If you DID start it, it launches something other than "
-                  f"{exe}.",
+    # Did the game itself run? Its own files answer that, and the answer
+    # decides which of these is the headline (#182 and 33 others).
+    _ours_files = {str(f).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                   for f in (man.get("files") or []) if isinstance(f, str)}
+    _ran_what, _ran_when = _game_ran(install_dir, str(man.get("exe") or ""),
+                                     _installed_at(install_dir) or 0.0,
+                                     _ours_files)
+    if _ran_what:
+        _clock = datetime.fromtimestamp(_ran_when).strftime("%d %b %H:%M")
+        rep.add(BAD, f"The {app} ran, and nothing this install wrote was "
+                     f"loaded.",
+                f"ReShade writes ReShade.log the moment it loads and there is "
+                f"none - but the {app}'s own files were written after the "
+                f"install ({_ran_what}, {_clock}), so it did run. Everything "
+                f"is still in place, so it is the loading that failed.")
+    else:
+        rep.add(WARN, f"The {app} has not been started since the install.",
+                "ReShade writes ReShade.log the moment it loads, and there is "
+                "none in the folder. Nothing the game itself writes has "
+                "changed since the install either. All the files are still in "
+                "place.")
+    rep.add(INFO,
+            f"The likeliest reason: it launches something other than {exe}."
+            if _ran_what else
+            f"If you DID start it, it launches something other than {exe}.",
             "A launcher or a different executable in another folder does not "
             "pick up the files here. Point the tool at the folder holding the "
             "executable that actually runs.")
@@ -1056,13 +1077,186 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
                 f"Try the {alt} proxy name in the settings and install again.")
-    rep.verdict = f"Not started since the install - run the {app} once, then check again."
+    rep.verdict = (f"It ran, and nothing this install wrote was loaded - the "
+                   f"proxy name or the executable is wrong."
+                   if _ran_what else
+                   f"Not started since the install - run the {app} once, then "
+                   f"check again.")
     # Said in a way the caller can act on: Windows' own fault record for this
     # executable is proof the game DID start, and it outranks "there is no
     # log" (#171 - GTA5.exe faulted eleven minutes before the report was
     # written, and the answer told the person to run the game once).
     rep.never_ran = True
     return rep
+
+
+# --- did the GAME run, whatever our own logs say? --------------------
+# The largest group of reports by a distance - 34 of the first 84 - is "no
+# log at all", and the answer to those began "the game has not been started
+# since the install". That is a guess, and to the half of them who HAD
+# started it, it is the sentence that makes a person give up: it blames
+# them for an install that did not load.
+#
+# A game that runs leaves its own traces - a log, a config, a save, a
+# shader cache - and not in one place, so three are looked at: the folder
+# holding the executable, its parents (Unreal keeps Saved/ two levels above
+# Binaries/Win64), and the per-user data folders where most engines
+# actually write (Unreal under LOCALAPPDATA, Unity under AppData LocalLow,
+# plenty of others under Documents/My Games).
+#
+# Bounded on purpose - directory entries and a wall clock, never a walk
+# (scan budgets, #8 #18 #32).
+_RAN_LOOK = ("", "Saved/Logs", "Saved/SaveGames", "Saved/Config/WindowsClient",
+             "Saved/Config/Windows", "Saved", "Logs", "logs", "Config",
+             "config", "SavedGames", "profiles", "Profiles", "UserData",
+             "savegames")
+_RAN_PARENTS = 3
+_RAN_ENTRIES = 4000
+# Per directory as well as in total: a game folder inside steamapps/common
+# sits beside every other game the person owns, and one directory like that
+# would spend the whole budget before the places that actually answer are
+# reached.
+_RAN_PER_DIR = 400
+_RAN_SECONDS = 1.0
+# Ours, and the files that say nothing about a game having run.
+_RAN_SKIP = {"reshade.log", "dlss5-feed.log", "optiscaler.log",
+             "standalone-dlssnr.log", "dlss5-autopilot.json",
+             "dlss5-feed-host64.log", "reshade.ini", "reshadepreset.ini",
+             "dlss5-feed.cfg", "dlss5-feed-crash.dmp"}
+_RAN_SKIP_SUFFIX = (".dlss5-autopilot-backup", ".tmp")
+# Nothing with one of these is a game leaving a trace - they are what an
+# install puts there. Our own files are never evidence about the game
+# ([[dlss5-own-files-not-candidates]] is the same lesson one layer out).
+_RAN_NOT_EVIDENCE = (".dll", ".addon64", ".addon32", ".fx", ".fxh", ".asi",
+                     ".json", ".7z", ".zip", ".pdb",
+                     # An executable's timestamp moves when the store
+                     # updates the game, which is not a session: Crimson
+                     # Desert answered with its own .exe on this machine.
+                     ".exe")
+# And an install writes its own files in a second or two, so anything
+# within a minute of it is the install, not a session. A game run that
+# started inside that minute is missed, and the older answer is given -
+# which is the safe way round.
+_RAN_MARGIN = 60.0
+_RAN_NOT_A_NAME = ("binaries", "win64", "win32", "bin", "common", "steamapps",
+                   "game", "x64", "retail")
+
+
+def _user_data_names(install_dir: Path, exe: str) -> list[str]:
+    """What this game's per-user folder is plausibly called."""
+    names: list[str] = []
+    stem = Path(exe or "").stem
+    for cut in ("-Win64-Shipping", "-WinGDK-Shipping", "-Win32-Shipping",
+                "-Shipping"):
+        if stem.lower().endswith(cut.lower()):
+            stem = stem[: -len(cut)]
+    if stem:
+        names.append(stem)
+        for tail in ("Client", "Game", "_x64", "64"):
+            if stem.lower().endswith(tail.lower()) and len(stem) > len(tail):
+                names.append(stem[: -len(tail)])
+    p = install_dir
+    for _ in range(_RAN_PARENTS + 1):
+        if p.name:
+            names.append(p.name)
+        if p.parent == p:
+            break
+        p = p.parent
+    out: list[str] = []
+    low: set[str] = set()
+    for n in names:
+        n = n.strip()
+        if n and n.lower() not in low and n.lower() not in _RAN_NOT_A_NAME:
+            low.add(n.lower())
+            out.append(n)
+    return out[:6]
+
+
+def _user_data_roots() -> list[Path]:
+    """Where engines keep per-user game data on Windows."""
+    roots: list[Path] = []
+    local = os.environ.get("LOCALAPPDATA")
+    app = os.environ.get("APPDATA")
+    if local:
+        roots.append(Path(local))
+        roots.append(Path(local + "Low"))
+    if app:
+        roots.append(Path(app))
+    try:
+        home = Path.home()
+        roots.append(home / "Documents" / "My Games")
+        roots.append(home / "Saved Games")
+    except (OSError, RuntimeError):
+        pass
+    return roots
+
+
+def _game_ran(install_dir: Path, exe: str, since: float,
+              ours: set[str]) -> tuple[str, float]:
+    """(what the game wrote after the install, when), or ("", 0).
+
+    Evidence, not proof: a Steam update writes into a game folder too. It
+    is reported as exactly what it is - something in the game's own files
+    changed after the install.
+    """
+    if not since:
+        return "", 0.0
+    since += _RAN_MARGIN
+    deadline = time.monotonic() + _RAN_SECONDS
+    seen = 0
+    best, best_t = "", 0.0
+    places: list[tuple[Path, Path]] = []
+    # The per-user folders first: they are small, they are named after this
+    # game, and they are where most engines actually write.
+    names = _user_data_names(install_dir, exe)
+    for base in _user_data_roots():
+        for n in names:
+            d = base / n
+            for rel in _RAN_LOOK:
+                places.append((d, d / rel if rel else d))
+    # Then the folder holding the executable, and only the NAMED subfolders
+    # of its parents. A parent itself is somebody else's ground - a game
+    # under steamapps/common shares it with every other game installed, and
+    # a file in there says nothing about this one.
+    root = install_dir
+    for depth in range(_RAN_PARENTS + 1):
+        for rel in _RAN_LOOK:
+            if rel:
+                places.append((root, root / rel))
+            elif depth == 0:
+                places.append((root, root))
+        if root.parent == root:
+            break
+        root = root.parent
+    for shown_from, d in places:
+        if seen > _RAN_ENTRIES or time.monotonic() > deadline:
+            break
+        try:
+            entries = list(os.scandir(d))[:_RAN_PER_DIR]
+        except OSError:
+            continue
+        for e in entries:
+            seen += 1
+            if seen > _RAN_ENTRIES or time.monotonic() > deadline:
+                break
+            low = e.name.lower()
+            if low in _RAN_SKIP or low in ours \
+                    or low.endswith(_RAN_SKIP_SUFFIX) \
+                    or low.endswith(_RAN_NOT_EVIDENCE):
+                continue
+            try:
+                if not e.is_file():
+                    continue
+                t = e.stat().st_mtime
+            except OSError:
+                continue
+            if t > since and t > best_t:
+                try:
+                    best = str(Path(e.path).relative_to(shown_from))
+                except ValueError:
+                    best = e.name
+                best_t = t
+    return best, best_t
 
 
 def _shader_failures(rtext: str, provider_tech: str, rep: Report) -> None:
