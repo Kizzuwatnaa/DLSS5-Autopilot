@@ -3,6 +3,7 @@ uninstalls cleanly, and the guard rails actually fire.
 
 Run this before cutting a release.
 """
+import atexit
 import inspect
 import json
 import os
@@ -53,7 +54,29 @@ def check(name: str, cond: bool, detail: str = "") -> bool:
     return cond
 
 
+_SECTIONS: list[str] = []
+_REACHED_RESULT = False
+
+
+@atexit.register
+def _say_if_truncated() -> None:
+    """A suite that dies half way is not a suite that passed.
+
+    An uncaught exception in any section ends the run - the sections after
+    it never execute, and the exit code is 1, exactly as it is for a failed
+    check. This says which section it stopped in, so nobody reads 731
+    passes as a green run.
+    """
+    if _REACHED_RESULT or not _SECTIONS:
+        return
+    print()
+    print("!! THE SUITE STOPPED IN: " + _SECTIONS[-1])
+    print(f"!! {len(_SECTIONS)} section(s) ran; everything after that one "
+          f"never did. This is not a pass.")
+
+
 def section(title: str) -> None:
+    _SECTIONS.append(title)
     print()
     print("=" * 78)
     print(title)
@@ -3573,7 +3596,24 @@ _lname = _m.loader_name(_game / "Game.exe")
 _lini = _lname[:-4] + ".ini"
 check("the loader name comes from the executable's import table",
       _lname in _m.LOADER_NAMES and _lname in {i.lower() for i in pe.pe_imports(_game / "Game.exe")}, _lname)
+# A file of the game's own under that name is not ours to replace: the
+# unlock is an opt-in extra and a version.dll the game ships does something.
+# It used to be backed up and written over (#137: on Cyberpunk that file is
+# Cyber Engine Tweaks, and doing it took CET out of the game).
 (_game / _lname).write_bytes(b"MZ-the-games-own")
+check("a name the game itself occupies is not taken (#137)",
+      _m.loader_name(_game / "Game.exe", set(), _game) is None
+      and _m.loader_name(_game / "Game.exe") == _lname)
+try:
+    _m.install(_game, _game / "Game.exe")
+    _refused = ""
+except _m.NoLoaderName as e:
+    _refused = str(e)
+check("...and the unlock says which file stopped it, not 'none imported'",
+      _lname in _refused and "another mod" in _refused, _refused[:90])
+# From here the name is a loader the person installed by hand, which IS
+# taken over - its ini is merged, so its own plugins keep loading.
+(_game / _lname).write_bytes(b"MZ" + b"Ultimate ASI Loader" + b"\0" * (1 << 18))
 (_game / _lini).write_text("[GlobalSets]\nLoadPlugins=1\nUseCrashHandler=0\n\n[Other]\nKeep=1\n", encoding="utf8")
 _saved = (_m.resolve, _m.resolve_loader, net.download)
 _m.resolve = lambda: ("v9.9", "mfg")
@@ -3605,8 +3645,9 @@ finally:
     _m.resolve, _m.resolve_loader, net.download = _saved
 check("the three unlock files land beside the exe",
       all((_game / n).is_file() for n in _m.FILES) and _tag == "v9.9")
-check("the game's own file under that name is backed up and the loader takes the name",
-      (_game / (_lname + _m.BACKUP_SUFFIX)).read_bytes() == b"MZ-the-games-own"
+check("a loader the person installed by hand IS taken over, and backed up",
+      (_game / (_lname + _m.BACKUP_SUFFIX)).read_bytes().startswith(
+          b"MZUltimate ASI Loader")
       and _m.is_loader(_game / _lname), str(_files))
 _ini = (_game / _lini).read_text(encoding="utf8")
 check("the loader's ini is merged, not replaced",
@@ -7407,6 +7448,12 @@ shutil.rmtree(_ub.parent, ignore_errors=True)
 section("1.8.2: api.github.com answered by something else (#175), and the "
         "crash verdict that stopped before the next step (#98)")
 
+# Several checks below build a folder that looks like somebody's install and
+# read the verdict out of it - the same thing _tools/replay_report.py does
+# for a saved report, so it is imported rather than written twice.
+sys.path.insert(0, str(SRC_DIR / "_tools"))
+import replay_report as _rr182  # noqa: E402
+
 # #175, word for word out of the report: the chain verified and the NAME on
 # the certificate did not match, which the old answer read as a missing
 # Windows root and told the person to open GitHub in Edge.
@@ -7569,15 +7616,39 @@ check("the first screen says the tool reads the logs afterwards, not only "
 check("...and that nothing is bundled",
       "bundled" in _readme[:3000].lower() or "bundles nothing" in _readme[:3000])
 
+# Every control the README names in bold has to exist. A renamed button
+# leaves the document telling people to press something that is not there -
+# the same fault as #148, one surface out. Two words are enough to match on,
+# because some labels are built at run time ("update (3 newer)").
+_readme_src = "".join((SRC_DIR / "core" / n).read_text(encoding="utf8")
+                      for n in ("gui.py", "installer.py", "optiscaler.py",
+                                "dlss.py")).lower()
+_named, _gone = 0, []
+for _b in _re.findall(r"[*][*]([^*\n]{2,40})[*][*]", _readme):
+    _t = _b.strip().rstrip(".")
+    if not _t or _t[0].isupper() or "," in _t or len(_t.split()) > 5:
+        continue                       # a sentence or a heading, not a control
+    _named += 1
+    _probe = " ".join(_t.split()[:2]).strip(" ?:%-").lower()
+    if _probe and _probe not in _readme_src:
+        _gone.append(_t)
+check("every control the README names in bold exists in the tool",
+      _named >= 30 and not _gone, _gone or _named)
+
 # The loop that measures itself: state.py turns every saved verdict into a
 # ranked backlog, and a class at the top is a shape to fix. Checked here so
 # the ranking cannot silently stop describing the corpus.
-_st_spec = _ilu2.spec_from_file_location("state", SRC_DIR / "_tools" / "state.py")
-_st = _ilu2.module_from_spec(_st_spec)
+import importlib.util as _ilu3  # noqa: E402
+_st_spec = _ilu3.spec_from_file_location("state", SRC_DIR / "_tools" / "state.py")
+_st = _ilu3.module_from_spec(_st_spec)
 _st_spec.loader.exec_module(_st)
 _stc = _st.corpus()
+_stsaved = json.loads((SRC_DIR / "_tools" / "verdict_baseline.json")
+                     .read_text(encoding="utf8"))
 check("the loop measures every report in the corpus, not a sample",
-      _stc.get("total", 0) == len(_vnow), (_stc.get("total"), len(_vnow)))
+      _stc.get("total", 0) == len(_stsaved)
+      == len(list((SRC_DIR / "_tools" / "reports").glob("*.txt"))),
+      (_stc.get("total"), len(_stsaved)))
 check("...and almost nothing falls through its classes",
       _stc["counts"].get("other", 0) <= max(6, _stc["total"] // 10),
       _stc["counts"].get("other"))
@@ -7723,9 +7794,6 @@ shutil.rmtree(_nue, ignore_errors=True)
 # #182 (Resident Evil 4, "it never started"): the report said "ReShade
 # loaded no add-ons" over a log block that read "(none)". Three shapes, and
 # they are three different answers.
-import sys as _sys182  # noqa: E402
-_sys182.path.insert(0, str(SRC_DIR / "_tools"))
-import replay_report as _rr182  # noqa: E402
 def _verdict_for(log_text):
     d = _rr182.build("feeder", "DX12", "re4.exe", {"reshade": " "}, 64)
     (d / "ReShade.log").write_text(log_text, encoding="utf8")
@@ -7868,8 +7936,10 @@ check("a game whose dropdown has no standalone entry is not steered to it",
 check("a game that ships its own DLSS keeps OptiScaler - it never loads the add-on",
       dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").recommended
       == dlss.OPTI)
+_guisrc182 = src_of(_gui)
 check("the window passes the driver in, or the steer never runs",
-      "driver=gpu.driver_version()" in _gsrc)
+      "driver=gpu.driver_version()" in _guisrc182,
+      len(_guisrc182))
 shutil.rmtree(_sd, ignore_errors=True)
 
 # #98: "It ran, and then the game crashed" was the end of the answer. The
@@ -7882,6 +7952,7 @@ check("...on the route whose ini that is, and something real on the others",
       'route == "optiscaler"' in _crash_src and "uninstall" in _crash_src.lower())
 
 section("RESULT")
+_REACHED_RESULT = True
 if FAILS:
     print(f"{len(FAILS)} FAILED:")
     for f in FAILS:

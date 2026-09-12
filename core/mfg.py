@@ -291,11 +291,18 @@ def install(exe_dir: Path, exe: Path | None, log=None,
         # way in - no second loader, no name taken off anyone (#137).
         plug = existing_plugins(exe_dir)
         if plug is None:
+            taken_here = [n for n in LOADER_NAMES
+                          if (exe_dir / n).is_file()
+                          and not free_for_loader(exe_dir, n, ours_now)]
+            why = (f"{', '.join(taken_here)} beside the executable belongs to "
+                   f"the game or another mod, and this does not overwrite it"
+                   if taken_here else
+                   f"{exe.name if exe else 'the executable'} imports none of "
+                   f"{', '.join(LOADER_NAMES)}")
             raise NoLoaderName(
-                f"{exe.name if exe else 'the executable'} imports none of "
-                f"{', '.join(LOADER_NAMES)} that is free here, so Ultimate "
-                f"ASI Loader has no name it would be loaded under - the "
-                f"unlock cannot be placed here")
+                f"{why}, so Ultimate ASI Loader has no name it would be "
+                f"loaded under - the unlock cannot be placed here. Everything "
+                f"else in the install is unaffected.")
     tag, url = resolve()
     log(f"      RTX40MFG-Unlock {tag}")
     z = net.download(url, f"RTX40MFG-Unlock-{tag}.zip")

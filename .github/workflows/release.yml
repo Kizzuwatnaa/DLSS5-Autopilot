@@ -137,7 +137,7 @@ jobs:
           [ -z "$VERSION" ] && VERSION="dev"
           mkdir -p out
           cp dist/dlss5-autopilot.exe out/
-          cp README.md LICENSE out/
+          cp README.md LICENSE NOTICE out/
           cd out
           7z a "../DLSS5-Autopilot-v${VERSION}-win64.zip" ./*
           cd ..

@@ -245,7 +245,8 @@ matters.
   without writing anything.
 - **Before / after** puts the last two ReShade screenshots side by side.
 - **Check versions**: games you set up earlier are checked against what
-  their publishers offer now; **update (N newer)** appears in the list.
+  their publishers offer now, and the game is marked **update** with
+  how many of its parts have a newer build.
 - The tool updates itself: a new release downloads in the background, its
   SHA-256 is checked against the `SHA256SUMS.txt` GitHub published, and the
   top bar offers a one-click restart. `"auto_update": false` in
@@ -549,7 +550,8 @@ builds of the same three stay in the list behind them, so a build picked by
 hand can still come from the mirror. Remix mods are never mirrored.
 Nothing here is affiliated with or endorsed by NVIDIA, ReShade, RenoDX,
 OptiScaler, RTX Remix or any project above. The installer's own code is
-MIT - see [LICENSE](LICENSE). Rights holders: open an issue and it will be
+MIT - see [LICENSE](LICENSE); what that does and does not cover is in
+[NOTICE](NOTICE). Rights holders: open an issue and it will be
 addressed.
 
 Thanks to [perseval-BLR/dlss5-classic-games](https://github.com/perseval-BLR/dlss5-classic-games)
