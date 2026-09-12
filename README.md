@@ -8,6 +8,24 @@ and can take all of it back out. One `.exe`, nothing to install, no admin.
 **[Download the latest release](../../releases/latest)** · Windows 10/11 ·
 NVIDIA RTX 20 or newer
 
+- **Eight routes, chosen per game.** DirectX 9 through 12, Vulkan, OpenGL,
+  32-bit, emulators and RTX Remix mods each reach the network a different
+  way. The tool reads the executable and the folder, offers every route
+  the game allows, marks the one that fits your card, and leaves the
+  choice yours.
+- **It tells you what happened.** Play, then press **did it work?**: it
+  reads ReShade's log, the add-on's, OptiScaler's and Windows' own crash
+  record, and says whether the model ran - and when it did not, which
+  part stopped and what to do next.
+- **Everything else the chain needs.** The right `nvngx_dlssnr.dll` for
+  your architecture, ReShade with add-on support, motion-vector shaders,
+  DXVK for DirectX 9, a 64-bit helper for 32-bit games, frame generation
+  where the card has it.
+- **It takes itself back out.** Uninstall restores every file it replaced
+  and removes only what it wrote.
+- **Nothing is bundled.** Each component is fetched from its own
+  publisher, at run time, at a version the tool resolves that day.
+
 > This repository holds installer logic only. No game files, no NVIDIA
 > binaries, no third-party code is redistributed - everything is fetched at
 > run time from the original publishers. [Credits and licensing](#credits-and-licensing).

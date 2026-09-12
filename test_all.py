@@ -7551,6 +7551,24 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# The first screen of the README is what a person reads before deciding
+# whether this tool is worth downloading, and the GitHub About line beside
+# it was describing a feeder installer long after the tool had eight
+# routes. Numbers in a document rot silently; these two are checked.
+_readme = (SRC_DIR / "README.md").read_text(encoding="utf8")
+_WORDS = {8: "eight", 9: "nine", 10: "ten", 7: "seven"}
+check("the README's route count is the number of routes there are",
+      f"{_WORDS.get(len(dlss.LABELS), len(dlss.LABELS))} routes" in _readme.lower(),
+      len(dlss.LABELS))
+from core import emulators as _emus  # noqa: E402
+check("...and its emulator count is the number of profiles there are",
+      f"{len(_emus.PROFILES)} emulators" in _readme, len(_emus.PROFILES))
+check("the first screen says the tool reads the logs afterwards, not only "
+      "that it installs",
+      "did it work?" in _readme[:3000] and "uninstall" in _readme[:3000].lower())
+check("...and that nothing is bundled",
+      "bundled" in _readme[:3000].lower() or "bundles nothing" in _readme[:3000])
+
 # The loop that measures itself: state.py turns every saved verdict into a
 # ranked backlog, and a class at the top is a shape to fix. Checked here so
 # the ranking cannot silently stop describing the corpus.
