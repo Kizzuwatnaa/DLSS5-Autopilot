@@ -259,6 +259,21 @@
     }
    }
   },
+  "horizonzerodawnremastered.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Horizon Zero Dawn\u2122 Remastered",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "lostplanetdx10.exe": {
    "drivers": {
     "616.64": {
@@ -522,6 +537,6 @@
    }
   }
  },
- "generated": "2026-09-12T09:14:24Z",
- "reports": 46
+ "generated": "2026-09-12T10:02:56Z",
+ "reports": 47
 }
