@@ -45,6 +45,21 @@
     }
    }
   },
+  "control_dx12.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Control Ultimate Edition",
+   "routes": {
+    "upstream": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "cyberpunk2077.exe": {
    "drivers": {
     "616.56": {
@@ -657,6 +672,6 @@
    }
   }
  },
- "generated": "2026-09-12T20:11:51Z",
- "reports": 55
+ "generated": "2026-09-12T20:27:59Z",
+ "reports": 56
 }
