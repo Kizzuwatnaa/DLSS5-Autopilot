@@ -187,7 +187,7 @@ def existing_plugins(exe_dir: Path) -> Path | None:
     # nothing else (Cyber Engine Tweaks ships cyber_engine_tweaks.asi in its
     # own). is_loader() cannot be used here - it recognises Ultimate ASI
     # Loader by name, and the loader this route exists for, CET's version.dll,
-    # is not that. Found by the release gate.
+    # is not that.
     if not any((exe_dir / n).is_file() for n in LOADER_NAMES):
         return None
     try:

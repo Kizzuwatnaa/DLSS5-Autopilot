@@ -2559,7 +2559,7 @@ class App:
         # Row 19: a paragraph, not a control, and it belongs under the
         # settings rather than between two of them. It shared row 13 with
         # the DXVK checkbox, which painted over it on every DX11 feeder
-        # game - found by the walkthrough's grid-overlap check.
+        # game.
         self.reswarn.grid(row=19, column=0, columnspan=3, sticky="ew", pady=(12, 0))
 
         inner.bind("<Configure>",
@@ -3517,9 +3517,7 @@ class App:
         # The feeder route needs BOTH: row 3 is its motion-vector provider,
         # and the name ReShade goes in under gets a row of its own. Without
         # it the commonest answer to a no-log report - "this game skips
-        # dxgi.dll, try d3d11.dll" - names a control that is not on the page
-        # (found by the release gate; the diagnosis text for that route had
-        # to say "this route does not offer it" instead).
+        # dxgi.dll, try d3d11.dll" - names a control that is not on the page.
         if feeder:
             self.lbl_rproxy.grid(row=21, column=0, sticky="w",
                                  padx=(0, 14), pady=5)

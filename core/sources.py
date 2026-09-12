@@ -818,7 +818,7 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
         # catalog["renodx"] directly, so a list missing either of them turns
         # a network problem into a KeyError traceback on the very route the
         # fallback exists to rescue. The API's own error is the better
-        # answer. Found by the release gate.
+        # answer.
         # NVIDIA's own runtimes first: they come off a redirect and a raw
         # URL rather than the API, so they are reachable in this outage and
         # they supply the "dlss" family the installer indexes directly. The

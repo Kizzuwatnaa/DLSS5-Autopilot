@@ -1084,9 +1084,8 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         # Naming a control that is not on the screen is #148's shape.
         # Only the ReShade routes reach this function - analyse() hands
         # optiscaler and remix to their own readers (:1389-1393) - so those
-        # two branches never fire today. They are kept because the mapping
-        # is the GUI's, and the day a route moves, one copy that quietly
-        # disagrees with the window is how #148 happened.
+        # two branches never fire today. Kept in step with the window all
+        # the same: a second copy that drifts is the bug itself.
         _drop = ("'loads as'" if rep.route == "optiscaler"
                  else "" if rep.route == "remix"
                  else "'reshade loads as'")
@@ -1165,7 +1164,7 @@ _RAN_MARGIN = 60.0
 # Steam rewrites Steam\logs\webhelper.txt every session, and a game under
 # steamapps/common is three levels below it, so every Steam game with no
 # ReShade.log was told "it ran, and nothing this install wrote was loaded"
-# on the strength of Steam's own log. Found by the release gate.
+# on the strength of Steam's own log.
 _RAN_CONTAINERS = ("binaries", "win64", "win32", "wingdk", "winarm64", "bin",
                    "bin64", "x64", "x86", "retail", "shipping", "game")
 # Never the name of THIS game's per-user folder, whatever the path says.
