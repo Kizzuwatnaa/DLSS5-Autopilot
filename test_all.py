@@ -7551,6 +7551,24 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# The words every verdict about somebody else's log is matched against
+# live in their builds, and they move (#168: "cost:" became "elapsed:").
+# _tools/phrase_check.py downloads the current builds and looks for them;
+# here, offline, only that its table still describes THIS code.
+import importlib.util as _ilu  # noqa: E402
+_spec = _ilu.spec_from_file_location("phrase_check",
+                                     SRC_DIR / "_tools" / "phrase_check.py")
+_pcmod = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_pcmod)
+_dg = (SRC_DIR / "core" / "diagnose.py").read_text(encoding="utf8")
+_pairs = [pair for group in _pcmod.PHRASES.values() for pair in group]
+_missing = [c for _b, c in _pairs if c not in _dg]
+check("every phrase the rot check watches is one the diagnosis really reads",
+      len(_pairs) >= 20 and not _missing, _missing or len(_pairs))
+check("...and the check is in the standing audits, so it runs by itself",
+      "phrase_check.py" in (SRC_DIR.parent / ".claude" / "skills"
+                            / "issue-triage" / "SKILL.md").read_text(encoding="utf8"))
+
 # #137: Cyberpunk's CET IS an ASI loader and owns version.dll. The unlock
 # used to write Ultimate ASI Loader over it - CET, and every mod that needs
 # it, out of the game. The reporter's own way round is now the tool's.
