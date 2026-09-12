@@ -111,17 +111,59 @@ def disk_full_message(e: BaseException, game_dir=None, cache_dir=None) -> str:
 _SSL: ssl.SSLContext | None = None
 
 
+def _host(url: str) -> str:
+    """The host out of a URL, for a message that names what to go and check."""
+    return url.split("/")[2] if "//" in url else url
+
+
 def untrusted(name: str, e: Exception) -> RuntimeError | None:
     """The error to raise when TLS verification failed, else None.
 
     urlopen reports a failed verification as a URLError whose reason is
     the SSLError, so the text is checked rather than the type.
+
+    One OpenSSL error code, four different faults - and the instruction for
+    one is useless for the others. #175 arrived as "Hostname mismatch,
+    certificate is not valid for 'api.github.com'" and was answered with
+    "open github.com in Edge so Windows fetches the missing root", which
+    could not have helped: the chain verified, the name on it did not
+    match, so something on that network answered for GitHub. The reason
+    text decides the answer.
     """
-    if "CERTIFICATE_VERIFY_FAILED" not in str(e):
+    text = str(e)
+    if "CERTIFICATE_VERIFY_FAILED" not in text:
         return None
+    host = name.split("/")[0] or name
+    low = text.lower()
+    if "hostname mismatch" in low or "certificate is not valid for" in low:
+        return RuntimeError(
+            f"{host}: something on this network answered for {host} with a "
+            f"certificate issued to a different name ({e}). The certificate "
+            f"was trusted - it is the name on it that is wrong, so this is "
+            f"not a missing Windows root and opening the site in Edge does "
+            f"not fix it: the connection did not reach {host} at all. The "
+            f"usual causes, in order - a DNS or family-filter service, an "
+            f"ISP or router block page, a hotel/campus wifi login page, a "
+            f"VPN, or an antivirus that inspects HTTPS. Try a phone hotspot "
+            f"or set this PC's DNS to 1.1.1.1, then install again.")
+    if "certificate has expired" in low or "not yet valid" in low:
+        return RuntimeError(
+            f"{host}: the certificate is outside its dates as far as this PC "
+            f"is concerned ({e}). That is almost always the PC's own clock: "
+            f"check the date and time in Windows settings (turn 'Set time "
+            f"automatically' on), then install again. A wrong date makes "
+            f"every HTTPS site untrusted, not only this one.")
+    if "self signed" in low or "self-signed" in low:
+        return RuntimeError(
+            f"{host}: the certificate offered for {host} was signed by "
+            f"something on this PC rather than by a public authority ({e}). "
+            f"That is an antivirus, a VPN or a company proxy inspecting "
+            f"HTTPS, and its root is not one Windows trusts here. Exclude "
+            f"this tool from the HTTPS/SSL scanning (or turn it off), then "
+            f"install again.")
     return RuntimeError(
-        f"{name}: Windows does not trust GitHub's certificate ({e}). Open "
-        f"https://github.com once in Edge (Windows fetches a missing root "
+        f"{host}: Windows does not trust the certificate for {host} ({e}). "
+        f"Open https://{host} once in Edge (Windows fetches a missing root "
         f"certificate the first time a Microsoft program needs it), then "
         f"try again. An antivirus that inspects HTTPS causes this too - "
         f"exclude this tool or turn that off.")
@@ -298,11 +340,14 @@ def download(url: str, name: str, progress=None, force: bool = False,
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)
-                if untrusted(name, e):
-                    raise untrusted(name, e) from e
+                # The host, not the file name: untrusted() names what to
+                # open in a browser and what answered for it, and "open
+                # https://renodx-4.55.zip" is not an instruction.
+                if untrusted(_host(url), e):
+                    raise untrusted(_host(url), e) from e
                 raise RuntimeError(
                     f"{name}: the secure connection kept breaking ({e}). "
-                    f"Something is sitting between this PC and GitHub - an "
+                    f"Something is sitting between this PC and {_host(url)} - an "
                     f"antivirus with HTTPS/SSL scanning, a VPN or a proxy. "
                     f"Turn that off (or exclude this tool) and try again; the "
                     f"download resumes where it stopped.") from e
@@ -316,8 +361,8 @@ def download(url: str, name: str, progress=None, force: bool = False,
             last = e
             if attempt == attempts - 1:
                 tmp.unlink(missing_ok=True)
-                if untrusted(name, e):
-                    raise untrusted(name, e) from e
+                if untrusted(_host(url), e):
+                    raise untrusted(_host(url), e) from e
                 raise
             time.sleep(1.0 * (attempt + 1))
     raise last if last else RuntimeError(f"{name}: download failed")

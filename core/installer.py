@@ -2815,6 +2815,19 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                          f"feeder release - newer builds conflict "
                                          f"with it")
                 e = sources.pick(catalog["renodx"], want)
+                # pick() falls back to the newest build when the wanted one
+                # is not on the list, and every pin above exists because the
+                # newest is the build that breaks. Silence there would read
+                # as "pinned to 4.55" in the log and install 5.2.1, so the
+                # miss is said out loud and carried into the report.
+                if want and e["label"] != want:
+                    miss = (f"renodx-dlss5 {want} is not on the build list "
+                            f"right now - installing {e['label']} instead, "
+                            f"which is the build that pin exists to avoid. "
+                            f"If the neural pass faults, pick {want} under "
+                            f"'renodx-dlss5 build' once the list is complete.")
+                    log(f"      {miss}")
+                    rep.warnings.append(miss)
                 f = dl(e["url"], f"renodx-{e['label']}.zip")
                 _extract(f, ".addon64", dlss_dir / RENODX, rep, root)
                 rep.written.append(str((dlss_dir / RENODX).relative_to(root)))

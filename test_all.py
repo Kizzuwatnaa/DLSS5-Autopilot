@@ -4152,8 +4152,9 @@ check("every fetch goes through it",
       and "context=net.ssl_context()" in src_of(sources._get))
 check("the release build installs certifi",
       "pip install --upgrade certifi" in Path(".github/workflows/release.yml").read_text(encoding="utf8"))
-check("a failed verification is explained",
-      "untrusted(name, e)" in src_of(net.download))
+check("a failed verification is explained, by host and not by file name",
+      "untrusted(_host(url), e)" in src_of(net.download)
+      and "untrusted(name, e)" not in src_of(net.download))
 
 section("50. issue #21: y4my4my4m's OptiScaler fork, from a .7z, through Windows' tar.exe")
 check("the build list starts with the build the route always installed",
@@ -7402,6 +7403,96 @@ check("a launcher beside the game it starts is not taken for the game (#152)",
       pe.find_game_exes(_ub)[0].name == "UBOAT.exe",
       [p.name for p in pe.find_game_exes(_ub)])
 shutil.rmtree(_ub.parent, ignore_errors=True)
+
+section("1.8.2: api.github.com answered by something else (#175), and the "
+        "crash verdict that stopped before the next step (#98)")
+
+# #175, word for word out of the report: the chain verified and the NAME on
+# the certificate did not match, which the old answer read as a missing
+# Windows root and told the person to open GitHub in Edge.
+_MISMATCH = ("<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate "
+             "verify failed: Hostname mismatch, certificate is not valid "
+             "for 'api.github.com'. (_ssl.c:1010)>")
+_m = str(net.untrusted("api.github.com", Exception(_MISMATCH)))
+check("a hostname mismatch is not called a missing root certificate (#175)",
+      "different name" in _m and "once in Edge" not in _m, _m[:90])
+check("...and it names what actually does it",
+      all(w in _m for w in ("DNS", "VPN", "1.1.1.1")), _m[:90])
+_exp = str(net.untrusted("reshade.me", Exception(
+    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+    "certificate has expired (_ssl.c:1010)")))
+check("an expired certificate points at this PC's clock",
+      "clock" in _exp and "Edge" not in _exp, _exp[:90])
+_self = str(net.untrusted("github.com", Exception(
+    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self "
+    "signed certificate in certificate chain")))
+check("a self-signed chain points at the HTTPS scanning that made it",
+      "antivirus" in _self and "Edge" not in _self, _self[:90])
+_root = str(net.untrusted("api.github.com", Exception(
+    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to "
+    "get local issuer certificate")))
+check("a missing root still gets the answer that fixes a missing root (#54)",
+      "Edge" in _root and "api.github.com" in _root, _root[:90])
+check("nothing but a verification failure is claimed as one",
+      net.untrusted("x", Exception("timed out")) is None)
+
+# The same two pages the fallback reads, in GitHub's own markup.
+_ASSETS_HTML = ('</svg>          <a href="/jlrouzies-fr/DLSS5-Feeder/releases'
+                '/download/v0.15.1/AUTOMATIC_INSTALLATION_AVAILABLE.txt" '
+                'rel="nofollow" data-turbo="false" class="wb-break-all">'
+                '<a href="/jlrouzies-fr/DLSS5-Feeder/releases/download/'
+                'v0.15.1/DLSS5-Feeder-0.15.1.zip" rel="nofollow">')
+_LIST_HTML = ('<a href="/jlrouzies-fr/DLSS5-Feeder/releases/tag/v1.16.0-beta.1"'
+              ' data-view-component="true" class="Link--primary Link">1.16.0'
+              '<a href="/jlrouzies-fr/DLSS5-Feeder/releases/tag/v0.15.1" '
+              'class="Link--primary Link">0.15.1'
+              '<a href="/jlrouzies-fr/DLSS5-Feeder/releases/tag/v0.15.1#top" '
+              'class="Link">same release again')
+with patch.object(sources, "_page", lambda url, timeout=30: _ASSETS_HTML):
+    _a = sources.release_assets_html("jlrouzies-fr/DLSS5-Feeder", "v0.15.1")
+check("a release's assets are read off github.com, with no API call",
+      _a.get("DLSS5-Feeder-0.15.1.zip", "").endswith(
+          "/jlrouzies-fr/DLSS5-Feeder/releases/download/v0.15.1/"
+          "DLSS5-Feeder-0.15.1.zip") and len(_a) == 2, _a)
+with patch.object(sources, "_page", lambda url, timeout=30: _LIST_HTML):
+    _t = sources.release_tags_html("jlrouzies-fr/DLSS5-Feeder", pages=1)
+check("...and the tags are, newest first, each one once",
+      _t == [("v1.16.0-beta.1", True), ("v0.15.1", False)], _t)
+check("a test build is told by its tag, not by a badge whose markup moves",
+      sources.release_tags_html.__doc__ and "badge" in sources.release_tags_html.__doc__)
+with patch.object(sources, "_page", lambda url, timeout=30: ""):
+    check("a page that does not answer ends the walk instead of looping",
+          sources.release_tags_html("x/y", pages=4) == []
+          and sources.release_assets_html("x/y", "v1") == {})
+
+check("the feeder falls back to those pages when the API does not answer",
+      "_feeder_html" in src_of(sources.resolve_feeder)
+      and "release_tags_html" in src_of(sources.feeder_releases))
+check("...and the build list does too, or gives the API's own error",
+      "_rhi_html_catalog" in src_of(sources.rhi_catalog)
+      and "raise" in src_of(sources.rhi_catalog))
+check("a pinned tag the API HAS answered about is not hunted for on the pages",
+      "_NoSuchTag" in src_of(sources.resolve_feeder))
+check("every build the installer pins by name survives the shortened list",
+      set(sources.RHI_HTML_REQUIRED["renodx"]) == {
+          sources.FEEDER_RENODX_PIN, sources.OPENGL_RENODX_PIN,
+          sources.DRIVER_FAULT_RENODX_PIN},
+      sources.RHI_HTML_REQUIRED)
+check("...and a pin that is missing anyway is said out loud, not installed over",
+      'e["label"] != want' in src_of(installer)
+      and "which is the build that pin exists to avoid" in src_of(installer))
+check("the fallback tells the user the list came from somewhere else",
+      "last_fallback" in src_of(sources.rhi_catalog)
+      and "last_fallback" in src_of(sources.resolve_feeder))
+
+# #98: "It ran, and then the game crashed" was the end of the answer. The
+# reporter found the next step himself, and it is the one test that splits
+# the neural pass from everything else.
+_crash_src = src_of(_gui.App._crash_overrides)
+check("the crash verdict now carries the test that splits it in two (#98)",
+      "[DlssNr]" in _crash_src and "Enabled=false" in _crash_src)
+check("...on the route whose ini that is, and something real on the others",
+      'route == "optiscaler"' in _crash_src and "uninstall" in _crash_src.lower())
 
 section("RESULT")
 if FAILS:

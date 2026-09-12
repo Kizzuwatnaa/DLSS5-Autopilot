@@ -2955,6 +2955,30 @@ class App:
                   "Windows recorded this game faulting afterwards, and a "
                   "session that ends in a crash is not a working one.",
                   "warn")
+        # And then the next step, which this stopped at until #98: "your
+        # install is right, the game crashes" is a diagnosis nobody can act
+        # on. The one test that splits it in two is switching the neural
+        # pass off and starting the game again - Dragon's Dogma 2 survived
+        # that and crashed with it on, which named the pass rather than the
+        # tool. A game that dies at startup cannot reach an overlay, so the
+        # file is the control that gets named here.
+        route = str(getattr(d, "route", ""))
+        if route == "optiscaler":
+            self._log("> the test that splits it in two: open OptiScaler.ini "
+                      "beside the game, set Enabled=false under [DlssNr], and "
+                      "start it again. Survives = the neural pass is what "
+                      "crashes it (Dragon's Dogma 2, #98) - set it back to "
+                      "true and try another 'optiscaler build', or switch the "
+                      "route to feeder. Still crashes = the fault is "
+                      "OptiScaler's or the game's own, and neural rendering "
+                      "was never the reason.", "warn")
+        else:
+            self._log("> the test that splits it in two: uninstall (the "
+                      "game's own files go back) and play the same spot "
+                      "again. Still crashes = the game or another mod, and "
+                      "this was never it. Survives = it is what we installed "
+                      "- say so in an issue with this report, and the module "
+                      "Windows named above says whose it is.", "warn")
 
     def _windows_crash(self, rep) -> None:
         """What Windows itself recorded when the game closed.
