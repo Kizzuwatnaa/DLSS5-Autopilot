@@ -500,6 +500,10 @@
   },
   "uboat launcher.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "616.92": {
      "failed": 5,
      "worked": 3
@@ -509,7 +513,7 @@
    "routes": {
     "feeder": {
      "failed": 5,
-     "worked": 0
+     "worked": 1
     },
     "standalone": {
      "failed": 0,
@@ -518,6 +522,6 @@
    }
   }
  },
- "generated": "2026-09-12T05:54:41Z",
- "reports": 45
+ "generated": "2026-09-12T07:33:51Z",
+ "reports": 46
 }
