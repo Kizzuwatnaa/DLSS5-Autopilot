@@ -498,8 +498,30 @@ def fetch_text(url: str, _try: int = 0) -> bytes:
 
 
 def json_get(url: str):
-    """Read JSON from a URL."""
-    return json.loads(fetch_text(url).decode("utf8"))
+    """Read JSON from a URL, with github.com behind api.github.com.
+
+    Every component that is not in sources.py reaches GitHub through here,
+    and the API is the one host that fails on its own - 60 anonymous calls
+    an hour, and the name a filter or an inspecting antivirus catches
+    (#175). When the request fails for a reason that is about reaching the
+    host rather than about the answer, the same release information is read
+    off github.com's pages in the API's own shape, so the caller's asset
+    matching is unchanged. A 404 or a 401 IS the answer and is raised.
+    """
+    try:
+        return json.loads(fetch_text(url).decode("utf8"))
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 404, 410):
+            raise
+        data = sources.release_json_html(url)
+        if data is None:
+            raise
+        return data
+    except Exception:
+        data = sources.release_json_html(url)
+        if data is None:
+            raise
+        return data
 
 
 def human(n: float) -> str:

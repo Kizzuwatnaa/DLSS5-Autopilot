@@ -7485,6 +7485,62 @@ check("the fallback tells the user the list came from somewhere else",
       "last_fallback" in src_of(sources.rhi_catalog)
       and "last_fallback" in src_of(sources.resolve_feeder))
 
+# Every component that is not in sources.py reaches GitHub through
+# net.json_get, and the components inside it through sources._json. Both
+# now answer from github.com's pages when the API cannot be reached - the
+# API's own shape, so no caller's asset matching changes.
+check("a releases URL is recognised in all three of its forms",
+      sources._RELEASE_URL.match(
+          "https://api.github.com/repos/doitsujin/dxvk/releases/latest"
+      ).group(2) == "latest"
+      and sources._RELEASE_URL.match(
+          "https://api.github.com/repos/a/b/releases/tags/v1").group(3) == "v1"
+      and sources._RELEASE_URL.match(
+          "https://api.github.com/repos/a/b/releases?per_page=20") is not None)
+check("...and something that is not one is left alone",
+      sources.release_json_html(
+          "https://api.github.com/repos/crosire/reshade/tags?per_page=5") is None
+      and sources.release_json_html("https://example.com/x") is None)
+_ONE = ('<a href="/a/b/releases/download/v2.0/Thing-v2.0.zip">'
+        '<a href="/a/b/releases/download/v2.0/Thing-v2.0.zip.sha256">')
+with patch.object(sources, "_page", lambda url, timeout=30: _ONE),         patch.object(sources, "latest_tag", lambda repo: "v2.0"):
+    _r = sources.release_json_html("https://api.github.com/repos/a/b/releases/latest")
+check("a release comes back in the API's own shape",
+      _r["tag_name"] == "v2.0" and _r["draft"] is False
+      and _r["prerelease"] is False
+      and _r["assets"][0]["name"] == "Thing-v2.0.zip"
+      and _r["assets"][0]["browser_download_url"].startswith("https://github.com/"),
+      _r)
+with patch.object(sources, "_page", lambda url, timeout=30: _ONE),         patch.object(sources, "latest_tag", lambda repo: None):
+    check("a tag that cannot be read is None, not an empty release",
+          sources.release_json_html(
+              "https://api.github.com/repos/a/b/releases/latest") is None)
+check("the list form is capped, so it cannot walk a hundred pages",
+      sources.HTML_LIST_MAX <= 15)
+import urllib.error as _ue2  # noqa: E402
+_e404 = _ue2.HTTPError("https://api.github.com/repos/a/b/releases/latest",
+                               404, "Not Found", None, None)
+with patch.object(net, "fetch_text", lambda u: (_ for _ in ()).throw(_e404)):
+    try:
+        net.json_get("https://api.github.com/repos/a/b/releases/latest")
+        _raised = ""
+    except _ue2.HTTPError as e:
+        _raised = str(e.code)
+    except Exception as e:
+        _raised = type(e).__name__
+check("a 404 is the answer and is raised - only an unreachable host falls back",
+      _raised == "404", _raised)
+check("every component outside sources.py gets it through json_get",
+      "release_json_html" in src_of(net.json_get)
+      and all("json_or_html" in src_of(m) or "json_get" in src_of(m)
+              for m in (optiscaler, dxvk, refw, _m141)))
+check("...and the ones inside it, through json_or_html",
+      "json_or_html" in src_of(sources.resolve_bridge)
+      and "sources._json(" not in src_of(video))
+check("rhi_catalog keeps its own walk - the capped list would drop the pins",
+      "_rhi_html_catalog" in src_of(sources.rhi_catalog)
+      and "json_or_html" not in src_of(sources.rhi_catalog))
+
 # 616.64+ steers off every route that loads renodx-dlss5, where a route
 # that does not is on offer. The shared results: standalone has not failed
 # yet where a renodx route did - on a handful of reports, which is what the

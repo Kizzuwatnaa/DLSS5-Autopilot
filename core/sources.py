@@ -256,6 +256,61 @@ def release_assets_html(repo: str, tag: str) -> dict[str, str]:
     return out
 
 
+# api.github.com/repos/<owner>/<repo>/releases[/latest | /tags/<tag> | ?...]
+_RELEASE_URL = re.compile(
+    r"^https://api\.github\.com/repos/([^/]+/[^/]+)/releases"
+    r"(?:/(latest)|/tags/([^/?#]+))?(?:\?|$)")
+# How many releases the list form fills in when it has to be built by hand.
+# Each one costs a page of its own, and every caller of the list form is
+# looking for the newest release of a particular shape - a handful is
+# enough to find it, and 20 would be a minute of waiting.
+HTML_LIST_MAX = 12
+
+
+def release_json_html(url: str):
+    """What the GitHub releases API would have answered, or None.
+
+    Built out of github.com's own pages so that a rate limited, blocked or
+    intercepted api.github.com (#175) does not take every component with it.
+    The shape is the API's - `tag_name`, `prerelease`, `draft`, `assets` with
+    `name` and `browser_download_url` - so the callers that pick an asset
+    apart stay exactly as they are.
+
+    None means "not a releases URL I can answer for", and the caller should
+    raise its own error rather than pretend.
+    """
+    m = _RELEASE_URL.match(url or "")
+    if not m:
+        return None
+    repo, latest, tag = m.group(1), m.group(2), m.group(3)
+
+    def one(t: str) -> dict:
+        assets = release_assets_html(repo, t)
+        low = t.lower()
+        return {"tag_name": t, "draft": False,
+                "prerelease": any(w in low for w in _PRE_WORDS),
+                "assets": [{"name": n, "browser_download_url": u,
+                            "size": 0, "download_count": 0}
+                           for n, u in assets.items()]}
+
+    if tag:
+        got = one(tag)
+        return got if got["assets"] else None
+    if latest:
+        t = latest_tag(repo)
+        if not t:
+            return None
+        got = one(t)
+        return got if got["assets"] else None
+    # The list form. Pages are read only until enough releases are filled in.
+    out = []
+    for t, _pre in release_tags_html(repo, pages=2)[:HTML_LIST_MAX]:
+        got = one(t)
+        if got["assets"]:
+            out.append(got)
+    return out or None
+
+
 def _get(url: str, timeout: int = 60, attempts: int = 3) -> bytes:
     """One small read (a release listing, reshade.me's page).
 
@@ -369,6 +424,27 @@ def _json(url: str):
         last_fallback = (f"GitHub could not be reached (rate limit or no "
                          f"connection); using the version list cached "
                          f"{age_h}h ago.")
+        return data
+
+
+def json_or_html(url: str):
+    """_json, and github.com's pages when the API cannot be reached at all.
+
+    For the components whose resolver reads one release and picks an asset
+    out of it: they keep their own matching, and gain the fallback. Not used
+    by rhi_catalog, whose list has to be long enough to still contain the
+    builds the installer pins by name - the generic list stops at
+    HTML_LIST_MAX and would drop them silently.
+    """
+    global last_fallback
+    try:
+        return _json(url)
+    except Exception:
+        data = release_json_html(url)
+        if data is None:
+            raise
+        last_fallback = ("GitHub's API could not be reached; this release "
+                         "was read from github.com's release pages instead.")
         return data
 
 
@@ -537,7 +613,7 @@ def renodx_for_feeder(feeder_tag: str) -> str | None:
 
 def resolve_bridge() -> tuple[str, str]:
     """Latest dlss5-bridge release: (tag, addon download url)."""
-    rel = _json(BRIDGE_API)
+    rel = json_or_html(BRIDGE_API)
     for a in rel.get("assets", []):
         if a["name"].lower().endswith(".addon64"):
             return rel.get("tag_name", "?"), a["browser_download_url"]

@@ -83,7 +83,7 @@ def is_player(folder: Path) -> bool:
 
 def resolve_player() -> tuple[str, str]:
     """(tag, url) of the newest MPC-HC x64 portable zip."""
-    data = sources._json(MPC_API)
+    data = sources.json_or_html(MPC_API)
     for a in data.get("assets", []):
         n = a.get("name", "")
         if n.lower().endswith("x64.zip"):
@@ -93,7 +93,7 @@ def resolve_player() -> tuple[str, str]:
 
 def resolve_ytdlp() -> tuple[str, str]:
     """(tag, url) of the newest yt-dlp.exe (64-bit)."""
-    data = sources._json(YTDLP_API)
+    data = sources.json_or_html(YTDLP_API)
     for a in data.get("assets", []):
         if a.get("name") == YTDLP:
             return data.get("tag_name", "?"), a["browser_download_url"]
@@ -337,7 +337,7 @@ def ensure_processor(folder: Path, on_prog=None, on_log=None) -> Path:
     if not has_processor(folder):
         url = PROCESSOR_LATEST
         try:
-            data = sources._json(PROCESSOR_API)
+            data = sources.json_or_html(PROCESSOR_API)
             url = next((a["browser_download_url"] for a in data.get("assets", [])
                         if a.get("name") == PROCESSOR_ASSET), url)
         except Exception:
@@ -499,7 +499,7 @@ def ensure_deno(folder: Path, on_prog=None, on_log=None) -> Path | None:
     dst = tools_dir(folder) / DENO
     say = on_log or (lambda *_: None)
     if not dst.is_file():
-        data = sources._json(DENO_API)
+        data = sources.json_or_html(DENO_API)
         url = next((a["browser_download_url"] for a in data.get("assets", [])
                     if a.get("name") == DENO_ASSET), None)
         if not url:
@@ -575,7 +575,7 @@ def ensure_ffmpeg(folder: Path, on_prog=None, on_log=None) -> Path:
     say = on_log or (lambda *_: None)
     url = None
     try:
-        assets = sources._json(FFMPEG_API).get("assets", [])
+        assets = sources.json_or_html(FFMPEG_API).get("assets", [])
         url = next((a["browser_download_url"] for a in assets
                     if a.get("name") == FFMPEG_ASSET), None)
         if not url:

@@ -140,7 +140,7 @@ def resolve(build: str = "") -> tuple[str, str]:
     """
     if build in FORKS:
         api, skip_names = FORKS[build]
-        rels = sources._json(api)
+        rels = sources.json_or_html(api)
         rels = [r for r in (rels if isinstance(rels, list) else [])
                 if not r.get("draft") and r.get("tag_name") != "nightly"]
         # GitHub orders by creation time and a fork's releases share one; the
@@ -157,7 +157,7 @@ def resolve(build: str = "") -> tuple[str, str]:
                            f"a .7z or .zip archive.")
     if build:
         raise ValueError(f"unknown OptiScaler build {build!r}")
-    rel = sources._json(API)
+    rel = sources.json_or_html(API)
     for a in rel.get("assets", []):
         if a["name"].lower().endswith((".zip", ".7z")):
             return rel.get("tag_name", "?"), a["browser_download_url"]
