@@ -550,8 +550,23 @@
      "worked": 3
     }
    }
+  },
+  "yakuzakiwami2_r.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Yakuza Kiwami 2",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
   }
  },
- "generated": "2026-09-12T11:35:00Z",
- "reports": 48
+ "generated": "2026-09-12T11:36:52Z",
+ "reports": 49
 }
