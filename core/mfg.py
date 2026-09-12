@@ -45,6 +45,7 @@ LOADER_API = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releas
 LOADER_ASSET = "Ultimate-ASI-Loader_x64.zip"
 # What the release zip carries and where it goes: beside the executable.
 FILES = ("RTX40MFGCore.dll", "RTX40MFG.asi", "RTX40MFG-UI.addon64")
+UI_ADDON = "RTX40MFG-UI.addon64"
 # The loader's own file inside its zip, and the names it can be loaded as.
 # dinput8.dll first (the author's example); version.dll for games that do
 # not import DirectInput, and for RE Engine games where dinput8.dll is
@@ -115,10 +116,44 @@ def applies(sm: int | None, api: str, install_dir: Path,
     return True, ""
 
 
-def loader_name(exe: Path | None, taken: set[str] = frozenset()) -> str | None:
+# Where a loader that is already there keeps its .asi plugins. Cyber Engine
+# Tweaks is the one this came from (#137): its version.dll IS an ASI loader,
+# it loads plugins out of this folder, and the tool used to put Ultimate ASI
+# Loader in its place - which takes CET, and every mod that depends on it,
+# out of the game.
+PLUGINS_DIR = "plugins"
+# What goes into that folder rather than beside the executable: the backend
+# and the .asi the loader picks up. The ReShade add-on stays beside the exe,
+# where ReShade looks for it.
+PLUGIN_FILES = ("RTX40MFGCore.dll", "RTX40MFG.asi")
+
+
+def free_for_loader(exe_dir: Path, name: str,
+                    ours: set[str] = frozenset()) -> bool:
+    """May the loader be written under this name here?
+
+    Yes when nothing has that name, when an earlier install of ours wrote
+    it, or when what is there is Ultimate ASI Loader itself - its ini is
+    merged rather than replaced, so its own plugins keep loading. Anything
+    else under that name belongs to another mod and is left alone.
+    """
+    p = exe_dir / name
+    if not p.is_file() or name.lower() in {o.lower() for o in ours}:
+        return True
+    return is_loader(p)
+
+
+def loader_name(exe: Path | None, taken: set[str] = frozenset(),
+                exe_dir: Path | None = None,
+                ours: set[str] = frozenset()) -> str | None:
     """The proxy name the loader goes in as: one the executable really
     imports and nothing else in the folder already uses - or None when the
-    import table names none of them (a guessed name would never load)."""
+    import table names none of them (a guessed name would never load).
+
+    With `exe_dir`, a name another mod's DLL already occupies is skipped
+    too. Without it the old answer stands, so every caller that does not
+    pass a folder is unchanged.
+    """
     imports: set[str] = set()
     if exe is not None:
         try:
@@ -126,8 +161,26 @@ def loader_name(exe: Path | None, taken: set[str] = frozenset()) -> str | None:
         except Exception:
             imports = set()
     for n in LOADER_NAMES:
-        if n in imports and n not in taken:
-            return n
+        if n not in imports or n in taken:
+            continue
+        if exe_dir is not None and not free_for_loader(exe_dir, n, ours):
+            continue
+        return n
+    return None
+
+
+def existing_plugins(exe_dir: Path) -> Path | None:
+    """A loader that is already here, with its plugins folder, or None.
+
+    Only when both halves are there: a plugins folder AND a DLL under one
+    of the names a loader is loaded as. A plugins folder on its own is some
+    other program's.
+    """
+    plug = exe_dir / PLUGINS_DIR
+    if not plug.is_dir():
+        return None
+    if any((exe_dir / n).is_file() for n in LOADER_NAMES):
+        return plug
     return None
 
 
@@ -228,15 +281,38 @@ def install(exe_dir: Path, exe: Path | None, log=None,
     any other file, whatever it contains.
     """
     log = log or (lambda *_: None)
-    name = loader_name(exe, taken)
+    ours_now = {str(p).replace("\\", "/").rsplit("/", 1)[-1].lower()
+                for p in preinstalled}
+    name = loader_name(exe, taken, exe_dir, ours_now)
+    plug = None
     if name is None:
-        raise NoLoaderName(
-            f"{exe.name if exe else 'the executable'} imports none of "
-            f"{', '.join(LOADER_NAMES)}, so Ultimate ASI Loader has no name "
-            f"it would be loaded under - the unlock cannot be placed here")
+        # Every name is either not imported or occupied by another mod. If
+        # one of those mods is itself a loader, its plugins folder is the
+        # way in - no second loader, no name taken off anyone (#137).
+        plug = existing_plugins(exe_dir)
+        if plug is None:
+            raise NoLoaderName(
+                f"{exe.name if exe else 'the executable'} imports none of "
+                f"{', '.join(LOADER_NAMES)} that is free here, so Ultimate "
+                f"ASI Loader has no name it would be loaded under - the "
+                f"unlock cannot be placed here")
     tag, url = resolve()
     log(f"      RTX40MFG-Unlock {tag}")
     z = net.download(url, f"RTX40MFG-Unlock-{tag}.zip")
+    if plug is not None:
+        _check_zip(z, FILES, f"RTX40MFG-Unlock {tag}")
+        written = []
+        for n in PLUGIN_FILES:
+            net.extract_one(z, n, plug / n)
+            written.append(f"{PLUGINS_DIR}/{n}")
+        net.extract_one(z, UI_ADDON, exe_dir / UI_ADDON)
+        written.append(UI_ADDON)
+        log(f"      a loader is already here: {', '.join(PLUGIN_FILES)} into "
+            f"{PLUGINS_DIR}/, {UI_ADDON} beside the game - its own loader "
+            f"picks the .asi up, and nothing of anyone else's is replaced")
+        log("      in game: ReShade overlay -> DLSS MFG tab -> Follow game, a "
+            "fixed multiplier, or Dynamic")
+        return tag, written
     ltag, lurl = resolve_loader()
     lz = net.download(lurl, f"Ultimate-ASI-Loader-{ltag}_x64.zip")
     # Both archives are downloaded and checked before the first file lands:
@@ -287,10 +363,11 @@ def remove_leftovers(exe_dir: Path, preinstalled, log=None) -> list[str]:
     log = log or (lambda *_: None)
     ours = {str(p).replace("\\", "/") for p in preinstalled}
     lowers = {p.lower() for p in ours}
-    if not any(f.lower() in lowers for f in FILES):
+    if not any(f.lower() in lowers for f in
+               [*FILES] + [f"{PLUGINS_DIR}/{x}" for x in PLUGIN_FILES]):
         return []
     gone: list[str] = []
-    for n in FILES:
+    for n in [*FILES] + [f"{PLUGINS_DIR}/{x}" for x in PLUGIN_FILES]:
         p = exe_dir / n
         if n.lower() in lowers and p.is_file():
             try:

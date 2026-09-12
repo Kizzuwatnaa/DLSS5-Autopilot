@@ -928,7 +928,10 @@ def plan(g: games.Game, opt: Options) -> list[str]:
     if opt.path == FEEDER and g.bitness == 32:
         steps.append("host64 helper process")
     if opt.mfg and mfg.applies(gpu.detect()[1], g.api, g.install_dir, g.folder)[0] \
-            and mfg.loader_name(g.exe, {refw.DINPUT8} if reengine.detected(g.install_dir) else set()):
+            and (mfg.loader_name(g.exe,
+                                 {refw.DINPUT8} if reengine.detected(g.install_dir) else set(),
+                                 g.install_dir)
+                 or mfg.existing_plugins(g.install_dir)):
         steps.append("RTX 40 multi-frame generation")
     steps.append("ReShade configuration")
     if opt.path == FEEDER:
@@ -1379,12 +1382,21 @@ def preview(g: games.Game, opt: Options) -> Preview:
 
     # 8b) RTX 40 multi-frame generation, when it applies here
     if opt.mfg and mfg.applies(gpu.detect()[1], g.api, root, g.folder)[0]:
-        lname = mfg.loader_name(g.exe, {refw.DINPUT8} if reengine.detected(root) else set())
-        if lname is None:
+        lname = mfg.loader_name(g.exe,
+                                {refw.DINPUT8} if reengine.detected(root) else set(),
+                                root)
+        plug = mfg.existing_plugins(root) if lname is None else None
+        if lname is None and plug is None:
             pv.warnings.append(
                 f"multi-frame generation will be skipped: {g.exe.name if g.exe else 'the executable'} "
-                f"imports none of {', '.join(mfg.LOADER_NAMES)}, so the ASI loader has no "
-                f"name it would be loaded under")
+                f"imports none of {', '.join(mfg.LOADER_NAMES)} that is free here, so the ASI "
+                f"loader has no name it would be loaded under")
+        elif lname is None:
+            # Another mod's loader is already here and its name is not
+            # ours to take: the unlock goes into its plugins folder (#137).
+            for n in mfg.PLUGIN_FILES:
+                write(f"{mfg.PLUGINS_DIR}/{n}", keep=False)
+            write(mfg.UI_ADDON, keep=False)
         else:
             for n in mfg.FILES:
                 write(n, keep=False)
@@ -3278,7 +3290,8 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                  "ReShade.ini", "ReShadePreset.ini",
                  str(SHADERS / FEEDER_FX), str(SHADERS / STANDALONE_FX),
                  str(SHADERS / VORT_FX), str(TEXTURES / VORT_TEXTURE),
-                 *mfg.FILES]
+                 *mfg.FILES,
+                 *(f"{mfg.PLUGINS_DIR}/{n}" for n in mfg.PLUGIN_FILES)]
         # A d3d9.dll here is ours (DXVK, or dgVoodoo2 from an older release)
         # UNLESS the folder is a Remix game, where that name belongs to the
         # Remix bridge client. With no manifest to tell them apart the Remix

@@ -7551,6 +7551,58 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# #137: Cyberpunk's CET IS an ASI loader and owns version.dll. The unlock
+# used to write Ultimate ASI Loader over it - CET, and every mod that needs
+# it, out of the game. The reporter's own way round is now the tool's.
+_cp = Path(tempfile.mkdtemp(prefix="cet137_"))
+_cpexe = _cp / "Cyberpunk2077.exe"
+shutil.copyfile(X64, _cpexe)
+check("with nothing in the way the loader name is what it always was",
+      _m141.loader_name(_cpexe, set(), _cp) == _m141.loader_name(_cpexe, set())
+      is not None)
+(_cp / "version.dll").write_bytes(b"MZ" + b"CyberEngineTweaks" * 64)
+(_cp / "plugins").mkdir()
+check("another mod's DLL under that name is not taken (#137)",
+      _m141.loader_name(_cpexe, set(), _cp) is None
+      and _m141.loader_name(_cpexe, set()) == "version.dll")
+check("...and its plugins folder is found instead",
+      _m141.existing_plugins(_cp) == _cp / "plugins")
+check("a plugins folder with no loader beside it is somebody else's",
+      _m141.existing_plugins(Path(tempfile.mkdtemp(prefix="noload_"))) is None)
+check("a name WE wrote last time is still ours to write again",
+      _m141.loader_name(_cpexe, set(), _cp, {"version.dll"}) == "version.dll")
+_ualdir = Path(tempfile.mkdtemp(prefix="ual137_"))
+shutil.copyfile(X64, _ualdir / _cpexe.name)
+(_ualdir / "version.dll").write_bytes(b"MZ" + b"Ultimate ASI Loader" + b"x" * (1 << 18))
+check("Ultimate ASI Loader under that name is merged with, not stepped around",
+      _m141.loader_name(_ualdir / _cpexe.name, set(), _ualdir) == "version.dll")
+_mz = Path(tempfile.mkdtemp(prefix="mfgzip_")) / "unlock.zip"
+with _zf141.ZipFile(_mz, "w") as _z:
+    for _n in _m141.FILES:
+        _z.writestr(_n, b"MZ" + _n.encode())
+with patch.object(_m141, "resolve", lambda: ("v1.2.1", "https://example/u.zip")),         patch.object(_m141, "resolve_loader",
+                     lambda: ("v9", "https://example/l.zip")),         patch.object(net, "download", lambda url, name, **k: _mz):
+    _tag, _files = _m141.install(_cp, _cpexe, taken=set())
+check("the unlock goes into the loader's plugins folder, whole",
+      sorted(_files) == ["RTX40MFG-UI.addon64", "plugins/RTX40MFG.asi",
+                         "plugins/RTX40MFGCore.dll"]
+      and (_cp / "plugins" / "RTX40MFG.asi").is_file()
+      and (_cp / "RTX40MFG-UI.addon64").is_file(), _files)
+check("...and the other mod's DLL is untouched, with no loader of ours beside it",
+      (_cp / "version.dll").read_bytes().startswith(b"MZCyberEngineTweaks")
+      and not (_cp / "version.dll.dlss5-autopilot-backup").exists()
+      and not (_cp / "RTX40MFGCore.dll").exists())
+check("a reinstall that no longer wants it takes the plugins copy back out",
+      sorted(_m141.remove_leftovers(_cp, _files)) ==
+      ["RTX40MFG-UI.addon64", "plugins/RTX40MFG.asi", "plugins/RTX40MFGCore.dll"]
+      or not (_cp / "plugins" / "RTX40MFG.asi").exists())
+check("the preview and the step list know about that route too",
+      "existing_plugins" in src_of(installer.preview)
+      and src_of(installer).count("existing_plugins") >= 2)
+shutil.rmtree(_cp, ignore_errors=True)
+shutil.rmtree(_ualdir, ignore_errors=True)
+shutil.rmtree(_mz.parent, ignore_errors=True)
+
 # 616.64+ steers off every route that loads renodx-dlss5, where a route
 # that does not is on offer. The shared results: standalone has not failed
 # yet where a renodx route did - on a handful of reports, which is what the
