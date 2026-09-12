@@ -62,6 +62,10 @@
   },
   "dawnwalker.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "616.64": {
      "failed": 0,
      "worked": 1
@@ -71,7 +75,7 @@
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -330,6 +334,51 @@
     }
    }
   },
+  "nfsc.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Need for Speed Carbon",
+   "routes": {
+    "remix": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "nms.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "No Man's Sky",
+   "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "onimushawots.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Onimusha: Way of the Sword",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "painkiller.exe": {
    "drivers": {
     "616.64": {
@@ -451,6 +500,10 @@
   },
   "uboat launcher.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "616.92": {
      "failed": 5,
      "worked": 3
@@ -460,7 +513,7 @@
    "routes": {
     "feeder": {
      "failed": 5,
-     "worked": 0
+     "worked": 1
     },
     "standalone": {
      "failed": 0,
@@ -469,6 +522,6 @@
    }
   }
  },
- "generated": "2026-09-11T18:53:55Z",
- "reports": 41
+ "generated": "2026-09-12T08:38:02Z",
+ "reports": 46
 }
