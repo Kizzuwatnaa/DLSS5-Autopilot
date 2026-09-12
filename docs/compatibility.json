@@ -543,6 +543,21 @@
     }
    }
   },
+  "sparkingzero-win64-shipping.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "DRAGON BALL: Sparking! ZERO",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "supremecommander2.exe": {
    "drivers": {
     "616.64": {
@@ -612,6 +627,6 @@
    }
   }
  },
- "generated": "2026-09-12T14:38:47Z",
- "reports": 52
+ "generated": "2026-09-12T15:13:18Z",
+ "reports": 53
 }
