@@ -1102,6 +1102,11 @@ check("intact folder with no ReShade.log means 'not started since the install'",
       and not _levels(_r, "bad"), _r.verdict)
 check("...and the hints name the exe and the other proxy name",
       "Game.exe" in _info and "d3d11.dll" in _info)
+# #171: that verdict rests on there being no log, so it has to say as much -
+# Windows' fault record for the game's own exe is better evidence, and the
+# report carried one while the answer said "run the game once".
+check("...and the verdict marks itself as resting on the absent log",
+      _r.never_ran is True)
 shutil.rmtree(_d, ignore_errors=True)
 
 _d = _diag_dir("diag_stale_", reshade="INFO | Initializing crosire's ReShade\n"
@@ -6165,6 +6170,245 @@ check("...only when it belongs to the session just diagnosed",
       "_crash_is_this_session" in _gsrc63)
 check("...and the shared record is held to the same window",
       "_crash_is_this_session" in src_of(_gui.App._pump))
+
+
+# #171: and it outranks the opposite verdict too. "Not started since the
+# install" is read off an absent log; a fault record for the game's own exe,
+# written after the install, says it started and died before anything loaded.
+class _FakeApp:
+    """Only what _crash_overrides touches."""
+
+    def __init__(self, rep):
+        self._last_diag = rep
+        self.said = []
+        self.game = None
+
+    def _crash_is_this_session(self, crash):
+        return True
+
+    def _log(self, text, tag=None):
+        self.said.append(text)
+
+
+_c171 = _wc.Crash(when="2026-09-12 00:54:33", exe="GTA5.exe", module="GTA5.exe",
+                  code="0xC0000005", provider="Application Error")
+
+
+def _overridden(verdict, never_ran):
+    rep = diagnose.Report(route="renodx")
+    rep.verdict = verdict
+    rep.never_ran = never_ran
+    app = _FakeApp(rep)
+    _gui.App._crash_overrides(app, _c171)
+    return rep.verdict, " ".join(app.said)
+
+
+_v171, _s171 = _overridden("Not started since the install - run the game once.", True)
+check("a fault record replaces 'not started since the install'",
+      "started and crashed" in _v171, _v171)
+check("...and explains why every log is empty",
+      "faulted before the add-ons" in _s171, _s171[:120])
+_v98, _ = _overridden("Working.", False)
+check("...while a fault still overrides Working.",
+      "then the game crashed" in _v98, _v98)
+_vinc, _ = _overridden("Inconclusive - the feed did not get far enough to tell.",
+                       False)
+check("...and no other verdict is rewritten",
+      _vinc.startswith("Inconclusive"), _vinc)
+
+
+# #168: the fork names the dispatch timing what it likes ("cost:", then
+# "elapsed:"), and matching the word called a game that dispatched every
+# frame "never reports it running".
+for _word in ("cost:", "elapsed:"):
+    _ln = ("[21:34:08.368508] [I] DlssNr_Dx12::Dispatch DLSS-NR "
+           f"{_word} 6.72 ms total, 6.60 ms model")
+    check(f"a dispatch line saying '{_word}' is proof the model ran",
+          bool(diagnose._DISPATCH_MS.search(_ln)))
+check("...and a setting echoed at startup is not",
+      not diagnose._DISPATCH_MS.search("[I] DlssNr.Enabled: true"))
+_opti_run = tempfile.mkdtemp(prefix="diag_opti_elapsed_")
+(Path(_opti_run) / "dlss5-autopilot.json").write_text(json.dumps(
+    {"version": 1, "complete": True, "path": "optiscaler", "proxy": "dxgi.dll",
+     "api": "DX12", "bitness": 64, "exe": "Spider-Man2.exe",
+     "files": ["dxgi.dll"]}), encoding="utf8")
+(Path(_opti_run) / "dxgi.dll").write_bytes(b"MZ")
+(Path(_opti_run) / "OptiScaler.log").write_text(
+    "[21:34:07.000000] [I] DlssNr forwarder loaded\n"
+    "[21:34:08.368508] [I] DlssNr_Dx12::Dispatch DLSS-NR elapsed: 6.72 ms "
+    "total, 6.60 ms model, 0.12 ms surrounding work\n", encoding="utf8")
+_r168 = diagnose.analyse(Path(_opti_run))
+check("...so the whole report says the neural pass is running",
+      _r168.verdict.startswith("Working")
+      and any("Neural rendering is running" in t for t in _levels(_r168, "ok")),
+      _r168.verdict)
+shutil.rmtree(_opti_run, ignore_errors=True)
+
+
+# #164: a ReShade.log read from its tail can lose the registration lines
+# while the add-on's own log proves it loaded. The answer said "ReShade
+# loaded no add-ons" above a feed that had attached and hooked the game.
+_d164 = _diag_dir(
+    "diag_tail_lost_",
+    reshade=("21:11:43:914 [24200] | WARN  | Successfully compiled "
+             "'D:\\Game\\reshade-shaders\\Shaders\\CShade\\cDots.fx'\n"
+             "21:11:44:173 [24200] | WARN  | Successfully compiled "
+             "'D:\\Game\\reshade-shaders\\Shaders\\DH\\dh_uber_rt.fx'\n"),
+    feed=("21:11:35.731  dlss5-feed64 0.15.1 (built Sep  9 2026) attached.\n"
+          "21:11:35.731    host game: D:\\Game\\Game.exe\n"
+          "21:11:35.759  [feed] vkCreateDevice hook installed\n"))
+_r164 = diagnose.analyse(_d164)
+check("a feed log that attached outranks a ReShade tail with no registration",
+      not any("loaded no add-ons" in t for t in _levels(_r164, "bad")),
+      str(_levels(_r164, "bad")))
+check("...and the answer says the add-on did load",
+      any("wrote its own log" in t for t in _levels(_r164, "ok")),
+      str(_levels(_r164, "ok")))
+check("...and names what is actually missing: an effect runtime",
+      "effect runtime" in _r164.verdict, _r164.verdict)
+shutil.rmtree(_d164, ignore_errors=True)
+
+
+# ...and the provider shader the install deliberately leaves alone, because
+# the person already has the pack, is not "MISSING" (#164 again).
+_d164b = tempfile.mkdtemp(prefix="diag_their_lumenite_")
+(Path(_d164b) / "reshade-shaders" / "Shaders" / "LumeniteFX").mkdir(parents=True)
+(Path(_d164b) / "reshade-shaders" / "Shaders" / "LumeniteFX"
+ / "lumenite_Kernel.fx").write_text("// theirs", encoding="utf8")
+_man164 = {"route": "feeder", "provider": 3, "bitness": 64, "api": "DX12",
+           "files": []}
+_seen = "\n".join(diagnose._presence(Path(_d164b), _man164, "feeder"))
+check("their own LumeniteFX copy is not reported as a missing file",
+      "lumenite_Kernel.fx: MISSING" not in _seen
+      and "not written by this install" in _seen,
+      _seen)
+shutil.rmtree(_d164b, ignore_errors=True)
+_d164c = tempfile.mkdtemp(prefix="diag_no_lumenite_")
+(Path(_d164c) / "reshade-shaders" / "Shaders").mkdir(parents=True)
+check("...while one that is genuinely gone still is",
+      "lumenite_Kernel.fx: MISSING"
+      in "\n".join(diagnose._presence(Path(_d164c), _man164, "feeder")))
+shutil.rmtree(_d164c, ignore_errors=True)
+
+
+# Every one of those four fixes went too far somewhere, and this is where each
+# one was pulled back. A widened test makes the branch below it unreachable;
+# these are the inputs that proved it.
+
+
+def _opti_log(log, **man):
+    """A folder that looks like an optiscaler install with this log in it."""
+    d = Path(tempfile.mkdtemp(prefix="diag_opti_probe_"))
+    m = {"version": 1, "complete": True, "path": "optiscaler",
+         "proxy": "dxgi.dll", "api": "DX12", "bitness": 64, "exe": "Game.exe",
+         "files": ["dxgi.dll"]}
+    m.update(man)
+    (d / "dlss5-autopilot.json").write_text(json.dumps(m), encoding="utf8")
+    (d / "dxgi.dll").write_bytes(b"MZ")
+    (d / "OptiScaler.log").write_text(log, encoding="utf8")
+    try:
+        return diagnose.analyse(d)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+_FWD = "[I] DlssNr forwarder loaded\n"
+_r = _opti_log(_FWD + "[E] DlssNr_Dx12::Dispatch DLSS-NR create failed after "
+                      "120 ms, disabling for this session\n")
+check("a create failure that reports how long it took is not work done",
+      not _r.verdict.startswith("Working")
+      and any("did not start" in t for t in _levels(_r, "bad")), _r.verdict)
+_r = _opti_log(_FWD + "[I] DlssNr.DispatchInterval: 16 ms\n")
+check("...nor is a setting whose name happens to hold the word",
+      not _r.verdict.startswith("Working"), _r.verdict)
+_r = _opti_log(_FWD + "[I] DlssNr_Dx12::Dispatch DLSS-NR skipped: no motion "
+                      "vectors (0.00 ms)\n")
+check("...nor a dispatch that says it skipped",
+      not _r.verdict.startswith("Working"), _r.verdict)
+_r = _opti_log(_FWD + "[I] DlssNr_Dx12::Dispatch DLSS-NR elapsed: 6.72 ms "
+                      "total, 6.60 ms model\n")
+check("...while a real dispatch is, still", _r.verdict.startswith("Working"),
+      _r.verdict)
+_r = _opti_log("", files=["dxgi.dll", "OptiScaler.ini"])
+check("the optiscaler 'not run yet' verdict rests on the absent log too",
+      _r.never_ran is True or _r.verdict.startswith("OptiScaler"), _r.verdict)
+
+# The feed log proving the add-on loaded must speak for THIS launch, and the
+# "never got an effect runtime" answer must rest on more than one build's
+# choice of words.
+_ATT = "21:11:35.731  dlss5-feed64 0.15.1 (built Sep  9 2026) attached.\n"
+_COMP = ("21:11:43:914 [24200] | WARN  | Successfully compiled 'a.fx'\n"
+         "21:11:44:173 [24200] | WARN  | Successfully compiled 'b.fx'\n")
+_d = _diag_dir("diag_runtime_other_words_",
+               feed=_ATT + "  [feed] runtime 0001 initialised on D3D12\n"
+                           "  [feed] DLSS5_Feed.fx technique MISSING\n",
+               reshade=_COMP)
+_r = diagnose.analyse(_d)
+check("a technique line is proof a runtime existed, whatever it is called",
+      "effect runtime" not in _r.verdict, _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = _diag_dir("diag_feed_older_launch_",
+               feed=_ATT + "  [feed] vkCreateDevice hook installed\n",
+               reshade=_COMP)
+_old = _time.time() - 3600
+_os.utime(_d / "dlss5-feed.log", (_old, _old))
+_r = diagnose.analyse(_d)
+check("a feed log from an earlier launch does not answer for this one",
+      any("loaded no add-ons" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+
+# A provider shader this install wrote and something has since removed is the
+# quarantine case, not "your own copy is used".
+_dp = tempfile.mkdtemp(prefix="diag_provider_ours_gone_")
+(Path(_dp) / "reshade-shaders" / "Shaders" / "LumeniteFX").mkdir(parents=True)
+(Path(_dp) / "reshade-shaders" / "Shaders" / "LumeniteFX"
+ / "lumenite_Kernel.fx").write_text("// theirs", encoding="utf8")
+_man_ours = {"path": "feeder", "provider": 3, "bitness": 64, "api": "DX11",
+             "files": ["reshade-shaders\\Shaders\\lumenite_Kernel.fx"]}
+check("a provider shader this install wrote and lost is still MISSING",
+      "lumenite_Kernel.fx: MISSING"
+      in "\n".join(diagnose._presence(Path(_dp), _man_ours, "feeder")))
+_seen = "\n".join(diagnose._presence(Path(_dp), dict(_man_ours, files=[]),
+                                    "feeder"))
+check("...and where it is theirs, no absolute path reaches the report",
+      "not written by this install" in _seen and ":\\" not in _seen, _seen)
+shutil.rmtree(_dp, ignore_errors=True)
+
+
+# With no log there is no timestamp to date a fault against, and the event is
+# found by the executable's NAME - so a second copy of the same game must not
+# answer for this one.
+def _override(module, where, never_ran=True,
+              verdict="Not started since the install - run it once."):
+    rep = diagnose.Report(route="renodx")
+    rep.verdict = verdict
+    rep.never_ran = never_ran
+    rep.add(diagnose.WARN, "The game has not been started since the install.")
+    rep.add(diagnose.INFO, "If you DID start it, it launches something else.")
+    app = _FakeApp(rep)
+    app.game = type("G", (), {"install_dir": where})()
+    _gui.App._crash_overrides(app, _wc.Crash(
+        when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
+        code="0xC0000005", provider="Application Error"))
+    return rep
+
+
+_here = Path(tempfile.mkdtemp(prefix="diag_fault_folder_"))
+_rep = _override(str(_here / "GTA5.exe"), _here)
+check("a fault recorded in this folder rewrites the 'not started' verdict",
+      "started and crashed" in _rep.verdict, _rep.verdict)
+check("...and the findings that said it never started go with it",
+      not any("has not been started" in f_.title for f_ in _rep.findings)
+      and any("faulting" in f_.title for f_ in _rep.findings),
+      str([f_.title for f_ in _rep.findings]))
+_rep = _override(r"D:\Another Copy\GTA5.exe", _here)
+check("...while a fault in another copy of the same game does not",
+      _rep.verdict.startswith("Not started"), _rep.verdict)
+_rep = _override("dxgi.dll", _here)
+check("...and a bare module name, which names no folder, still counts",
+      "started and crashed" in _rep.verdict, _rep.verdict)
+shutil.rmtree(_here, ignore_errors=True)
 
 # The install's own proxy is in the manifest's file list, and the event
 # names a module rather than a path - so "it is in our list" is not proof

@@ -63,6 +63,25 @@ def _api_name(api: str) -> str:
             "DX12": "DirectX 12"}.get(api, api)
 
 
+def _fault_in_this_folder(crash, install_dir) -> bool:
+    """Could this fault have come from the install being looked at?
+
+    The event is found by the executable's name, so a second copy of the same
+    game answers for the first. When the record names a path - Application
+    Error's module field usually does - it has to be this folder's. When it
+    names a bare module ("dxgi.dll"), there is nothing to compare and the
+    answer is yes.
+    """
+    mod = str(getattr(crash, "module", "") or "").replace("/", "\\")
+    if not ("\\" in mod or ":" in mod):
+        return True
+    try:
+        here = str(Path(install_dir).resolve()).replace("/", "\\").lower()
+    except (OSError, ValueError, TypeError):
+        return True
+    return here.rstrip("\\") in mod.lower()
+
+
 def _crash_is_this_session_impl(crash, install_dir) -> bool:
     """Was this fault recorded during the session the logs describe?
 
@@ -2845,13 +2864,63 @@ class App:
         well. Windows' own record is, and when the two disagree the record
         wins - saying "Working." to somebody who watched the game close is
         the fastest way to lose their trust (#98).
+
+        It outranks the opposite verdict for the same reason. "Not started
+        since the install" rests on there being no log; a fault record for
+        the game's own executable, written after the install, says it did
+        start - and a game that dies before ReShade loads writes nothing,
+        which is exactly this shape (#171, GTA V: the report carried the
+        fault and still said "run the game once").
         """
         d = getattr(self, "_last_diag", None)
-        if d is None or not str(getattr(d, "verdict", "")).startswith("Working"):
+        if d is None:
+            return
+        working = str(getattr(d, "verdict", "")).startswith("Working")
+        never_ran = bool(getattr(d, "never_ran", False))
+        if not working and not never_ran:
             return
         if not self._crash_is_this_session(crash):
             return
         mod = str(getattr(crash, "module", "") or "")
+        if never_ran:
+            # With no log there is no mtime to date the fault against, so
+            # _crash_is_this_session above cannot filter anything here - and
+            # the event is matched on the executable's NAME. Two copies of the
+            # same game (the #171 fault was in "...\\Grand Theft Auto V
+            # Legacy\\GTA5.exe", which need not be the folder being looked at)
+            # would otherwise rewrite this verdict from the wrong install.
+            g = self.game
+            where = getattr(g, "install_dir", None) if g is not None else None
+            if where is not None and not _fault_in_this_folder(crash, where):
+                return
+            d.verdict = ("It started and crashed before anything could write a "
+                         "line - Windows recorded the fault"
+                         + (f" in {mod}." if mod else "."))
+            d.never_ran = False
+            # The findings under it were written on the strength of the absent
+            # log and now contradict the verdict - and they go into the report
+            # and the shared record verbatim.
+            d.findings = [f for f in d.findings
+                          if "has not been started since the install" not in f.title
+                          and not f.title.startswith("If you DID start it")]
+            d.add(diagnose.BAD,
+                  f"Windows recorded {getattr(crash, 'exe', 'the game')} "
+                  f"faulting" + (f" in {mod}." if mod else "."),
+                  "So it was started. Nothing here had a chance to write a "
+                  "line, which is what an empty set of logs means when a "
+                  "fault is on record.")
+            self._log("")
+            # The dropdown has two names, one per family of routes; naming
+            # the wrong one is the #148 mistake all over again.
+            drop = ("'loads as'" if str(getattr(d, "route", "")) == "optiscaler"
+                    else "'reshade loads as'")
+            self._log("> so it WAS started: the logs are empty because the "
+                      "game faulted before the add-ons could write anything. "
+                      "Uninstall, check the game starts on its own, then "
+                      f"install again - and if it faults the same way, try "
+                      f"another name in the {drop} dropdown on the install "
+                      f"page.", "warn")
+            return
         d.verdict = ("It ran, and then the game crashed - Windows recorded "
                      "the fault" + (f" in {mod}." if mod else "."))
         self._log("")

@@ -79,6 +79,10 @@ def _standalone_named(name: str) -> bool:
 # error in one of those is noise, not a failure.
 FEED_SHADERS = ("dlss5_feed.fx", "lumenite_kernel.fx", "lumenite_quantmotion.fx")
 
+# A DLSS-NR dispatch line with a duration in it, whatever the fork calls the
+# number ("cost:", "elapsed:", ...). See the running/failed split below.
+_DISPATCH_MS = re.compile(r"\d+(?:[.,]\d+)?\s*ms\b")
+
 _DEPTH_HINT = (
     "In the ReShade overlay open the Add-ons tab and look at the depth "
     "buffer list: one has to be selected. If none is, or it switches when "
@@ -110,6 +114,9 @@ class Report:
     route: str = ""
     findings: list[Finding] = field(default_factory=list)
     log_time: str = ""
+    # This verdict rests on there being no log at all: whoever has better
+    # evidence that the game ran (Windows' fault record) must replace it.
+    never_ran: bool = False
 
     def add(self, level: str, title: str, detail: str = "") -> None:
         self.findings.append(Finding(level, title, detail))
@@ -184,6 +191,35 @@ def _last_feed_session(text: str) -> str:
     for last in _FEED_SESSION.finditer(text):
         pass
     return text[last.start():] if last is not None and last.start() > 0 else text
+
+
+def _attached(text: str) -> bool:
+    """Did the feed add-on say it was loaded? Its own session marker, so a
+    build named something new is still recognised - and "detached" is not it."""
+    return bool(_FEED_SESSION.search(text or ""))
+
+
+# Everything the feed can say about the picture starts from the effect runtime
+# ReShade hands it. These are the lines that can only exist once it has one,
+# whatever the build calls the runtime itself.
+_FEED_GOT_RUNTIME = re.compile(
+    r"effect runtime|runtime \w+ initialis|effects:|technique|building:"
+    r"|feature ready|session ready|frame \d+", re.I)
+
+
+def _same_launch(feed: Path, reshade: Path, tol: float = 300.0) -> bool:
+    """Were these two logs written by the same run of the game?
+
+    The feed log's last session and ReShade's last session come out of two
+    files, and nothing else in the report ties them together: an add-on
+    removed between two launches would otherwise be reported as loaded, on
+    the strength of the older file. Unreadable or absent: say yes, and let
+    the finding that reads the text decide.
+    """
+    try:
+        return abs(feed.stat().st_mtime - reshade.stat().st_mtime) <= tol
+    except OSError:
+        return True
 
 
 # Both the feeder's crash handler and its evaluate guard print the module
@@ -443,6 +479,9 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
                     f"that {proxy} sits next to the executable the game "
                     f"actually launches.")
             rep.verdict = "Not run yet, or OptiScaler did not load."
+            # Rests on the absent log, like the feeder one: Windows' own
+            # fault record for this game outranks it (#171).
+            rep.never_ran = True
         else:
             rep.add(BAD, "No OptiScaler log, and no proxy in the folder.",
                     (f"The proxy this install wrote ({proxy}) is not beside "
@@ -465,14 +504,18 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     nr = [(i, ln) for i, ln in enumerate(lines)
           if "DLSS-NR" in ln or "dlssnr" in ln.lower()]
     # "running at WxH" is the base build's line when the model is created.
-    # The forks also print the model's cost every frame it actually draws
-    # ("DlssNr_Dx12::Dispatch DLSS-NR cost: 7.41 ms total = 7.23 ms model"),
+    # The forks also print the model's timing every frame it actually draws,
     # and on wilsjo2's after-RR path that dispatch line is the ONLY thing
     # written - the report called a thirteen-minute session with a dispatch
-    # every frame "Inconclusive" (#81). A cost line is the strongest proof
-    # there is: the model cannot report a time for work it did not do.
-    running = [x for x in nr if "running at" in x[1]
-               or ("Dispatch" in x[1] and "cost" in x[1])]
+    # every frame "Inconclusive" (#81). A timing is the strongest proof there
+    # is: the model cannot report a time for work it did not do.
+    #
+    # The word in front of the number is the fork author's, and it changes:
+    #   "DlssNr_Dx12::Dispatch DLSS-NR cost: 7.41 ms total = 7.23 ms model"
+    #   "DlssNr_Dx12::Dispatch DLSS-NR elapsed: 6.72 ms total, 6.60 ms model"
+    # Matching "cost" called the second one - Spider-Man 2 dispatching every
+    # frame on wilsjo2 - "never reports it running" (#168). Ask for a dispatch
+    # and a duration instead, and let them name it what they like.
     failed = [x for x in nr if any(k in x[1] for k in (
         "create failed", "unavailable", "did not run", "not found beside",
         "would not load", "disabling for this session", "refused"))]
@@ -480,6 +523,17 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     # for, not what happened. Separating them keeps the "never ran" verdict
     # from sounding like the tool has no idea what went on.
     settings_only = [x for x in nr if re.search(r"DlssNr\.\w+:", x[1])]
+    # Asking only for a duration made three other kinds of line proof that the
+    # model ran: a create failure that reports how long it took, a setting
+    # whose name happens to contain the word ("DlssNr.DispatchInterval: 16 ms")
+    # and a dispatch that says it skipped. A line that is also a failure, also
+    # a setting, or says it did nothing is not evidence of work done.
+    _not_work = ("skip", "fail", "refus", "abort", "cancel", "no motion")
+    running = [x for x in nr
+               if x not in failed and x not in settings_only
+               and not any(k in x[1].lower() for k in _not_work)
+               and ("running at" in x[1]
+                    or ("Dispatch" in x[1] and _DISPATCH_MS.search(x[1])))]
     if "forwarder loaded" in text:
         rep.add(OK, "OptiScaler loaded and found the neural-rendering forwarder.")
     # The game is running on Vulkan while this route was installed for D3D12.
@@ -725,6 +779,7 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
                 f"loading at all - check the game's own d3d9.dll (the Remix "
                 f"bridge) is still beside the executable.")
         rep.verdict = "Not run yet, or the Remix runtime never loaded."
+        rep.never_ran = True
         return rep
     rep.ran = True
     try:
@@ -999,6 +1054,11 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
                 f"Try the {alt} proxy name in the settings and install again.")
     rep.verdict = f"Not started since the install - run the {app} once, then check again."
+    # Said in a way the caller can act on: Windows' own fault record for this
+    # executable is proof the game DID start, and it outranks "there is no
+    # log" (#171 - GTA5.exe faulted eleven minutes before the report was
+    # written, and the answer told the person to run the game once).
+    rep.never_ran = True
     return rep
 
 
@@ -1341,7 +1401,30 @@ def analyse(install_dir: Path) -> Report:
         # prefixes an add-on's own lines with its name in brackets, and a
         # line like that is proof enough on its own.
         wrote = re.search(r"\|\s*(?:INFO|WARN|ERROR)\s*\|\s*\[[^\]]+\]", rtext)
-        if "Registered add-on" not in rtext and not wrote:
+        # And the add-on keeps a log of its own. ReShade is the only thing
+        # that loads it, so a feed log from this session says the add-on was
+        # loaded even when the ReShade tail no longer holds a line about it:
+        # Web of Shadows had a folder full of shader packs, the compile lines
+        # pushed the registrations out of the tail, and the answer was "no
+        # add-ons loaded" directly above a feed that had attached and hooked
+        # the game (#164). The add-on's own word beats a cut log.
+        # Two things this must NOT do. It must not speak for a different
+        # launch: the feed log's last session and ReShade's last session are
+        # read from two files, so an add-on removed between launches would be
+        # reported as loaded from the older feed log. And it must not speak
+        # for an older install - that is what the warning above it is for.
+        attached = bool(_attached(text) or _attached(htext))
+        if attached and since and not _fresh(feed, since):
+            attached = False
+        if attached and not _same_launch(feed, reshade):
+            attached = False
+        if "Registered add-on" not in rtext and not wrote and attached:
+            rep.add(OK, "The add-on loaded - it wrote its own log in the "
+                        "session this report reads.",
+                    "ReShade's own log no longer holds the registration line "
+                    "(a long log is read from its tail), but nothing except "
+                    "ReShade loads this add-on.")
+        if "Registered add-on" not in rtext and not wrote and not attached:
             rep.add(BAD, "ReShade loaded no add-ons.",
                     "Add-on support requires the ReShade build WITH add-ons, "
                     "and AddonPath must point at the game folder.")
@@ -1860,7 +1943,34 @@ def analyse(install_dir: Path) -> Report:
                 rep.verdict = ("The bridge's substitute is off - install the "
                                "bridge route again.")
     else:
-        rep.verdict = "Inconclusive - the feed did not get far enough to tell."
+        # A log that stops at the hooks it installed is not "did not get far
+        # enough" in some vague way: everything the feed can say about the
+        # picture starts from the effect runtime ReShade hands it, and that
+        # log says it never got one (Web of Shadows, #164: eight lines, and
+        # the answer named none of them). Which of the two ends is at fault is
+        # not in this log, so ask for what would tell us instead of guessing.
+        #
+        # The absence of ONE wording is not that evidence, though - the word
+        # "effect runtime" is one build's. Ask for the absence of every line
+        # that can only be written once a runtime exists: a technique state, a
+        # build, a frame. With any of those present this is a different answer
+        # and the findings above have already given it.
+        if _attached(text) \
+                and not _FEED_GOT_RUNTIME.search(text or "") \
+                and not _FEED_GOT_RUNTIME.search(htext or ""):
+            rep.add(WARN, "The add-on loaded, and ReShade never handed it an "
+                          "effect runtime.",
+                    "Everything the feed does starts from that runtime, and "
+                    "its log stops at the hooks it installed. Open the "
+                    "ReShade overlay in the game and check that 'DLSS 5 Feed' "
+                    "is ticked in the effect list - and if it is, send "
+                    "dlss5-feed.log and ReShade.log whole: this pair of logs "
+                    "cannot say which side stopped.")
+            rep.verdict = ("The add-on loaded but ReShade never gave it an "
+                           "effect runtime - check 'DLSS 5 Feed' is ticked in "
+                           "the overlay.")
+        else:
+            rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 
     return rep
 
@@ -2199,6 +2309,37 @@ def _block(title: str, lines: list[str], budget: int) -> str:
     return f"\n**{title}**\n```\n{body}\n```\n"
 
 
+def _their_provider(install_dir: Path, prov: str, man: dict) -> str:
+    """Where the person's own copy of the provider shader is, or "".
+
+    The installer leaves a pack that is already there alone (a second
+    technique of the same name is a red error in ReShade's overlay), so the
+    place the install WOULD have written to is empty by design.
+
+    Only when it really did not write it. A file OUR install wrote and
+    something has since removed is the quarantine case #13 and #84 exist for,
+    and "your own copy is used" would hide it - so the manifest's own file
+    list has the last word, and is what the installer itself asks.
+    """
+    want = ("reshade-shaders/shaders/" + prov).lower()
+    ours = [f for f in (man.get("files") or []) if isinstance(f, str)]
+    if any(f.replace("\\", "/").lower() == want for f in ours):
+        return ""                       # we wrote it; it is gone, say so
+    try:
+        from . import installer as _inst
+        hit = _inst.foreign_lumenite(Path(install_dir), ours, marker=prov)
+    except Exception:
+        return ""
+    if not hit:
+        return ""
+    try:
+        return str(Path(hit).relative_to(install_dir)).replace("\\", "/")
+    except ValueError:
+        # Can only come out of rglob under install_dir, so this is
+        # unreachable - and a full path must never reach a published report.
+        return ""
+
+
 # DLSS5_MV_PROVIDER -> the shader file the feeder needs for it.
 PROVIDER_FX = {2: "vort_Motion.fx", 3: "lumenite_Kernel.fx",
                4: "lumenite_QuantMotion.fx"}
@@ -2288,6 +2429,7 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
         names.append("host64/nvngx_dlssnr.dll")
     else:
         names.append("nvngx_dlssnr.dll")
+    prov = None
     if route == "feeder":
         # The feed is a shader technique plus a motion-vector provider; when
         # either file is gone the add-ons load and nothing happens (issue
@@ -2301,6 +2443,20 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
     for n in dict.fromkeys(names):
         state = "present" if (install_dir / n).is_file() else "MISSING"
         out.append(f"- {n}: {state}")
+        if state == "MISSING" and route == "feeder" and prov \
+                and n.endswith(prov):
+            # The install does not write this one when the person already has
+            # the pack: their copy is used, wherever they keep it under
+            # reshade-shaders. Reporting the place we would have written to as
+            # MISSING sent Web of Shadows (#164) looking for a file the
+            # install had deliberately not put there.
+            mine = _their_provider(install_dir, prov, man)
+            if mine:
+                # Whether ReShade loads that copy depends on its own
+                # EffectSearchPaths, which nothing here reads - so say where
+                # the file is, not that it is the one in use.
+                out[-1] = (f"- {n}: not written by this install - your own "
+                           f"copy is at {mine}")
     out += extra
     # The game's own compiler beside the exe is the cause of the silent
     # "frames flow, nothing happens" case; worth a line whenever it is there.
