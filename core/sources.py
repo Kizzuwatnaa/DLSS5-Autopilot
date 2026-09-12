@@ -802,16 +802,24 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
         # loss takes the whole tool down with it. github.com's release pages
         # carry the same tags and the same assets (#175).
         fams = _rhi_html_catalog()
-        if not fams:
+        # Partial is not usable: the installer indexes catalog["dlssnr"] and
+        # catalog["renodx"] directly, so a list missing either of them turns
+        # a network problem into a KeyError traceback on the very route the
+        # fallback exists to rescue. The API's own error is the better
+        # answer. Found by the release gate.
+        if not fams.get("renodx") or not fams.get("dlssnr"):
             raise
         last_fallback = ("GitHub's API could not be reached; the build list "
                          "was read from github.com's release pages instead. "
                          "It is shorter than usual - every build the tool "
                          "pins is in it.")
+        # Deliberately NOT cached: this list is the short one, and the next
+        # install in the same session should ask the API again rather than
+        # inherit it silently (the "shorter than usual" line is printed
+        # once). Found by the release gate.
+        return fams
         for fam, entries in nvidia_dlss().items():
             fams[fam] = entries + fams.get(fam, [])
-        _CATALOG_CACHE = fams
-        return fams
     fams: dict[str, list[dict]] = {}
     for r in rels:
         tag = r.get("tag_name", "")
@@ -890,7 +898,15 @@ def nvidia_dlss() -> dict[str, list[dict]]:
 
 
 def pick(entries: list[dict], want: str | None) -> dict:
-    """Pick the entry whose label/tag matches `want`, else the newest."""
+    """Pick the entry whose label/tag matches `want`, else the newest.
+
+    An empty list is a build list that could not be read, not a programming
+    error: say so, rather than raising IndexError into the install.
+    """
+    if not entries:
+        raise RuntimeError(
+            "The build list came back empty - GitHub could not be reached "
+            "and nothing is cached yet. Try again in a few minutes.")
     if want:
         for e in entries:
             if e["label"] == want or e["tag"] == want:

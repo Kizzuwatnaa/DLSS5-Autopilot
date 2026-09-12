@@ -335,7 +335,9 @@ class ProtectedXboxTests(unittest.TestCase):
         self.assertIsNone(g.bitness)
         ok, why = installer.check_supported(g)
         self.assertFalse(ok)
-        self.assertIn("architecture and graphics API", why)
+        # The controls are named as the window spells them, lower case.
+        self.assertIn("'architecture'", why)
+        self.assertIn("'graphics api'", why)
         games.set_bitness_override(self.folder, 64)
         games.enrich(g)
         self.assertFalse(installer.check_supported(g)[0], "unknown API must not be assumed")

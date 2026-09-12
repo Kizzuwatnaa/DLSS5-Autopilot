@@ -2206,6 +2206,15 @@ class App:
                  f"arch   {g.bit_label}  api {g.api}  ({g.api_why})",
                  f"route  {dlss.LABELS[sup.recommended]}  [{level}]"
                  + ("  -  ships its own dlss" if sup.native_dlss else "")]
+        # Why the recommended route is the experimental one: without this the
+        # page says "standalone-dlssnr [experimental]" on every 64-bit D3D11/12
+        # game of a 616.64+ machine and nothing on the page says the driver did
+        # that. The install page carries the full reason.
+        if getattr(sup, "steered_from", ""):
+            lines.append(f"driver {gpu.driver_version()}: {dlss.LABELS[sup.steered_from].split(' - ')[0]} "
+                         f"reaches nvidia's runtime through the add-on that "
+                         f"faults on this driver - the install page has the "
+                         f"whole reason")
         n_stale = self.stale.get(str(g.install_dir), 0)
         if n_stale:
             lines.append(f"update {n_stale} installed part(s) have a newer version "
@@ -2922,7 +2931,13 @@ class App:
             # and the shared record verbatim.
             d.findings = [f for f in d.findings
                           if "has not been started since the install" not in f.title
-                          and not f.title.startswith("If you DID start it")]
+                          and not f.title.startswith("If you DID start it")
+                          # ...and the one that replaced it when the game's
+                          # own files showed it HAD run: "the likeliest
+                          # reason is another executable" reads badly under
+                          # proof that this one faulted.
+                          and not f.title.startswith("The likeliest reason:")
+                          and "ran, and nothing this install wrote" not in f.title]
             d.add(diagnose.BAD,
                   f"Windows recorded {getattr(crash, 'exe', 'the game')} "
                   f"faulting" + (f" in {mod}." if mod else "."),
@@ -2944,8 +2959,10 @@ class App:
                      "and if it faults the same way, say so in an issue with "
                      "this report - a game that dies before anything loads is "
                      "worth a look.")
-            self._log("> so it WAS started: the logs are empty because the "
-                      "game faulted before the add-ons could write anything. "
+            self._log("> so it WAS started: nothing here recorded the "
+                      "session, and Windows recorded the game faulting - "
+                      "which is what a game that dies before the add-ons "
+                      "load looks like. "
                       "Uninstall, check the game starts on its own, then "
                       f"install again - {after}", "warn")
             return

@@ -179,8 +179,23 @@ def existing_plugins(exe_dir: Path) -> Path | None:
     plug = exe_dir / PLUGINS_DIR
     if not plug.is_dir():
         return None
-    if any((exe_dir / n).is_file() for n in LOADER_NAMES):
-        return plug
+    # ...and the folder has to be a loader's, not just called "plugins". A
+    # game that ships its own winmm.dll next to an unrelated plugins/ folder
+    # would otherwise get the unlock written where nothing reads it, and the
+    # log would say its loader had picked the .asi up. An .asi already in
+    # there is the evidence: that extension exists for ASI loaders and for
+    # nothing else (Cyber Engine Tweaks ships cyber_engine_tweaks.asi in its
+    # own). is_loader() cannot be used here - it recognises Ultimate ASI
+    # Loader by name, and the loader this route exists for, CET's version.dll,
+    # is not that. Found by the release gate.
+    if not any((exe_dir / n).is_file() for n in LOADER_NAMES):
+        return None
+    try:
+        if any(p.suffix.lower() == ".asi" and p.is_file()
+               for p in plug.iterdir()):
+            return plug
+    except OSError:
+        return None
     return None
 
 

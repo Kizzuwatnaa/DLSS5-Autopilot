@@ -496,7 +496,7 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
     if g.error:
         return False, g.error
     if g.exe_warning and (g.bitness not in (32, 64) or g.api not in games.APIS):
-        return False, ("Choose this game's architecture and graphics API in "
+        return False, ("Choose this game's 'architecture' and 'graphics api' in "
                        "its details on the games page - Windows protects its "
                        "executable, so they cannot be read from it.")
     if g.bitness not in (32, 64):
@@ -1404,7 +1404,11 @@ def preview(g: games.Game, opt: Options) -> Preview:
             write(lname, keep=False)
             write(lname[:-4] + ".ini")
     elif not opt.mfg:
-        for n in mfg.FILES:
+        # The same list remove_leftovers and the manifest-less uninstall use:
+        # an unlock that went into another loader's plugins folder is removed
+        # from there too, and the preview has to say so.
+        for n in [*mfg.FILES] + [f"{mfg.PLUGINS_DIR}/{x}"
+                                 for x in mfg.PLUGIN_FILES]:
             if n in preinstalled or n.lower() in {p.lower() for p in preinstalled}:
                 add(pv.removes, f"{n} (multi-frame generation is off now)")
     # A pinned feeder build older than the D3D10 relay is a blocker, and
@@ -2839,11 +2843,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 # as "pinned to 4.55" in the log and install 5.2.1, so the
                 # miss is said out loud and carried into the report.
                 if want and e["label"] != want:
-                    miss = (f"renodx-dlss5 {want} is not on the build list "
-                            f"right now - installing {e['label']} instead, "
-                            f"which is the build that pin exists to avoid. "
+                    miss = (f"renodx-dlss5 {want} is not on the build "
+                            f"list - installing {e['label']} instead, which "
+                            f"is the kind of build that pin exists to avoid. "
                             f"If the neural pass faults, pick {want} under "
-                            f"'renodx-dlss5 build' once the list is complete.")
+                            f"'dlss5 add-on' on the install page.")
                     log(f"      {miss}")
                     rep.warnings.append(miss)
                 f = dl(e["url"], f"renodx-{e['label']}.zip")

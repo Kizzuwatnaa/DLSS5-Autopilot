@@ -127,6 +127,10 @@ def new_on_the_tracker(online: bool) -> list[int]:
 def guards() -> list[str]:
     """What is wrong with the guard rails themselves, if anything."""
     bad: list[str] = []
+    if not SETTINGS.is_file():
+        # Another checkout: the hook wiring lives beside the repository and
+        # travels with the machine, not with the code. Nothing to report.
+        return []
     try:
         cfg = json.loads(SETTINGS.read_text(encoding="utf8"))
         wired = json.dumps(cfg.get("hooks") or {})

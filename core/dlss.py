@@ -278,6 +278,11 @@ class Support:
     native_dlss: bool = False
     evidence: list[str] = None            # type: ignore[assignment]
     recommended: str = FEEDER
+    # Set by _driver_steer when the driver moved the recommendation off a
+    # route that loads renodx-dlss5: the route it moved off. The games page
+    # reads it, so "standalone [experimental]" does not appear there with no
+    # reason beside it.
+    steered_from: str = ""
     reason: str = ""
     options: list[str] = None             # type: ignore[assignment]
     supported: bool = True                # False: no component reaches this API
@@ -381,9 +386,18 @@ def _driver_steer(s: Support, driver: str | None) -> None:
         return
     if STANDALONE not in s.options:
         return
+    # A game that ships its own DLSS is not steered. The routes recommended
+    # there run the game's own DLSS quality mode; standalone ignores it,
+    # brings its own feed and presents through its own window, which is a
+    # different thing rather than a safer one - and the shared results
+    # behind this are all games with no DLSS of their own. (The pre-install
+    # driver warning still names it on those routes.)
+    if getattr(s, "native_dlss", False):
+        return
     if not gpu.driver_at_least(sources.DRIVER_FAULT_MIN, driver):
         return
     was = LABELS.get(s.recommended, s.recommended).split(" - ")[0]
+    s.steered_from = s.recommended
     s.recommended = STANDALONE
     s.reason = (f"Driver {driver} is one of the {sources.DRIVER_FAULT_MIN}+ "
                 f"builds that fault inside NVIDIA's own NGX runtime on every "
@@ -394,13 +408,14 @@ def _driver_steer(s: Support, driver: str | None) -> None:
                 f"gets most games through and not all. standalone-dlssnr does "
                 f"not load it at all, so it never takes that path: it brings "
                 f"its own feed and presents through a window of its own. At "
-                f"native resolution that needs nothing from you; its real "
-                f"upscaling below native wants the game in windowed mode, "
-                f"which is the add-on's own instruction. It is the less "
-                f"tested of the two and the reports behind this are a "
-                f"handful, so if it does not suit the game, {was} is one "
-                f"dropdown away - and rolling the driver back to 616.56 is "
-                f"the other answer.")
+                f"native resolution that needs nothing from you; to run below "
+                f"native there is an option on its own tab in the ReShade "
+                f"overlay for reduced-resolution fullscreen and borderless "
+                f"swap chains (reported by the person who got it working, "
+                f"#173). It is the less tested of the two and the reports "
+                f"behind this are a handful, so if it does not suit the game, "
+                f"{was} is one dropdown away - and rolling the driver back to "
+                f"616.56 is the other answer.")
 
 
 def fit(route: str, api: str, native_dlss: bool, sm: int | None,

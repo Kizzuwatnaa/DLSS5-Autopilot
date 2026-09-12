@@ -9,8 +9,8 @@ and can take all of it back out. One `.exe`, nothing to install, no admin.
 NVIDIA RTX 20 or newer
 
 - **Eight routes, chosen per game.** DirectX 9 through 12, Vulkan, OpenGL,
-  32-bit, emulators and RTX Remix mods each reach the network a different
-  way. The tool reads the executable and the folder, offers every route
+  32-bit, emulators and RTX Remix mods each reach the neural network a
+  different way. The tool reads the executable and the folder, offers every route
   the game allows, marks the one that fits your card, and leaves the
   choice yours.
 - **It tells you what happened.** Play, then press **did it work?**: it
@@ -98,13 +98,14 @@ OpenGL); the choice is remembered for that folder.
 
 **Three things that override the diagram.** A Remix mod present means
 *remix*, always - ReShade crashes a Remix game before it draws. On NVIDIA
-driver 616.64 and newer, every route that loads the `renodx-dlss5` add-on
-(native, bridge, feeder, renodx-dlss) reaches the driver's NGX runtime
-through a path that faults there on a good number of games; the tool pins
-the add-on to 4.55, which gets most of them through and not all, and where
-*standalone-dlssnr* is on offer it is recommended instead - it does not
-load that add-on at all. Rolling the driver back to 616.56 is the other
-answer. And an online game with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
+driver 616.64 and newer, the native, bridge and feeder routes all reach
+the driver's NGX runtime through the `renodx-dlss5` add-on, which faults
+there on a good number of games; the tool pins that add-on to 4.55 on those
+routes, which gets most of them through and not all, and where
+*standalone-dlssnr* is on offer it is recommended instead - it does not load
+that add-on at all. The renodx-dlss route reaches the same runtime through
+ShortFuse's own add-on and has no such pin. Rolling the driver back to
+616.56 is the other answer. And an online game with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
 XIGNCODE3, Denuvo Anti-Cheat, PunkBuster, FACEIT, Ricochet, ACE) is marked
 in the list and asks for confirmation before INSTALL: ReShade add-ons and
 anti-cheat do not coexist, and a ban is on the person who chooses to

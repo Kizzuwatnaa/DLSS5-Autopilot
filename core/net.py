@@ -143,9 +143,9 @@ def untrusted(name: str, e: Exception) -> RuntimeError | None:
             f"not a missing Windows root and opening the site in Edge does "
             f"not fix it: the connection did not reach {host} at all. The "
             f"usual causes, in order - a DNS or family-filter service, an "
-            f"ISP or router block page, a hotel/campus wifi login page, a "
-            f"VPN, or an antivirus that inspects HTTPS. Try a phone hotspot "
-            f"or set this PC's DNS to 1.1.1.1, then install again.")
+            f"ISP or router block page, a hotel/campus wifi login page, or a "
+            f"VPN. Try a phone hotspot or set this PC's DNS to 1.1.1.1, then "
+            f"install again.")
     if "certificate has expired" in low or "not yet valid" in low:
         return RuntimeError(
             f"{host}: the certificate is outside its dates as far as this PC "
@@ -497,6 +497,13 @@ def fetch_text(url: str, _try: int = 0) -> bytes:
         raise
 
 
+# Said once, wherever the answer came off github.com's pages instead of
+# the API - sources.json_or_html sets the same line for the components it
+# resolves, and the installer prints whichever is set.
+_HTML_FALLBACK = ("GitHub's API could not be reached; this release was read "
+                  "from github.com's release pages instead.")
+
+
 def json_get(url: str):
     """Read JSON from a URL, with github.com behind api.github.com.
 
@@ -516,11 +523,13 @@ def json_get(url: str):
         data = sources.release_json_html(url)
         if data is None:
             raise
+        sources.last_fallback = _HTML_FALLBACK
         return data
     except Exception:
         data = sources.release_json_html(url)
         if data is None:
             raise
+        sources.last_fallback = _HTML_FALLBACK
         return data
 
 

@@ -28,6 +28,7 @@ bug report arrived carrying exactly that and nothing else.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
@@ -1039,12 +1040,14 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                                      _ours_files)
     if _ran_what:
         _clock = datetime.fromtimestamp(_ran_when).strftime("%d %b %H:%M")
-        rep.add(BAD, f"The {app} ran, and nothing this install wrote was "
-                     f"loaded.",
-                f"ReShade writes ReShade.log the moment it loads and there is "
-                f"none - but the {app}'s own files were written after the "
-                f"install ({_ran_what}, {_clock}), so it did run. Everything "
-                f"is still in place, so it is the loading that failed.")
+        rep.add(BAD, f"Something in the {app}'s own files changed after "
+                     f"the install.",
+                f"{_ran_what}, {_clock} - so it looks as though it has been "
+                f"run since, though a store update writes into a game folder "
+                f"too. ReShade writes ReShade.log the moment it loads and "
+                f"there is none, and everything is still in place: if it did "
+                f"run, it is the loading that failed rather than the "
+                f"install.")
     else:
         rep.add(WARN, f"The {app} has not been started since the install.",
                 "ReShade writes ReShade.log the moment it loads, and there is "
@@ -1077,8 +1080,9 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
                 f"Try the {alt} proxy name in the settings and install again.")
-    rep.verdict = (f"It ran, and nothing this install wrote was loaded - the "
-                   f"proxy name or the executable is wrong."
+    rep.verdict = (f"It looks as though it ran and nothing this install "
+                   f"wrote was loaded - most likely the proxy name or the "
+                   f"executable."
                    if _ran_what else
                    f"Not started since the install - run the {app} once, then "
                    f"check again.")
@@ -1138,8 +1142,21 @@ _RAN_NOT_EVIDENCE = (".dll", ".addon64", ".addon32", ".fx", ".fxh", ".asi",
 # started inside that minute is missed, and the older answer is given -
 # which is the safe way round.
 _RAN_MARGIN = 60.0
-_RAN_NOT_A_NAME = ("binaries", "win64", "win32", "bin", "common", "steamapps",
-                   "game", "x64", "retail")
+# Folders that are a step on the way to the game rather than the game: the
+# walk climbs THROUGH these and stops at the first one that is not, which is
+# the game's own root. Without that it kept climbing into the launcher -
+# Steam rewrites Steam\logs\webhelper.txt every session, and a game under
+# steamapps/common is three levels below it, so every Steam game with no
+# ReShade.log was told "it ran, and nothing this install wrote was loaded"
+# on the strength of Steam's own log. Found by the release gate.
+_RAN_CONTAINERS = ("binaries", "win64", "win32", "wingdk", "winarm64", "bin",
+                   "bin64", "x64", "x86", "retail", "shipping", "game")
+# Never the name of THIS game's per-user folder, whatever the path says.
+_RAN_NOT_A_NAME = _RAN_CONTAINERS + (
+    "common", "steamapps", "steamlibrary", "steam", "epic games", "gog galaxy",
+    "gog games", "ubisoft", "ubisoft game launcher", "origin games", "ea games",
+    "ea", "battle.net", "riot games", "amazon games", "xboxgames",
+    "program files", "program files (x86)", "games", "program data")
 
 
 def _user_data_names(install_dir: Path, exe: str) -> list[str]:
@@ -1155,11 +1172,13 @@ def _user_data_names(install_dir: Path, exe: str) -> list[str]:
         for tail in ("Client", "Game", "_x64", "64"):
             if stem.lower().endswith(tail.lower()) and len(stem) > len(tail):
                 names.append(stem[: -len(tail)])
+    # Up through the container folders only. One more step and this is the
+    # launcher's name, and %LOCALAPPDATA%\Steam is not this game's data.
     p = install_dir
     for _ in range(_RAN_PARENTS + 1):
         if p.name:
             names.append(p.name)
-        if p.parent == p:
+        if p.name.lower() not in _RAN_CONTAINERS or p.parent == p:
             break
         p = p.parent
     out: list[str] = []
@@ -1225,14 +1244,22 @@ def _game_ran(install_dir: Path, exe: str, since: float,
                 places.append((root, root / rel))
             elif depth == 0:
                 places.append((root, root))
-        if root.parent == root:
+        # Unreal keeps Saved/ two levels above Binaries/Win64, which is the
+        # only reason this climbs at all - so it climbs only while it is
+        # standing in one of those container folders. At the game's own root
+        # it stops: the next level up is steamapps/common, and the one above
+        # that is Steam itself, whose logs and config it was reading.
+        if root.parent == root or root.name.lower() not in _RAN_CONTAINERS:
             break
         root = root.parent
     for shown_from, d in places:
         if seen > _RAN_ENTRIES or time.monotonic() > deadline:
             break
         try:
-            entries = list(os.scandir(d))[:_RAN_PER_DIR]
+            # islice, not list()[:n]: a folder with 100k entries would be
+            # materialised in full before the slice bounded anything.
+            with os.scandir(d) as it:
+                entries = list(itertools.islice(it, _RAN_PER_DIR))
         except OSError:
             continue
         for e in entries:
@@ -1317,7 +1344,8 @@ def analyse(install_dir: Path) -> Report:
                         if isinstance(n, str) and n.startswith(_net.STOP_NOTE)), "")
         if stopped:
             rep.add(BAD, "The install was stopped before it finished.",
-                    f"It said: {stopped} Whatever came before that step is in "
+                    f"It said: {stopped.rstrip('.')}. Whatever came before "
+                    f"that step is in "
                     f"place; nothing after it was written.")
             rep.verdict = "The install stopped for a reason of its own - see below."
             return rep
@@ -1649,8 +1677,10 @@ def analyse(install_dir: Path) -> Report:
                         "gone a moment later. That is the game closing during "
                         "start-up rather than anything about the add-ons. "
                         "Uninstall (the game's own files go back), check it "
-                        "starts on its own, then install again and try "
-                        "another name in the 'reshade loads as' dropdown.")
+                        "starts on its own, then install again"
+                        + ("." if rep.route in ("feeder", "remix", "optiscaler")
+                           else " and try another name in the 'reshade loads "
+                                "as' dropdown on the install page."))
             else:
                 rep.add(BAD, "ReShade loaded no add-ons.",
                         "Add-on support requires the ReShade build WITH "

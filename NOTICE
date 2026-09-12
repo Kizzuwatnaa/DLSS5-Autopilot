@@ -1,7 +1,7 @@
 DLSS 5 Autopilot
 ================
 
-NOTE: This licence covers only this project's own source code. The tool
+The MIT licence in LICENSE covers only this project's own source code. The tool
 downloads third-party components at run time; those remain under their own
 licences. In particular the DLSS 5 neural-rendering add-on and the NVIDIA NGX
 runtimes are proprietary software and are NOT contained in this repository or

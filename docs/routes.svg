@@ -91,5 +91,5 @@
   <rect x="700" y="418" width="160" height="42" rx="4" class="r"/>
   <text x="780" y="436" text-anchor="middle" class="b">feeder</text>
   <text x="780" y="452" text-anchor="middle" class="m">standalone on 616.64+</text>
-  <text x="20" y="470" class="lb">FSR/XeSS in the game: optiscaler too · on driver 616.64+ every route that loads renodx-dlss5 faults, so standalone is recommended instead</text>
+  <text x="20" y="470" class="lb">FSR/XeSS in the game: optiscaler too · on driver 616.64+ the renodx-dlss5 add-on faults in many games; where standalone is offered (64-bit D3D11/12) it is recommended instead</text>
 </svg>

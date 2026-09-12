@@ -1440,8 +1440,10 @@ with patch("builtins.open", side_effect=_protected_read):
           not _g.error and _g.exe_warning == games.XBOX_EXE_HINT, repr(_g.exe_warning))
     check("...the game keeps its executable so it stays listed", _g.exe == _exe)
     _ok, _why = installer.check_supported(_g)
-    check("...and check_supported requests missing metadata",
-          not _ok and "architecture and graphics API" in _why, repr(_why))
+    check("...and check_supported requests missing metadata, naming the "
+          "controls as the window spells them",
+          not _ok and "'architecture'" in _why and "'graphics api'" in _why,
+          repr(_why))
     installer.preflight(_g)
     check("writing beside a protected EXE is allowed", True)
 check("the executable was not changed", _exe.read_bytes()[:2] == b"MZ")
@@ -6252,7 +6254,10 @@ _v171, _s171 = _overridden("Not started since the install - run the game once.",
 check("a fault record replaces 'not started since the install'",
       "started and crashed" in _v171, _v171)
 check("...and explains why every log is empty",
-      "faulted before the add-ons" in _s171, _s171[:120])
+      "nothing here recorded the session" in _s171
+      # ...without claiming the logs are empty BECAUSE of the fault:
+      # never_ran is set on five shapes and three of them have a log.
+      and "the logs are empty because" not in _s171, _s171[:120])
 _v98, _ = _overridden("Working.", False)
 check("...while a fault still overrides Working.",
       "then the game crashed" in _v98, _v98)
@@ -7454,6 +7459,10 @@ section("1.8.2: api.github.com answered by something else (#175), and the "
 sys.path.insert(0, str(SRC_DIR / "_tools"))
 import replay_report as _rr182  # noqa: E402
 
+# The window's own source, read here rather than borrowed: _gsrc is rebound
+# four times on the way down this file and by now it is one function's.
+_guisrc182 = src_of(_gui)
+
 # #175, word for word out of the report: the chain verified and the NAME on
 # the certificate did not match, which the old answer read as a missing
 # Windows root and told the person to open GitHub in Edge.
@@ -7527,7 +7536,10 @@ check("every build the installer pins by name survives the shortened list",
       sources.RHI_HTML_REQUIRED)
 check("...and a pin that is missing anyway is said out loud, not installed over",
       'e["label"] != want' in src_of(installer)
-      and "which is the build that pin exists to avoid" in src_of(installer))
+      and "the kind of build that pin exists to avoid" in src_of(installer)
+      # ...and it names a control that exists (the gate found it naming one
+      # that did not).
+      and "'dlss5 add-on'" in src_of(installer))
 _FOREIGN = ('<a href="/someone/else/releases/tag/v9.9">'
             '<a href="/jlrouzies-fr/DLSS5-Feeder/releases/tag/v0.15.1">'
             '<a href="/someone/else/releases/download/v9.9/other.zip">')
@@ -7662,8 +7674,11 @@ check("a verdict this project has actually given lands in the right class",
       and _st.classify("Inconclusive - the feed did not get far enough to tell.")
       == "we cannot tell from the logs"
       and _st.classify("Working.") == "working")
+_settings182 = SRC_DIR.parent / ".claude" / "settings.json"
 check("...and the guard rails report themselves as wired",
-      _st.guards() == [], _st.guards())
+      _st.guards() == [] if _settings182.is_file() else True,
+      _st.guards() if _settings182.is_file()
+      else "(no .claude/settings.json beside the repo - skipped)")
 check("the session opens with that measurement",
       (SRC_DIR / "_tools" / "hooks" / "session_start.py").is_file()
       and "state.py" in (SRC_DIR / "_tools" / "hooks"
@@ -7673,12 +7688,16 @@ check("the session opens with that measurement",
 # opened with "the game has not been started since the install" - a guess,
 # and the one sentence that makes a person who DID start it give up. The
 # game's own files answer it.
+_last_ran_findings = []
+
+
 def _no_log_verdict(make=None, exe="Game.exe"):
     d = _rr182.build("feeder", "DX12", exe, {}, 64)
     try:
         if make:
             make(d)
         r = diagnose.analyse(d)
+        _last_ran_findings[:] = r.findings
         return r.verdict, [f.title for f in r.findings]
     finally:
         shutil.rmtree(d, ignore_errors=True)
@@ -7704,8 +7723,12 @@ def _save(d):
 
 _v, _f = _no_log_verdict(_save)
 check("the game's own save, written after the install, says it DID run",
-      "It ran, and nothing this install wrote was loaded" in _v
-      and any("ran, and nothing this install wrote" in t for t in _f), _v)
+      "looks as though it ran" in _v
+      and any("own files changed after the install" in t for t in _f), _v)
+check("...and the verdict hedges it, because a store update writes there too",
+      "most likely" in _v and "though a store update" in " ".join(
+          f.detail or "" for f in
+          [x for x in _last_ran_findings]), _v)
 
 
 def _dll(d):
@@ -7748,7 +7771,7 @@ _later(_ulog)
 with patch.object(diagnose, "_user_data_roots", lambda: [_ud]):
     _v, _f = _no_log_verdict(exe="WardogsClient-Win64-Shipping.exe")
 check("an Unreal game writes under LOCALAPPDATA, and that counts too",
-      "It ran, and nothing this install wrote was loaded" in _v, _v)
+      "looks as though it ran" in _v, _v)
 check("...the folder name is worked out from the executable",
       "Wardogs" in diagnose._user_data_names(Path("C:/g/Binaries/Win64"),
                                              "WardogsClient-Win64-Shipping.exe"),
@@ -7858,9 +7881,14 @@ _pairs = [pair for group in _pcmod.PHRASES.values() for pair in group]
 _missing = [c for _b, c in _pairs if c not in _dg]
 check("every phrase the rot check watches is one the diagnosis really reads",
       len(_pairs) >= 20 and not _missing, _missing or len(_pairs))
+# The skills and the hook wiring live beside the repository, not in it, so
+# on anybody else's checkout there is nothing to read. Absent means "not set
+# up here", which is not a failure; present means it has to say so.
+_skill182 = SRC_DIR.parent / ".claude" / "skills" / "issue-triage" / "SKILL.md"
 check("...and the check is in the standing audits, so it runs by itself",
-      "phrase_check.py" in (SRC_DIR.parent / ".claude" / "skills"
-                            / "issue-triage" / "SKILL.md").read_text(encoding="utf8"))
+      "phrase_check.py" in _skill182.read_text(encoding="utf8")
+      if _skill182.is_file() else True,
+      "" if _skill182.is_file() else "(no .claude beside the repo - skipped)")
 
 # #137: Cyberpunk's CET IS an ASI loader and owns version.dll. The unlock
 # used to write Ultimate ASI Loader over it - CET, and every mod that needs
@@ -7876,7 +7904,11 @@ check("with nothing in the way the loader name is what it always was",
 check("another mod's DLL under that name is not taken (#137)",
       _m141.loader_name(_cpexe, set(), _cp) is None
       and _m141.loader_name(_cpexe, set()) == "version.dll")
-check("...and its plugins folder is found instead",
+check("a folder merely CALLED plugins is not a loader's (#137, the gate)",
+      _m141.existing_plugins(_cp) is None)
+# CET's own folder carries its .asi; that is what says a loader reads it.
+(_cp / "plugins" / "cyber_engine_tweaks.asi").write_bytes(b"MZ-cet")
+check("...and one with an .asi already in it is",
       _m141.existing_plugins(_cp) == _cp / "plugins")
 check("a plugins folder with no loader beside it is somebody else's",
       _m141.existing_plugins(Path(tempfile.mkdtemp(prefix="noload_"))) is None)
@@ -7928,7 +7960,13 @@ check("616.64 and newer recommend the route that does not load renodx-dlss5",
       _steer)
 check("...and the reason says which route it moved off, and what it costs",
       all(w in dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").reason
-          for w in ("feeder", "616.56", "windowed", "handful")))
+          for w in ("feeder", "616.56", "borderless", "handful")))
+check("...and it leaves a marker, so the games page can say why",
+      dlss.detect(_sd, _sd, "DX12", 64, sm=120,
+                  driver="616.92").steered_from == dlss.FEEDER
+      and not dlss.detect(_sd, _sd, "DX12", 64, sm=120).steered_from)
+check("...which the games page actually prints",
+      "steered_from" in _guisrc182)
 check("a game whose dropdown has no standalone entry is not steered to it",
       dlss.detect(_sd, _sd, "DX9", 32, sm=120, driver="616.92").recommended
       != dlss.STANDALONE)
@@ -7936,7 +7974,6 @@ check("a game whose dropdown has no standalone entry is not steered to it",
 check("a game that ships its own DLSS keeps OptiScaler - it never loads the add-on",
       dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").recommended
       == dlss.OPTI)
-_guisrc182 = src_of(_gui)
 check("the window passes the driver in, or the steer never runs",
       "driver=gpu.driver_version()" in _guisrc182,
       len(_guisrc182))

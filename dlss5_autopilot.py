@@ -71,7 +71,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     need = installer.wants_dxvk(g)
     use_dxvk = bool(need) if dxvk is None else dxvk
     card, sm = gpu.detect()
-    sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm)
+    sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, sm,
+                      driver=gpu.driver_version())
     level, why_rel = installer.reliability(g, sup.recommended)
     print(f"game    : {g.name}")
     if card:
