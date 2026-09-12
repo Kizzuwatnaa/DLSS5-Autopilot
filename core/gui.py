@@ -2327,6 +2327,8 @@ class App:
                    [f"{n}  -  {installer.RESHADE_PROXY_HELP[n]}"
                     for n in installer.RESHADE_PROXIES])
         self.cb_rproxy.current(0)
+        self.cb_rproxy.bind("<<ComboboxSelected>>",
+                            lambda e: self._set_pathlbl(self.game))
 
         row(4, "dlss5 add-on")
         self.cb_renodx = ttk.Combobox(inner, state="readonly", values=["loading..."])
@@ -3498,10 +3500,17 @@ class App:
             pair = (self.lbl_proxy, self.cb_proxy)
         elif feeder:
             pair = (self.lbl_mv, self.cb_prov)
+        elif path == dlss.REMIX:
+            # Remix installs no ReShade at all: install() sets the proxy to
+            # "" and preview returns before any proxy is written, so the
+            # dropdown here would change nothing. It was on the page only
+            # because this was the else branch.
+            pair = None
         else:
             pair = (self.lbl_rproxy, self.cb_rproxy)
-        pair[0].grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
-        pair[1].grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+        if pair is not None:
+            pair[0].grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
+            pair[1].grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
         # The feeder route needs BOTH: row 3 is its motion-vector provider,
         # and the name ReShade goes in under gets a row of its own. Without
         # it the commonest answer to a no-log report - "this game skips

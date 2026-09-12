@@ -6518,6 +6518,12 @@ _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="feeder")
 check("...and the feeder route, which has its own row for it, is told "
       "'reshade loads as'",
       "'reshade loads as'" in _said, _said[-200:])
+_asrc2 = src_of(_gui.App._apply_route)
+check("the remix route shows no proxy dropdown - it installs no ReShade",
+      "elif path == dlss.REMIX:" in _asrc2 and "pair = None" in _asrc2)
+check("...and changing the name rebuilds the header line that promises it",
+      'self.cb_rproxy.bind("<<ComboboxSelected>>"'
+      in src_of(_gui.App._page_install))
 _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="remix")
 check("...and the remix route, which installs no ReShade, is told neither",
       "loads as" not in _said, _said[-200:])

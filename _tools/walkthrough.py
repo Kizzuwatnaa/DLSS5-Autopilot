@@ -142,6 +142,27 @@ for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
     except Exception as e:
         ok(f"the {route} route renders its page", False, f"{type(e).__name__}: {e}")
 
+# The control our own answers name, on the route they name it to. Twice
+# now a verdict has told somebody to change a dropdown their route does not
+# show (#148, and the feeder route until the 1.8.2 gate); once the reverse,
+# with the dropdown on the page and the text saying it was not. The mapping
+# below is the one gui._crash_overrides and diagnose._explain_no_log use.
+for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
+              dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
+    app._apply_route(route)
+    root.update()
+    named = (app.cb_proxy if route == dlss.OPTI
+             else None if route == dlss.REMIX
+             else app.cb_rproxy)
+    if named is None:
+        ok(f"...{route} names no proxy dropdown, and shows none",
+           not app.cb_rproxy.winfo_ismapped()
+           and not app.cb_proxy.winfo_ismapped())
+    else:
+        ok(f"...the dropdown our answers name on {route} is on its page",
+           named.winfo_ismapped(),
+           f"{named.winfo_class()} not mapped")
+
 # The Remix route's one control. Every message about a runtime without the
 # neural pass said "tick 'swap the Remix runtime'", and the page never had
 # it - REMIX was not even in the route loop above (#148).
