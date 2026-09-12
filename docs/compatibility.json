@@ -169,6 +169,21 @@
     }
    }
   },
+  "fallout4.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Fallout 4",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "falloutnv.exe": {
    "drivers": {
     "616.64": {
@@ -582,6 +597,6 @@
    }
   }
  },
- "generated": "2026-09-12T12:12:37Z",
- "reports": 50
+ "generated": "2026-09-12T12:15:31Z",
+ "reports": 51
 }
