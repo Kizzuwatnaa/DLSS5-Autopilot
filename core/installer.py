@@ -1408,6 +1408,12 @@ def preview(g: games.Game, opt: Options) -> Preview:
         # an unlock that went into another loader's plugins folder is removed
         # from there too, and the preview has to say so.
         _pre_low = {p.lower() for p in preinstalled}
+        # remove_leftovers returns early unless one of the unlock's own files
+        # is on the record, so the loader only comes out with them. The
+        # preview must promise exactly that and no more.
+        _unlock_here = any(
+            n.lower() in _pre_low for n in
+            [*mfg.FILES] + [f"{mfg.PLUGINS_DIR}/{x}" for x in mfg.PLUGIN_FILES])
         for n in [*mfg.FILES] + [f"{mfg.PLUGINS_DIR}/{x}"
                                  for x in mfg.PLUGIN_FILES]:
             if n in preinstalled or n.lower() in _pre_low:
@@ -1415,13 +1421,20 @@ def preview(g: games.Game, opt: Options) -> Preview:
         # ...and the loader itself, which remove_leftovers also takes out -
         # with the file of theirs that was under that name going back. That
         # is the line a person reads the preview for.
-        for n in mfg.LOADER_NAMES:
+        for n in mfg.LOADER_NAMES if _unlock_here else []:
             if n.lower() not in _pre_low:
                 continue
-            add(pv.removes, f"{n} (the ASI loader, multi-frame generation is "
-                            f"off now)")
-            if (root / (n + mfg.BACKUP_SUFFIX)).is_file():
-                add(pv.removes, f"{n} (put back from its backup)")
+            # One line, not two: the same name listed twice - once as a
+            # removal and once as a restore - reads as two files.
+            _back = (root / (n + mfg.BACKUP_SUFFIX)).is_file()
+            add(pv.removes,
+                f"{n} (the ASI loader, multi-frame generation is off now"
+                + ("; your own file goes back in its place)" if _back else ")"))
+            # remove_leftovers unlinks the loader's ini as well, and the
+            # preview's ON branch writes it - so the OFF branch names it.
+            _lini = n[:-4] + ".ini"
+            if _lini.lower() in _pre_low:
+                add(pv.removes, f"{_lini} (the loader's settings)")
     # A pinned feeder build older than the D3D10 relay is a blocker, and
     # needs no network to say so.
     if opt.path == FEEDER and g.api == "DX10" and opt.feeder_tag and \

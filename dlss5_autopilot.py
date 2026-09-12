@@ -96,10 +96,11 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
                   f"(options: {', '.join(sup.options)})", file=sys.stderr)
             return 1
         sup.recommended = route
-        # An explicit --route is the answer; the reason belongs to the
-        # recommendation it just overrode, and printing it would argue for
-        # a route this run is not taking.
+        # An explicit --route is the answer; the reason and the outlook
+        # belong to the recommendation it just overrode - printing either
+        # would describe a route this run is not taking.
         sup.reason = ""
+        level, why_rel = installer.reliability(g, sup.recommended)
     if card:
         # The same warning the install page shows, for the route that will
         # actually be installed. A command-line install on a driver that
@@ -120,7 +121,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     elif sup.upscaler:
         print(f"          this game ships {dlss.UPSCALER_NAMES[sup.upscaler]} "
               f"and no DLSS ({', '.join(sup.upscaler_evidence[:3])})")
-    print(f"          {sup.reason}")
+    if sup.reason:
+        print(f"          {sup.reason}")
     print(f"outlook : {level} - {why_rel}")
     if use_dxvk:
         print(f"dxvk    : yes - {need + ' closes itself when ReShade hooks it; ' if need else ''}"

@@ -2487,9 +2487,11 @@ class App:
             inner, bg=PANEL, fg=DIM, font=font(8), anchor="w", justify="left",
             text="stable = what GitHub marks as the latest release; or pin an "
                  "exact build when the newest one breaks a game. builds "
-                 "before 0.8.0-beta.3 pair with DLSS 5 add-on 4.55 and have a "
-                 "settings tab; from there on the newest add-on is installed "
-                 "and preset and work area are taken from here")
+                 "before 0.8.0-beta.3 pair with renodx-dlss5 4.55 and have "
+                 "a settings tab; from there on preset and work area are "
+                 "taken from here, and the newest add-on is installed unless "
+                 "the driver or an OpenGL game pins an older one - the "
+                 "install log says which")
         _wrap_to_width(self.feederhint)
 
         # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
@@ -2926,11 +2928,12 @@ class App:
             where = getattr(g, "install_dir", None) if g is not None else None
             if where is not None and not _fault_in_this_folder(crash, where):
                 return
-            # never_ran is set on seven shapes and four of them have a
-            # log (switched off, older than the install, the add-on's own
-            # log empty). "before anything could write a line" is only true
-            # of the other three, so the verdict says what IS true of all
-            # seven: nothing here recorded this session.
+            # never_ran is set on seven shapes and three of them have a
+            # log (older than the install - twice - and the standalone
+            # add-on's own log missing while ReShade's is not). "before
+            # anything could write a line" is only true of the rest, so the
+            # verdict says what IS true of all seven: nothing here recorded
+            # this session.
             d.verdict = ("It started, and nothing here recorded the session - "
                          "Windows recorded the fault"
                          + (f" in {mod}." if mod else "."))
@@ -2950,13 +2953,20 @@ class App:
                           # prune was written against a title that had been
                           # renamed in the same commit, and silently stopped
                           # removing anything.
-                          and "own files changed after" not in f.title]
+                          and "own files changed after" not in f.title
+                          # ...and the other never_ran branches, which all
+                          # end in "play once and check again" - unreadable
+                          # under a fault record for this very session.
+                          and "is older than the install" not in f.title
+                          and "predates this install" not in f.title
+                          and "has not been run since installing" not in f.title]
             d.add(diagnose.BAD,
                   f"Windows recorded {getattr(crash, 'exe', 'the game')} "
                   f"faulting" + (f" in {mod}." if mod else "."),
                   "So it was started. Nothing here had a chance to write a "
                   "line that describes this session, which is what a "
-                  "fault on record and no log of our own means.")
+                  "fault on record and no session of our own in the logs "
+                  "means.")
             # After the finding exists: the reprint carries it.
             self._reprint_verdict(d)
             # The dropdown is named differently per route - and on the feeder
@@ -3490,6 +3500,17 @@ class App:
             pair = (self.lbl_rproxy, self.cb_rproxy)
         pair[0].grid(row=3, column=0, sticky="w", padx=(0, 14), pady=5)
         pair[1].grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
+        # The feeder route needs BOTH: row 3 is its motion-vector provider,
+        # and the name ReShade goes in under gets a row of its own. Without
+        # it the commonest answer to a no-log report - "this game skips
+        # dxgi.dll, try d3d11.dll" - names a control that is not on the page
+        # (found by the release gate; the diagnosis text for that route had
+        # to say "this route does not offer it" instead).
+        if feeder:
+            self.lbl_rproxy.grid(row=21, column=0, sticky="w",
+                                 padx=(0, 14), pady=5)
+            self.cb_rproxy.grid(row=21, column=1, columnspan=2,
+                                sticky="ew", pady=5)
         # Motion vectors, work area and DLSS preset belong to the feeder's
         # synthetic contract; the other routes hook the game's real DLSS calls
         # and ignore all three.

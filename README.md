@@ -105,10 +105,10 @@ faults there in a good number of games. The tool pins that add-on to 4.55
 on those routes, which gets most games through and not all. For a game with
 **no DLSS of its own** - the feeder's case - the recommendation moves to
 *standalone-dlssnr* where that route is offered (64-bit, D3D11 or D3D12):
-it does not load the add-on at all. A game that ships its own DLSS keeps
-native or optiscaler, because the routes recommended there run the game's
-own DLSS quality mode and standalone ignores it; the pre-install warning
-names the driver either way. The renodx-dlss route reaches the same runtime
+it does not load the add-on at all. A game that ships its own DLSS is not
+moved - native or optiscaler on D3D12, the bridge on D3D11 - because those
+routes run the game's own DLSS quality mode and standalone ignores it; the
+pre-install warning names the driver either way. The renodx-dlss route reaches the same runtime
 through ShortFuse's own add-on, which has no such pin and no report either
 way on these drivers. Rolling the driver back to 616.56 is the other
 answer.

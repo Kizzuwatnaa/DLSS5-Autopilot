@@ -819,7 +819,12 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
         # a network problem into a KeyError traceback on the very route the
         # fallback exists to rescue. The API's own error is the better
         # answer. Found by the release gate.
-        # ...and "dlss", which the installer indexes directly too.
+        # NVIDIA's own runtimes first: they come off a redirect and a raw
+        # URL rather than the API, so they are reachable in this outage and
+        # they supply the "dlss" family the installer indexes directly. The
+        # guard has to run AFTER them or it rejects a catalog they complete.
+        for fam, entries in nvidia_dlss().items():
+            fams[fam] = entries + fams.get(fam, [])
         if (not fams.get("renodx") or not fams.get("dlssnr")
                 or not fams.get("dlss")):
             raise
@@ -828,13 +833,6 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
                          "It is shorter than usual; if a build the tool "
                          "pins is missing from it, the install says so "
                          "before it writes anything.")
-        # NVIDIA's own runtimes come off a redirect and a raw URL, not the
-        # API, so they are still reachable in exactly the outage this branch
-        # exists for - and the merge has to happen BEFORE the return, or the
-        # fallback quietly installs the mirror's nvngx_dlss and skips ray
-        # reconstruction altogether. (Pass 1 moved the return above it.)
-        for fam, entries in nvidia_dlss().items():
-            fams[fam] = entries + fams.get(fam, [])
         # Deliberately NOT cached: this list is the short one, and the next
         # install in the same session should ask the API again rather than
         # inherit it silently.

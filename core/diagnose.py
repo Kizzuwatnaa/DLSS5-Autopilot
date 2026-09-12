@@ -1077,10 +1077,21 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 "install page and install again.")
     elif proxy:
         alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
+        # The same mapping the crash override uses (gui._crash_overrides):
+        # optiscaler calls it 'loads as', and the feeder and remix routes
+        # take that row off the page altogether (the feeder puts the
+        # motion-vector dropdown there). Naming a control that is not on
+        # the screen is #148's shape.
+        _drop = ("'loads as'" if rep.route == "optiscaler"
+                 else "" if rep.route == "remix"
+                 else "'reshade loads as'")
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
-                f"Set 'reshade loads as' to {alt} on the install page and "
-                f"install again.")
+                + (f"Set {_drop} to {alt} on the install page and install "
+                   f"again." if _drop else
+                   f"This route does not offer the proxy name on the page; "
+                   f"if the {app} starts with nothing else in the folder, "
+                   f"say so in an issue with this report."))
     rep.verdict = (f"It looks as though it ran and nothing this install "
                    f"wrote was loaded - most likely the proxy name or the "
                    f"executable."
@@ -2411,7 +2422,10 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
                 f"once and check again.")
         rep.verdict = ("Add-on loaded, but its own log has nothing yet - play "
                        "once and check again.")
-        rep.never_ran = True
+        # A fresh ReShade.log is a record of this session, and this verdict is
+        # built on it - so a fault record must not rewrite it into "nothing
+        # here recorded the session".
+        rep.never_ran = not reshade_ran
         return rep
     try:
         rep.log_time = datetime.fromtimestamp(p.stat().st_mtime).strftime("%d %b %H:%M")
@@ -2422,7 +2436,8 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool) -> Report:
                 "It is one file for every game the add-on ran in, and it was "
                 "last written before this install. Play once and check again.")
         rep.verdict = "Installed after the last run - play once and check again."
-        rep.never_ran = True
+        # As above: a fresh ReShade.log is a record of this session.
+        rep.never_ran = not reshade_ran
         return rep
     # One log for every game: only the last session can describe this one.
     cut = text.rfind(_STANDALONE_SESSION)
