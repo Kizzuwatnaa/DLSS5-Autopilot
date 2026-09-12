@@ -7551,6 +7551,41 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# #182 (Resident Evil 4, "it never started"): the report said "ReShade
+# loaded no add-ons" over a log block that read "(none)". Three shapes, and
+# they are three different answers.
+import sys as _sys182  # noqa: E402
+_sys182.path.insert(0, str(SRC_DIR / "_tools"))
+import replay_report as _rr182  # noqa: E402
+def _verdict_for(log_text):
+    d = _rr182.build("feeder", "DX12", "re4.exe", {"reshade": " "}, 64)
+    (d / "ReShade.log").write_text(log_text, encoding="utf8")
+    try:
+        r = diagnose.analyse(d)
+        return r.verdict, [f.title for f in r.findings]
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+_NL = chr(10)
+_BANNER = ("16:29:03:123 [1234] | INFO  | Initializing crosire's ReShade "
+           "version 6.6.1 ..." + _NL)
+for _label, _txt in (("empty", ""), ("whitespace", _NL + "  " + _NL)):
+    _v, _f = _verdict_for(_txt)
+    check(f"a ReShade.log with nothing in it is no log, not 'no add-ons' ({_label})",
+          "Not started since the install" in _v
+          and not any("loaded no add-ons" in t for t in _f), (_v, _f[:1]))
+_v, _f = _verdict_for(_BANNER)
+check("ReShade's banner and nothing after it is a game that died at start-up",
+      "closed during start-up" in _v
+      and any("session ended before anything else" in t for t in _f), (_v, _f[:1]))
+_v, _f = _verdict_for("16:29:03:123 [1234] | WARN  | Reference count for "
+                      "ID3D12CommandQueue0 is inconsistent (7)." + _NL)
+check("...but a tail that does not start where ReShade did says nothing of the kind",
+      any("loaded no add-ons" in t for t in _f), _f[:2])
+_v, _f = _verdict_for(_BANNER + "16:29:05:001 [1234] | INFO  | Redirecting "
+                      "IDXGIFactory::CreateSwapChain(...)" + _NL)
+check("...and neither does a session that got as far as a swap chain",
+      any("loaded no add-ons" in t for t in _f), _f[:2])
+
 # Every report anybody ever sent, through the diagnosis as it is now,
 # against the answers recorded last time. This is the net under every
 # change to diagnose.py: 236 if/elif branches over one input, where a rule

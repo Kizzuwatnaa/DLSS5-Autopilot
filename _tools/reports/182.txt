@@ -1,0 +1,34 @@
+**Did the game start?** it never started
+
+**What happened**
+dead at lunch
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.56
+- game: Resident Evil 4
+- exe: re4.exe
+- arch/api: 64-bit / DX12 (imports d3d11.dll, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [bad] ReShade loaded no add-ons.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1181,6 +1181,14 @@ def analyse(install_dir: Path) -> Report:
     # Only the last launch describes what the person just saw. Everything
     # before it belongs to an install that may not even be this route.
     rtext = _last_session(_tail(reshade, 250_000))
+    # A file with nothing in it is not a log. ReShade creates ReShade.log
+    # when it attaches and a game that dies on the next breath leaves it
+    # empty - which used to read as "ReShade ran and loaded no add-ons",
+    # printed above a report block saying "(none)" (#182). Whitespace is
+    # the same thing: #155 covered a log whose lines nothing reads, not a
+    # log with no lines.
+    if not rtext.strip():
+        rtext = ""
 
     if text and since and not _fresh(feed, since):
         rep.add(WARN, "The log predates the current install.",
@@ -1439,9 +1447,21 @@ def analyse(install_dir: Path) -> Report:
                     "(a long log is read from its tail), but nothing except "
                     "ReShade loads this add-on.")
         if "Registered add-on" not in rtext and not wrote and not attached:
-            rep.add(BAD, "ReShade loaded no add-ons.",
-                    "Add-on support requires the ReShade build WITH add-ons, "
-                    "and AddonPath must point at the game folder.")
+            if _reshade_died_early(rtext):
+                rep.add(BAD, "ReShade attached and the session ended before "
+                             "anything else happened.",
+                        "Its log holds nothing but the start-up lines - no "
+                        "add-on, no runtime, no swap chain - so the game was "
+                        "gone a moment later. That is the game closing during "
+                        "start-up rather than anything about the add-ons. "
+                        "Uninstall (the game's own files go back), check it "
+                        "starts on its own, then install again and try "
+                        "another name in the 'reshade loads as' dropdown.")
+            else:
+                rep.add(BAD, "ReShade loaded no add-ons.",
+                        "Add-on support requires the ReShade build WITH "
+                        "add-ons, and AddonPath must point at the game "
+                        "folder.")
             if (man.get("proxy") or "").lower() == "opengl32.dll":
                 rep.add(INFO, "Or this log is from another program's ReShade.",
                         "This install went in as opengl32.dll, which only "
@@ -1983,6 +2003,9 @@ def analyse(install_dir: Path) -> Report:
             rep.verdict = ("The add-on loaded but ReShade never gave it an "
                            "effect runtime - check 'DLSS 5 Feed' is ticked in "
                            "the overlay.")
+        elif _reshade_died_early(rtext):
+            rep.verdict = ("It started and closed during start-up - ReShade "
+                           "attached and nothing else got to run.")
         else:
             rep.verdict = "Inconclusive - the feed did not get far enough to tell."
 
@@ -2265,6 +2288,38 @@ _RESHADE_KEEP = ("WARN", "ERROR", "Registered add-on", "CreateSwapChain",
                  "Direct3DCreate9", "Exiting", "EvaluateFeature")
 # What a report's ReShade.log excerpt gives up last when it is over budget:
 # the lines the diagnosis itself reads, then which add-ons loaded.
+# Lines that can only be written once ReShade got somewhere: an add-on
+# registered, a factory call redirected, a runtime or swap chain created, an
+# effect compiled, a clean exit. A last session with NONE of them is ReShade
+# attaching and the process ending on the next breath - which is a game that
+# died during start-up, not a ReShade built without add-on support (#182,
+# Resident Evil 4: "it never started", and the report said "ReShade loaded
+# no add-ons" over a log block that read "(none)").
+_RESHADE_GOT_GOING = ("registered add-on", "redirecting", "initialized runtime",
+                      "swap chain", "swapchain", "compiled", "exiting",
+                      "effect", "created")
+
+
+# ReShade's first line of every session. It has to be there for "the
+# session ended right after it attached" to mean anything: a log read from
+# its tail, or a session slice that begins in the middle, has no start-up
+# line and no marker either - which is not the same fact at all. Three real
+# reports (#34, #63, #64) said so the moment the corpus was replayed.
+_RESHADE_STARTED = "initializing crosire"
+
+
+def _reshade_died_early(rtext: str) -> bool:
+    """Did ReShade's last session end before it did anything at all?
+
+    Only when the session is whole - it begins where ReShade began - and
+    holds none of the lines that say it got somewhere.
+    """
+    low = (rtext or "").lower()
+    if _RESHADE_STARTED not in low:
+        return False
+    return not any(k in low for k in _RESHADE_GOT_GOING)
+
+
 _RESHADE_FIRM = ("EvaluateFeature",)
 _RESHADE_ALSO = ("Registered add-on",)
 _HOOK_ADDRESSES = re.compile(r" with 0x[0-9A-Fa-f]+ => 0x[0-9A-Fa-f]+")
