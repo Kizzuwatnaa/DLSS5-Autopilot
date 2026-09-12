@@ -364,6 +364,21 @@
     }
    }
   },
+  "onimushawots.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Onimusha: Way of the Sword",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "painkiller.exe": {
    "drivers": {
     "616.64": {
@@ -503,6 +518,6 @@
    }
   }
  },
- "generated": "2026-09-12T01:22:46Z",
- "reports": 44
+ "generated": "2026-09-12T02:45:11Z",
+ "reports": 45
 }
