@@ -7551,6 +7551,35 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# The loop that measures itself: state.py turns every saved verdict into a
+# ranked backlog, and a class at the top is a shape to fix. Checked here so
+# the ranking cannot silently stop describing the corpus.
+_st_spec = _ilu2.spec_from_file_location("state", SRC_DIR / "_tools" / "state.py")
+_st = _ilu2.module_from_spec(_st_spec)
+_st_spec.loader.exec_module(_st)
+_stc = _st.corpus()
+check("the loop measures every report in the corpus, not a sample",
+      _stc.get("total", 0) == len(_vnow), (_stc.get("total"), len(_vnow)))
+check("...and almost nothing falls through its classes",
+      _stc["counts"].get("other", 0) <= max(6, _stc["total"] // 10),
+      _stc["counts"].get("other"))
+check("the biggest class is named, with the reports behind it",
+      bool(_stc["counts"].most_common(1)[0][0])
+      and len(_stc["where"][_stc["counts"].most_common(1)[0][0]]) ==
+      _stc["counts"].most_common(1)[0][1])
+check("a verdict this project has actually given lands in the right class",
+      _st.classify("Not started since the install - run the game once.")
+      == "nothing we wrote ever loaded"
+      and _st.classify("Inconclusive - the feed did not get far enough to tell.")
+      == "we cannot tell from the logs"
+      and _st.classify("Working.") == "working")
+check("...and the guard rails report themselves as wired",
+      _st.guards() == [], _st.guards())
+check("the session opens with that measurement",
+      (SRC_DIR / "_tools" / "hooks" / "session_start.py").is_file()
+      and "state.py" in (SRC_DIR / "_tools" / "hooks"
+                         / "session_start.py").read_text(encoding="utf8"))
+
 # 34 of the first 84 reports are "no log at all", and the answer to them
 # opened with "the game has not been started since the install" - a guess,
 # and the one sentence that makes a person who DID start it give up. The
