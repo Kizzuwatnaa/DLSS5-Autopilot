@@ -60,6 +60,21 @@
     }
    }
   },
+  "darksoulsiii.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "DARK SOULS\u2122 III",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "dawnwalker.exe": {
    "drivers": {
     "616.56": {
@@ -642,6 +657,6 @@
    }
   }
  },
- "generated": "2026-09-12T15:14:28Z",
- "reports": 54
+ "generated": "2026-09-12T15:23:46Z",
+ "reports": 55
 }
