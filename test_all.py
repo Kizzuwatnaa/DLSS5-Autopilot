@@ -7551,6 +7551,38 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# The owner's own machine, found by detect_check: an Unreal game whose
+# shipping exe imports no graphics DLL at all was read as OpenGL, because
+# the only renderer name in the file is Unreal's unused OpenGL RHI string.
+# ReShade would have gone in as opengl32.dll, which the game never loads -
+# and the report would have come back with no log at all.
+_ue = Path(tempfile.mkdtemp(prefix="unreal_"))
+_ue_exe = _ue / "Wardogs" / "Binaries" / "Win64" / "WardogsClient-Win64-Shipping.exe"
+_ue_exe.parent.mkdir(parents=True)
+shutil.copyfile(X64, _ue_exe)
+with open(_ue_exe, "ab") as _f:
+    _f.write(b"opengl32.dll")
+check("without the engine folder the rule does not fire at all",
+      pe._engine_default(_ue_exe) is None and not pe._is_unreal(_ue_exe))
+(_ue / "Engine").mkdir()
+_api, _why = pe.detect_api(_ue_exe)
+check("an Unreal layout decides the renderer before an opengl32 string does",
+      _api == "DX12" and "Unreal" in _why, (_api, _why[:60]))
+check("...and it is the shape that says so, not the executable's name",
+      pe._is_unreal(_ue_exe)
+      and not pe._is_unreal(_ue / "Wardogs" / "Binaries" / "Win64"))
+_nue = Path(tempfile.mkdtemp(prefix="notunreal_"))
+(_nue / "bin" / "win64").mkdir(parents=True)
+shutil.copyfile(_ue_exe, _nue / "bin" / "win64" / "Game.exe")
+check("a game in some other bin/win64, with no Engine folder, is left alone",
+      pe._engine_default(_nue / "bin" / "win64" / "Game.exe") is None)
+(_nue / "Engine").mkdir()
+check("...and an Engine folder alone is not the Unreal layout either - "
+      "Binaries is part of it",
+      pe._engine_default(_nue / "bin" / "win64" / "Game.exe") is None)
+shutil.rmtree(_ue, ignore_errors=True)
+shutil.rmtree(_nue, ignore_errors=True)
+
 # #182 (Resident Evil 4, "it never started"): the report said "ReShade
 # loaded no add-ons" over a log block that read "(none)". Three shapes, and
 # they are three different answers.
