@@ -54,7 +54,10 @@ DRIVER_RE = re.compile(r"driver\s+([\d.]+)")
 
 def _answer(path: Path) -> dict:
     """What the diagnosis says about one saved report, on any machine."""
-    text = path.read_text(encoding="utf8", errors="replace")
+    # Git may hand these back with CRLF on another checkout, and a log line
+    # that ends in \r is not the same string to a rule that matches the end
+    # of one. The baseline has to mean the same thing everywhere.
+    text = path.read_text(encoding="utf8", errors="replace").replace("\r\n", "\n")
     logs = replay_report._blocks(text)
     head = replay_report._header(text)
     route = head.get("route", "feeder")
