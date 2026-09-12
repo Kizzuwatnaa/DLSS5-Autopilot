@@ -223,7 +223,10 @@ class ScanTests(unittest.TestCase):
             workers.append(thread)
             return thread
 
-        def slow_detect(*_args):
+        # **_kw: the window passes the driver in by keyword now, and a
+        # double that only took positionals turned 'runs off the UI
+        # thread' into a dead worker and a two-second timeout.
+        def slow_detect(*_args, **_kw):
             worker_ids.append(threading.get_ident())
             entered.set()
             if not release.wait(5):
