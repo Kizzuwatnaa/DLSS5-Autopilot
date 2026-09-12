@@ -2490,8 +2490,9 @@ class App:
             text="stable = what GitHub marks as the latest release; or pin an "
                  "exact build when the newest one breaks a game. builds "
                  "before 0.8.0-beta.3 pair with renodx-dlss5 4.55 and have "
-                 "a settings tab; from there on preset and work area are "
-                 "taken from here, and the newest add-on is installed unless "
+                 "a settings tab; from there on the preset is taken from "
+                 "here, the work area too on the 64-bit d3d11 path, and the "
+                 "newest add-on is installed unless "
                  "the driver or an OpenGL game pins an older one - the "
                  "install log says which")
         _wrap_to_width(self.feederhint)
@@ -2930,12 +2931,14 @@ class App:
             where = getattr(g, "install_dir", None) if g is not None else None
             if where is not None and not _fault_in_this_folder(crash, where):
                 return
-            # never_ran is set on seven shapes and three of them have a
-            # log (older than the install - twice - and the standalone
-            # add-on's own log missing while ReShade's is not). "before
-            # anything could write a line" is only true of the rest, so the
-            # verdict says what IS true of all seven: nothing here recorded
-            # this session.
+            # never_ran is set on seven shapes and two of them have a log
+            # (older than the install: ReShade's at diagnose.py:981 and the
+            # standalone add-on's at :2440). The third one used to be the
+            # add-on's log missing while ReShade's was not - that shape
+            # stopped setting never_ran when :2428 became `not reshade_ran`.
+            # "before anything could write a line" is only true of the rest,
+            # so the verdict says what IS true of all seven: nothing here
+            # recorded this session.
             d.verdict = ("It started, and nothing here recorded the session - "
                          "Windows recorded the fault"
                          + (f" in {mod}." if mod else "."))

@@ -1082,6 +1082,11 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         # motion-vector provider on that row and the ReShade name on one of
         # its own; Remix installs no ReShade, so there is nothing to name.
         # Naming a control that is not on the screen is #148's shape.
+        # Only the ReShade routes reach this function - analyse() hands
+        # optiscaler and remix to their own readers (:1389-1393) - so those
+        # two branches never fire today. They are kept because the mapping
+        # is the GUI's, and the day a route moves, one copy that quietly
+        # disagrees with the window is how #148 happened.
         _drop = ("'loads as'" if rep.route == "optiscaler"
                  else "" if rep.route == "remix"
                  else "'reshade loads as'")

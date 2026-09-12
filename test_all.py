@@ -6256,7 +6256,7 @@ check("a fault record replaces 'not started since the install'",
 check("...and explains why every log is empty",
       "nothing here recorded the session" in _s171
       # ...without claiming the logs are empty BECAUSE of the fault:
-      # never_ran is set on seven shapes and three of them have a log.
+      # never_ran is set on seven shapes and two of them have a log.
       and "the logs are empty because" not in _s171, _s171[:120])
 _v98, _ = _overridden("Working.", False)
 check("...while a fault still overrides Working.",
