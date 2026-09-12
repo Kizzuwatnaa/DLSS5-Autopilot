@@ -7481,6 +7481,16 @@ check("every build the installer pins by name survives the shortened list",
 check("...and a pin that is missing anyway is said out loud, not installed over",
       'e["label"] != want' in src_of(installer)
       and "which is the build that pin exists to avoid" in src_of(installer))
+_FOREIGN = ('<a href="/someone/else/releases/tag/v9.9">'
+            '<a href="/jlrouzies-fr/DLSS5-Feeder/releases/tag/v0.15.1">'
+            '<a href="/someone/else/releases/download/v9.9/other.zip">')
+with patch.object(sources, "_page", lambda url, timeout=30: _FOREIGN):
+    _ft = sources.release_tags_html("jlrouzies-fr/DLSS5-Feeder", pages=1)
+    _fa = sources.release_assets_html("jlrouzies-fr/DLSS5-Feeder", "v0.15.1")
+check("a link to another project's release is not read as one of ours",
+      _ft == [("v0.15.1", False)] and _fa == {}, (_ft, _fa))
+check("one install's fallback notice does not leak into the next",
+      "sources.last_fallback = None" in src_of(installer.install))
 check("the fallback tells the user the list came from somewhere else",
       "last_fallback" in src_of(sources.rhi_catalog)
       and "last_fallback" in src_of(sources.resolve_feeder))

@@ -229,7 +229,11 @@ def release_tags_html(repo: str, pages: int = 1) -> list[tuple[str, bool]]:
         if not html:
             break
         found = 0
-        for tag in re.findall(r'/releases/tag/([^"?#]+)"', html):
+        # Anchored to this repo. A release body is rendered on that page too,
+        # and a link in it to some other project's release would otherwise
+        # come back as a tag of this one.
+        for tag in re.findall(r'/%s/releases/tag/([^"?#]+)"' % re.escape(repo),
+                              html):
             tag = urllib.parse.unquote(tag)
             if tag in seen:
                 continue
@@ -250,7 +254,8 @@ def release_assets_html(repo: str, tag: str) -> dict[str, str]:
     """
     html = _page(EXPANDED_ASSETS.format(repo=repo, tag=tag))
     out: dict[str, str] = {}
-    for href in re.findall(r'"(/[^"]+/releases/download/[^"]+)"', html):
+    for href in re.findall(r'"(/%s/releases/download/[^"]+)"' % re.escape(repo),
+                           html):
         name = urllib.parse.unquote(href.rsplit("/", 1)[-1])
         out.setdefault(name, "https://github.com" + href)
     return out
@@ -746,7 +751,8 @@ def _rhi_html_catalog() -> dict[str, list[dict]]:
             html = _page(RELEASES_PAGE.format(repo=RHI_REPO, page=page))
             tags = [(urllib.parse.unquote(t), False)
                     for t in dict.fromkeys(
-                        re.findall(r'/releases/tag/([^"?#]+)"', html))]
+                        re.findall(r'/%s/releases/tag/([^"?#]+)"'
+                                   % re.escape(RHI_REPO), html))]
         if not tags:
             break
         for tag, _pre in tags:

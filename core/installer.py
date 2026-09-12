@@ -2026,6 +2026,12 @@ def _restore_sidelined(root: Path, names, log) -> list[str]:
 
 
 def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None) -> Report:
+    # "the version list is 14h old" is a sentence about one install. It was
+    # module state that nothing ever cleared, so the next install in the
+    # same session repeated it whether or not it had fallen back to
+    # anything - and now that every component can fall back, it would be
+    # repeated far more often.
+    sources.last_fallback = None
     # The detection walk is remembered per folder; writing into it makes
     # that memory wrong.
     dlss.forget_walk(g.folder)
