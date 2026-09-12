@@ -374,6 +374,12 @@ _API_FRESH_SECONDS = 6 * 3600
 # Set by _json when it had to fall back to a stale copy, so the installer can
 # tell the user why the version list might be out of date.
 last_fallback: str | None = None
+# ...and by the resolvers that drop to GitHub's "latest" redirect when the
+# API cannot be reached. Silent there until the gate asked what the install
+# log says when the newest build is not the one being installed.
+_LATEST_REDIRECT = ("GitHub's API could not be reached; this component came "
+                    "from its project's 'latest release' redirect, so the "
+                    "exact version is whatever that points at today.")
 
 
 def _cache_path(url: str) -> Path:
@@ -632,9 +638,11 @@ def resolve_upstream() -> tuple[str, str]:
     nothing is cached: the route must not be unavailable just because this
     machine has spent its anonymous allowance on the other components.
     """
+    global last_fallback
     try:
         rel = _json(UPSTREAM_API)
     except Exception:
+        last_fallback = _LATEST_REDIRECT
         return "latest", UPSTREAM_LATEST
     for a in rel.get("assets", []):
         if a["name"].lower() == UPSTREAM_ASSET:
@@ -649,10 +657,12 @@ def resolve_standalone() -> tuple[str, dict[str, str]]:
     neural-upstream: with the API out of reach and nothing cached, GitHub's
     "latest" download redirect still resolves each asset by name.
     """
+    global last_fallback
     urls = {VORT_ZIP_NAME: VORT_ZIP}
     try:
         rel = _json(STANDALONE_API)
     except Exception:
+        last_fallback = _LATEST_REDIRECT
         # From 2.2.0 the loose files are gone from the release: the three
         # names below now answer 404, so the old fallback failed the install
         # for exactly the people it was written for - the rate-limited ones.
@@ -695,9 +705,11 @@ def resolve_remix_runtime() -> tuple[str, dict[str, str]]:
     rate limited and nothing cached, GitHub's "latest" download redirect
     still resolves each asset by name, so the route stays available.
     """
+    global last_fallback
     try:
         rel = _json(REMIX_RUNTIME_API)
     except Exception:
+        last_fallback = _LATEST_REDIRECT
         return "latest", {n: REMIX_RUNTIME_LATEST + n
                           for n in REMIX_RUNTIME_ASSETS}
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
@@ -807,19 +819,26 @@ def rhi_catalog(force: bool = False) -> dict[str, list[dict]]:
         # a network problem into a KeyError traceback on the very route the
         # fallback exists to rescue. The API's own error is the better
         # answer. Found by the release gate.
-        if not fams.get("renodx") or not fams.get("dlssnr"):
+        # ...and "dlss", which the installer indexes directly too.
+        if (not fams.get("renodx") or not fams.get("dlssnr")
+                or not fams.get("dlss")):
             raise
         last_fallback = ("GitHub's API could not be reached; the build list "
                          "was read from github.com's release pages instead. "
-                         "It is shorter than usual - every build the tool "
-                         "pins is in it.")
-        # Deliberately NOT cached: this list is the short one, and the next
-        # install in the same session should ask the API again rather than
-        # inherit it silently (the "shorter than usual" line is printed
-        # once). Found by the release gate.
-        return fams
+                         "It is shorter than usual; if a build the tool "
+                         "pins is missing from it, the install says so "
+                         "before it writes anything.")
+        # NVIDIA's own runtimes come off a redirect and a raw URL, not the
+        # API, so they are still reachable in exactly the outage this branch
+        # exists for - and the merge has to happen BEFORE the return, or the
+        # fallback quietly installs the mirror's nvngx_dlss and skips ray
+        # reconstruction altogether. (Pass 1 moved the return above it.)
         for fam, entries in nvidia_dlss().items():
             fams[fam] = entries + fams.get(fam, [])
+        # Deliberately NOT cached: this list is the short one, and the next
+        # install in the same session should ask the API again rather than
+        # inherit it silently.
+        return fams
     fams: dict[str, list[dict]] = {}
     for r in rels:
         tag = r.get("tag_name", "")
@@ -904,7 +923,7 @@ def pick(entries: list[dict], want: str | None) -> dict:
     error: say so, rather than raising IndexError into the install.
     """
     if not entries:
-        raise RuntimeError(
+        raise Unavailable(
             "The build list came back empty - GitHub could not be reached "
             "and nothing is cached yet. Try again in a few minutes.")
     if want:

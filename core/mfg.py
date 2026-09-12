@@ -191,11 +191,19 @@ def existing_plugins(exe_dir: Path) -> Path | None:
     if not any((exe_dir / n).is_file() for n in LOADER_NAMES):
         return None
     try:
-        if any(p.suffix.lower() == ".asi" and p.is_file()
-               for p in plug.iterdir()):
-            return plug
+        inside = list(plug.iterdir())
     except OSError:
         return None
+    # An .asi in there is what says a loader reads this folder. The gate
+    # asked whether an EMPTY one should count too, since a loader with no
+    # plugins yet is still a loader - but an empty folder is equally some
+    # other program's, and writing into it would leave the unlock somewhere
+    # nothing loads while the log said it was placed. This route is an
+    # opt-in extra: skipping it with a reason is the honest failure, and
+    # there is nothing to regress to - before 1.8.2 this path took the
+    # other mod's name instead.
+    if any(p.suffix.lower() == ".asi" and p.is_file() for p in inside):
+        return plug
     return None
 
 

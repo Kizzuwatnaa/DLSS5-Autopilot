@@ -63,7 +63,7 @@ and nothing else.
 
 ## Which route a game gets
 
-<p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means optiscaler on D3D12 (native and neural-upstream offered too) or bridge on D3D11, and feeder without DLSS - standalone instead on driver 616.64 and newer, where every route that loads renodx-dlss5 faults" width="900"></p>
+<p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means optiscaler on D3D12 (native and neural-upstream offered too) or bridge on D3D11, and feeder without DLSS - standalone instead on driver 616.64 and newer for a game with no DLSS of its own, where the renodx-dlss5 add-on faults in many games" width="900"></p>
 
 The dropdown lists every route the game allows, marks the recommended one
 and greys out what your card cannot run. The card under it says, per
@@ -97,15 +97,23 @@ OpenGL); the choice is remembered for that folder.
 | **remix** | the game has an **RTX Remix** mod; DLSS 5 runs inside the Remix runtime, after its upscaler. Nothing injected | any game with a `.trex` folder beside it | Remix's Neural Uplift sliders |
 
 **Three things that override the diagram.** A Remix mod present means
-*remix*, always - ReShade crashes a Remix game before it draws. On NVIDIA
-driver 616.64 and newer, the native, bridge and feeder routes all reach
-the driver's NGX runtime through the `renodx-dlss5` add-on, which faults
-there on a good number of games; the tool pins that add-on to 4.55 on those
-routes, which gets most of them through and not all, and where
-*standalone-dlssnr* is on offer it is recommended instead - it does not load
-that add-on at all. The renodx-dlss route reaches the same runtime through
-ShortFuse's own add-on and has no such pin. Rolling the driver back to
-616.56 is the other answer. And an online game with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
+*remix*, always - ReShade crashes a Remix game before it draws.
+
+On NVIDIA driver 616.64 and newer, the native, bridge and feeder routes
+reach the driver's NGX runtime through the `renodx-dlss5` add-on, which
+faults there in a good number of games. The tool pins that add-on to 4.55
+on those routes, which gets most games through and not all. For a game with
+**no DLSS of its own** - the feeder's case - the recommendation moves to
+*standalone-dlssnr* where that route is offered (64-bit, D3D11 or D3D12):
+it does not load the add-on at all. A game that ships its own DLSS keeps
+native or optiscaler, because the routes recommended there run the game's
+own DLSS quality mode and standalone ignores it; the pre-install warning
+names the driver either way. The renodx-dlss route reaches the same runtime
+through ShortFuse's own add-on, which has no such pin and no report either
+way on these drivers. Rolling the driver back to 616.56 is the other
+answer.
+
+And an online game with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
 XIGNCODE3, Denuvo Anti-Cheat, PunkBuster, FACEIT, Ricochet, ACE) is marked
 in the list and asks for confirmation before INSTALL: ReShade add-ons and
 anti-cheat do not coexist, and a ban is on the person who chooses to

@@ -409,10 +409,10 @@ def _driver_steer(s: Support, driver: str | None) -> None:
                 f"not load it at all, so it never takes that path: it brings "
                 f"its own feed and presents through a window of its own. At "
                 f"native resolution that needs nothing from you; to run below "
-                f"native there is an option on its own tab in the ReShade "
-                f"overlay for reduced-resolution fullscreen and borderless "
-                f"swap chains (reported by the person who got it working, "
-                f"#173). It is the less tested of the two and the reports "
+                f"native there is an option for reduced-resolution "
+                f"fullscreen and borderless swap chains on its "
+                f"'Standalone DLSS-NR + SR' tab in the ReShade overlay "
+                f"(reported by the person who got it working, #173). It is the less tested of the two and the reports "
                 f"behind this are a handful, so if it does not suit the game, "
                 f"{was} is one dropdown away - and rolling the driver back to "
                 f"616.56 is the other answer.")
@@ -878,6 +878,16 @@ def driver_warning(route: str, driver: str | None,
     tail = ("If this game crashes the moment neural rendering comes on, the "
             "driver is the first thing to roll back - 616.56 is the newest "
             "one with no reports of this fault.")
+    if route == RENODX:
+        # This route installs ShortFuse's renodx-dlss, not renodx-dlss5, and
+        # the 4.55 pin lives only in the other branch of the installer - so
+        # the mitigation the other routes get does not apply here, and
+        # saying it does would be a promise the tool cannot keep.
+        return (f"driver {driver}: this route loads ShortFuse's own add-on "
+                f"rather than renodx-dlss5, so the {sources.DRIVER_FAULT_RENODX_PIN} "
+                f"pin that works around the {sources.DRIVER_FAULT_MIN}+ fault "
+                f"elsewhere does not apply here, and nothing is known either "
+                f"way about this add-on on those drivers. " + tail)
     if route in _RENODX_ROUTES:
         # The fault lives in renodx-dlss5's path through the driver. The
         # shared results showed a game fail three times on the feeder route
@@ -965,7 +975,7 @@ CONFLICTS: dict[str, tuple[str, ...]] = {
              "NVIDIA Smooth Motion off",
              "not with the bridge or renodx-dlss add-on in the same folder"),
     RENODX: ("not with the renodx-dlss5 add-on, the feeder or the bridge in "
-             "the folder - both hook NGX",
+             "the folder - they all hook NGX",
              "reported not working in many games; nothing to tune if it does "
              "nothing, switch route"),
     STANDALONE: ("the game's own DLSS, frame generation and anti-aliasing "

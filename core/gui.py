@@ -2198,8 +2198,9 @@ class App:
             forced = games.api_override(g.folder)
             self.cb_protected_api.current(games.APIS.index(forced) + 1 if forced in games.APIS else 0)
             self.protected_details.pack(fill="x")
+        _drv_now = gpu.driver_version()
         sup = dlss.detect(g.install_dir, g.folder, g.api, g.bitness or 0, self._sm(),
-                          driver=gpu.driver_version())
+                          driver=_drv_now)
         level, why_rel = installer.reliability(g, sup.recommended)
         proxy = installer._proxy_name(g.api, self._opts().reshade_proxy)
         lines = [f"exe    {g.exe}",
@@ -2211,10 +2212,13 @@ class App:
         # game of a 616.64+ machine and nothing on the page says the driver did
         # that. The install page carries the full reason.
         if getattr(sup, "steered_from", ""):
-            lines.append(f"driver {gpu.driver_version()}: {dlss.LABELS[sup.steered_from].split(' - ')[0]} "
+            _drv = _drv_now or "?"
+            lines.append(f"driver {_drv}: "
+                         f"{dlss.LABELS[sup.steered_from].split(' - ')[0]} "
                          f"reaches nvidia's runtime through the add-on that "
                          f"faults on this driver - the install page has the "
-                         f"whole reason")
+                         f"whole reason, and 616.56 is the newest driver with "
+                         f"no report of it")
         n_stale = self.stale.get(str(g.install_dir), 0)
         if n_stale:
             lines.append(f"update {n_stale} installed part(s) have a newer version "
@@ -2483,9 +2487,9 @@ class App:
             inner, bg=PANEL, fg=DIM, font=font(8), anchor="w", justify="left",
             text="stable = what GitHub marks as the latest release; or pin an "
                  "exact build when the newest one breaks a game. builds "
-                 "before 0.8 pair with DLSS 5 add-on 4.55 and have a settings "
-                 "tab; 0.10 and later use add-on 4.7 and take preset and work "
-                 "area from here")
+                 "before 0.8.0-beta.3 pair with DLSS 5 add-on 4.55 and have a "
+                 "settings tab; from there on the newest add-on is installed "
+                 "and preset and work area are taken from here")
         _wrap_to_width(self.feederhint)
 
         # Some D3D11 games quit the moment ReShade hooks them (MGS V). Through
@@ -2922,8 +2926,13 @@ class App:
             where = getattr(g, "install_dir", None) if g is not None else None
             if where is not None and not _fault_in_this_folder(crash, where):
                 return
-            d.verdict = ("It started and crashed before anything could write a "
-                         "line - Windows recorded the fault"
+            # never_ran is set on seven shapes and four of them have a
+            # log (switched off, older than the install, the add-on's own
+            # log empty). "before anything could write a line" is only true
+            # of the other three, so the verdict says what IS true of all
+            # seven: nothing here recorded this session.
+            d.verdict = ("It started, and nothing here recorded the session - "
+                         "Windows recorded the fault"
                          + (f" in {mod}." if mod else "."))
             d.never_ran = False
             # The findings under it were written on the strength of the absent
@@ -2937,13 +2946,17 @@ class App:
                           # reason is another executable" reads badly under
                           # proof that this one faulted.
                           and not f.title.startswith("The likeliest reason:")
-                          and "ran, and nothing this install wrote" not in f.title]
+                          # Matched on a fragment, not the sentence: this
+                          # prune was written against a title that had been
+                          # renamed in the same commit, and silently stopped
+                          # removing anything.
+                          and "own files changed after" not in f.title]
             d.add(diagnose.BAD,
                   f"Windows recorded {getattr(crash, 'exe', 'the game')} "
                   f"faulting" + (f" in {mod}." if mod else "."),
                   "So it was started. Nothing here had a chance to write a "
-                  "line, which is what an empty set of logs means when a "
-                  "fault is on record.")
+                  "line that describes this session, which is what a "
+                  "fault on record and no log of our own means.")
             # After the finding exists: the reprint carries it.
             self._reprint_verdict(d)
             # The dropdown is named differently per route - and on the feeder

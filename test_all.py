@@ -6252,7 +6252,7 @@ def _overridden(verdict, never_ran):
 
 _v171, _s171 = _overridden("Not started since the install - run the game once.", True)
 check("a fault record replaces 'not started since the install'",
-      "started and crashed" in _v171, _v171)
+      "It started, and nothing here recorded the session" in _v171, _v171)
 check("...and explains why every log is empty",
       "nothing here recorded the session" in _s171
       # ...without claiming the logs are empty BECAUSE of the fault:
@@ -6471,7 +6471,8 @@ def _override(module, where, never_ran=True,
 _here = Path(tempfile.mkdtemp(prefix="diag_fault_folder_"))
 _rep = _override(str(_here / "GTA5.exe"), _here)
 check("a fault recorded in this folder rewrites the 'not started' verdict",
-      "started and crashed" in _rep.verdict, _rep.verdict)
+      "It started, and nothing here recorded the session" in _rep.verdict,
+      _rep.verdict)
 check("...and the findings that said it never started go with it",
       not any("has not been started" in f_.title for f_ in _rep.findings)
       and any("faulting" in f_.title for f_ in _rep.findings),
@@ -6481,7 +6482,8 @@ check("...while a fault in another copy of the same game does not",
       _rep.verdict.startswith("Not started"), _rep.verdict)
 _rep = _override("dxgi.dll", _here)
 check("...and a bare module name, which names no folder, still counts",
-      "started and crashed" in _rep.verdict, _rep.verdict)
+      "It started, and nothing here recorded the session" in _rep.verdict,
+      _rep.verdict)
 shutil.rmtree(_here, ignore_errors=True)
 
 

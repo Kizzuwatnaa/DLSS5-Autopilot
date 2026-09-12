@@ -96,6 +96,10 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
                   f"(options: {', '.join(sup.options)})", file=sys.stderr)
             return 1
         sup.recommended = route
+        # An explicit --route is the answer; the reason belongs to the
+        # recommendation it just overrode, and printing it would argue for
+        # a route this run is not taking.
+        sup.reason = ""
     if card:
         # The same warning the install page shows, for the route that will
         # actually be installed. A command-line install on a driver that

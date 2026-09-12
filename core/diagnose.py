@@ -1079,7 +1079,8 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
-                f"Try the {alt} proxy name in the settings and install again.")
+                f"Set 'reshade loads as' to {alt} on the install page and "
+                f"install again.")
     rep.verdict = (f"It looks as though it ran and nothing this install "
                    f"wrote was loaded - most likely the proxy name or the "
                    f"executable."
@@ -1990,7 +1991,7 @@ def analyse(install_dir: Path) -> Report:
                     "The stack is " + " <- ".join(chain[:5]) + ". The feed "
                     "asked the runtime for a neural frame and the runtime "
                     "faulted, so no feeder build changes it. Try another "
-                    "'DLSS 5 add-on' build from the install page, and if the "
+                    "'dlss5 add-on' build from the install page, and if the "
                     "driver is 616.64 or newer, "
                     + ("try the standalone route (it does not load "
                        "renodx-dlss5), or " if _sa else "")
