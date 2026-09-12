@@ -1,0 +1,36 @@
+**Did the game start?** yes / no / it closed itself
+Yes
+
+**What happened**
+Reshade doesn't activate, can't open Reshade menu
+
+**What I expected**
+Be able to press 'Home' and open reshade menu
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.56
+- game: Assassin's Creed Odyssey
+- exe: ACOdyssey_plus.exe
+- arch/api: 64-bit / OpenGL
+- route: feeder
+
+**Files in the folder**
+- opengl32.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- d3dcompiler_47.dll: renamed aside
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

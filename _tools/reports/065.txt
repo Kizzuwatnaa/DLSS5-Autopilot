@@ -1,0 +1,46 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 4050 Laptop GPU (sm_89), driver 616.64
+- game: Cyberpunk 2077
+- exe: Cyberpunk2077.exe
+- arch/api: 64-bit / DX12
+- route: standalone
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll: MISSING
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2319, in work
+  File "core\installer.py", line 2202, in install
+  File "core\sources.py", line 308, in resolve_standalone
+RuntimeError: The DLSS5-Reshade-AIO release is missing standalone-dlssnr.addon64, nvngx.dll, DLSS5_AIO_Feed.fx.
+```

@@ -1,0 +1,44 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5060 Laptop GPU (sm_120), driver 616.56
+- game: PCSX2 (PlayStation 2)
+- exe: pcsx2-qt.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2389, in work
+  File "core\installer.py", line 2597, in install
+  File "core\feedcfg.py", line 85, in write
+ValueError: could not convert string to float: '1,000'
+```

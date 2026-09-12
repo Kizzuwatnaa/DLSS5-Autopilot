@@ -1,0 +1,59 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4060 Laptop GPU (sm_89), driver 616.64
+- game: Batman: Arkham City GOTY
+- exe: BatmanAC.exe
+- arch/api: 32-bit / DX11 (imports d3d9.dll, but delay-loads d3d11.dll - the renderer is Direct3D 11 and the d3d9 import is a leftover)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.14.0-beta.5 0.0.0.0
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] The 32-bit helper process started.
+- [bad] The helper started but never connected.
+- [info] On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+03:06:58:502 [29828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.14.0-beta.5" v0.0.0.0 using ReShade API version 20.
+03:06:58:931 [29828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.14.0-beta.5" v0.0.0.0 using ReShade API version 20.
+03:06:59:076 [29828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.14.0-beta.5" v0.0.0.0 using ReShade API version 20.
+03:06:59:092 [29828] | WARN  | Skipping device because it uses the Microsoft Basic Render Driver.
+03:07:03:268 [29828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.14.0-beta.5" v0.0.0.0 using ReShade API version 20.
+03:07:03:500 [29828] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0C670B08, pDevice = 17C87810, pDesc = 001AD928, ppSwapChain = 1E85AAE0) ...
+03:07:05:732 [ 5016] | WARN  | Successfully compiled 'C:\Program Files (x86)\Steam\steamapps\common\Batman Arkham City GOTY\Binaries\Win32\reshade-shaders\Shaders\DLSS5_Feed.fx' in 1.779000 s with war
+03:07:08:025 [47744] | WARN  | [DLSS 5 Feed (32-bit) 0.14.0-beta.5] [DLSS 5 Feed 32] stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\) names the reason. The game renders n
+```
+
+**dlss5-feed.log**
+```
+...
+03:07:03.269  [feed32] Deep Fried Chicken: not present in host64\
+03:07:03.790  [feed32] effect runtime 25392E90 initialised (device 17B8B3CC, window class 'LaunchUnrealUWindowsClient'; 1 runtime in this process)
+03:07:03.796  [feed32] host DLSS 5 settings loaded into the overlay page: NeuralUplift=1(default) NREnableUpscaling=0(default) NRPreset=0(default) NRStyle=0(default) NRIntensity=1(default) NRGlobalTon
+03:07:03.796  [feed32] effects: technique MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> none (not installed), depth reversed=1
+03:07:05.828  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled), depth reversed=1
+03:07:05.828  [feed32] first frame fed from thread 47744
+03:07:05.828  [feed32] starting the 64-bit host in the background (the game keeps rendering)
+03:07:05.892  [feed32] host spawned (pid 31224): "C:\Program Files (x86)\Steam\steamapps\common\Batman Arkham City GOTY\Binaries\Win32\host64\dlss5-feed-host64.exe" 25404
+03:07:08.024  [feed32] host lost: exited during startup with code 1 (it rejected its own command line -- see dlss5-feed-host.log) (exit code 1)
+03:07:08.025  stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\) names the reason. The game renders normally. See dlss5-feed.log for the detail.
+```

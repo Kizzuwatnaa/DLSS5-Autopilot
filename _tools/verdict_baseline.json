@@ -1,0 +1,897 @@
+{
+ "101": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
+   "bad: Motion vectors: LumeniteFX Kernel is not installed."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "103": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than SPEED2.EXE.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "11": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than GTAIV.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "110": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "119": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than NBA2K27.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "127": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on could not hook NVSDK_NGX_D3D12_EvaluateFeature_C.",
+   "info: This route leaves no frame log of its own."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "bridge",
+  "verdict": "Add-ons loaded. Confirm in the DLSS 5 Neural Rendering panel - this route does not log frames."
+ },
+ "13": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0",
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "bad: DLSS5_Feed.fx never loaded."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "130": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "134": {
+  "findings": [
+   "ok: Frames are being processed (3 logged, last was frame 3).",
+   "info: 600 frames at 20.5 fps, 0.33 ms/frame spent on the feed."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "-",
+  "verdict": "Working."
+ },
+ "140": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "141": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than forzahorizon6.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "renodx",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "142": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.15.1 0.15.1.0",
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "warn: The game closed while ReShade was still compiling the effects."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "145": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
+   "bad: Motion vectors: LumeniteFX Kernel is not installed."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "148": {
+  "findings": [
+   "bad: The RTX Remix runtime is gone from this game."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "remix",
+  "verdict": "No Remix runtime in the folder any more."
+ },
+ "154": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "ok: The add-on hooked the game's DLSS call (1 entry point).",
+   "info: The add-on loaded and set itself up, but never ran."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Loaded and set up; no neural frame yet."
+ },
+ "155": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than sdhdship.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "156": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: VORT is enabled.",
+   "ok: Frames are being processed (2 logged, last was frame 3).",
+   "bad: The feed stopped after frame 3: the 64-bit host went away."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "It started, then the feed stopped - see why below."
+ },
+ "16": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than DOOMx64vk.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "162": {
+  "findings": [
+   "warn: OptiScaler mentions neural rendering but never reports it running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox."
+ },
+ "164": {
+  "findings": [
+   "ok: The add-on loaded - it wrote its own log in the session this report reads.",
+   "warn: The add-on loaded, and ReShade never handed it an effect runtime."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "The add-on loaded but ReShade never gave it an effect runtime - check 'DLSS 5 Feed' is ticked in the overlay."
+ },
+ "168": {
+  "findings": [
+   "ok: Neural rendering is running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Working."
+ },
+ "17": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0",
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "bad: The feed recorded a crash (0xE06D7363) while running the D3D12 evaluate (later faults in this proce."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "The feed crashed after starting - a feeder bug; try another feeder build."
+ },
+ "171": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than GTA5.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "renodx",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "173": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.15.1 0.15.1.0",
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "175": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than The Stanley Parable Ultra Deluxe.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "19": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than rpcs3.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "20": {
+  "findings": [
+   "bad: Neural rendering did not start.",
+   "info: OptiScaler needs driver 616.56 or newer, and a nvngx_dlssnr build for your card (the tool picks one). If it keeps refusing, the native or renodx-dlss route is one click away."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded, but the model refused or failed."
+ },
+ "22": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than SWZeroCompany.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "upstream",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "24": {
+  "findings": [
+   "bad: ReShade failed to compile: DLSS5_Feed.fx",
+   "bad: DLSS5_Feed.fx never loaded."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "25": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than FlightSimulator2024.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "26": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than FC26.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "27": {
+  "findings": [
+   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "info: This route leaves no frame log of its own."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "bridge",
+  "verdict": "Add-ons loaded. Confirm in the DLSS 5 Neural Rendering panel - this route does not log frames."
+ },
+ "29": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.56: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "30": {
+  "findings": [
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "31": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than CoJGunslinger.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "34": {
+  "findings": [
+   "bad: ReShade loaded no add-ons.",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "35": {
+  "findings": [
+   "ok: Motion vectors look alive (29% non-zero).",
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "37": {
+  "findings": [
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55)."
+ },
+ "38": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than BioShockInfinite.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "39": {
+  "findings": [
+   "bad: ReShade loaded no add-ons.",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "40": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "-",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "41": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.64: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "42": {
+  "findings": [
+   "ok: Neural rendering is running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Working."
+ },
+ "43": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than ACBlackFlag.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "44": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than JediAcademy.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "45": {
+  "findings": [
+   "ok: ReShade loaded add-on: MFG Unlock 0.2026.903.310",
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0",
+   "warn: Other ReShade add-ons are loaded: MFG Unlock",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: LumeniteFX Kernel is enabled.",
+   "warn: Motion vectors measured 0% non-zero.",
+   "warn: ReShade is not giving the feed a depth buffer.",
+   "ok: Frames are being processed (1 logged, last was frame 23400).",
+   "info: 600 frames at 75.0 fps, 0.24 ms/frame spent on the feed."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Working."
+ },
+ "46": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than HouseParty.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "47": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than HouseParty.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "48": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than ACOdyssey_plus.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "52": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "ok: ReShade loaded add-on: Universal RTX 40 MFG Unlock V1.2 1.2.0.22",
+   "warn: Other ReShade add-ons are loaded: Universal RTX 40 MFG Unlock V1.2",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "54": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "55": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than re9.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "upstream",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "56": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "57": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "58": {
+  "findings": [
+   "bad: The game refused the swapchain OptiScaler wrapped (0x80004002)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route."
+ },
+ "59": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than ReadyOrNotSteam-Win64-Shipping.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "61": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than evilwithin.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "63": {
+  "findings": [
+   "warn: Something else is pacing the frames this game presents."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "64": {
+  "findings": [
+   "bad: ReShade loaded no add-ons.",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "65": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than Cyberpunk2077.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "standalone",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "66": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 610.88: older than 616.56, the first driver documented to carry the neural-rendering runtime"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "68": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "69": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than pcsx2-qt.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "7": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "74": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0",
+   "bad: DLSS5_Feed.fx never loaded."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "75": {
+  "findings": [
+   "warn: Motion vectors measured 0% non-zero.",
+   "warn: ReShade is not giving the feed a depth buffer.",
+   "bad: This machine's driver, 610.60, is older than DLSS 5 itself."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "The driver has no DLSS 5 entry point - update the graphics driver."
+ },
+ "77": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than GTA5.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "renodx",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "78": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "80": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than LMSR_Windows64_Steam.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "82": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.14.0-beta.5 0.0.0.0",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: LumeniteFX Kernel is enabled.",
+   "ok: The 32-bit helper process started.",
+   "bad: The helper started but never connected.",
+   "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "84": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than GTAIV.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "86": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.56: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "87": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "89": {
+  "findings": [
+   "bad: The game refused the swapchain OptiScaler wrapped (0x887A0005)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route."
+ },
+ "9": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "-",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "90": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than C:\\Program Files (x86)\\Steam\\steamapps\\common\\Phasmophobia\\Phasmophobia.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "91": {
+  "findings": [
+   "bad: OptiScaler.ini is missing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "OptiScaler.ini is missing - install again."
+ },
+ "92": {
+  "findings": [
+   "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "94": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.92: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "95": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
+   "bad: The game closed before it drew a single frame.",
+   "warn: The add-on loaded, and ReShade never handed it an effect runtime."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "The add-on loaded but ReShade never gave it an effect runtime - check 'DLSS 5 Feed' is ticked in the overlay."
+ },
+ "96": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than DOOMTheDarkAges.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "97": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than ACBlackFlag.exe.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "98": {
+  "findings": [
+   "warn: OptiScaler mentions neural rendering but never reports it running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox."
+ }
+}

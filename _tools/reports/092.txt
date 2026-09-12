@@ -1,0 +1,60 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Mafia: Definitive Edition
+- exe: mafiadefinitiveedition.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: feeder
+
+**Diagnosis**: Driver 616.64+ faults inside NGX even with renodx-dlss5 4.55 - roll the driver back to 616.56.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.15.1 0.15.1.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [bad] Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5).
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+...
+15:44:30:808 [48412] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+15:44:31:806 [24256] | WARN  | Successfully compiled 'W:\SteamLibrary\steamapps\common\Mafia Definitive Edition\reshade-shaders\Shaders\DLSS5_Feed.fx' in 0.997000 s with warnings:
+15:44:33:169 [50628] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+15:44:33:172 [50628] | WARN  | Ignoring LoadLibrary('msasn1.dll') call to avoid possible deadlock.
+15:44:33:176 [50636] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+15:44:33:179 [10284] | WARN  | Ignoring LoadLibrary('gdi32.dll') call to avoid possible deadlock.
+15:44:33:516 [10284] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+15:44:33:520 [10284] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+15:44:34:831 [10284] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 0000015B4C2C0C40 (00000158CC125C40) is inconsistent (1).
+15:44:34:833 [10284] | WARN  | [DLSS 5 Feed 0.15.1] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See d
+```
+
+**dlss5-feed.log**
+```
+...
+15:44:34.783  [feed] frame 1 delivered (7680x2160 at 100% -> 7680x2160, reset=1, jitter +0.000,+0.000)
+15:44:34.831  [feed] evaluate raised 0xC0000005 (reading address 000000000000000C) (caught; nothing submitted)
+15:44:34.831  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- dxgi.dll <- mafiadefinitiveedit
+15:44:34.833  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+15:44:34.833  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+15:44:34.833  [feed] STALL frame 1: interval 124.7 ms | feed 49.18 ms (of which NGX evaluate 46.51 ms) | outside the feed 75.5 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or anoth
+15:44:34.834  ### CRASH RECORDED ###  exception 0xE06D7363 (C++ exception: std::system_error -- "resource deadlock would occur: resource deadlock would occur") at 00007FF9050341CA in C:\WINDOWS\System
+15:44:34.834  [feed] crash stack, by module (innermost first): KERNELBASE.dll <- renodx-dlss5.addon64 <- dxgi.dll <- mafiadefinitiveedition.exe <- KERNEL32.DLL <- ntdll.dll
+15:44:34.838  [feed] crash dump FAILED (W:\SteamLibrary\steamapps\common\Mafia Definitive Edition\dlss5-feed-crash.dmp, error 2147943398)
+```

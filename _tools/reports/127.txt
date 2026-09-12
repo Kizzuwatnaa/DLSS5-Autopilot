@@ -1,0 +1,49 @@
+**Did the game start?** it started and ran
+
+**What happened**
+DLSS 5 dosn't run
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 616.92
+- game: Assassin's Creed Unity
+- exe: ACU.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: bridge
+
+**Diagnosis**: The driver has no DLSS 5 entry point - update the graphics driver.
+- [warn] Another DLSS hook shares this folder: OptiScaler.ini, nvngx.dll_dlssnr.dll
+- [ok] ReShade loaded add-on: DLSS 5 Bridge 1.4.12 1.4.12.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [warn] The add-on flagged your nvngx_dlssnr as an untested build.
+- [bad] The driver's NGX runtime does not export the call the add-on hooks.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-bridge.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+13:13:50:495 [21600] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+13:13:50:497 [21600] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+13:13:50:822 [21600] | WARN  | [DLSS 5 Neural Rendering] DLSS5 Generic: signed runtime sha256 4B8D19BC3EFF58A084F5ECA7489C921501C203450169FB82FF4F649A4482BA05 (custom runtime accepted; untested build,
+13:13:52:322 [21600] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000000006541170, pDevice = 00000000065B4600, pDesc = 00000000FED15090, ppSwapChain = 00000000FED15060) ...
+13:14:07:224 [26308] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+13:14:07:331 [26308] | INFO  | Redirecting Direct3DCreate9Ex(SDKVersion = 0x20, ppD3D = 00007FF9A02A07F0) ...
+13:14:07:424 [26308] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+13:14:10:065 [26308] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+13:14:10:106 [26308] | INFO  | Redirecting Direct3DCreate9Ex(SDKVersion = 0x20, ppD3D = 00007FF9A02A07F0) ...
+13:14:10:132 [26308] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+13:15:45:768 [14048] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+13:15:45:769 [14048] | WARN  | Reference count for ID3D11Device0 object 00000000065B4620 (00000000066DB4D0) is inconsistent (23947).
+13:15:46:272 [21600] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

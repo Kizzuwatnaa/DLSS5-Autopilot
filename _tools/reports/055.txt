@@ -1,0 +1,37 @@
+**Did the game start?** it closed itself
+
+**What happened** the game crashed adter about 10 sec of luanch
+
+
+**What I expected** i know my GPU is trash, but i used to play with DLSS 5 on 30 fps with the regular renodx method
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 3070 (sm_86), driver 616.64
+- game: Resident Evil Requiem
+- exe: re9.exe
+- arch/api: 64-bit / DX12
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [info] An old dlss5-feed.log is still in the folder.
+- [warn] Another DLSS hook shares this folder: dlss5-lab-overlay-0d90c616cc1b051f.addon64
+- [ok] ReShade loaded add-on: DLSS 5 Swapper Overlay 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [warn] Other ReShade add-ons are loaded: DLSS 5 Swapper Overlay
+- [info] This route leaves no frame log of its own.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

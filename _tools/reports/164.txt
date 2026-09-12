@@ -1,0 +1,48 @@
+**Did the game start?** it started and ran
+
+**What happened**
+ReSHADE says it cant find any addons
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 616.92
+- game: Spider-Man - Web of Shadows
+- exe: Spider-Man Web of Shadows.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [bad] ReShade loaded no add-ons.
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: MISSING
+- ReShade 32-bit Vulkan layer: registered
+
+**ReShade.log**
+```
+21:11:43:914 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\CShade\cDots.fx' in 0.029000 s with warnings:
+21:11:44:173 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\CShade\cLetterBox.fx' in 0.030000 s with warnings:
+21:11:44:370 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\CShade\cMotionStabilization.fx' in 0.082000 s with warnings:
+21:11:44:538 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\CShade\cSpace.fx' in 0.028000 s with warnings:
+21:11:44:591 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\CShade\cTransform.fx' in 0.027000 s with warnings:
+21:11:44:787 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\Daodan\dev\DrawOverlay.fx' in 0.021000 s with warnings:
+21:11:44:820 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\Daodan\RemoveTint.fx' in 0.013000 s with warnings:
+21:11:45:150 [24200] | WARN  | Successfully compiled 'D:\Spider-Man - Web of Shadows\image\pc\reshade-shaders\Shaders\DH\dh_uber_rt.fx' in 0.051000 s with warnings:
+```
+
+**dlss5-feed.log**
+```
+21:11:35.731  dlss5-feed32 0.15.1 (built Sep  9 2026 07:48:17) attached.
+21:11:35.731    host game: D:\Spider-Man - Web of Shadows\image\pc\Spider-Man Web of Shadows.exe
+21:11:35.731  [feed32] config: enabled=1 mode=2 hdr=-1 depth_inverted=-1 flags=-1 reset_every=0 log_frames=3 host_window=1 host_gpu_priority=0 work_resolution=100% work_upscale=0 work_sharpness=0.30 a
+21:11:35.731  [feed32] Deep Fried Chicken: not present in host64\
+21:11:35.732  [feed32] OptiScaler: not present in host64\
+21:11:35.759  [feed] vkCreateDevice hook installed on vulkan-1!vkCreateDevice (6482CCB0): the KHR external-interop extensions will be appended to every device this game creates
+21:11:35.783  [feed] vkQueuePresentKHR hook installed (64829760): counting presents against frames fed, to detect an external frame pacer (Smooth Motion is invisible to a module check on Vulkan)
+```

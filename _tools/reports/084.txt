@@ -1,0 +1,35 @@
+Hello, I need some help. I performed the installation three times, and it didn't work.
+
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.56
+- game: Grand Theft Auto IV: The Complete Edition
+- exe: GTAIV.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: DXVK ran and ReShade did not - install again to rewrite the 32-bit Vulkan layer.
+- [bad] DXVK ran, and ReShade did not.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

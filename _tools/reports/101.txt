@@ -1,0 +1,62 @@
+**Did the game start?** yes / no / it closed itself
+Yes, menu works. 
+ 
+**What happened**
+Exception error when going in-game.
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 616.64
+- game: Need For Speed III (Modern Bundle)
+- exe: nfs3.exe
+- arch/api: 32-bit / Unknown (graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll)
+- route: feeder
+
+**Diagnosis**: The feed crashed after starting - a feeder bug; try another feeder build.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [bad] Motion vectors: LumeniteFX Kernel is not installed.
+- [ok] The 32-bit helper process started.
+- [ok] The game and the helper are talking.
+- [info] On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+- [bad] The feed recorded a crash (0xC0000005) while nothing yet -- no feed work has run in this process (later faults in this process are not recorded).
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+20:50:03:783 [14828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+20:50:03:931 [14828] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 054CFEA0, pDevice = 05696570, pDesc = 05D7F588, ppSwapChain = 0EB92FFC) ...
+20:50:05:962 [21036] | WARN  | [DLSS 5 Feed (32-bit) 0.15.1] [DLSS 5 Feed 32] Lumenite_QuantMotion is enabled, but DLSS5_Feed.fx is compiled for provider 3 (LumeniteFX Kernel) and does not read it -- 
+20:50:44:409 [14828] | WARN  | Reference count for ID3D11Device0 object 05696570 (057074B4) is inconsistent (70).
+20:50:44:544 [14828] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+20:50:44:666 [14828] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 054CFEA0, pDevice = 0EB93440, pDesc = 05D7F100, ppSwapChain = 0ED76BEC) ...
+20:51:15:115 [14828] | WARN  | Reference count for ID3D11Device0 object 0EB93440 (00B58F94) is inconsistent (68).
+20:51:19:297 [21036] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+...
+20:50:44.545    host game: F:\Gry\Need For Speed III (Modern Bundle)\nfs3.exe
+20:50:44.545  [feed32] config: enabled=1 mode=2 hdr=-1 depth_inverted=-1 flags=-1 reset_every=0 log_frames=3 host_window=1 host_gpu_priority=0 work_resolution=100% work_upscale=1 work_sharpness=1.00 a
+20:50:44.545  [feed32] Deep Fried Chicken: not present in host64\
+20:50:44.545  [feed32] OptiScaler: not present in host64\
+20:50:44.674  [feed32] effect runtime 167C95D0 initialised (device 00B58F94, window class 'NFS3CLASS'; 1 runtime in this process)
+20:50:44.675  [feed32] host DLSS 5 settings loaded into the overlay page: NeuralUplift=1 NREnableUpscaling=1 NRPreset=0 NRStyle=1 NRIntensity=2 NRGlobalTone=2 NRLocalTone=1(default) NRLocalStructure=1
+20:50:44.675  [feed32] effects: technique MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> none (not installed), depth reversed=1
+20:50:45.487  ### CRASH RECORDED ###  exception 0xC0000005 (reading address 00000018) at 054126FF in F:\Gry\Need For Speed III (Modern Bundle)\drivers\dgvoodoo\voodoo2a.dll; this add-on was last doing
+20:50:45.656  [feed32] crash dump written: F:\Gry\Need For Speed III (Modern Bundle)\dlss5-feed-crash.dmp -- attach it to the issue with this log
+20:51:15.107  [feed32] effect runtime 167C95D0 destroyed -- it was the bound one (0 runtimes left)
+20:51:15.115  shut down cleanly.
+```

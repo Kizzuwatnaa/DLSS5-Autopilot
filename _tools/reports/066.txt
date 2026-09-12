@@ -1,0 +1,49 @@
+**Did the game start?** yes / no / it closed itself
+ it closed itself
+**What happened**
+rockstar launcher crashes the game on start
+
+**What I expected**
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 610.88
+- game: Red Dead Redemption 2
+- exe: RDR2.exe
+- arch/api: 64-bit / DX12 (imports d3d9.dll, but ships nvngx_dlss.dll - the renderer is D3D12 or Vulkan, not DirectX 9. If the game is set to Vulkan, pick that in the settings before installing)
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[00:58:47.736915] [I] Util::LoadProxyLibrary _nvngx.dll loaded from override path: C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_0373d825005116d0\_nvngx.dll
+[00:58:47.736927] [I] NVNGXProxy::InitNVNGX Loaded from C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_0373d825005116d0\_nvngx.dll
+[00:58:47.736931] [I] NVNGXProxy::InitNVNGX Getting nvngx method addresses
+[00:58:47.736936] [I] HookNgxApi NVSDK_NGX_XXXXXX_GetFeatureRequirements found, hooking!
+[00:58:47.737042] [I]
+[00:58:47.737050] [I] HookFSR2Inputs Trying to hook FSR2 methods
+[00:58:47.737081] [I] HookFSR2ExeInputs Trying to hook FSR2 methods
+[00:58:47.737114] [I]
+[00:58:47.737117] [I] Init done
+[00:58:47.737120] [I] ---------------------------------------------
+[00:58:47.737124] [I]
+[00:58:47.755997] [W] DxgiSpoofing::AttachToAdapter DxgiSpoofing and DxgiVRAM is disabled, skipping hooking
+```

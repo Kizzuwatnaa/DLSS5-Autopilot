@@ -1,0 +1,62 @@
+**What happened**
+
+I get a compilation error in ReShade, that the dgVoodoo2 wrapper for DirectX 9 games is missing and that's why it doesn't work.
+
+<img width="3840" height="325" alt="Image" src="https://github.com/user-attachments/assets/becaadce-72f9-48d3-87fe-ad71852f40e7" />
+
+**What I expected**
+
+I expected it to automatically load dgVoodoo2 and have everything work.
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: R.U.S.E
+- exe: RUSE.exe
+- arch/api: 64-bit / DX11
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.4 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [warn] ReShade attached to a Direct3D 9 device, not DXGI.
+- [bad] ReShade failed to compile: DLSS5_Feed.fx
+- [bad] DLSS5_Feed.fx never loaded.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+14:07:56:219 [ 5840] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+14:07:56:220 [ 4572] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+14:07:56:220 [ 9136] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+14:07:56:221 [12564] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+14:07:56:561 [13800] | WARN  | [DLSS 5 Feed 0.14.0-beta.4] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+14:07:56:669 [ 5288] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+14:07:56:671 [12384] | ERROR | Failed to compile 'D:\SteamLibrary\steamapps\common\R.U.S.E\reshade-shaders\Shaders\DLSS5_Feed.fx':
+14:08:04:115 [ 5288] | WARN  | Successfully compiled 'D:\SteamLibrary\steamapps\common\R.U.S.E\reshade-shaders\Shaders\lumenite_Kernel.fx' in 7.445000 s with warnings:
+14:08:04:116 [13800] | WARN  | Preset 'D:\SteamLibrary\steamapps\common\R.U.S.E\ReShadePreset.ini' uses unknown technique 'DLSS5_Feed@DLSS5_Feed.fx'.
+14:08:04:129 [13800] | WARN  | [DLSS 5 Feed 0.14.0-beta.4] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+```
+
+**dlss5-feed.log**
+```
+...
+14:07:56.173  [feed] EnableHooks was unset; wrote EnableHooks=2 (NGX-only -- this feeder calls NGX directly, no Streamline)
+14:07:56.174  [feed] NeuralUplift was unset; wrote NeuralUplift=1 (neural rendering on)
+14:07:56.174  [feed] NREnableUpscaling was unset; wrote NREnableUpscaling=0 (upscaling off; this feeder publishes a complete 1:1 DLAA contract)
+14:07:56.174  [feed] Alex's Toolkit: not present -- DLSS 5 runs a single neural pass
+14:07:56.174  [feed] Deep Fried Chicken: not present
+14:07:56.561  [feed] effect runtime 000000004BB2D540 initialised (device 000000004BAD6F00, window class 'EugGameWindow'; 1 runtime in this process)
+14:07:56.561  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteF
+14:07:56.561  DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+14:08:04.128  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteF
+14:08:04.129  DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+```

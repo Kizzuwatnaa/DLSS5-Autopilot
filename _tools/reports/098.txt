@@ -1,0 +1,44 @@
+**Did the game start?** it closed itself
+
+**What happened**
+The game crashed right after the logos.
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.92
+- game: Dragon's Dogma 2
+- exe: DD2.exe
+- arch/api: 64-bit / DX12 (imports d3d11.dll, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+
+**Diagnosis**: Working.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [ok] Neural rendering is running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[19:11:34.716485] [W] StreamlineHooks::streamlineLogCallback [19-11-34][streamline][warn][tid:14964][129s:785ms:912us]dlfgPresent.cpp:455[sanitizeResourceExtent] Invalid backbuffer resource extent, IF
+[19:11:34.786512] [I] DlssNr_Dx12::Dispatch DLSS-NR: the game's DLSS buffer is linear HDR so the colour transform is on
+[19:11:34.787428] [I] DlssNr_Dx12::Dispatch DLSS-NR exposure: option switched on, held reading discarded
+[19:11:34.788642] [W] StreamlineHooks::streamlineLogCallback [19-11-34][streamline][warn][tid:10080][129s:858ms:055us]dlss_gEntry.cpp:1048[slGetData] slDLSSGGetState must be synchronized with the pres
+[19:11:34.788766] [I] DlssNr_Dx12::Dispatch DLSS-NR composition: paper white 1.00x, detail 1.00, colour 1.00, guard 2.0x, colour transform on (linear HDR), transfer matched residual, model 2880x1620, 
+```

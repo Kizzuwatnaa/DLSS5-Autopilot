@@ -1,0 +1,68 @@
+**Did the game start?** it closed itself immidietly after launch
+
+**What happened**
+
+Previously, I got Far Cry 5 with DLSS 5 to work. Now, after updating the Feeder plugin, it crashes instantly when trying to activate neural rendering. But even going back a previous version doesn't help. When DLSS 5 is already enabled, the game crashes pretty much instantly after launch (during the intro videos).
+
+**What I expected**
+
+The game should launch as usual.
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Far Cry 5
+- exe: FarCry5.exe
+- arch/api: 64-bit / Unknown (graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll)
+- route: feeder
+
+**Diagnosis**: Working.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] NGX initialised successfully.
+- [ok] The driver reports DLSS as available.
+- [ok] Frames are being processed (1 logged, last was frame 1).
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- d3dcompiler_47.dll: renamed aside
+
+**ReShade.log**
+```
+...
+01:08:58:261 [22428] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+01:08:59:260 [28276] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000001BF45349920, pDevice = 000001BF453B7020, pDesc = 000000B3567FE8D0, ppSwapChain = 000000B3567FE960) ...
+01:08:59:302 [ 7060] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+01:08:59:302 [ 7060] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+01:08:59:309 [ 7060] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+01:08:59:391 [28276] | WARN  | [DLSS 5 Feed 0.14.0-beta.5] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+01:08:59:428 [ 7060] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+01:08:59:536 [ 7060] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+01:09:03:598 [28276] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+01:09:04:093 [28276] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 000001C254270E80 (000001C253D66F80) is inconsistent (1).
+01:09:04:094 [28276] | WARN  | [DLSS 5 Feed 0.14.0-beta.5] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally
+```
+
+**dlss5-feed.log**
+```
+...
+01:09:03.943  [feed] Mask   3840x2160 ? via D3D12->D3D11
+01:09:03.948  [feed] copy-back and work-resolution resample shaders ready
+01:09:03.995  [feed] fsr1 shaders: ok (EASU + RCAS expand-back available)
+01:09:03.996  [feed] GPU timing on (queue timestamp frequency 1000000000 Hz)
+01:09:04.048  [feed] feature ready: 3840x2160 DLAA, flags=74 (SDR MVLowRes DepthInverted AutoExposure), color R10G10B10A2_UNORM -> output R10G10B10A2_UNORM, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+01:09:04.053  [feed] frame 1 delivered (3840x2160 at 100% -> 3840x2160, reset=1, jitter +0.000,+0.000)
+01:09:04.092  [feed] evaluate raised 0xC0000005 (reading address 000000000000000C) (caught; nothing submitted)
+01:09:04.093  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- dxgi.dll <- overlay64.dll <- FC
+01:09:04.093  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+01:09:04.093  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+01:09:04.094  [feed] STALL frame 1: interval 117.7 ms | feed 36.98 ms (of which NGX evaluate 34.37 ms) | outside the feed 80.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or anoth
+```

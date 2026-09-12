@@ -1,0 +1,34 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.0
+- gpu: NVIDIA GeForce RTX 4060 (sm_89), driver 610.47
+- game: Grand Theft Auto IV - The Complete Edition
+- exe: GTAIV.exe
+- arch/api: 32-bit / DX9
+- route: feeder
+
+**Diagnosis**: ReShade's (vulkan layer) is missing from the folder - reinstall.
+- [bad] ReShade's (vulkan layer) is gone from the folder.
+
+**Files in the folder**
+- (vulkan layer): MISSING
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- host64/renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

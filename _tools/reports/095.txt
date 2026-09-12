@@ -1,0 +1,46 @@
+yes
+
+**What happened**
+No reshade
+
+**What I expected**
+Reshade working
+
+wow 1.12 client
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 616.92
+- game: turtle
+- exe: WoW.exe
+- arch/api: 32-bit / OpenGL (imports opengl32.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0
+- [bad] The game closed before it drew a single frame.
+
+**Files in the folder**
+- opengl32.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- host64/renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+
+**ReShade.log**
+```
+18:34:31:832 [14640] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+18:34:56:862 [14640] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+18:34:31.832  dlss5-feed32 0.15.1 (built Sep  9 2026 07:48:17) attached.
+18:34:31.832    host game: G:\turtle\WoW.exe
+18:34:31.833  [feed32] config: enabled=1 mode=2 hdr=-1 depth_inverted=-1 flags=-1 reset_every=0 log_frames=3 host_window=1 host_gpu_priority=0 work_resolution=100% work_upscale=0 work_sharpness=0.30 a
+18:34:31.833  [feed32] Deep Fried Chicken: not present in host64\
+18:34:31.833  [feed32] OptiScaler: not present in host64\
+18:34:31.833  shut down cleanly.
+```

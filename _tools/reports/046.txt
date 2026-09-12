@@ -1,0 +1,41 @@
+**Did the game start?** yes / no / it closed itself
+
+Yes 
+
+**What happened**
+
+'Home' doesn't open the Reshade menu.
+
+**What I expected**
+
+To be able to open the Reshade menu to enable LuminiteFX Kernel and DLSS 5 Feed.
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.56
+- game: House Party
+- exe: HouseParty.exe
+- arch/api: 64-bit / OpenGL
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [bad] ReShade loaded no add-ons.
+
+**Files in the folder**
+- opengl32.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

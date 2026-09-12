@@ -7551,6 +7551,27 @@ check("rhi_catalog keeps its own walk - the capped list would drop the pins",
       "_rhi_html_catalog" in src_of(sources.rhi_catalog)
       and "json_or_html" not in src_of(sources.rhi_catalog))
 
+# Every report anybody ever sent, through the diagnosis as it is now,
+# against the answers recorded last time. This is the net under every
+# change to diagnose.py: 236 if/elif branches over one input, where a rule
+# put in front of the others silently changes what all of them see.
+import importlib.util as _ilu2  # noqa: E402
+_vspec = _ilu2.spec_from_file_location("verdict_check",
+                                       SRC_DIR / "_tools" / "verdict_check.py")
+_vc = _ilu2.module_from_spec(_vspec)
+_vspec.loader.exec_module(_vc)
+_vbase = json.loads((SRC_DIR / "_tools" / "verdict_baseline.json").read_text(encoding="utf8"))
+_vnow = _vc.answers()
+_vmoved = _vc._diff(_vbase, _vnow)
+check("the corpus is every real report with logs, not a handful",
+      len(_vnow) >= 80, len(_vnow))
+check("the diagnosis raises on none of them",
+      not [n for n, r in _vnow.items() if r.get("error")],
+      [n for n, r in _vnow.items() if r.get("error")][:5])
+check("no report's verdict moved without being recorded "
+      "(_tools/verdict_check.py --save)",
+      not _vmoved, " | ".join(_vmoved[:6]))
+
 # The words every verdict about somebody else's log is matched against
 # live in their builds, and they move (#168: "cost:" became "elapsed:").
 # _tools/phrase_check.py downloads the current builds and looks for them;

@@ -1,0 +1,35 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Game ran but autopilot detects it as DX12 when it's in fact Vulkan. Optiscaler never ran in game. Game just runs as before (built-in DLSS, etc) as if nothing changed.
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.64
+- game: Enshrouded
+- exe: enshrouded.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (named in GFSDK_Aftermath_Lib.x64.dll beside the exe); no static graphics import)
+- route: optiscaler
+
+**Diagnosis**: Not run yet, or OptiScaler never loaded.
+- [bad] No OptiScaler log from this install yet.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```

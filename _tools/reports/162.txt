@@ -1,0 +1,44 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Game starts, without NR, and no sign of optiscaler in game. INS does nothing
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.56
+- game: Resident Evil 2
+- exe: re2.exe
+- arch/api: 64-bit / DX12 (imports d3d11.dll, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[19:42:00.228937] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 60 -- buffer, 80 bytes
+[19:42:00.228974] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 61 -- buffer, 80 bytes
+[19:42:00.229004] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 62 -- buffer, 80 bytes
+[19:42:00.229034] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 63 -- buffer, 80 bytes
+[19:42:00.229070] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 64 -- buffer, 80 bytes
+[19:42:00.229103] [W] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: more than 64 candidates, so the filter is too loose here rather than the game having 64 exposures
+[19:42:16.429762] [I]
+[19:42:16.429785] [I] DLL_PROCESS_DETACH
+[19:42:16.429789] [I] Unloading OptiScaler
+```

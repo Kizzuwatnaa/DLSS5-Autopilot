@@ -1,0 +1,23 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.0
+- gpu: NVIDIA GeForce RTX 5060 (sm_120), driver 616.64
+- game: -
+- exe: -
+- arch/api: - / -
+- route: -
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

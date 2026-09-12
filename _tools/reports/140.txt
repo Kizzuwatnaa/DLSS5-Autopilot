@@ -1,0 +1,35 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Game launched and worked normally. But, reshade didn't launch.
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.92
+- game: -
+- exe: -
+- arch/api: - / -
+- route: feeder
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 3425, in work
+  File "core\installer.py", line 2631, in install
+  File "core\installer.py", line 734, in _extract
+  File "core\net.py", line 232, in extract_one
+  File "zipfile\__init__.py", line 1354, in __init__
+  File "zipfile\__init__.py", line 1421, in _RealGetContents
+zipfile.BadZipFile: File is not a zip file
+```

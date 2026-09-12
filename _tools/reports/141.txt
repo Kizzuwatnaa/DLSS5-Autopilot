@@ -1,0 +1,40 @@
+**Did the game start?** it started and ran
+
+**What happened**
+RTX40MFG-Unlock build 1.3.2 in the release zip file provides only 1 .dll file. The structure changed from the 1.2.1 version
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 4080 (sm_89), driver 616.92
+- game: Forza Horizon 6
+- exe: forzahorizon6.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: renodx
+
+**Files in the folder**
+- dxgi.dll: present
+- renodx-dlss.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- nvngx_dlssd.dll: present (swapped to 310.9.1 (NVIDIA SDK); the game's own is backed up)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 3425, in work
+  File "core\installer.py", line 2786, in install
+  File "core\mfg.py", line 199, in install
+  File "core\net.py", line 236, in extract_one
+RuntimeError: RTX40MFG-Unlock-v1.3.2.zip does not contain RTX40MFGCore.dll.
+```

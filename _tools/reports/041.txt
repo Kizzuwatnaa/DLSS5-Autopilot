@@ -1,0 +1,45 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+at night exposure information isn't submitted (says paperwhite is in use) and the default is to use game exposure. So it needs to be adjusted and dialed down to .25x.
+
+**What I expected**
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 616.64
+- game: Marvel’s Spider-Man Remastered
+- exe: Spider-Man.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- d3dcompiler_47.dll: present (the game's own)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[23:16:17.445542] [I] StreamlineHooks::streamlineLogCallback [23-16-17][streamline][info][tid:22208][704s:239ms:007us]generic.cpp:817[collectGarbage] Destroyed 0x11dd7b579e0(ScratchBuffer) - scheduled
+[23:16:17.445636] [I] StreamlineHooks::streamlineLogCallback [23-16-17][streamline][info][tid:22208][704s:239ms:102us]generic.cpp:817[collectGarbage] Destroyed 0x11dd7b58460(FastLanczosLut) - schedule
+[23:16:17.445727] [I] StreamlineHooks::streamlineLogCallback [23-16-17][streamline][info][tid:22208][704s:239ms:192us]generic.cpp:817[collectGarbage] Destroyed 0x11dd7b57960(FastLanczosScratchBuffer) 
+[23:16:17.445735] [I] StreamlineHooks::streamlineLogCallback [23-16-17][streamline][info][tid:22208][704s:239ms:201us]generic.cpp:317[shutdown] Delayed destroy resource list count 0
+[23:16:17.584644] [I]
+[23:16:17.584661] [I] DLL_PROCESS_DETACH
+[23:16:17.584666] [I] Unloading OptiScaler
+```

@@ -1,0 +1,33 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4080 SUPER (sm_89), driver 616.92
+- game: Content
+- exe: DOOMTheDarkAges.exe
+- arch/api: ? / ?
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [bad] ReShade loaded no add-ons.
+
+**Files in the folder**
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

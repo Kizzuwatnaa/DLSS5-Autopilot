@@ -1,0 +1,44 @@
+**Did the game start?** yes / no / it closed itself
+no
+**What happened**
+it opens in task bar and closes
+**What I expected**
+For the game to open
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 616.64
+- game: Assetto Corsa EVO
+- exe: AssettoCorsaEVO.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[14:58:08.089895] [I] OptiInput::InstallHooks Win32 HID hooks installed
+[14:58:08.089917] [I] OptiInput::InstallHooks Win32 raw input hooks installed
+[14:58:08.089942] [I] OptiInput::InstallHooks Win32 windows input hooks installed
+[14:58:08.090062] [I] OptiInput::InstallHooks Win32 position input hooks installed
+[14:58:08.090072] [I] OptiInput::Initialize Initialize completed hooksInstalled:1 target:0xf02f4 targetPid:20612 input:0xf02f4 inputPid:20612 externalTarget:0 subclassed:1
+[14:58:08.090118] [I] OptiInput::UpdateXInputIntegrationLocked XInput hooks installed module:0x7ffa731d0000 getState:1 getStateEx:1 getKeystroke:1 setState:1
+[14:58:08.090146] [I] OptiInput::`anonymous-namespace'::InstallDirectInputExportHookLocked DirectInput8Create hook installed module:0x7ffa69a00000
+[14:58:08.296170] [E] LocalPresent Original present result: 80004002
+```

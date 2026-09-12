@@ -1,0 +1,48 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.0
+- gpu: NVIDIA GeForce RTX 3060 (sm_86), driver 610.88
+- game: Shadow of the Tomb Raider
+- exe: SOTTR.exe
+- arch/api: 64-bit / Unknown
+- route: optiscaler
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2172, in work
+  File "core\installer.py", line 1904, in install
+  File "core\optiscaler.py", line 201, in install
+  File "core\installer.py", line 1737, in dl
+  File "core\net.py", line 71, in download
+  File "http\client.py", line 479, in read
+  File "socket.py", line 720, in readinto
+  File "ssl.py", line 1251, in recv_into
+  File "ssl.py", line 1103, in read
+ssl.SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac (_ssl.c:2580)
+```

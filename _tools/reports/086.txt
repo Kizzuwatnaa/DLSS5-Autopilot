@@ -1,0 +1,42 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.56
+- game: Forza Horizon 6
+- exe: forzahorizon6.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[22:39:45.170820] [I] StreamlineHooks::streamlineLogCallback [22-39-45][streamline][info][tid:10740][322s:011ms:330us]dlfgPresent.cpp:994[presentCommon] Display output changed (000000000001007F -> 000
+[22:39:45.170834] [I] StreamlineHooks::streamlineLogCallback [22-39-45][streamline][info][tid:10740][322s:011ms:345us]dlfgPresent.cpp:2102[flushAll] Flushing all worker queues ...
+[22:39:45.225778] [I] StreamlineHooks::streamlineLogCallback [22-39-45][streamline][info][tid:10740][322s:066ms:275us]rsync.cpp:454[blockUntilWarmedUp] RSYNC: Blocked for warmup for 50 ms
+[22:39:45.226028] [W] OptiInput::`anonymous-namespace'::LogQueryWindowFailure SetTargetWindow rejected hwnd:0x1808b6 isWindow:0 root:0x0 pid:0 tid:0 currentPid:19792
+```

@@ -1,0 +1,54 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.56
+- game: Assassins Creed Black Flag Resynced
+- exe: ACBlackFlag.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: OptiScaler loaded, but the model refused or failed.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [bad] Neural rendering did not start.
+- [info] OptiScaler needs driver 616.56 or newer, and a nvngx_dlssnr build for your card (the tool picks one). If it keeps refusing, the native or renodx-dlss route is one click away.
+
+**Files in the folder**
+- winmm.dll: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+09:12:36:547 [26664] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000000021F5DDC0, pDevice = 000000016874B430, pDesc = 000000000015F190, ppSwapChain = 000000000015F530) ...
+09:12:37:517 [ 7968] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+09:12:40:239 [15468] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+09:12:40:267 [ 3768] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = 0000000021F5DDC0, pDevice = 000000016A233390, pDesc = 000000001394ECF0, pRestrictToOutput = 0000000000000
+09:12:40:283 [15468] | INFO  | Redirecting Direct3DCreate9(SDKVersion = 0x20) ...
+09:12:40:297 [ 3768] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = 0000000021F5DDC0, pDevice = 000000016A233390, pDesc = 000000001394ECF0, pRestrictToOutput = 0000000000000
+09:12:40:316 [ 3768] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = 0000000021F5DDC0, pDevice = 000000016A233390, pDesc = 000000001394ECF0, pRestrictToOutput = 0000000000000
+09:12:44:021 [26544] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+09:12:54:029 [26544] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+09:13:04:029 [26544] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+09:13:14:026 [26544] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[09:12:42.178267] [I] `anonymous-namespace'::DiscoverFloatSlot DLSS-NR float parameters go through vtable slot 6
+[09:12:42.178295] [I] Util::FindFilePath nvngx_dlssnr.dll found at D:\Assassins Creed Black Flag Resynced
+[09:12:42.179173] [I] `anonymous-namespace'::ReportScalingRatios DLSS-NR the model's own scaling ratios: MaxPerf=1.0000 Balanced=1.0000 MaxQuality=1.0000 UltraPerformance=refused UltraQuality=1.0000 D
+[09:12:42.182814] [I] DlssNr_Dx12::Dispatch DLSS-NR: white point meter up, 64x64 tiles
+[09:12:42.182854] [I] Util::FindFilePath nvngx_dlssnr.dll found at D:\Assassins Creed Black Flag Resynced
+[09:12:42.324190] [E] StreamlineHooks::streamlineLogCallback [09-12-42][streamline][error][tid:12348][12s:004ms:220us]exception.cpp:75[writeMiniDump] Exception detected - thread 12348 - creating mini-
+```

@@ -1,0 +1,37 @@
+**What happened**
+Using the tool with neural upstream and DLSS Quality enabled in Star Wars Zero company makes the game significantly darker, both with HDR on and off. Tweaking exposure values in optiscaler doesn't help.
+
+**What I expected**
+For the game to remain the same brightness with DLSS5 enabled.
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.64
+- game: STAR WARS Zero Company™
+- exe: SWZeroCompany.exe
+- arch/api: 64-bit / DX12
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [info] This route leaves no frame log of its own.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

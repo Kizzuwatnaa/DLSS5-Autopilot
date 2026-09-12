@@ -1,0 +1,96 @@
+**Did the game start?** yes / no / it closed itself
+Game is fine, DLSS-Autopilot however failed to install anything for it
+
+**What happened**
+
+Upon trying to install DLSS-autopilot, I'm presented with this error. This is a brand spanking new Windows 11 25H2 install (was acting up forcing a reinstall, would be lovely to get this working on linux at some point) and a brand new install (though launched once to have all preamble taken care of) Mortal Shell 2
+
+**What I expected**
+Not an SSL error upon trying to install DLSS Auto-pilot for the game
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.64
+- game: Mortal Shell II
+- exe: MortalShell2-Win64-Shipping.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+2026-09-07 15:18:50 info  ======================================================================
+2026-09-07 15:18:50 info  DLSS 5 Autopilot 1.7.1 starting
+2026-09-07 15:18:50 info    windows : Windows-11-10.0.26200-SP0
+2026-09-07 15:18:50 info    python  : 3.12.10  frozen=True
+2026-09-07 15:18:50 info    exe     : C:\Users\<user>\Downloads\DLSS5-Autopilot-v1.7.1-win64\dlss5-autopilot.exe
+2026-09-07 15:18:50 info    gpu     : NVIDIA GeForce RTX 5080  sm_120
+2026-09-07 15:19:28 info  scan Steam: 7 found
+2026-09-07 15:19:28 info  scan Epic: 0 found
+2026-09-07 15:19:28 info  scan GOG: 0 found
+2026-09-07 15:19:28 info  scan EA: 0 found
+2026-09-07 15:19:28 info  scan Ubisoft: 0 found
+2026-09-07 15:19:28 info  scan Battle.net: 0 found
+2026-09-07 15:19:28 info  scan Rockstar: 1 found
+2026-09-07 15:19:28 info  scan Amazon: 0 found
+2026-09-07 15:19:28 info  scan itch: 0 found
+2026-09-07 15:19:28 info  scan Heroic: 0 found
+2026-09-07 15:19:28 info  scan Xbox: 0 found
+2026-09-07 15:19:28 info  scan Folders: 3 found
+2026-09-07 15:19:28 info  scan Emulator: 0 found
+2026-09-07 15:20:17 warn  feeder release list: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:21:31 ERROR installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2319, in work
+  File "core\installer.py", line 2008, in install
+  File "core\optiscaler.py", line 95, in resolve
+  File "core\sources.py", line 186, in _json
+  File "core\sources.py", line 171, in _json
+  File "core\sources.py", line 118, in _get
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 515, in open
+  File "urllib\request.py", line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:34:19 warn  feeder release list: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:34:19 warn  feeder release list: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:34:20 warn  feeder release list: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:34:29 warn  feeder release list: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+2026-09-07 15:34:45 ERROR installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2319, in work
+  File "core\installer.py", line 2008, in install
+  File "core\optiscaler.py", line 95, in resolve
+  File "core\sources.py", line 186, in _json
+  File "core\sources.py", line 171, in _json
+  File "core\sources.py", line 118, in _get
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 515, in open
+  File "urllib\request.py", line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+```

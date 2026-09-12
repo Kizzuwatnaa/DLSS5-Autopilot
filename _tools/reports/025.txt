@@ -1,0 +1,41 @@
+**What happened**
+
+There's a description in Autopilot about how to enable mods for Windows Store / Xbox games. That description appears to be wrong. There's no toggle to enable mods in the Xbox app.
+
+<img alt="screenshot of the description in DLSS5 Autopilot telling me to enable mods in Xbox app" src="https://github.com/user-attachments/assets/729fedc7-40f4-4e80-afe7-c4e375b7bb47" />
+
+<img width="400" alt="screenshot of Flight Simulator settings in Xbox app, no button or toggle for mods" src="https://github.com/user-attachments/assets/12e40e28-b02b-48c1-bab1-fe752e25ac15" />
+
+**What I expected**
+
+As described, a toggle or button to enable mods / The description to be correct.
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Microsoft Flight Simulator 2024
+- exe: FlightSimulator2024.exe
+- arch/api: ? / ?
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.4 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [warn] ReShade attached to a Direct3D 9 device, not DXGI.
+- [bad] ReShade failed to compile: DLSS5_Feed.fx
+- [bad] DLSS5_Feed.fx never loaded.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,58 @@
+**Did the game start?** yes / no / it closed itself
+cant install patch to game
+
+**What happened**
+error during install
+
+**What I expected**
+the patch to apply and install correctly
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 2080 SUPER (sm_75), driver 616.56
+- game: Jedi Survivor
+- exe: JediSurvivor.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2319, in work
+  File "core\installer.py", line 2008, in install
+  File "core\optiscaler.py", line 95, in resolve
+  File "core\sources.py", line 186, in _json
+  File "core\sources.py", line 171, in _json
+  File "core\sources.py", line 118, in _get
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 515, in open
+  File "urllib\request.py", line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+```
+
+
+
+<img width="3837" height="2004" alt="Image" src="https://github.com/user-attachments/assets/13af51d0-0a92-4fe1-8513-12e423808977" />

@@ -1,0 +1,35 @@
+**Did the game start?** it started and ran
+
+**What happened**
+very good fps
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 4070 Ti SUPER (sm_89), driver 616.64
+- game: The Blood of Dawnwalker
+- exe: Dawnwalker.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: optiscaler
+
+**Diagnosis**: Not run yet, or OptiScaler never loaded.
+- [bad] No OptiScaler log from this install yet.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: y4my4my4m
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```

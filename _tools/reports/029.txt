@@ -1,0 +1,39 @@
+**What happened**
+After doing the procedures and launching the game, it auto closes on the ZZZ screen before showing the login screen. I suspect it being an gacha the direct injection/installation method is detected and the game auto closes, next time the game is launched the injector don't work anymore, there's no message on the startup or the Insert key open any overlay.
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.56
+- game: ZenlessZoneZero Game
+- exe: ZenlessZoneZero.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[12:28:05.423918] [I] StreamlineHooks::streamlineLogCallback [12-28-05][streamline][info][tid:2936][17s:286ms:492us]commonInterface.cpp:608[presentCommon] Total VRAM used: 0.91 GB
+[12:28:05.475023] [I] StreamlineHooks::streamlineLogCallback [12-28-05][streamline][info][tid:2936][17s:337ms:596us]commonInterface.cpp:608[presentCommon] Total VRAM used: 0.92 GB
+[12:28:05.523936] [I] StreamlineHooks::streamlineLogCallback [12-28-05][streamline][info][tid:2936][17s:386ms:512us]commonInterface.cpp:608[presentCommon] Total VRAM used: 0.93 GB
+[12:28:07.055410] [W] StreamlineHooks::streamlineLogCallback [12-28-07][streamline][warn][tid:2936][18s:917ms:982us]dxgiSwapchain.cpp:152[notifyAfterPresent] Streamline supports only one DXGISwapChain
+```

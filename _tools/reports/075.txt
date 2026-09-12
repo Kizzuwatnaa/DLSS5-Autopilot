@@ -1,0 +1,64 @@
+**Did the game start?** no
+
+**What happened** error message
+
+
+**What I expected** to download and play a file
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 3090 (sm_86), driver 610.60
+- game: Video player (MPC-HC)
+- exe: mpc-hc64.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- d3dcompiler_47.dll: renamed aside
+
+**ReShade.log**
+```
+...
+11:25:46:119 [26964] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 000001F434122740, pDevice = 000001F434330F00, hWnd = 000000000002100E, pDesc = 000000D0A25FCD50, pFullscreenDesc
+11:25:46:713 [ 4892] | WARN  | [DLSS 5 Feed 0.14.0-beta.5] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+11:25:46:735 [ 4892] | WARN  | Skipping device because the driver type is 'D3D_DRIVER_TYPE_WARP' or 'D3D_DRIVER_TYPE_REFERENCE'.
+11:25:50:598 [32228] | WARN  | Successfully compiled 'C:\Users\<user>\Videos\DLSS5 Player\reshade-shaders\Shaders\DLSS5_Feed.fx' in 3.843000 s with warnings:
+11:25:54:684 [19864] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+11:25:54:685 [19864] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+11:27:16:120 [26964] | WARN  | Reference count for ID3D12CommandQueue0 object 000001F40D7B0E80 (000001F40D57E5C0) is inconsistent (1).
+11:27:16:120 [26964] | WARN  | Reference count for ID3D11Device1 object 000001F434330F00 (000001F43436D3D0) is inconsistent (7).
+11:27:18:336 [ 4892] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+11:27:18:336 [ 4892] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+11:27:18:762 [ 4892] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+...
+11:26:52.697  [feed] 600 frames: feed CPU 2.28 ms/frame | frame interval 22.47 ms (44.5 fps) | feed CPU is 10% of the frame | feed GPU 20.83 ms/frame (93% of the frame) | worst frame 32.3 ms (feed 3.4
+11:26:54.083  [feed] MV probe (centre 64x64, frame 2400): mean |mv| 0.000 px, max 0.00 px, 0% non-zero  <-- DLSS is getting (almost) no motion vectors
+11:26:54.084  [feed] Depth probe (4x 32x32, frame 2400): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+11:27:02.046  [feed] STALL frame 2639: interval 2614.1 ms | feed 2.13 ms (of which NGX evaluate 1.24 ms) | outside the feed 2612.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or a
+11:27:06.530  [feed] STALL frame 2726: interval 2481.9 ms | feed 2.30 ms (of which NGX evaluate 1.24 ms) | outside the feed 2479.6 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or a
+11:27:08.697  [feed] STALL frame 2772: interval 1115.9 ms | feed 2.15 ms (of which NGX evaluate 1.19 ms) | outside the feed 1113.7 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or a
+11:27:16.111  [feed] effect runtime 000001F4344B1950 destroyed -- it was the bound one (0 runtimes left)
+11:27:16.116  [feed] D3D11 device destroyed; shutting the session down
+11:27:18.758  shut down cleanly.
+```
+
+**Last error**
+```
+downloading a video
+Traceback (most recent call last):
+  File "core\gui.py", line 997, in work
+  File "core\video.py", line 562, in ensure_ffmpeg
+RuntimeError: ffmpeg build not found on GitHub
+```

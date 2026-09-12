@@ -1,0 +1,47 @@
+**Did the game start?** it never started
+
+**What happened**
+"tick to swap remix runtime" box doesn't actually exist.
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 4070 Ti SUPER (sm_89), driver 616.56
+- game: Vampire: The Masquerade - Bloodlines
+- exe: Vampire.exe
+- arch/api: 32-bit / DX9 (set by hand (detected Unknown))
+- route: remix
+
+**Diagnosis**: The install never finished - install again.
+- [bad] The install did not finish.
+
+**Files in the folder**
+- .trex: found at C:\Program Files (x86)\GOG Galaxy\Games\VtMB\.trex
+- .trex/d3d9.dll: present
+- .trex/nvngx_dlssnr.dll: MISSING
+- .trex/remix_nvngx.dll: MISSING
+- runtime flavour: no DLSS 5 pass
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**remix-dxvk.log**
+```
+[23:40:05.187] info:  [RTX info] Neural Radiance Cache: supported
+[23:40:05.200] info:  [RTX Neural Radiance Cache] Selected High preset mode.
+```
+
+**Last error**
+```
+saving the library cache
+Traceback (most recent call last):
+  File "core\library.py", line 139, in save
+  File "pathlib.py", line 1048, in write_text
+OSError: [Errno 28] No space left on device
+```

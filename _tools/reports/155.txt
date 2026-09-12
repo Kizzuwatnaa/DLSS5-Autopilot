@@ -1,0 +1,34 @@
+**Did the game start?** it never started
+
+**What happened**
+prompted a reinstall or removal of vcredits, and when I clicked repair, it wouldn't run. Reinstalling didn't prompt vcredits anymore, but still wouldn't run.
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 4070 Ti SUPER (sm_89), driver 616.92
+- game: Sleeping Dogs: Definitive Edition
+- exe: sdhdship.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [bad] ReShade loaded no add-ons.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

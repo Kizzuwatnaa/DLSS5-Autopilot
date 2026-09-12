@@ -1,0 +1,43 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 616.64
+- game: Cyberpunk.2077.Ultimate.Edition.v2.31a.85116-GOG
+- exe: Cyberpunk2077.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2665, in work
+  File "core\installer.py", line 2072, in install
+  File "core\optiscaler.py", line 342, in install
+  File "core\optiscaler.py", line 218, in _unpacked
+  File "core\optiscaler.py", line 203, in extract_7z
+RuntimeError: tar.exe could not unpack OptiScaler-DLSSNR-v10.0.0-dev-fork-y4my4my4m-v4.7z: tar.exe: LZMA codec is unsupported
+tar.exe: Error exit delayed from previous errors.
+```

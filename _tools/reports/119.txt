@@ -1,0 +1,27 @@
+**Did the game start?** it never started
+
+**What happened**
+DLSS files are here NBA 2K27\data\streamline
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 616.92
+- game: NBA 2K27
+- exe: NBA2K27.exe
+- arch/api: 64-bit / DX12 (set by hand (detected Unknown))
+- route: feeder
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,53 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 3050 (sm_86), driver 610.88
+- game: NFSU2
+- exe: SPEED2.EXE
+- arch/api: 32-bit / DX9 (set by hand (detected DX9))
+- route: feeder
+
+**Diagnosis**: The install never finished - install again.
+- [bad] The install did not finish.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+- reshade-shaders/Shaders/lumenite_Kernel.fx: MISSING
+- ReShade 32-bit Vulkan layer: registered
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2665, in work
+  File "core\installer.py", line 2248, in install
+  File "core\installer.py", line 1175, in _install_feeder_parts
+  File "core\net.py", line 223, in fetch_text
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 521, in open
+  File "urllib\request.py", line 630, in http_response
+  File "urllib\request.py", line 559, in error
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 639, in http_error_default
+urllib.error.HTTPError: HTTP Error 503: Backend.max_conn reached
+```

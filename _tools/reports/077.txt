@@ -1,0 +1,36 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+im install dlss5 autopilot for gta5 and start this game from rockstar games launcher and dlss5 is not working
+
+**What I expected**
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 591.86
+- game: Grand Theft Auto V
+- exe: GTA5.exe
+- arch/api: 64-bit / DX9 (detected from the executable)
+- route: renodx
+
+**Diagnosis**: Not started since the install - run the game once, then check again.
+- [warn] The game has not been started since the install.
+- [info] If you DID start it, it launches something other than GTA5.exe.
+- [info] Or the game ignores dxgi.dll.
+
+**Files in the folder**
+- dxgi.dll: present
+- renodx-dlss.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

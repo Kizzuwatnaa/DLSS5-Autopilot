@@ -1,0 +1,45 @@
+**Did the game start?** / no / it closed itself
+
+**What happened**
+Black screen, optiscaler text, reframework text, then Insta crash.
+
+**What I expected**
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Onimusha: Way of the Sword
+- exe: OnimushaWotS.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: Working.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [ok] Neural rendering is running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[02:16:40.508571] [I] Util::FindFilePath nvngx_dlssnr.dll found at F:\SteamLibrary\steamapps\common\OnimushaWotS
+[02:16:40.513445] [I] LibraryLoadHooks::LoadLibraryCheckW nvapi64.dll call!
+[02:16:40.615887] [I] LibraryLoadHooks::LoadLibraryCheckW dxgi.dll call, returning this dll!
+[02:16:40.771133] [I] DlssNr_Dx12::Dispatch DLSS-NR running at 3840x2160, guides 2560x1440 (preset 0, intensity 1, style 0)
+[02:16:40.786317] [I] DlssNr_Dx12::Dispatch DLSS-NR: the game's DLSS buffer is linear HDR so the colour transform is on
+[02:16:40.786955] [I] DlssNr_Dx12::Dispatch DLSS-NR exposure: option switched on, held reading discarded
+[02:16:40.788247] [I] DlssNr_Dx12::Dispatch DLSS-NR composition: paper white 1.00x, detail 1.00, colour 1.00, guard 2.0x, colour transform on (linear HDR), transfer matched residual, model 2880x1620, 
+```

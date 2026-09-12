@@ -1,0 +1,64 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.86
+- game: Mega Man Legacy Collection 2
+- exe: MMLC2.exe
+- arch/api: 64-bit / DX11
+- route: feeder
+
+**Diagnosis**: Set up correctly, but not switched on yet.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.4 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] NGX initialised successfully.
+- [ok] The driver reports DLSS as available.
+- [warn] The feature was created but no frames were delivered.
+- [info] If it is switched on and still does nothing, check the depth buffer.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+09:17:17:209 [24080] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+09:17:17:211 [18784] | WARN  | Ignoring LoadLibrary('gdi32.dll') call to avoid possible deadlock.
+09:17:17:211 [18784] | WARN  | Ignoring LoadLibrary('kernel32.dll') call to avoid possible deadlock.
+09:17:17:213 [ 9384] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+09:17:17:225 [25940] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+09:17:17:508 [18784] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+09:17:18:643 [18784] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 000002A204408520 (000002A204F716C0) is inconsistent (1).
+09:17:18:643 [18784] | WARN  | [DLSS 5 Feed 0.14.0-beta.4] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally
+09:17:18:709 [18784] | WARN  | Reference count for ID3D11Device0 object 0000029F71C2B260 (0000029F71A927F0) is inconsistent (1).
+09:17:18:746 [10620] | WARN  | Reference count for ID3D12DescriptorHeap object 0000029FFCA64650 (0000029FFCD56260) is inconsistent (1).
+09:17:18:757 [10620] | WARN  | Reference count for ID3D12DescriptorHeap object 0000029F69488980 (0000029FFD5D7510) is inconsistent (1).
+```
+
+**dlss5-feed.log**
+```
+...
+09:17:18.495  [feed] MV     3840x1080 R16G16_FLOAT via D3D12->D3D11
+09:17:18.496  [feed] Mask   3840x1080 ? via D3D12->D3D11
+09:17:18.496  [feed] work-resolution source: 5120x1440 staging copy -> 3840x1080
+09:17:18.500  [feed] copy-back and work-resolution resample shaders ready
+09:17:18.545  [feed] fsr1 shaders: ok (EASU + RCAS expand-back available)
+09:17:18.546  [feed] GPU timing on (queue timestamp frequency 1000000000 Hz)
+09:17:18.580  [feed] feature ready: 3840x1080 DLAA, flags=74 (SDR MVLowRes DepthInverted AutoExposure), color R8G8B8A8_UNORM -> output R8G8B8A8_UNORM, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+09:17:18.642  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)
+09:17:18.642  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- dxgi.dll <- MMLC2.exe <- KERNEL
+09:17:18.643  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+09:17:18.643  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+09:17:18.688  [feed] effect runtime 0000029FF734C9A0 destroyed -- it was the bound one (0 runtimes left)
+09:17:18.702  [feed] D3D11 device destroyed; shutting the session down
+```

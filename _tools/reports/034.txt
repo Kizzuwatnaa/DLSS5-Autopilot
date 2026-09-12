@@ -1,0 +1,37 @@
+**Did the game start?** yes / no / it closed itself
+Yes
+**What happened**
+Game starts and everything seems to work but the only thing that occurs with DLSS-NR is that the game darkens. Adjusting settings make zero changes to the image, and increasing intensity just decreases the brightness of the screen.
+
+
+**What I expected**
+Expected actual changes to the skin, structure of buildings and foliage. 
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.64
+- game: Mafia: The Old Country
+- exe: MafiaTheOldCountry.exe
+- arch/api: 64-bit / DX12
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] NGX initialised successfully.
+- [info] This route leaves no frame log of its own.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+12:37:44:178 [30492] | WARN  | Reference count for ID3D12CommandQueue0 object 000000007EC02980 (000000007EDBAC70) is inconsistent (7).
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,52 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 4060 (sm_89), driver 610.47
+- game: DYING LIGHT
+- exe: DyingLightGame.exe
+- arch/api: 64-bit / Unknown
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [warn] The add-on flagged your nvngx_dlssnr as an untested build.
+- [bad] DLSS5_Feed.fx never loaded.
+- [bad] Motion vectors: LumeniteFX Kernel is not installed.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+18:11:40:870 [19340] | INFO  | Registered add-on "DLSS 5 Feed 0.13.1-beta.1" v0.13.1.0 using ReShade API version 20.
+18:11:40:880 [19340] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+18:11:41:338 [19340] | WARN  | [DLSS 5 Neural Rendering] DLSS5 Generic: signed runtime sha256 4B8D19BC3EFF58A084F5ECA7489C921501C203450169FB82FF4F649A4482BA05 (custom runtime accepted; untested build,
+18:11:41:655 [19340] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000013AEA1B66A0, pDevice = 0000013AE832FF70, pDesc = 0000013AED93BC80, ppSwapChain = 0000013AED93BC50) ...
+18:11:41:966 [19340] | WARN  | [DLSS 5 Feed 0.13.1-beta.1] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+```
+
+**dlss5-feed.log**
+```
+...
+18:11:40.877  [feed] NeuralUplift was unset; wrote NeuralUplift=1 (neural rendering on)
+18:11:40.877  [feed] NREnableUpscaling was unset; wrote NREnableUpscaling=0 (upscaling off; this feeder publishes a complete 1:1 DLAA contract)
+18:11:40.877  [feed] Alex's Toolkit: not present -- DLSS 5 runs a single neural pass
+18:11:40.877  [feed] Deep Fried Chicken: not present
+18:11:41.966  [feed] effect runtime 0000013AF7DDAC80 initialised (device 0000013AEA4991B0, window class 'techland_game_class'; 1 runtime in this process)
+18:11:41.966  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteF
+18:11:41.966  DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+18:12:14.148  [feed] effect runtime 0000013AF7DDAC80 destroyed -- it was the bound one (0 runtimes left)
+18:12:14.149  [feed] effect runtime 0000013AF7DDAC80 initialised (device 0000013AEA4991B0, window class 'techland_game_class'; 1 runtime in this process)
+18:12:14.474  [feed] effect runtime 0000013AF7DDAC80 destroyed -- it was the bound one (0 runtimes left)
+18:12:14.479  [feed] effect runtime 0000013AF7DDAC80 initialised (device 0000013AEA4991B0, window class 'techland_game_class'; 1 runtime in this process)
+```

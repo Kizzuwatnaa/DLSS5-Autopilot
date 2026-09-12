@@ -1,0 +1,64 @@
+**Did the game start?** yes, but crashed when enabling neural rendering
+
+**What happened**
+
+When ticking the NR box in ReShade, the game crashes
+
+**What I expected**
+
+I expected Neural Rendering to work.
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Just Cause 4
+- exe: JustCause4.exe
+- arch/api: 64-bit / DX12
+- route: feeder
+
+**Diagnosis**: The feed crashed after starting - a feeder bug; try another feeder build.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.4 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] Motion vectors look alive (29% non-zero).
+- [bad] The feed recorded a crash (0xE06D7363) while running the D3D12 evaluate (later faults in this process are not recorded).
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+...
+21:58:29:166 [10236] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+21:58:30:466 [26864] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+21:58:30:468 [26032] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+21:58:30:469 [24240] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+21:58:30:470 [26032] | WARN  | Ignoring LoadLibrary('Advapi32.dll') call to avoid possible deadlock.
+21:58:30:471 [26032] | WARN  | Ignoring LoadLibrary('kernel32.dll') call to avoid possible deadlock.
+21:58:30:479 [24240] | WARN  | Ignoring LoadLibrary('C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_436833bbb0f00476\Display.NvContainer/NvMessageBus.dll') call to avoid possible de
+21:58:30:976 [26032] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+21:58:30:976 [26032] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+21:59:59:448 [26032] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 0000000135051700 (0000000134156390) is inconsistent (1).
+21:59:59:448 [26032] | WARN  | [DLSS 5 Feed 0.14.0-beta.4] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally
+```
+
+**dlss5-feed.log**
+```
+...
+21:59:57.431  [feed] 600 frames: feed CPU 2.46 ms/frame | frame interval 7.06 ms (141.7 fps) | feed CPU is 35% of the frame | feed GPU 0.83 ms/frame (12% of the frame) | worst frame 10.3 ms (feed 3.68
+21:59:58.223  [feed] MV probe (centre 64x64, frame 33600): mean |mv| 0.032 px, max 0.31 px, 29% non-zero
+21:59:58.223  [feed] Depth probe (4x 32x32, frame 33600): min 4.7816e-06, max 0.0015622, mean 0.000704508, variance 4.88e-07, 100% finite
+21:59:59.448  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)
+21:59:59.448  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- dxgi.dll <- JustCause4.exe <- K
+21:59:59.448  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+21:59:59.448  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+21:59:59.451  ### CRASH RECORDED ###  exception 0xE06D7363 (C++ exception: std::system_error -- "resource deadlock would occur: resource deadlock would occur") at 00007FF90A273CFA in C:\WINDOWS\System
+21:59:59.452  [feed] crash stack, by module (innermost first): KERNELBASE.dll <- renodx-dlss5.addon64 <- dxgi.dll <- JustCause4.exe <- KERNEL32.DLL <- ntdll.dll
+```

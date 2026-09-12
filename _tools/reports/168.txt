@@ -1,0 +1,43 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+Enabling Finished Picture causes the game to completely freeze, whether I enable it in-game or set FinishedPicture = true in OptiScaler.ini before launching
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.92
+- game: Marvel's Spider-Man 2
+- exe: Spider-Man2.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+
+**Diagnosis**: OptiScaler loaded, but the model refused or failed.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [bad] Neural rendering did not start.
+- [info] OptiScaler needs driver 616.56 or newer, and a nvngx_dlssnr build for your card (the tool picks one). If it keeps refusing, the native or renodx-dlss route is one click away.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: wilsjo2
+- d3dcompiler_47.dll: present (the game's own)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[21:34:08.368508] [I] DlssNr_Dx12::Dispatch DLSS-NR elapsed: 6.72 ms total, 6.60 ms model, 0.12 ms surrounding work (2%; intervals may include other GPU work)
+[21:34:08.632277] [W] OptiInput::LogInputHealthSnapshotLocked menu is visible but no window/queue/raw input was received this frame. input:0x220632 foreground:0x220632 focused:yes subclassed:yes. Chec
+[21:34:09.301438] [I] OptiInput::ApplyMenuVisibilityChangeLocked menu visibility changed 1 -> 0 blockMouse:0 blockKeyboard:0 blockCursor:0 input:0x220632 target:0x220632
+[21:34:09.301467] [I] OptiInput::EndCursorClipBlockLocked end cursor clip block hasDeferred:0 deferredNull:0 hasSaved:1 savedActive:0
+[21:34:10.634642] [I] StreamlineHooks::streamlineLogCallback [21-34-10][streamline][info][tid:13868][25s:869ms:309us]commonInterface.cpp:585[presentCommon] Total VRAM used: 7.60 GB
+```

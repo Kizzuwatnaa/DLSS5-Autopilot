@@ -1,0 +1,43 @@
+**Did the game start?** it never started
+
+**What happened**
+Windows does not trust Github's certificate, could not fetch the version list. DLSS Feeder won't install
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 596.49
+- game: The Stanley Parable: Ultra Deluxe
+- exe: The Stanley Parable Ultra Deluxe.exe
+- arch/api: 64-bit / DX11 (Unity player beside the exe - Direct3D 11 on Windows unless the game is started with -force-d3d12, -force-vulkan or -force-glcore)
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: present
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+- reshade-shaders/Shaders/lumenite_Kernel.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 3720, in work
+  File "core\installer.py", line 2464, in install
+  File "core\installer.py", line 1382, in _install_feeder_parts
+  File "core\sources.py", line 382, in resolve_feeder
+  File "core\sources.py", line 285, in _json
+  File "core\sources.py", line 270, in _json
+  File "core\sources.py", line 218, in _get
+RuntimeError: api.github.com: Windows does not trust GitHub's certificate (<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'api.github.com'. (_ssl.c:1010)>). Open https://github.com once in Edge (Windows fetches a missing root certificate the first time a Microsoft program needs it), then try again. An antivirus that inspects HTTPS causes this too - exclude this tool or turn that off.
+```

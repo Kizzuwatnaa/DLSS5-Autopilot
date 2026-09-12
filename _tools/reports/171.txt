@@ -1,0 +1,34 @@
+**Did the game start?** it started and ran
+
+**What happened**
+I tried to launch DLSS5 again after fixing on version 1.7.3 (https://github.com/Kizzuwatnaa/DLSS5-Autopilot/issues/77) in 1.8.1, but I encountered the same issue. The game started but in logs his says me game not started after installation, and a new error message appears regarding a recording problem. I closed all my overlays, but the issue persists. I tried to change graphics api to DX11 but nothing change.
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 591.86
+- game: Grand Theft Auto V
+- exe: GTA5.exe
+- arch/api: 64-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: renodx
+- windows event: GTA5.exe faulted in C:\Program Files\Rockstar Games\Grand Theft Auto V Legacy\GTA5.exe  at 2026-09-12 00:54:33 UTC
+
+**Diagnosis**: Not started since the install - run the game once, then check again.
+- [warn] The game has not been started since the install.
+- [info] If you DID start it, it launches something other than GTA5.exe.
+- [info] Or the game ignores dxgi.dll.
+
+**Files in the folder**
+- dxgi.dll: present
+- renodx-dlss.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,37 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.64
+- game: Conan Exiles Enhanced
+- exe: ConanSandbox-Win64-Shipping.exe
+- arch/api: 64-bit / DX12
+- route: optiscaler
+
+**Diagnosis**: Not run yet, or OptiScaler never loaded.
+- [bad] No OptiScaler log from this install yet.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```

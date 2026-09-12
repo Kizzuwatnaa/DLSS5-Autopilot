@@ -1,0 +1,46 @@
+**Did the game start?** yes 
+
+**What happened**
+
+I tested the experimental "VR headset (OpenXR)" option with Phasmophobia using a Meta Quest 3 and Meta Quest Link / Meta OpenXR.
+
+With the desktop dxgi.dll proxy disabled, Phasmophobia starts correctly in VR.
+
+The ReShade OpenXR layer is definitely loaded:
+- ReShade64.dll is loaded inside Phasmophobia.exe
+- ReShade.log shows xrCreateSession and xrCreateSwapchain
+- ReShade creates a VR runtime at 5440x2976
+- Lumenite_Kernel.fx and DLSS5_Feed.fx compile successfully
+- dlss5-feed.addon64 attaches successfully
+
+However, dlss5-feed.log stops immediately after initialization at:
+
+OptiScaler: not present
+
+There are no later lines such as runtime detection, feature creation, feature ready, or frame delivery.
+
+If I enable the normal dxgi.dll ReShade proxy again, DLSS5 works on the normal desktop D3D path, but Phasmophobia no longer starts correctly in VR and instead only starts as a desktop game.
+
+I also tested standalone-dlssnr, but that did NOT work in the headset either. It only worked on the desktop/non-VR path, where it was much more laggy than the Feeder route.
+
+**What I expected**
+
+I expected the Feeder to receive the OpenXR/ReShade VR runtime frames when "VR headset (OpenXR)" is enabled, so DLSS5 can run on the actual headset image while Phasmophobia remains in VR.
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.56
+- game: Phasmophobia
+- exe: C:\Program Files (x86)\Steam\steamapps\common\Phasmophobia\Phasmophobia.exe
+- arch/api: x64 / D3D11 + OpenXR
+- route: feeder
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

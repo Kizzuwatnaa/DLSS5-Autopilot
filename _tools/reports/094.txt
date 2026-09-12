@@ -1,0 +1,47 @@
+**Did the game start?** 
+ no /
+
+**What happened**
+it closed itself and never loaded
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4080 SUPER (sm_89), driver 616.92
+- game: Dead Space (2023)
+- exe: Dead Space.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (named in the exe); no static graphics import)
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+
+**Files in the folder**
+- winmm.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+11:13:29:709 [ 1008] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+11:13:29:712 [ 1008] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+11:13:30:044 [ 1008] | WARN  | [DLSS 5 Neural Rendering] DLSS5 Generic: signed runtime sha256 4B8D19BC3EFF58A084F5ECA7489C921501C203450169FB82FF4F649A4482BA05 (custom runtime accepted; untested build,
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[11:13:31.843031] [I] LibraryLoadHooks::LoadLibraryCheckW nvngx call: C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_b20cc8aeaed64fc2\_nvngx.dll, returning this dll!
+[11:13:31.848617] [I] LibraryLoadHooks::LoadLibraryCheckW C:\WINDOWS\system32\nvapi64.dll call!
+[11:13:32.411215] [I] LibraryLoadHooks::LoadLibraryCheckW B:\XBox\Dead Space (2023)\winmm.dll call, returning this dll!
+[11:13:32.412946] [I] LibraryLoadHooks::LoadLibraryCheckW C:\WINDOWS\system32\winmm.dll call, returning this dll!
+[11:13:32.415332] [I] LibraryLoadHooks::LoadLibraryCheckW nvngx call: C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_b20cc8aeaed64fc2\_nvngx.dll, returning this dll!
+[11:13:32.420443] [I] LibraryLoadHooks::LoadLibraryCheckW C:\WINDOWS\system32\nvapi64.dll call!
+```

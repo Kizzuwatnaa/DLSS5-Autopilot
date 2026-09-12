@@ -1,0 +1,46 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 616.64
+- game: EA SPORTS FC 26
+- exe: FC26.exe
+- arch/api: 64-bit / Unknown
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2172, in work
+  File "core\installer.py", line 1991, in install
+  File "core\sources.py", line 161, in resolve_reshade
+  File "core\sources.py", line 93, in _get
+  File "http\client.py", line 473, in read
+  File "http\client.py", line 597, in _read_chunked
+  File "http\client.py", line 579, in _get_chunk_left
+  File "http\client.py", line 539, in _read_next_chunk_size
+  File "socket.py", line 720, in readinto
+  File "ssl.py", line 1251, in recv_into
+  File "ssl.py", line 1103, in read
+TimeoutError: The read operation timed out
+```

@@ -1,0 +1,45 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+dxgi.dll signature failed to authentication please reinstall. Window appeared and after click accept. Gmae closes
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5090 Laptop GPU (sm_120), driver 616.92
+- game: Forspoken
+- exe: FORSPOKEN.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: upstream
+
+**Diagnosis**: Loaded and set up; no neural frame yet.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] The add-on hooked the game's DLSS call (1 entry point).
+- [info] The add-on loaded and set itself up, but never ran.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+09:40:47:087 [ 3624] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+09:40:48:646 [ 3624] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 0000029AA56091D0, pDevice = 0000029AA5C3CDE0, hWnd = 0000000000130332, pDesc = 0000029AA5CEA6F0, pFullscreenDesc
+09:40:49:045 [19316] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 0 on NVSDK_NGX_D3D12_EvaluateFeature: OK  C:\Program Files (x86)\Steam\steamapps\common\FORSPOKEN\FORSPOKEN.exe
+09:40:50:985 [ 3624] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+09:40:50:988 [ 3624] | WARN  | Ignoring LoadLibrary('cryptbase.dll') call to avoid possible deadlock.
+09:40:50:989 [ 3624] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+09:40:50:990 [ 8136] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+09:40:50:998 [19196] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+09:40:51:078 [ 3624] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+09:40:51:081 [ 3624] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+09:40:51:082 [ 3624] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+09:40:51:083 [ 3624] | WARN  | Ignoring LoadLibrary('devobj.dll') call to avoid possible deadlock.
+09:40:58:108 [ 1672] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

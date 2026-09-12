@@ -1,0 +1,89 @@
+**Did the game start?** it started and ran
+
+**What happened**
+**Did the game start?** it started and ran
+
+**What happened**
+=== diagnosis :: log 11 Sep 11:21 ===
+> Driver 616.64+ faults inside NGX even with renodx-dlss5 4.55 - roll the driver back to 616.56.
+[ok]   ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0
+
+[fail] The game closed before it drew a single frame.
+        ReShade attached and the device was created, but no swap chain ever was, so the game quit during start-up. That points at something in the folder stopping it rather than at the DLSS setup. Uninstall and check the game starts on its own first.
+[ok]   DLSS5_Feed.fx loaded and its textures were found.
+[ok]   Motion vectors: VORT is enabled.
+[ok]   The 32-bit helper process started.
+[ok]   The game and the helper are talking.
+[--]   On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+[fail] Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5).
+        This is NVIDIA driver 616.64 or newer: the driver routes the feature into the runtime itself and the renodx-dlss5 add-on does not survive it (measured by the feeder's author, DLSS5-Feeder #54). This install already carries 4.55, the build that passes on most games there, so on this one the fault is in the driver's runtime itself and no renodx-dlss5 build this tool can install changes it. The bridge route works around it in memory for games that ship DLSS; otherwise rolling the driver back to 616.56 is the answer.
+
+> stuck? press [ report a bug ] on the left - the diagnosis above and the log tail go into the report, you post it.
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.92
+- game: Octowow
+- exe: WoW.exe
+- arch/api: 32-bit / OpenGL (imports opengl32.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: Driver 616.64+ faults inside NGX even with renodx-dlss5 4.55 - roll the driver back to 616.56.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0
+- [bad] The game closed before it drew a single frame.
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: VORT is enabled.
+- [ok] The 32-bit helper process started.
+- [ok] The game and the helper are talking.
+- [info] On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+- [bad] Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5).
+
+**Files in the folder**
+- opengl32.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- host64/renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+
+**ReShade.log**
+```
+11:18:26:359 [25448] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+11:18:26:887 [25448] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+11:18:26:956 [25448] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+11:18:26:964 [25448] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+11:18:38:663 [25448] | WARN  | [DLSS 5 Feed (32-bit) 0.15.1] [DLSS 5 Feed 32] stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\) names the reason. The game renders normally
+11:21:16:610 [25448] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+...
+11:18:35.043  [feed32] frame 2 delivered (3440x1440, reset=0, OpenGL)
+11:18:35.060  [feed32] frame 3 delivered (3440x1440, reset=0, OpenGL)
+11:18:38.625  [feed32] host lost: frame message failed (exit code 3765269347)
+11:18:38.663  stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\) names the reason. The game renders normally. See dlss5-feed.log for the detail.
+11:18:49.767  [feed32] game device destroyed; shutting down
+11:18:49.767  [feed32] the GL context is not current here; the imported textures are left to the driver
+11:19:54.265  [feed32] effects: technique MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_MV_PROVIDER=2 (VORT) -> none (not installed), depth reversed=1
+11:19:54.311  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=2 (VORT) -> vort_MotionEffects (enabled), depth reversed=1
+11:20:13.575  [feed32] effects: technique MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_MV_PROVIDER=2 (VORT) -> none (not installed), depth reversed=1
+11:20:13.615  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=2 (VORT) -> vort_MotionEffects (enabled), depth reversed=1
+11:21:16.513  [feed32] effect runtime 0EFE7BA8 destroyed -- it was the bound one (0 runtimes left)
+11:21:16.514  [feed32] game device destroyed; shutting down
+11:21:16.514  shut down cleanly.
+```
+
+
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.92
+- game: Octowow
+- exe: WoW.exe
+- arch/api: 32-bit / OpenGL (imports opengl32.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: Driver 616.64+ faults inside NGX even with renodx-dlss5 4.55 - r

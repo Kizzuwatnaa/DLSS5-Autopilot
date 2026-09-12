@@ -1,0 +1,40 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.4.1
+- gpu: NVIDIA GeForce RTX 4070 SUPER (sm_89), driver 616.64
+- game: BioShock Infinite
+- exe: BioShockInfinite.exe
+- arch/api: 32-bit / DX9
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: MISSING
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 1904, in work
+  File "core\installer.py", line 1272, in install
+  File "core\dgvoodoo.py", line 106, in install
+  File "core\net.py", line 111, in extract_one
+  File "zipfile\__init__.py", line 1336, in __init__
+OSError: [Errno 22] Invalid argument: 'C:\\Users\\Said_\\AppData\\Local\\dlss5-autopilot\\cache\\dgVoodoo2_v2.87.4.zip'
+```

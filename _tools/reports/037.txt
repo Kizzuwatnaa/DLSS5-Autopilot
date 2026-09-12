@@ -1,0 +1,64 @@
+**Did the game start?** it closed itself
+
+**What happened**
+
+After installation of DLSS 5, the game crashes during the intro videos while compiling things in ReShade.
+
+**What I expected**
+
+The intro videos to play regularly and the compilation to be successful.
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: STAR WARS™ Empire at War: Gold Pack
+- exe: StarWarsG.exe
+- arch/api: 64-bit / DX9
+- route: feeder
+
+**Diagnosis**: The feed crashed after starting - a feeder bug; try another feeder build.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.4 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [bad] The feed recorded a crash (0xE06D7363) while waiting for the result (Vulkan) (later faults in this process are not recorded).
+
+**Files in the folder**
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 64-bit Vulkan layer: registered
+
+**ReShade.log**
+```
+...
+00:11:34:070 [31492] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+00:11:34:072 [29300] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+00:11:34:073 [21244] | WARN  | Ignoring LoadLibrary('msasn1.dll') call to avoid possible deadlock.
+00:11:34:074 [29300] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+00:11:34:074 [21244] | WARN  | Ignoring LoadLibrary('cryptbase.dll') call to avoid possible deadlock.
+00:11:34:075 [29300] | WARN  | Ignoring LoadLibrary('Advapi32.dll') call to avoid possible deadlock.
+00:11:34:075 [21244] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+00:11:34:076 [29300] | WARN  | Ignoring LoadLibrary('kernel32.dll') call to avoid possible deadlock.
+00:11:34:088 [30492] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+00:11:34:404 [29300] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+00:11:34:887 [29300] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 00000273AD1679D0 (000002714781E2E0) is inconsistent (1).
+00:11:34:888 [29300] | WARN  | [DLSS 5 Feed 0.14.0-beta.4] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally
+```
+
+**dlss5-feed.log**
+```
+...
+00:11:34.887  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)
+00:11:34.887  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- ReShade64.dll <- SteamOverlayVu
+00:11:34.888  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+00:11:34.888  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+00:11:34.888  [feed] STALL frame 1: interval 63.4 ms | feed 66.02 ms (of which NGX evaluate 64.68 ms) | outside the feed -2.6 ms -- most of it was INSIDE the NGX evaluate -- the neural consumer's deto
+00:11:34.889  ### CRASH RECORDED ###  exception 0xE06D7363 (C++ exception: std::system_error -- "resource deadlock would occur: resource deadlock would occur") at 00007FF90A273CFA in C:\WINDOWS\System
+00:11:34.889  [feed] crash stack, by module (innermost first): KERNELBASE.dll <- renodx-dlss5.addon64 <- ReShade64.dll <- SteamOverlayVulkanLayer64.dll <- dlss5-feed.addon64 <- d3d9.dll <- KERNEL32.DL
+00:11:34.891  [feed] crash dump FAILED (D:\SteamLibrary\steamapps\common\Star Wars Empire at War\corruption\dlss5-feed-crash.dmp, error 2147943398)
+```

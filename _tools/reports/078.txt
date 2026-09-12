@@ -1,0 +1,40 @@
+**Did the game start?** yes / no / it closed itself
+it closed itself
+**What happened**
+Game started launching, then before the credits sound stops then it crashes, happened three times in a row
+
+**What I expected**
+The game to launch
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 4060 Laptop GPU (sm_89), driver 616.56
+- game: 007 First Light (2026)
+- exe: 007FirstLight.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] NGX initialised successfully.
+- [info] This route leaves no frame log of its own.
+- [info] If the picture only gets darker, switch the route to native.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+22:10:53:572 [15900] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+22:10:53:646 [15900] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+22:10:54:141 [15900] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+22:11:00:370 [23776] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000001B1719D530, pDevice = 0000001B1E280350, pDesc = 0000000053C2FC50, ppSwapChain = 00000012F5C9FC40) ...
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

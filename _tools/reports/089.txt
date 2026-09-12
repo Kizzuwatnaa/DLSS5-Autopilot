@@ -1,0 +1,87 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4070 SUPER (sm_89), driver 616.64
+- game: Way of the Hunter 2
+- exe: WOTH2-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: optiscaler
+
+**Diagnosis**: The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route.
+- [bad] The game refused the swapchain OptiScaler wrapped (0x887A0005).
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**ReShade.log**
+```
+...
+16:54:31:665 [22156] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/34, root_dwords: 30, descriptor_injection_cost: 0 )
+16:54:33:547 [ 6424] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/34, root_dwords: 30, descriptor_injection_cost: 0 )
+16:54:33:588 [ 8484] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/41, root_dwords: 23, descriptor_injection_cost: 0 )
+16:54:35:734 [22184] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/38, root_dwords: 26, descriptor_injection_cost: 0 )
+16:54:37:029 [ 5944] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/44, root_dwords: 20, descriptor_injection_cost: 0 )
+16:54:39:754 [22340] | WARN  | [RenoDX] mods::shader::OnCreatePipelineLayout(shader injection oversized: 45/36, root_dwords: 28, descriptor_injection_cost: 0 )
+17:02:50:680 [ 2252] | WARN  | Reference count for ID3D12CommandQueue0 object 0000015EC4A25340 (0000015EC42A1D30) is inconsistent (5).
+17:02:55:326 [ 7056] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+17:02:55:326 [ 7056] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+17:02:55:327 [ 7056] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+```
+
+**dlss5-feed.log**
+```
+16:51:43.251  dlss5-feed 0.7.0 (built Aug 31 2026 12:10:37) attached.
+16:51:43.251    host: E:\Steam\steamapps\common\Way of the Hunter 2\WOTH2\Binaries\Win64\WOTH2-Win64-Shipping.exe
+16:51:43.254  [feed] DLSS 5 add-on: renodx-dlss5.addon64 v0.2026.828.517 -- v45+ (per-present rescan, lazy feature adoption; warm-up re-create skipped) engine
+16:51:43.255  [feed] EnableHooks=2 (user-set; leaving it alone)
+16:51:49.492  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteF
+16:51:49.492  DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+16:51:49.492  [feed] effect runtime 0000015EBA3B9130 initialised
+16:51:49.531  [feed] effect runtime 0000015EBA3B9130 destroyed
+16:51:49.543  [feed] effect runtime 0000015EBA3B9130 initialised
+17:02:50.677  [feed] effect runtime 0000015EBA3B9130 destroyed
+17:02:55.328  shut down cleanly.
+```
+
+**OptiScaler.log**
+```
+...
+[12:52:30.859167] [E] StreamlineHooks::streamlineLogCallback [12-52-30][streamline][error][tid:7108][304s:834ms:876us]fenceHolder.cpp:52[updateCompletedValue] We've lost the Device
+[12:52:30.860035] [E] StreamlineHooks::streamlineLogCallback [12-52-30][streamline][error][tid:17972][304s:835ms:739us]d3d12.cpp:2627[mapResource] Failed to map buffer
+[12:52:30.860138] [W] GpuTime_Dx12::ReadGpuTime timestampData is null!
+[12:52:30.860165] [W] GpuTime_Dx12::ReadGpuTime timestampData is null!
+[12:52:30.862429] [E] LocalPresent Original present result: 887A0005
+[12:52:30.862449] [E] Util::GetDeviceRemovedReason Device removed reason: DXGI_ERROR_DEVICE_HUNG
+[12:52:30.862593] [W] StreamlineHooks::streamlineLogCallback [12-52-30][streamline][warn][tid:17972][304s:838ms:295us]dlfgPresent.cpp:2051[presentFrame] Async present failed (0x887A0005: Die GPU-Ger�t
+```
+
+**Last error**
+```
+ File "ssl.py", line 1041, in _create
+  File "ssl.py", line 1319, in do_handshake
+ConnectionResetError: [WinError 10054] Eine vorhandene Verbindung wurde vom Remotehost geschlossen
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "core\gui.py", line 2665, in work
+  File "core\installer.py", line 2248, in install
+  File "core\installer.py", line 1175, in _install_feeder_parts
+  File "core\net.py", line 223, in fetch_text
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 515, in open
+  File "urllib\request.py", line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [WinError 10054] Eine vorhandene Verbindung wurde vom Remotehost geschlossen>
+```

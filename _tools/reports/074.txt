@@ -1,0 +1,78 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5060 Laptop GPU (sm_120), driver 616.64
+- game: Video player (MPC-HC)
+- exe: mpc-hc64.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0
+- [bad] DLSS5_Feed.fx never loaded.
+- [bad] Motion vectors: texMotionVectors is not installed.
+
+**Files in the folder**
+- dxgi.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- d3dcompiler_47.dll: renamed aside
+
+**ReShade.log**
+```
+19:35:24:422 [59784] | INFO  | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0 using ReShade API version 20.
+19:35:24:672 [59784] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 00000229B66DC910, pDevice = 0000022A3E9EC980, hWnd = 0000000000070CC2, pDesc = 000000A99EAFD5F0, pFullscreenDesc
+19:35:24:877 [59784] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 0000022A3ED1DEB0, pDevice = 0000022A43921E90, hWnd = 0000000000070CC2, pDesc = 000000A99EAFCA90, pFullscreenDesc
+19:35:25:136 [44720] | WARN  | [DLSS 5 Feed 0.14.0-beta.5] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+19:35:25:144 [44720] | WARN  | Skipping device because the driver type is 'D3D_DRIVER_TYPE_WARP' or 'D3D_DRIVER_TYPE_REFERENCE'.
+19:36:28:478 [59784] | WARN  | Reference count for ID3D11Device1 object 0000022A43921E90 (0000022A3ECA88C0) is inconsistent (11).
+19:36:28:681 [44720] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+19:35:24.422  dlss5-feed 0.14.0-beta.5 (built Sep  7 2026 07:47:43) attached.
+19:35:24.422    host: C:\Users\<user>\Videos\DLSS5 Player\mpc-hc64.exe
+19:35:24.422  [feed] config: enabled=1 mode=0 hdr=-1 depth_inverted=-1 flags=-1 reset_every=1 warmup_rebuild=180 rebuild=1 log_frames=3 create_delay=60 work_resolution=100% work_upscale=1 work_sharpne
+19:35:24.422  [feed] DLSS 5 add-on: renodx-dlss5*.addon64 not found next to this add-on
+19:35:24.422  [feed] Alex's Toolkit: not present -- DLSS 5 runs a single neural pass
+19:35:24.422  [feed] Deep Fried Chicken: not present
+19:35:25.136  [feed] effect runtime 0000022A43B86010 initialised (device 0000022A3ECA88C0, window class 'VRWindow'; 1 runtime in this process)
+19:35:25.136  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=0 (texMotion
+19:35:25.136  DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+19:36:28.478  [feed] effect runtime 0000022A43B86010 destroyed -- it was the bound one (0 runtimes left)
+19:36:28.649  shut down cleanly.
+```
+
+**Last error**
+```
+= h.getresponse()
+  File "D:\python\Lib\http\client.py", line 1478, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "D:\python\Lib\http\client.py", line 343, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "D:\python\Lib\http\client.py", line 304, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\python\Lib\socket.py", line 729, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "D:\python\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+```

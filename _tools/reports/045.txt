@@ -1,0 +1,66 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+Installed with no error.
+DLSS detected
+feeder working but no options for neural rendering in the DLSS 5 panel
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 4080 (sm_89), driver 616.64
+- game: Far Cry 6
+- exe: FarCry6.exe
+- arch/api: 64-bit / DX12
+- route: feeder
+
+**Diagnosis**: Working.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0
+- [ok] ReShade loaded add-on: MFG Unlock 0.2026.903.310
+- [warn] Other ReShade add-ons are loaded: MFG Unlock
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [warn] Motion vectors measured 0% non-zero.
+- [warn] ReShade is not giving the feed a depth buffer.
+- [ok] NGX initialised successfully.
+- [ok] The driver reports DLSS as available.
+- [ok] Frames are being processed (16 logged, last was frame 23400).
+- [info] 600 frames at 22.4 fps, 35.98 ms/frame spent on the feed.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- d3dcompiler_47.dll: renamed aside
+
+**ReShade.log**
+```
+...
+19:08:46:842 [30132] | INFO  | Registered add-on "MFG Unlock" v0.2026.903.310 using ReShade API version 18.
+19:08:47:390 [30132] | INFO  | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0 using ReShade API version 20.
+19:08:47:415 [30132] | INFO  | Registered add-on "MFG Unlock" v0.2026.903.310 using ReShade API version 18.
+19:08:48:151 [35140] | INFO  | Registered add-on "DLSS 5 Feed 0.14.0-beta.5" v0.14.0.0 using ReShade API version 20.
+19:08:48:178 [35140] | INFO  | Registered add-on "MFG Unlock" v0.2026.903.310 using ReShade API version 18.
+19:08:52:043 [17476] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 000001980C2EC990, pDevice = 0000019810EB4EB0, hWnd = 00000000005F0DE2, pDesc = 0000008922CFE5F0, pFullscreenDesc
+19:08:52:199 [17476] | WARN  | [DLSS 5 Feed 0.14.0-beta.5] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+19:08:53:939 [38112] | WARN  | Successfully compiled 'E:\Far Cry 6\bin\reshade-shaders\Shaders\lumenite_Kernel.fx' in 0.958000 s with warnings:
+19:08:54:160 [30212] | WARN  | Successfully compiled 'E:\Far Cry 6\bin\reshade-shaders\Shaders\DLSS5_Feed.fx' in 1.181000 s with warnings:
+19:09:06:974 [43668] | WARN  | [MFG Unlock] mfgunlock: bounded startup discovery ended without verifying every component; the load-time trigger remains armed for late modules.
+```
+
+**dlss5-feed.log**
+```
+...
+19:12:51.751  [feed] DLSS5_Feed.fx handles gone during an effect reload; waiting for the recompile
+19:12:51.814  [feed] effects: DLSS5_Feed.fx technique found, ColorInput found, DLSS5_MV found, DLSS5_Depth found, DLSS5_Mask found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled)
+19:12:51.819  [feed] STALL frame 22818: interval 99.4 ms | feed 0.37 ms (of which NGX evaluate 0.15 ms) | outside the feed 99.0 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or anot
+19:12:55.540  [feed] 600 frames: feed CPU 0.24 ms/frame | frame interval 13.33 ms (75.0 fps) | feed CPU is 2% of the frame | feed GPU 1.55 ms/frame (12% of the frame) | worst frame 99.4 ms (feed 8.43,
+19:12:59.513  [feed] frame 23400 delivered (3840x2160, reset=0, same-device)
+19:12:59.541  [feed] MV probe (centre 64x64, frame 23400): mean |mv| 0.000 px, max 0.00 px, 0% non-zero  <-- DLSS is getting (almost) no motion vectors
+19:12:59.546  [feed] Depth probe (4x 32x32, frame 23400): min 0, max 0, mean 0, variance 0, 100% finite  <-- sampled depth is flat; inspect the depth debug view / Generic Depth settings
+19:13:03.291  [feed] 600 frames: feed CPU 0.24 ms/frame | frame interval 12.92 ms (77.4 fps) | feed CPU is 2% of the frame | feed GPU 1.55 ms/frame (12% of the frame) | worst frame 24.9 ms (feed 8.40,
+```

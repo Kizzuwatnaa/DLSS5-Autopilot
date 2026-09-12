@@ -1,0 +1,58 @@
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.64
+- game: bin
+- exe: wwzRetailEgs.exe
+- arch/api: 64-bit / DX11
+- route: feeder
+
+**Diagnosis**: The feed crashed after starting - a feeder bug; try another feeder build.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [bad] The feed recorded a crash (0xE06D7363) while running the D3D12 evaluate (later faults in this process are not recorded).
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+22:23:44:561 [16676] | INFO  | Registered add-on "DLSS 5 Feed 0.13.1-beta.1" v0.13.1.0 using ReShade API version 20.
+22:23:44:568 [16676] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+22:23:44:892 [16676] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000019B956C7760, pDevice = 0000019C1FC5E090, pDesc = 0000001E396FF3B0, ppSwapChain = 0000019B972016B8) ...
+22:23:45:000 [16676] | WARN  | [DLSS 5 Feed 0.13.1-beta.1] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+22:23:50:819 [16676] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+22:23:50:820 [16676] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+22:23:52:628 [16676] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 0000019ED11C3AA0 (0000019ED1135900) is inconsistent (1).
+22:23:52:628 [16676] | WARN  | [DLSS 5 Feed 0.13.1-beta.1] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally
+22:23:52:792 [16676] | WARN  | Reference count for ID3D12DescriptorHeap object 0000019CB3FC7EE0 (0000019ED259ECA0) is inconsistent (1).
+22:23:52:801 [16676] | WARN  | Reference count for ID3D12DescriptorHeap object 0000019CA2C23560 (0000019C8A9802E0) is inconsistent (1).
+```
+
+**dlss5-feed.log**
+```
+...
+22:23:52.429  [feed] Output 1920x1080 R8G8B8A8_UNORM via D3D11->D3D12 (d3d12 flags=0x24 UAV)
+22:23:52.429  [feed] Depth  1920x1080 R32_FLOAT via D3D12->D3D11
+22:23:52.430  [feed] MV     1920x1080 R16G16_FLOAT via D3D12->D3D11
+22:23:52.430  [feed] Mask   1920x1080 ? via D3D12->D3D11
+22:23:52.435  [feed] copy-back and work-resolution resample shaders ready
+22:23:52.492  [feed] fsr1 shaders: ok (EASU + RCAS expand-back available)
+22:23:52.493  [feed] GPU timing on (queue timestamp frequency 1000000000 Hz)
+22:23:52.554  [feed] feature ready: 1920x1080 DLAA, flags=74 (SDR MVLowRes DepthInverted AutoExposure), color R8G8B8A8_UNORM -> output R8G8B8A8_UNORM, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+22:23:52.628  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+22:23:52.628  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+22:23:52.655  ### CRASH RECORDED ###  exception 0xE06D7363 at 00007FFAFF25187A in C:\WINDOWS\System32\KERNELBASE.dll; this add-on was last doing: running the D3D12 evaluate (later faults in this proce
+22:23:52.656  [feed] crash dump FAILED (D:\WWZtest5\World.War.Z.Undead.Sea-CODEX\World.War.Z.Undead.Sea-CODEX\World War Z Undead Sea\en_us\client\bin\pc\dlss5-feed-crash.dmp, error 2147943398)
+```

@@ -1,0 +1,65 @@
+**Did the game start?** yes / no / it closed itself
+
+**What happened**
+
+
+**What I expected**
+
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.86
+- game: Detroit: Become Human
+- exe: DetroitBecomeHuman.exe
+- arch/api: 64-bit / Vulkan (imports vulkan-1.dll, no DXGI)
+- route: feeder
+
+**Diagnosis**: The feed crashed after starting - a feeder bug; try another feeder build.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [warn] Motion vectors measured 0% non-zero.
+- [warn] ReShade is not giving the feed a depth buffer.
+- [bad] The feed recorded a crash (0xC0000005) while waiting for the result (Vulkan) (later faults in this process are not recorded).
+
+**Files in the folder**
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 64-bit Vulkan layer: registered
+
+**ReShade.log**
+```
+...
+00:54:12:622 [14768] | WARN  | [DLSS 5 Feed 0.13.1-beta.1] [DLSS 5 Feed] DLSS5_Feed.fx is not loaded (technique/textures missing) -- install it into reshade-shaders\Shaders.
+00:54:15:754 [21760] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+00:54:16:929 [25828] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+00:54:16:930 [14768] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+00:54:16:932 [ 5384] | WARN  | Ignoring LoadLibrary('msasn1.dll') call to avoid possible deadlock.
+00:54:16:932 [ 5384] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+00:54:16:933 [14768] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+00:54:16:933 [14768] | WARN  | Ignoring LoadLibrary('devobj.dll') call to avoid possible deadlock.
+00:54:16:933 [14768] | WARN  | Ignoring LoadLibrary('Advapi32.dll') call to avoid possible deadlock.
+00:54:16:934 [ 5384] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+00:54:16:934 [14768] | WARN  | Ignoring LoadLibrary('kernel32.dll') call to avoid possible deadlock.
+00:54:16:937 [14108] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+00:56:12:392 [14768] | WARN  | A depth-stencil resource was destroyed while still in use.
+```
+
+**dlss5-feed.log**
+```
+...
+00:55:59.888  [feed] sync probe: n=6061 (waited out=6061) sig=1 wait=1 | d12 in=6060 out=6060 | vk in=6060 out=6060
+00:56:00.504  [feed] overlay: rebuilding the feature to apply a creation-time setting
+00:56:00.520  [feed] config: enabled=1 mode=0 hdr=-1 depth_inverted=-1 flags=-1 reset_every=0 warmup_rebuild=180 rebuild=0 log_frames=3 create_delay=60 work_resolution=100% work_upscale=0 work_sharpne
+00:56:26.703  [feed] an external frame pacer is presenting this swapchain: 7623 presents against 6098 frames fed since the first fed frame (1.25x). NVIDIA Smooth Motion does exactly this, and on Vulka
+00:56:49.958  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0000000000000000) at 00007FF6AD6D4067 in E:\STEAM\steamapps\common\Detroit Become Human\DetroitBecomeHuman.exe; this add-on 
+00:56:49.964  [feed] crash dump FAILED (E:\STEAM\steamapps\common\Detroit Become Human\dlss5-feed-crash.dmp, error 2147943398)
+00:56:49.964  ### CRASH RECORDED ###  exception 0xC0000005 (writing address 0000000000000000) at 00007FF6AD6D4067 in E:\STEAM\steamapps\common\Detroit Become Human\DetroitBecomeHuman.exe; this add-on 
+00:56:49.964  [feed] crash stack, by module (innermost first): DetroitBecomeHuman.exe <- KERNEL32.DLL <- ntdll.dll
+00:56:49.970  [feed] crash dump FAILED (E:\STEAM\steamapps\common\Detroit Become Human\dlss5-feed-crash.dmp, error 2147943398)
+```

@@ -1,0 +1,46 @@
+**Did the game start?** it started and ran
+
+**What happened**
+no dlss5 =(
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.92
+- game: S.T.A.L.K.E.R.: Call of Pripyat
+- exe: xrEngine.exe
+- arch/api: 32-bit / DX11 (loads d3d11.dll at run time (xrRender_R4.dll beside the exe imports it); no static graphics import)
+- route: feeder
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+03:18:24:662 [25580] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+03:18:24:823 [25580] | INFO  | Calling IDXGIFactory::CreateSwapChain:
+03:18:24:823 [25580] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0E4CD790, pDevice = 0E3C4E90, pDesc = 001AF97C, ppSwapChain = 001AF93C) ...
+03:18:25:415 [25580] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 0.15.1" v0.0.0.0 using ReShade API version 20.
+03:18:25:545 [25580] | INFO  | Calling IDXGIFactory::CreateSwapChain:
+03:18:25:545 [25580] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 02D00558, pDevice = 0E242798, pDesc = 0A6A6C7C, ppSwapChain = 0A6A6C14) ...
+```
+
+**dlss5-feed.log**
+```
+...
+03:18:24.990  [feed32] effect runtime 0E53BEB0 destroyed -- it was the bound one (0 runtimes left)
+03:18:24.991  shut down cleanly.
+03:18:25.415  dlss5-feed32 0.15.1 (built Sep  9 2026 07:48:17) attached AGAIN in the same process (ReShade loaded the add-on a second time; the log above is the earlier attach).
+03:18:25.415    host game: C:\Program Files (x86)\Steam\steamapps\common\Stalker Call of Pripyat\bin\xrengine.exe
+03:18:25.415  [feed32] config: enabled=1 mode=2 hdr=-1 depth_inverted=-1 flags=-1 reset_every=0 log_frames=3 host_window=1 host_gpu_priority=0 work_resolution=100% work_upscale=0 work_sharpness=0.30 a
+03:18:25.415  [feed32] Deep Fried Chicken: not present in host64\
+03:18:25.415  [feed32] OptiScaler: not present in host64\
+03:18:25.554  [feed32] effect runtime 0E33B6C8 initialised (device 0E48F20C, window class '_XRAY_1.5'; 1 runtime in this process)
+03:18:25.555  [feed32] host DLSS 5 settings loaded into the overlay page: NeuralUplift=1 NREnableUpscaling=0 NRPreset=0(default) NRStyle=0(default) NRIntensity=1(default) NRGlobalTone=1(default) NRLoc
+03:18:25.555  [feed32] effects: technique MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> none (not installed), depth reversed=1
+```

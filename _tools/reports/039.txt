@@ -1,0 +1,46 @@
+**Did the game start?** yes / no / it closed itself
+yes
+**What happened**
+Nothing changed when activating NR. 0 visual difference and 0 FPS loss.
+Mind you, with Optiscaler it works.
+
+**What I expected**
+To work
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.86
+- game: The First Descendant
+- exe: M1-Win64-Shipping.exe
+- arch/api: 64-bit / DX12
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] NGX initialised successfully.
+- [info] This route leaves no frame log of its own.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+08:57:52:037 [17608] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000000000CC2CB50, pDevice = 0000000139437E50, pDesc = 000000006DC0D460, ppSwapChain = 0000000000F7F288) ...
+08:57:52:134 [17608] | WARN  | Ignoring LoadLibrary('DBGHELP.DLL') call to avoid possible deadlock.
+08:57:55:567 [17608] | WARN  | Ignoring LoadLibrary('kernel32') call to avoid possible deadlock.
+08:57:55:569 [ 3356] | WARN  | Ignoring LoadLibrary('F:\Games\SteamLibrary\steamapps\common\The First Descendant\M1\Plugins\NexonJYP\ThirdPartyLibraries\Win64\jypc.dll') call to avoid possible deadloc
+08:57:55:584 [21136] | WARN  | Ignoring LoadLibrary('api-ms-win-core-winrt-l1-1-0.dll') call to avoid possible deadlock.
+08:57:55:585 [ 3356] | WARN  | Ignoring LoadLibrary('F:\Games\SteamLibrary\steamapps\common\The First Descendant\M1\Plugins\NexonJYP\ThirdPartyLibraries\Win64\jypc.dll') call to avoid possible deadloc
+08:57:55:600 [ 3356] | WARN  | Ignoring LoadLibrary('F:\Games\SteamLibrary\steamapps\common\The First Descendant\M1\Plugins\NexonJYP\ThirdPartyLibraries\Win64\jypc.dll') call to avoid possible deadloc
+09:01:39:765 [ 9388] | WARN  | Reference count for ID3D12CommandQueue0 object 0000000139437E50 (00000001398B4530) is inconsistent (11).
+09:01:39:765 [ 9388] | WARN  | Reference count for IDXGISwapChain4 object 000000012075E310 (000000011F9B03C0) is inconsistent (1).
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

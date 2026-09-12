@@ -1,0 +1,34 @@
+**Did the game start?** yes
+
+**What happened**
+Games starts with good performance but the colour profile and brightness is off.
+Main character skin appears red by default and all faces are heavily shadowed even if facing the sun
+
+
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 4080 (sm_89), driver 616.64
+- game: Assassin's Creed Black Flag Resynced
+- exe: ACBlackFlag.exe
+- arch/api: 64-bit / DX12
+- route: feeder
+
+**Diagnosis**: Not started since the install - run the game once, then check again.
+- [warn] The game has not been started since the install.
+- [info] If you DID start it, it launches something other than the game's executable.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

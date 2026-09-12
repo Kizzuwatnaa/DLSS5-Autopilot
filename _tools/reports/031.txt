@@ -1,0 +1,31 @@
+**Did the game start?** 
+Not tested. I did not install the files because the preview appears to choose the wrong graphics API path.
+
+**What happened**
+Call of Juarez: Gunslinger is a 32-bit Direct3D 9.0c game, but Autopilot 1.7.0 detects CoJGunslinger.exe as "32-bit / Unknown". The install preview then plans to write dxgi.dll and use the feeder + host64 path, with no DXVK d3d9.dll step.
+
+**What I expected**
+I expected the game to be detected as 32-bit / DX9 and to use the DirectX 9 route through DXVK (d3d9.dll -> Vulkan -> feeder + 32-bit Vulkan layer + host64 helper).
+
+---
+- version: 1.7.0
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.64
+- game: Call of Juarez Gunslinger
+- exe: CoJGunslinger.exe
+- arch/api: 32-bit / Unknown
+- route: feeder
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

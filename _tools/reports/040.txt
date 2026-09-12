@@ -1,0 +1,29 @@
+**Did the game start?** 
+Not about a game, its the program itself
+
+**What happened**
+Program text is not readable at 4k resolution on my computer (See Screenshots)
+
+**What I expected**
+Game List to be readable
+
+<img width="3840" height="2015" alt="Image" src="https://github.com/user-attachments/assets/e5a12eef-d436-4e65-b53d-a328ed44cc29" />
+<img width="3840" height="2160" alt="Image" src="https://github.com/user-attachments/assets/489bb96e-3b29-4bf8-b247-8e939574bf79" />
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.64
+- game: -
+- exe: -
+- arch/api: - / -
+- route: -
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,50 @@
+**Did the game start?** yes
+
+**What happened**
+
+Miss RTX 40 MFG configuration, the game doesnt identified RTX40 asi.
+
+**What I expected**
+
+To load RTX 40 MFG.
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 616.64
+- game: Alan Wake 2
+- exe: AlanWake2.exe
+- arch/api: 64-bit / DX12
+- route: upstream
+
+**Diagnosis**: Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [ok] ReShade loaded add-on: Universal RTX 40 MFG Unlock V1.2 1.2.0.22
+- [warn] Other ReShade add-ons are loaded: Universal RTX 40 MFG Unlock V1.2
+- [ok] NGX initialised successfully.
+- [info] This route leaves no frame log of its own.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- RTX40MFG-UI.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+11:30:31:804 [21424] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:30:32:393 [21424] | INFO  | Registered add-on "Universal RTX 40 MFG Unlock V1.2" v1.2.0.22 using ReShade API version 20.
+11:30:32:566 [21424] | INFO  | Calling IDXGIFactory::CreateSwapChain:
+11:30:32:566 [21424] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000001C0D71B3530, pDevice = 000001C0DB349580, pDesc = 0000004C810F0590, ppSwapChain = 0000004C810F0170) ...
+11:30:32:664 [21424] | WARN  | Reference count for IDXGIAdapter0 object 000001C0DE30DF90 (000001C0D8E527F0) is inconsistent (2).
+11:30:32:664 [21424] | WARN  | Reference count for ID3D11Device0 object 000001C0DB349580 (000001C0DB1A0100) is inconsistent (1).
+11:30:32:665 [21424] | WARN  | Reference count for IDXGIFactory0 object 000001C0D71B3530 (000001C0DB142A00) is inconsistent (4).
+11:30:32:714 [30308] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:30:32:717 [30308] | INFO  | Registered add-on "Universal RTX 40 MFG Unlock V1.2" v1.2.0.22 using ReShade API version 20.
+11:30:34:777 [30308] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000001C0DDFAC970, pDevice = 000001C0FAFB39E0, pDesc = 000001C0DCFEA220, ppSwapChain = 0000036E52060608) ...
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

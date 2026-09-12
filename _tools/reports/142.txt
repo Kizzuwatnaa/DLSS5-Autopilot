@@ -1,0 +1,62 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+My game crashed and gave me an “out of video memory” error, even though I’m not actually running out of VRAM. It has also happened with other games.
+
+I’m also having an issue with ReShade. At first, everything was working perfectly, but then it suddenly stopped working and started saying that it couldn’t find the `.fx` files.
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 616.64
+- game: Half Sword Demo
+- exe: HalfSwordUE5-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.15.1 0.15.1.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [bad] DLSS5_Feed.fx never loaded.
+- [bad] Motion vectors: LumeniteFX Kernel is not installed.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+18:29:09:395 [21916] | INFO  | Registered add-on "DLSS 5 Feed 0.15.1" v0.15.1.0 using ReShade API version 20.
+18:29:09:410 [21916] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+18:29:09:592 [21916] | WARN  | Ignoring LoadLibrary('msasn1.dll') call to avoid possible deadlock.
+18:29:09:612 [ 3512] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+18:29:09:923 [21916] | INFO  | Registered add-on "DLSS 5 Feed 0.15.1" v0.15.1.0 using ReShade API version 20.
+18:29:09:937 [21916] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+18:29:10:426 [21916] | INFO  | Registered add-on "DLSS 5 Feed 0.15.1" v0.15.1.0 using ReShade API version 20.
+18:29:10:439 [21916] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+18:29:10:597 [11812] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+18:29:11:068 [21916] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000001FA2374E1A0, pDevice = 000001FA23802120, pDesc = 0000008EEEF7D7A0, ppSwapChain = 0000008EEEF7D748) ...
+18:29:11:805 [21916] | WARN  | Ignoring LoadLibrary('xaudio2_9.dll') call to avoid possible deadlock.
+```
+
+**dlss5-feed.log**
+```
+...
+18:29:10.432  [feed] EnableHooks=2 (user-set; leaving it alone)
+18:29:10.432  [feed] NeuralUplift=1 (user-set; leaving it alone)
+18:29:10.432  [feed] NREnableUpscaling=0 (user-set; leaving it alone)
+18:29:10.433  [feed] Alex's Toolkit: not present -- DLSS 5 runs a single neural pass
+18:29:10.433  [feed] Deep Fried Chicken: not present
+18:29:10.433  [feed] OptiScaler: not present
+18:29:11.328  [feed] swapchain colour space: sRGB G2.2 BT.709 (SDR)
+18:29:11.331  [feed] effect runtime 000001FA283BAE00 initialised (device 000001FA23DC7760, window class 'UnrealWindow'; 1 runtime in this process)
+18:29:11.331  [feed] effects: DLSS5_Feed.fx technique MISSING, ColorInput MISSING, DLSS5_MV MISSING, DLSS5_Depth MISSING, DLSS5_Mask absent (older shader: no bias mask), DLSS5_MV_PROVIDER=3 (LumeniteF
+18:29:11.331  [feed] DLSS5_Feed.fx has not resolved yet (ReShade may still be compiling); waiting 10 s before calling it missing
+18:29:11.335  [feed] effect runtime 000001FA283BAE00 destroyed -- it was the bound one (0 runtimes left)
+18:29:11.338  [feed] swapchain colour space: sRGB G2.2 BT.709 (SDR)
+18:29:11.340  [feed] effect runtime 000001FA283BAE00 initialised (device 000001FA23DC7760, window class 'UnrealWindow'; 1 runtime in this process)
+```

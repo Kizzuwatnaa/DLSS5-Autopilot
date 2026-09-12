@@ -1,0 +1,42 @@
+**What happened**
+DLSS 5 doesn't work in Indiana Jones and the Great Circle (Steam version)
+
+**What I expected**
+
+
+---
+- version: 1.6.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.64
+- game: Indiana Jones and the Great Circle
+- exe: TheGreatCircle.exe
+- arch/api: 64-bit / Vulkan
+- route: bridge
+
+**Files in the folder**
+- dlss5-bridge.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- ReShade 64-bit Vulkan layer: registered
+
+**ReShade.log**
+```
+...
+12:47:25:775 [18200] | WARN  | Ignoring LoadLibrary('devobj.dll') call to avoid possible deadlock.
+12:47:25:781 [ 2424] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+12:47:25:795 [18200] | WARN  | Ignoring LoadLibrary('api-ms-win-core-synch-l1-2-0') call to avoid possible deadlock.
+12:47:25:799 [18200] | WARN  | Ignoring LoadLibrary('api-ms-win-core-synch-l1-2-0') call to avoid possible deadlock.
+12:47:25:800 [ 1684] | WARN  | Ignoring LoadLibrary('PSAPI.DLL') call to avoid possible deadlock.
+12:47:25:802 [18200] | WARN  | Ignoring LoadLibrary('kernel32') call to avoid possible deadlock.
+12:47:25:807 [ 1784] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+12:47:26:188 [ 1684] | WARN  | [DLSS 5 Neural Rendering] DLSS5 Generic: signed runtime sha256 6EB209E764F39872625DEBD6ABAF45E2BB6322F6F270F781F70C059AE30B3927 (custom runtime accepted; untested build,
+12:47:26:222 [ 6792] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+12:47:29:372 [17832] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+12:47:29:373 [15516] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+12:47:29:374 [18048] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

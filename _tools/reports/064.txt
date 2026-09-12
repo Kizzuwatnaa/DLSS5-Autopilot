@@ -1,0 +1,58 @@
+**Did the game start?** yes / no / it closed itself
+yes
+
+**What happened**
+S.T.A.L.K.E.R. 2 starts normally and reaches the main menu, but loading a save hangs indefinitely on the loading screen when the neural-upstream add-on nvngx.dll.addon64 is active.
+
+I isolated the issue with an A/B test. With the same Autopilot/ReShade installation and the same game/save/config, renaming only nvngx.dll.addon64 to nvngx.dll.addon64.disabled allows the save to load normally. Restoring the file causes the loading hang again.
+
+This reproduces on Autopilot 1.7.2, and I previously reproduced the same behavior on 1.7.1.
+
+The ReShade log shows Neural Upstream loading successfully and NR enabled, then the normal NR Feature 18 creation fails with 0xBAD0000B. It falls back to the snippet route, where Feature 18 creation succeeds and NR starts processing.
+
+The log also shows repeated D3D12 device creation/destruction/reset activity around startup and loading.
+
+Additional isolation: disabling only nvngx.dll.addon64 fixes the issue while leaving dxgi.dll, ReShade, and the rest of the Autopilot installation unchanged.
+
+[ReShade.log](https://github.com/user-attachments/files/31929406/ReShade.log)
+
+**What I expected**
+The save should load into the game world normally with neural-upstream enabled, with DLSS NR running pre-upscale, without hanging on the loading screen.
+
+---
+- version: 1.7.2
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.64
+- game: S.T.A.L.K.E.R. 2: Heart of Chornobyl
+- exe: Stalker2-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: upstream
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**ReShade.log**
+```
+...
+16:53:17:074 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:075 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:075 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:076 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:076 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:076 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:077 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:093 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:093 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:094 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:094 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:095 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:095 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+16:53:17:099 [30200] | WARN  | Ignoring LoadLibrary('kernelbase.dll') call to avoid possible deadlock.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,39 @@
+**Did the game start?** it closed itself
+
+**What happened**
+Small game splash screen. Then crash to desktop.
+
+**What I expected**
+Game to load and run with DLSS5 via reshade.
+
+
+---
+- version: 1.7.3
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 616.64
+- game: Lonely Mountains - Snow Riders
+- exe: LMSR_Windows64_Steam.exe
+- arch/api: 64-bit / DX11 (Unity player beside the exe - Direct3D 11 on Windows unless the game is started with -force-d3d12, -force-vulkan or -force-glcore)
+- route: feeder
+
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+
+Nothing related to error in autopilog.log.

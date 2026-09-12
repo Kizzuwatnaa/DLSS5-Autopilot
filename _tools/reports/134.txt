@@ -1,0 +1,42 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+Tried Remeber me and bunch of old games on DX9, pre 1.8 they worked great now they do not.
+I also changed addon to DFC. DX11 games work great with it, I basically replaced renodx addon with DFC and everything good to go.
+Same thing did for DX9 but it stoppped working.
+
+---
+- version: 1.8.0
+- gpu: NVIDIA GeForce RTX 5080 Laptop GPU (sm_120), driver 616.92
+- game: Remember Me
+- exe: RememberMe.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: -
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+...
+18:49:35.686  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.690  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.701  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.711  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.722  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.732  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread
+18:49:35.743  [feed32] frame fed from thread 26960, not the usual 32888 -- Present is off-thread; further thread changes not logged
+18:49:35.754  [feed32] the host answered the build in 63 ms
+18:49:35.809  [feed32] fsr1 shaders: ok (EASU + RCAS expand-back available)
+18:49:35.809  [feed32] shared set ready: 2560x1440 (100% of 2560x1440) color fmt=28 output fmt=28 (host ngx 0x00000001, DLSS)
+18:49:35.822  [feed32] frame 1 delivered (2560x1440, reset=0)
+18:49:35.826  [feed32] frame 2 delivered (2560x1440, reset=0)
+18:49:36.240  [feed32] frame 3 delivered (2560x1440, reset=0)
+18:49:51.353  [feed32] 600 frames: feed CPU 0.33 ms/frame | frame interval 48.71 ms (20.5 fps) | feed is 1% of the frame | pipe write 0.01 ms mean, 0.02 ms worst
+```

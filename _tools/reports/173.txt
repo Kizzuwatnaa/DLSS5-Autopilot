@@ -1,0 +1,55 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+nfs payback game crashed after the magic Applied, first time it got a error message sayting ................disconnected and ..........., nxt its opens black screen crashes
+
+---
+- version: 1.8.1
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 616.92
+- game: Need for Speed Payback
+- exe: NeedForSpeedPayback.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (named in the exe); no static graphics import)
+- route: feeder
+
+**Diagnosis**: Inconclusive - the feed did not get far enough to tell.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 0.15.1 0.15.1.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+
+**ReShade.log**
+```
+10:41:47:933 [61736] | INFO  | Registered add-on "DLSS 5 Feed 0.15.1" v0.15.1.0 using ReShade API version 20.
+10:41:47:941 [61736] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+10:41:49:118 [61828] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 00000000044AC940, pDevice = 00000000648AD6D0, pDesc = 000000003C86F630, ppSwapChain = 00000000415730D8) ...
+10:41:52:227 [106200] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook(NVSDK_NGX_D3D12_EvaluateFeaturehooked (0x00007ff832208740 ) (0x00007ff8376ed868))
+10:41:52:227 [106200] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+10:41:52:228 [106200] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook(NVSDK_NGX_D3D12_EvaluateFeaturehooked (0x00007ff80bafca90 ) (0x00007ff8376ed888))
+10:41:52:228 [106200] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+10:41:55:369 [106200] | WARN  | Reference count for ID3D12GraphicsCommandList0 object 000000035DB51770 (000000035D228580) is inconsistent (1).
+10:41:55:370 [106200] | WARN  | [DLSS 5 Feed 0.15.1] [DLSS 5 Feed] stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See 
+```
+
+**dlss5-feed.log**
+```
+...
+10:41:55.255  [feed] Output 1920x1080 R8G8B8A8_UNORM via D3D11->D3D12 (d3d12 flags=0x24 UAV)
+10:41:55.256  [feed] Color  1920x1080 R8G8B8A8_UNORM via D3D12->D3D11
+10:41:55.256  [feed] Depth  1920x1080 R32_FLOAT via D3D12->D3D11
+10:41:55.257  [feed] MV     1920x1080 R16G16_FLOAT via D3D12->D3D11
+10:41:55.258  [feed] Mask   1920x1080 ? via D3D12->D3D11
+10:41:55.258  [feed] GPU timing on (queue timestamp frequency 1000000000 Hz)
+10:41:55.316  [feed] feature ready: 1920x1080 DLAA, flags=74 (SDR MVLowRes DepthInverted AutoExposure), color R8G8B8A8_UNORM -> output R8G8B8A8_UNORM, depth R32_FLOAT (reversed), mv R16G16_FLOAT
+10:41:55.322  [feed] frame 1 delivered (1920x1080 at 100% -> 1920x1080, reset=1, jitter +0.000,+0.000)
+10:41:55.369  [feed] evaluate raised 0xC0000005 (reading address FFFFFFFFFFFFFFFF) (caught; nothing submitted)
+10:41:55.369  [feed] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed.addon64 <- dxgi.dll <- NeedForSpeedPayback
+10:41:55.370  [feed] evaluate raised exception 0xC0000005 (caught; nothing was submitted)
+10:41:55.370  stopped: the DLSS evaluate crashed (the DLSS 5 add-on may be incompatible with this game/resolution). The game renders normally. See dlss5-feed.log for the detail.
+```
