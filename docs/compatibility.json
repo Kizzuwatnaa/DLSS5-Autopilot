@@ -513,6 +513,21 @@
     }
    }
   },
+  "s2_sp64_ship.exe": {
+   "drivers": {
+    "616.64": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Call of Duty: WWII - Multiplayer",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "skyrimse.exe": {
    "drivers": {
     "616.92": {
@@ -627,6 +642,6 @@
    }
   }
  },
- "generated": "2026-09-12T15:13:18Z",
- "reports": 53
+ "generated": "2026-09-12T15:14:28Z",
+ "reports": 54
 }
