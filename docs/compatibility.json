@@ -319,6 +319,21 @@
     }
    }
   },
+  "jdm-win64-shipping.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "JDM: Japanese Drift Master",
+   "routes": {
+    "upstream": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "lostplanetdx10.exe": {
    "drivers": {
     "616.64": {
@@ -597,6 +612,6 @@
    }
   }
  },
- "generated": "2026-09-12T14:33:29Z",
- "reports": 51
+ "generated": "2026-09-12T14:38:47Z",
+ "reports": 52
 }
