@@ -319,6 +319,21 @@
     }
    }
   },
+  "gtavlauncher.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Grand Theft Auto V",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "halfswordue5-win64-shipping.exe": {
    "drivers": {
     "616.64": {
@@ -680,6 +695,6 @@
    }
   }
  },
- "generated": "2026-09-13T02:44:44Z",
- "reports": 57
+ "generated": "2026-09-13T02:49:25Z",
+ "reports": 58
 }
