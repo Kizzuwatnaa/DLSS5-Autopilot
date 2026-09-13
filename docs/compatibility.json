@@ -679,6 +679,21 @@
     }
    }
   },
+  "wolfneworder_x64.exe": {
+   "drivers": {
+    "581.80": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Wolfenstein: The New Order",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "yakuzakiwami2_r.exe": {
    "drivers": {
     "616.92": {
@@ -695,6 +710,6 @@
    }
   }
  },
- "generated": "2026-09-13T02:49:25Z",
- "reports": 58
+ "generated": "2026-09-13T03:38:43Z",
+ "reports": 59
 }
