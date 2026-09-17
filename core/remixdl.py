@@ -190,39 +190,53 @@ def install(mod_url: str, game_dir: Path, log=None, progress=None) -> list[str]:
     pre = f"{root}/" if root else ""
     written: list[str] = []
     backups: list[str] = []
-    with zipfile.ZipFile(z) as zf:
-        members = [i for i in zf.infolist()
-                   if not i.is_dir() and i.filename.startswith(pre)
-                   and i.filename != pre]
-        for i, item in enumerate(members):
-            rel = item.filename[len(pre):]
-            if not rel:
-                continue
-            target = _safe_target(game_dir, rel)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            bak = target.with_name(target.name + BACKUP_SUFFIX)
-            if target.is_file() and not bak.exists():
-                try:
-                    bak.write_bytes(target.read_bytes())
-                    backups.append(str(bak.relative_to(game_dir)).replace("\\", "/"))
-                except OSError:
-                    log(f"      WARNING: could not back up {rel}")
-            with zf.open(item) as src, open(target, "wb") as out:
-                while True:
-                    chunk = src.read(1 << 20)
-                    if not chunk:
-                        break
-                    out.write(chunk)
-            written.append(rel.replace("\\", "/"))
-            if progress and len(members) > 50 and i % 25 == 0:
-                progress(int(i * 100 / len(members)),
-                         f"unpacking {i}/{len(members)}")
-
-    record = {
-        "mod_url": mod_url, "tag": f.tag, "asset": f.name,
-        "files": written, "backups": backups,
-    }
-    (game_dir / RECORD).write_text(json.dumps(record, indent=2), encoding="utf8")
+    complete = False
+    try:
+        with zipfile.ZipFile(z) as zf:
+            members = [i for i in zf.infolist()
+                       if not i.is_dir() and i.filename.startswith(pre)
+                       and i.filename != pre]
+            for i, item in enumerate(members):
+                rel = item.filename[len(pre):]
+                if not rel:
+                    continue
+                target = _safe_target(game_dir, rel)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                bak = target.with_name(target.name + BACKUP_SUFFIX)
+                if target.is_file() and not bak.exists():
+                    try:
+                        bak.write_bytes(target.read_bytes())
+                        backups.append(str(bak.relative_to(game_dir)).replace("\\", "/"))
+                    except OSError:
+                        log(f"      WARNING: could not back up {rel}")
+                # on the record before the first byte: a copy that fails half
+                # way still left a file that remove() has to take out
+                written.append(rel.replace("\\", "/"))
+                with zf.open(item) as src, open(target, "wb") as out:
+                    while True:
+                        chunk = src.read(1 << 20)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                if progress and len(members) > 50 and i % 25 == 0:
+                    # (percent, text): the download's calls are (bytes, bytes)
+                    progress(int(i * 100 / len(members)),
+                             f"unpacking {i}/{len(members)}")
+        complete = True
+    finally:
+        # Written whatever happened above. A failure part way (a full drive,
+        # a progress callback that raised) used to leave every file already
+        # copied in the game folder with no record, so nothing could take
+        # the mod back out.
+        if written or backups:
+            record = {
+                "mod_url": mod_url, "tag": f.tag, "asset": f.name,
+                "files": written, "backups": backups, "complete": complete,
+            }
+            try:
+                (game_dir / RECORD).write_text(json.dumps(record, indent=2), encoding="utf8")
+            except OSError as e:
+                log(f"      could not write '{RECORD}': {e}")
     log(f"      {len(written)} files written; '{RECORD}' records them so the "
         f"mod can be taken back out")
     return written

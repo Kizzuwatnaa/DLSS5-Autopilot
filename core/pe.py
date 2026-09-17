@@ -226,22 +226,74 @@ API_PROXY = {
 }
 
 
-def _has_d3d12_agility_sdk(folder: Path) -> bool:
+def _fits(p: Path, bits: int | None) -> bool:
+    """Could an executable of `bits` load this file at all?
+
+    A folder can hold both builds of a game. Subnautica ships Subnautica.exe
+    and Subnautica32.exe side by side, and the 64-bit build's runtimes
+    labelled the 32-bit executable DX12 (#190). A 32-bit process cannot load
+    a 64-bit DLL, so for a 32-bit exe only a 32-bit file is evidence.
+    Unknown bitness keeps the old reading.
+    """
+    if bits != 32:
+        return True
+    try:
+        return exe_bitness(p) == 32
+    except PEError:
+        return False
+
+
+def _has_d3d12_agility_sdk(folder: Path, bits: int | None = None) -> bool:
     """A `D3D12/D3D12Core.dll` beside the exe: the Agility SDK, loaded at
     run time via SetD3D12SDKPath rather than a static import - so a game
     that only statically links d3d11.dll can still be a D3D12 title. Seen
     on Resident Evil Requiem, which ships DLSS Frame Generation and Ray
-    Reconstruction (DX12-only NGX features) as further evidence."""
+    Reconstruction (DX12-only NGX features) as further evidence.
+
+    `bits` is the executable's: a file it could not load says nothing
+    about it (#190)."""
     try:
-        if (folder / "D3D12" / "D3D12Core.dll").is_file():
+        core = folder / "D3D12" / "D3D12Core.dll"
+        if core.is_file() and _fits(core, bits):
             return True
-        names = {f.name.lower() for f in folder.iterdir() if f.is_file()}
+        files = {f.name.lower(): f for f in folder.iterdir() if f.is_file()}
     except OSError:
         return False
-    return "nvngx_dlssg.dll" in names or "nvngx_dlssd.dll" in names
+    return any(n in files and _fits(files[n], bits)
+               for n in ("nvngx_dlssg.dll", "nvngx_dlssd.dll"))
 
 
-def _ships_dlss(folder: Path) -> str:
+# Files that mean another DLSS/NGX tool is installed in the folder. The same
+# file list as installer.other_ngx_hooks, kept here because installer imports
+# pe. Narrower on add-ons on purpose: the installer warns about ANY foreign
+# add-on (it hooks the same swap chain), but here a match throws away the
+# game's own DLSS evidence, and a RenoDX HDR mod brings no NGX file - so only
+# an add-on whose name says DLSS/NGX (a swapper's overlay, #250) counts.
+_OUR_ADDONS = ("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-bridge.addon64",
+               "renodx-dlss5.addon64", "renodx-dlss.addon64", "nvngx.dll.addon64",
+               "standalone-dlssnr.addon64", "rtx40mfg-ui.addon64",
+               # the old bridge's name, which an install of ours may still hold
+               "dlss5-dx11-bridge.addon64")
+# "dlss" covers dlssg/dlssd, "ngx" covers nvngx
+_NGX_ADDON_WORDS = ("dlss", "ngx", "swapper")
+_FOREIGN_NGX_FILES = ("optiscaler.ini", "nvngx.ini", "fakenvapi.ini", "dlss-enabler.dll",
+                      "dlss-enabler-upscaler.dll", "nvngx-wrapper.dll",
+                      "dlssg_to_fsr3_amd_is_better.dll", "dlssg_to_fsr3.ini",
+                      "nvngx.dll_dlssnr.dll", "dlssg_sm86.ini", "nvngx_dlssnr.ini")
+
+
+def _foreign_ngx(names: set[str]) -> str:
+    """The first file (lower-case) of another DLSS tool in the folder, or ""."""
+    for n in sorted(names):
+        if n in _FOREIGN_NGX_FILES:
+            return n
+        if n.endswith((".addon64", ".addon32")) and n not in _OUR_ADDONS \
+                and any(w in n for w in _NGX_ADDON_WORDS):
+            return n
+    return ""
+
+
+def _ships_dlss(folder: Path, bits: int | None = None) -> str:
     """The name of a DLSS runtime the GAME shipped, or "".
 
     Evidence that a title is not what its imports say: NGX runs on D3D11,
@@ -266,10 +318,21 @@ def _ships_dlss(folder: Path) -> str:
                     for f in man.get("files") or [] if isinstance(f, str)}
         except (OSError, ValueError, AttributeError):
             ours = set()
-    for n in ("nvngx_dlss.dll", "nvngx_dlssg.dll", "nvngx_dlssd.dll"):
-        if n in names and n not in ours:
-            return n
-    if (folder / "D3D12" / "D3D12Core.dll").is_file():
+    # Another DLSS tool in the folder (a swapper's overlay add-on, a wrapper,
+    # OptiScaler put in by hand) brings NGX files of its own. Arkham Knight is
+    # DirectX 11, and a swapper's nvngx_dlss.dll beside it read as "the game
+    # ships DLSS" and sent it to a route that needs the game's DLSS call
+    # (#250). With one of those present, the NGX files say nothing about the
+    # game; only the Agility SDK below still does. What our own install wrote
+    # is not another tool: the optiscaler route writes OptiScaler.ini and
+    # nvngx.dll_dlssnr.dll, and counting them sent a game read as DX12 from
+    # its DLSS files back to DX9 on the next scan ("reinstall - was DX12").
+    if not _foreign_ngx(names - ours):
+        for n in ("nvngx_dlss.dll", "nvngx_dlssg.dll", "nvngx_dlssd.dll"):
+            if n in names and n not in ours and _fits(folder / n, bits):
+                return n
+    core = folder / "D3D12" / "D3D12Core.dll"
+    if core.is_file() and _fits(core, bits):
         return "a D3D12 Agility SDK"
     return ""
 
@@ -290,11 +353,18 @@ def detect_api(path: Path) -> tuple[str, str]:
     """
     imports = pe_imports(path)
     has = lambda d: any(d in i for i in imports)
+    # Every promotion below reads files beside the exe, and a folder holding
+    # both builds of a game has the 64-bit build's runtimes next to the
+    # 32-bit executable too (#190).
+    try:
+        bits = exe_bitness(path)
+    except PEError:
+        bits = None
 
     if has("d3d12.dll"):
         return "DX12", "imports d3d12.dll statically"
     if has("d3d11.dll"):
-        if _has_d3d12_agility_sdk(path.parent):
+        if _has_d3d12_agility_sdk(path.parent, bits):
             return ("DX12", "imports d3d11.dll, but ships a D3D12 Agility SDK "
                             "or DLSS Frame Generation/Ray Reconstruction - "
                             "the real renderer is D3D12")
@@ -326,13 +396,13 @@ def detect_api(path: Path) -> tuple[str, str]:
         # been checked on that executable). So every other kind of evidence
         # is asked first, and only a game with nothing else anywhere is
         # called DirectX 9.
-        modern = _ships_dlss(path.parent)
+        modern = _ships_dlss(path.parent, bits)
         if modern:
             return ("DX12", f"imports d3d9.dll, but ships {modern} - the "
                             f"renderer is D3D12 or Vulkan, not DirectX 9. "
                             f"If the game is set to Vulkan, pick that in "
                             f"the settings before installing")
-        if _has_d3d12_agility_sdk(path.parent):
+        if _has_d3d12_agility_sdk(path.parent, bits):
             return ("DX12", "imports d3d9.dll, but ships a D3D12 Agility SDK "
                             "- the renderer is D3D12, not DirectX 9")
         # A delay-load is still a dependency the linker recorded; the loader
@@ -376,7 +446,7 @@ def detect_api(path: Path) -> tuple[str, str]:
                 return (name, f"imports d3d9.dll, but {where} - the renderer "
                               f"is {label[name]}, not DirectX 9")
         return "DX9", "imports d3d9.dll, no DXGI"
-    if _has_d3d12_agility_sdk(path.parent):
+    if _has_d3d12_agility_sdk(path.parent, bits):
         return ("DX12", "no graphics DLL imported statically, but ships a "
                         "D3D12 Agility SDK or DLSS Frame Generation/Ray "
                         "Reconstruction - the real renderer is D3D12")
@@ -389,7 +459,7 @@ def detect_api(path: Path) -> tuple[str, str]:
         api = _RUNTIME_API.get(name, name)
         if name not in _RUNTIME_API:
             return api, where
-        if api == "DX9" and _ships_dlss(path.parent):
+        if api == "DX9" and _ships_dlss(path.parent, bits):
             api = "DX12"
         return api, f"loads {name} at run time ({where}); no static graphics import"
     return "Unknown", "graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll"
@@ -705,6 +775,9 @@ _TRIAL = re.compile(r"[\s._-]*(trial|demo)$")
 # "UBOAT Launcher.exe" beside "UBOAT.exe": the launcher is the settings box
 # that starts the game, and ReShade in front of it hooks nothing (#152).
 _LAUNCHER = re.compile(r"[\s._-]*launcher$")
+# The marker a game puts on one of its two builds: Subnautica32, Game_x64,
+# Game-Win32 (#190).
+_BITS_MARK = re.compile(r"[\s._-]*(x86|x64|win32|win64|32|64)(bit)?$")
 
 # A name that is a launcher whatever else is in the folder. #152's rule only
 # demoted one whose stripped name had an exact sibling - "UBOAT Launcher" ->
@@ -771,6 +844,32 @@ def find_game_exes(folder: Path) -> list[Path]:
         for p in cands:
             if launcher_like(p):
                 score[p] -= 600
+    # Both builds of one game side by side: Subnautica.exe and
+    # Subnautica32.exe score the same on name, folder and size, and the
+    # 32-bit one was picked - the feeder went in front of an executable
+    # nobody starts (#190). Names that differ only by a 32/64 marker, and
+    # really are one 32-bit and one 64-bit file: the 32-bit one gives way.
+    groups: dict = {}
+    for p in cands:
+        groups.setdefault((p.parent, _BITS_MARK.sub("", p.stem.lower())),
+                          []).append(p)
+    for grp in groups.values():
+        if len(grp) < 2:
+            continue
+        bits = {}
+        for p in grp:
+            try:
+                bits[p] = exe_bitness(p)
+            except PEError:
+                pass
+        if 32 in bits.values() and 64 in bits.values():
+            for p, b in bits.items():
+                if b == 32:
+                    # 400 and not 600: below -500 the file is dropped from
+                    # the list altogether, and someone who really does play
+                    # the 32-bit build could not pick it at all. Losing to
+                    # its twin is the whole job here (gate 1.9.1).
+                    score[p] -= 400
     scored = sorted(cands, key=lambda p: score[p], reverse=True)
     # Drop obvious helpers, but never return nothing if that is all there is.
     good = [p for p in scored if score[p] > -500]

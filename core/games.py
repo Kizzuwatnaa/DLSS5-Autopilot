@@ -54,9 +54,9 @@ XBOX_EXE_HINT = ("Windows protects this Xbox game's executable, so the tool "
                  "details (almost every Game Pass game is 64-bit) and check "
                  "the graphics API there - that guess comes from the files "
                  "beside the game, not from the game itself.")
-# ...and on the install page, where the choice has already been made.
+# ...and in the game's settings, where the choice has already been made.
 XBOX_EXE_CHOSEN = ("Windows protects this executable: the architecture is "
-                   "the one chosen on the games page, and the graphics API is "
+                   "the one chosen in the game's settings, and the graphics API is "
                    "chosen there or guessed from the files beside the game - "
                    "neither is read from the game.")
 
@@ -510,7 +510,10 @@ def scan_rockstar() -> list[Game]:
                     except OSError:
                         break
                     i += 1
-                    if sub.lower() in ("launcher", "rockstar games launcher"):
+                    # The launcher and Social Club register an InstallFolder of
+                    # their own under the same key, and are not games.
+                    if sub.lower() in ("launcher", "rockstar games launcher",
+                                       "rockstar games social club", "social club"):
                         continue
                     try:
                         with winreg.OpenKey(root, sub) as k:
@@ -816,7 +819,7 @@ def enrich(g: Game, chosen: bool = False) -> Game:
         forced = api_override(g.folder)
         if forced:
             # The import table can lie: R.U.S.E. links D3D11 and renders
-            # with D3D9 (#24). A choice made on the install page wins.
+            # with D3D9 (#24). A choice made in the game's settings wins.
             g.api, g.api_why = forced, f"set by hand (detected {g.api_detected})"
         if g.emu is None:
             prof = emulators.profile_for(g.exe)

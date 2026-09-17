@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -58,6 +59,9 @@ BLOCKS = {
     # no log, no .trex and no rtx.conf, so every rule in _analyse_remix has
     # never seen a real report.
     "remix-dxvk.log": "remix",
+    # The 64-bit helper of a 32-bit game, where its DLSS actually runs
+    # (#252: the fault was only in this log).
+    "dlss5-feed-host.log": "host",
 }
 ADDONS = ("dlss5-feed.addon64", "renodx-dlss5.addon64")
 
@@ -255,6 +259,13 @@ def build(route: str, api: str, exe: str, logs: dict, bitness: int = 64,
         write_manifest = bool(state["manifest"])
     man = {"version": 1, "complete": True, "exe": exe, "bitness": bitness,
            "api": api, "proxy": proxy, "path": route, "files": files}
+    # A D3D proxy name AND a registered ReShade Vulkan layer is the DXVK
+    # shape: the install record says dxvk and the proxy is the layer. Read
+    # as a plain d3d9.dll proxy, #238 replayed with "the proxy is reached".
+    if state is not None and state.get("layer") is not None \
+            and re.match(r"(d3d9|d3d10|d3d11|dxgi)\.dll$", proxy or "", re.I):
+        man["dxvk"] = True
+        man["proxy"] = diagnose.VULKAN_LAYER
     rx = (state or {}).get("remix")
     if rx:
         man["remix"] = {"key": rx["key"], "conf": remix.CONF} if rx["key"] else {}
@@ -283,6 +294,10 @@ def build(route: str, api: str, exe: str, logs: dict, bitness: int = 64,
                       ("opti", "OptiScaler.log")):
         if logs.get(key):
             (d / name).write_text(logs[key], encoding="utf8")
+    if logs.get("host"):
+        p = d / diagnose.HOST_LOG
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(logs["host"], encoding="utf8")
     if rx:
         _build_remix(d, rx)
     if logs.get("remix"):
@@ -367,11 +382,76 @@ def machine(text: str, d: Path):
     reg = (True, True) if layer is None else (layer, layer)
     drv = re.search(r"driver\s+([\d.]+)", _header(text).get("gpu", ""))
     from core import gpu as _gpu
+    from core import watch as _watch
+    from core import vulkan as _vk
+    # What the watcher saw on their machine, put where the diagnosis reads
+    # it. The block was printed in every 1.9.0 report and the replay never
+    # read it, so #238's "another dxgi.dll" answer could not be reproduced.
+    rec_file = d / "_sightings.json"
+    seen = sighting(text)
+    man_file = d / "dlss5-autopilot.json"
+    if seen and man_file.is_file():
+        # Installed two minutes before it was seen, so the record is read as
+        # evidence about this install - on any day the replay is run.
+        os.utime(man_file, (seen["at"] - 120, seen["at"] - 120))
+    rec_file.write_text(json.dumps(
+        {os.path.normcase(str(d)): seen} if seen else {}),
+        encoding="utf8")
     with patch.object(diagnose.model, "STANDALONE_LOG", sa), \
             patch.object(diagnose.model, "_layer_state", lambda man: reg), \
+            patch.object(_watch, "RECORD", rec_file), \
+            patch.object(_watch, "inspect", lambda *a, **k: []), \
+            patch.object(_vk, "name_clash", lambda: None), \
             patch.object(_gpu, "driver_version",
                          lambda: drv.group(1) if drv else None):
         yield
+
+
+def _seen_at(text: str) -> float:
+    """When the report says the game was seen, as a fixed timestamp.
+
+    Not the replay's clock: a verdict that prints the time would then move
+    on every run, and verdict_check reads that as a changed answer.
+    """
+    from datetime import datetime
+    m = re.search(r"\(seen at (\d{1,2} \w{3} \d{2}:\d{2})\)", text)
+    y = re.search(r"^(20\d\d)-\d\d-\d\d \d\d:\d\d", text, re.M)
+    try:
+        return datetime.strptime(f"{m.group(1)} {y.group(1) if y else 2026}",
+                                 "%d %b %H:%M %Y").timestamp()
+    except (AttributeError, ValueError):
+        return datetime(2026, 1, 1).timestamp()
+
+
+def sighting(text: str) -> dict:
+    """The report's "What ran, and what it loaded" block, as a record."""
+    m = re.search(r"\*\*What ran, and what it loaded\*\*[^\n]*\n(.*?)(?:\n\s*\n|\Z)",
+                  text, re.S)
+    if not m:
+        return {}
+    rec = {"at": _seen_at(text), "exe": "", "name": "", "refused": "", "modules": 0,
+           "ours": [], "elsewhere": [], "missing": []}
+
+    def names(v):
+        return [x.strip() for x in v.split(",")
+                if x.strip() and x.strip() != "none"]
+
+    for line in m.group(1).splitlines():
+        key, _, val = line.strip().lstrip("- ").partition(":")
+        key, val = key.strip().lower(), val.strip()
+        if key == "process":
+            rec["name"] = val
+        elif key == "dll list":
+            rec["refused"] = val.split(" - ", 1)[-1] or "refused"
+        elif key == "dlls in the process":
+            rec["modules"] = int(re.sub(r"\D", "", val) or 0)
+        elif key == "ours, loaded":
+            rec["ours"] = names(val)
+        elif key == "same name, loaded from elsewhere":
+            rec["elsewhere"] = names(val)
+        elif key.startswith(("ours, not loaded", "also written")):
+            rec["missing"] += names(val)
+    return rec
 
 
 def show(d: Path, label: str, text: str = "") -> None:

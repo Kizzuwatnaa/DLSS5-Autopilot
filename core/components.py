@@ -68,12 +68,31 @@ def _latest(name: str) -> str:
     return latest
 
 
+# The build that started picking wilsjo2's standard package. An install
+# recorded by anything older got the RTX 40 MFG one.
+_STANDARD_ZIP_FROM = (1, 9, 1)
+
+
+def _before_191(tool) -> bool:
+    """Was this install written by a build older than the two-zip fix?
+
+    No recorded version means older than the day the tool recorded one,
+    which is older than this.
+    """
+    k = _key(str(tool or ""))
+    return not k or k < _STANDARD_ZIP_FROM
+
+
 @dataclass
 class Item:
     name: str
     installed: str
     latest: str
     outdated: bool
+    # Why this one needs installing again when the version did not move -
+    # the package behind that version changed. Printed in place of the
+    # "installed -> latest" arrow, which would read "0.8.4 -> 0.8.4".
+    note: str = ""
 
 
 def _read(root: Path) -> dict:
@@ -142,6 +161,20 @@ def check(root: Path) -> list[Item]:
             # "outdated" here would never clear - installing again puts the
             # same fork back, because the manifest records which one.
             outdated = False
+            # One exception, and it is not about the version: wilsjo2
+            # publishes two packages per release, and every build before
+            # 1.9.1 took the RTX 40 MFG one whatever the card (#196, #231).
+            # The number on disk is right and the files are wrong, so
+            # nothing else here would ever say so.
+            if man.get("opti_build") == optiscaler.PRESR \
+                    and _before_191(man.get("tool")):
+                outdated = True
+                latest = installed
+                out.append(Item(LABELS.get(name, name), installed, latest,
+                                True, note=("this is the RTX 40 MFG package"
+                                            " - install again for the"
+                                            " standard one")))
+                continue
         elif name == "renodx":
             # The add-on is pinned on purpose in two cases, and the pin is
             # the newest build that works there - nagging "1 newer" would
@@ -188,4 +221,8 @@ def summary(items: list[Item]) -> str:
         return "nothing recorded to check"
     if not stale:
         return f"all {len(items)} components are current"
+    # A component whose package changed under the same version number is
+    # not "a newer version", so say what is true of both kinds.
+    if any(getattr(i, "note", "") for i in stale):
+        return f"{len(stale)} of {len(items)} components need installing again"
     return f"{len(stale)} of {len(items)} components have a newer version"

@@ -1,0 +1,54 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Ran fine until enabling Frame gen manually or via Autopilot. FG worked fine before Optiscaler updates. 
+_No idea why logs are going on about Minecraft when Control is the game and running for logs >.<_
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 616.92
+- game: Control Ultimate Edition
+- exe: Control_DX12.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (CheckDXR.dll beside the exe imports it); no static graphics import)
+- route: optiscaler
+
+**Diagnosis**: Inconclusive - open the overlay (Insert) and read the status under the Neural Rendering checkbox.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+- [ok] When it last ran (15 Sep 09:20), the process had amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx_dlssnr.dll loaded.
+- [warn] ...and not amd_fidelityfx_vk.dll.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: wilsjo2
+- d3dcompiler_47.dll: present (the game's own)
+
+**What ran, and what it loaded** (seen at 15 Sep 09:20)
+- process: Control_DX12.exe
+- DLLs in the process: 177
+- ours, loaded: amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx_dlssnr.dll
+- same name, loaded from elsewhere: C:\WINDOWS\SYSTEM32\D3D12Core.dll, C:\WINDOWS\system32\dxgi.dll
+- ours, not loaded: amd_fidelityfx_vk.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[09:42:34.683243] [I] OptiInput::InstallHooks Win32 raw input hooks installed
+[09:42:34.683271] [I] OptiInput::InstallHooks Win32 windows input hooks installed
+[09:42:34.683296] [I] OptiInput::InstallHooks Win32 position input hooks installed
+[09:42:34.683302] [I] OptiInput::Initialize Initialize completed hooksInstalled:1 target:0x43091e targetPid:23536 input:0x43091e inputPid:23536 externalTarget:0 subclassed:1
+[09:42:34.683343] [I] OptiInput::UpdateXInputIntegrationLocked XInput hooks installed module:0x7ffcec5f0000 getState:1 getStateEx:1 getKeystroke:1 setState:1
+[09:42:34.683371] [I] OptiInput::`anonymous-namespace'::InstallDirectInputExportHookLocked DirectInput8Create hook installed module:0x7ffcc3d20000
+[09:42:34.683384] [I] MenuHdrCheck Output HDR: true, UI Mode: ScRGB
+[09:42:34.697417] [I] CreateRenderTargetDx12 done!
+```

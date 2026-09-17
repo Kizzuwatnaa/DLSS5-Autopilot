@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 FILE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "dlss5-autopilot" / "settings.json"
@@ -26,19 +28,76 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def load() -> dict:
+# One read-modify-write at a time. The watcher's worker, the DLSS worker and
+# the Tk thread all call set_; two of them interleaved used to lose the
+# first one's key, and a read that met a half-written file came back {} -
+# which the next set_ then wrote back as a one-key file, installs list gone.
+_lock = threading.RLock()
+# The text of the last settings read whole or written, per file (tests move
+# FILE), so a file that cannot be read for a moment is not taken for an
+# empty one. Text, not the dict: a caller that appends to a list it got
+# must not change the copy kept.
+_good: dict[str, str] = {}
+
+
+def _last_good() -> dict:
     try:
-        return json.loads(FILE.read_text(encoding="utf8"))
-    except (OSError, json.JSONDecodeError):
+        return json.loads(_good.get(str(FILE)) or "{}")
+    except ValueError:
         return {}
 
 
-def save(data: dict) -> None:
+def _read() -> tuple[dict, bool]:
+    """(settings, readable). A missing file is readable and empty; a
+    truncated, locked or hand-broken one, or JSON that is not an object,
+    is not - and hands back the last good copy instead of {}."""
+    key = str(FILE)
     try:
-        FILE.parent.mkdir(parents=True, exist_ok=True)
-        FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf8")
-    except OSError:
-        pass
+        text = FILE.read_text(encoding="utf8")
+        data = json.loads(text)
+    except FileNotFoundError:
+        _good[key] = "{}"
+        return {}, True
+    except (OSError, ValueError):
+        return _last_good(), False
+    if not isinstance(data, dict):
+        # a top-level [] or "x": every get() would raise AttributeError
+        return _last_good(), False
+    _good[key] = text
+    return data, True
+
+
+def load() -> dict:
+    with _lock:
+        return _read()[0]
+
+
+def save(data: dict) -> None:
+    with _lock:
+        try:
+            FILE.parent.mkdir(parents=True, exist_ok=True)
+            text = json.dumps(data, ensure_ascii=False, indent=2)
+            # Written beside and moved over: a reader sees the old file or
+            # the new one, never the half of one that was being written.
+            tmp = FILE.with_name(f"{FILE.name}.{os.getpid()}.tmp")
+            tmp.write_text(text, encoding="utf8")
+            for attempt in range(6):
+                try:
+                    os.replace(tmp, FILE)
+                    break
+                except PermissionError:
+                    # another process has it open for reading this moment
+                    if attempt == 5:
+                        try:
+                            tmp.unlink()
+                        except OSError:
+                            pass
+                        FILE.write_text(text, encoding="utf8")
+                        break
+                    time.sleep(0.02)
+            _good[str(FILE)] = text
+        except OSError:
+            pass
 
 
 def get(key: str, default=None):
@@ -46,9 +105,21 @@ def get(key: str, default=None):
 
 
 def set_(key: str, value) -> None:
-    d = load()
-    d[key] = value
-    save(d)
+    with _lock:
+        d, readable = _read()
+        if not readable and str(FILE) not in _good:
+            # Nothing good seen yet this run: once more after a moment (a
+            # foreign writer mid-write), then keep the unreadable file beside
+            # it before writing, so what was in it can still be put back.
+            time.sleep(0.05)
+            d, readable = _read()
+            if not readable and str(FILE) not in _good:
+                try:
+                    FILE.with_name(FILE.name + ".unreadable").write_bytes(FILE.read_bytes())
+                except OSError:
+                    pass
+        d[key] = value
+        save(d)
 
 
 def is_renodx(path: Path) -> bool:

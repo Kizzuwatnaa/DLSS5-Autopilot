@@ -57,6 +57,35 @@ APIS = tuple(FILES_BY_API)
 def files_for(api: str) -> tuple[str, ...]:
     return FILES_BY_API.get(api, ())
 
+
+# Where a DXVK DLL has to go, relative to the executable. Source 1 games
+# (Half-Life 2, Portal 2, Garry's Mod...) load their renderer as
+# bin\shaderapidx9.dll with an altered search path, so its d3d9.dll import is
+# looked for in bin and then System32 - never beside hl2.exe. A d3d9.dll put
+# there is never loaded, and the game quietly renders on Windows' own (#224:
+# "the DXVK d3d9.dll must be placed inside \bin"). The 64-bit branch of the
+# 2024 update keeps the same DLL in bin\win64.
+SOURCE_RENDERER = "shaderapidx9.dll"
+TARGET_DIRS = ("", "bin/win64", "bin")
+
+
+def target_dir(exe_dir: Path, x64: bool, api: str) -> str:
+    """The folder (relative, "/"-separated) this API's DXVK files go into."""
+    if api != "DX9":
+        return ""
+    from . import pe
+    for sub in (("bin/win64", "bin") if x64 else ("bin",)):
+        dll = Path(exe_dir) / sub / SOURCE_RENDERER
+        if not dll.is_file():
+            continue
+        try:
+            if pe.exe_bitness(dll) != (64 if x64 else 32):
+                continue
+        except pe.PEError:
+            continue
+        return sub
+    return ""
+
 BACKUP_SUFFIX = ".dlss5-autopilot-backup"
 
 
@@ -130,18 +159,23 @@ def install(exe_dir: Path, x64: bool, log=None, api: str = "DX11") -> tuple[str,
     arch = "x64" if x64 else "x32"
     written: list[str] = []
     names = files_for(api) or FILES
+    sub = target_dir(exe_dir, x64, api)
+    pre = f"{sub}/" if sub else ""
     for name in names:
-        dest = exe_dir / name
+        dest = exe_dir / pre / name if sub else exe_dir / name
         bak = dest.with_name(name + BACKUP_SUFFIX)
         if dest.is_file() and not bak.exists() and not is_dxvk(dest):
             try:
                 shutil.copy2(dest, bak)
-                written.append(bak.name)
-                log(f"      kept your existing {name} as {bak.name}")
+                written.append(pre + bak.name)
+                log(f"      kept your existing {pre}{name} as {bak.name}")
             except OSError:
-                log(f"      WARNING: could not back up the existing {name}")
+                log(f"      WARNING: could not back up the existing {pre}{name}")
         _extract(tgz, f"{arch}/{name}", dest)
-        written.append(name)
+        written.append(pre + name)
+    if sub:
+        log(f"      into {sub}\\ - a Source engine game loads its d3d9.dll "
+            f"from there ({SOURCE_RENDERER}), never from beside the exe")
     log(f"      {', '.join(names)} ({arch} build) - the game now renders "
         f"through Vulkan; ReShade loads as a Vulkan layer, nothing hooks the game")
     return ver, written

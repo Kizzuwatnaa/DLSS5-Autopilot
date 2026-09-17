@@ -15,7 +15,8 @@ drift apart), and writes one small aggregate:
                                     "fps": 78}}}}}
 
 The `measured` rows are the middle of what people ran: the work area and
-the frame rate they played at, and what the model cost a frame - measured
+the frame rate they played at, and what grows with the work area cost a
+frame (the model alone, or model and feed together on the feeder) - measured
 where the route logs it, solved from two sessions where it does not. Only
 from results that worked - a session that crashed measured a crash - and
 only the median, so one machine with a strange number cannot move the

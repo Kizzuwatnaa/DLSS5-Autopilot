@@ -263,15 +263,19 @@ def inspect(folder: Path, ours: list[str], exe: str = "") -> list[Sighting]:
     """
     folder = Path(folder)
     want = {}
+    names, sub = process_names(ours)
     for rel in ours or []:
         # ReShade loads an add-on the same way Windows loads any DLL, so it
         # is in the module list under its own name - which is how "the
         # add-on loaded" stops being a question for the person to answer in
         # an overlay. The runtime (nvngx_dlssnr.dll) likewise.
-        if not isinstance(rel, str) \
-                or not rel.lower().endswith((".dll", ".addon64", ".addon32")):
-            continue
-        want[os.path.basename(rel).lower()] = folder / rel
+        # A list per name: an install can hold two copies of one runtime
+        # (nvngx_dlss.dll beside the exe and the game's own, swapped, under
+        # Plugins - #225), and either one loaded is ours.
+        if isinstance(rel, str) and os.path.basename(rel).lower() in names \
+                and not _other_process(rel):
+            want.setdefault(os.path.basename(rel).lower(), []).append(
+                folder / rel)
     out: list[Sighting] = []
     for p in from_folder(folder, exe=exe):
         got = modules(p.pid)
@@ -279,15 +283,131 @@ def inspect(folder: Path, ours: list[str], exe: str = "") -> list[Sighting]:
         if got.known:
             for name, mine in want.items():
                 hits = got.by_name(name)
-                if not hits:
-                    s.missing.append(name)
+                mine_hits = [h for h in hits
+                             if any(_same_file(h, m) for m in mine)]
+                if mine_hits:
+                    # Ours is in. A same-named copy beside it is the one ours
+                    # forwards to - ReShade's dxgi.dll loads System32's - and
+                    # was reported as "ours is never reached" (#232, #238).
+                    s.ours.extend(mine_hits)
                     continue
-                for h in hits:
-                    if _same_file(h, mine):
-                        s.ours.append(h)
-                    else:
-                        s.elsewhere.append(h)
+                if name in sub:
+                    # A file we keep in a subfolder is optional to the game
+                    # (OptiScaler's D3D12Core.dll): Windows' own copy of it
+                    # is not a conflict. And when that copy was the only
+                    # hit, the name belongs in NEITHER list - calling it
+                    # missing put "not in the process: D3D12Core.dll" under
+                    # a verdict about our own files (gate 1.9.1).
+                    hits = [h for h in hits if not _windows_file(h)]
+                    if not hits:
+                        continue
+                if hits:
+                    s.elsewhere.extend(hits)
+                else:
+                    s.missing.append(name)
         out.append(s)
+    return out
+
+
+# The 32-bit feeder's 64-bit helper runs as a process of its own out of this
+# folder, so what is in it is never in the game. Listed as the game's, its
+# dxgi.dll matched System32's in the game and #238 was told another dxgi.dll
+# had taken ours' place in a DX9 game. installer.HOST_DIR, kept literal here
+# so watch imports nothing heavy.
+_OTHER_PROCESS_DIRS = ("host64",)
+
+# What the game loads by name when the chain is working. The rest of an
+# install is loaded on demand (amd_fidelityfx_vk.dll in a DX12 game) or
+# never by name (OptiScaler's nvngx.dll_dlssnr.dll), and "not loaded"
+# about those read as a fault (#225, #231). nvngx_dlssnr.dll itself
+# arrives when the model first runs, so its absence beside a "no neural
+# frame yet" verdict is pending, not a fault (#232).
+ESSENTIAL = ("nvngx_dlssnr.dll",)
+
+
+def _other_process(rel: str) -> bool:
+    first = rel.replace("\\", "/").lstrip("/").split("/", 1)
+    return len(first) == 2 and first[0].lower() in _OTHER_PROCESS_DIRS
+
+
+def _windows_file(path: str) -> bool:
+    win = os.environ.get("SystemRoot") or os.environ.get("windir") \
+        or r"C:\Windows"
+    try:
+        return os.path.normcase(str(path)).startswith(
+            os.path.normcase(win.rstrip("\\/")) + os.sep)
+    except Exception:
+        return False
+
+
+def process_names(files) -> tuple[set, set]:
+    """(names the game process can load, those kept only in a subfolder).
+
+    From an install's file list; anything that is not a string, not a DLL
+    or add-on, or belongs to the helper process is left out.
+    """
+    names: set[str] = set()
+    root: set[str] = set()
+    for rel in files if isinstance(files, (list, tuple)) else []:
+        if not isinstance(rel, str) \
+                or not rel.lower().endswith((".dll", ".addon64", ".addon32")) \
+                or _other_process(rel):
+            continue
+        norm = rel.replace("\\", "/").strip("/")
+        name = os.path.basename(norm).lower()
+        names.add(name)
+        # bin/ is where a Source game loads its d3d9.dll (#224): a file the
+        # game needs, so Windows' copy there IS the conflict, as beside the
+        # exe.
+        if "/" not in norm or norm.lower().startswith(("bin/", "bin64/")):
+            root.add(name)
+    return names, names - root
+
+
+def essential(name: str, proxy: str = "", also=()) -> bool:
+    """`also`: names this install cannot work without beyond the usual -
+    DXVK's DLLs on a DXVK install, where the proxy is a Vulkan layer and
+    DXVK not loading is the fault itself (#224)."""
+    low = str(name).lower()
+    return low in ESSENTIAL or low.endswith((".addon64", ".addon32")) \
+        or (bool(proxy) and low == str(proxy).lower()) \
+        or low in {str(a).lower() for a in also or ()}
+
+
+def settle(rec: dict, files) -> dict:
+    """A remembered sighting, read with the rules inspect() uses today.
+
+    Records written by 1.9.0 listed the helper's files as the game's and
+    System32's copy of a loaded proxy as a conflict. They sit in people's
+    sightings.json, so the reader applies the rule as well as the writer.
+    With no file list there is nothing to read it against: returned as is.
+    """
+    if not isinstance(rec, dict) or not rec:
+        return {}
+    names, sub = process_names(files)
+    if not names:
+        return rec
+    out = dict(rec)
+
+    def strs(key):
+        v = rec.get(key)
+        return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+    # "ours" is filtered like the other two, and for the same reason: a
+    # 1.9.0 record counted the 64-bit helper's own files as the game's, so
+    # an unfiltered list still reads host64\renodx-dlss5.addon64 as an
+    # add-on the game loaded - and a loaded add-on suppresses the verdict
+    # this release wrote for exactly that case (#238).
+    ours = [n for n in strs("ours") if os.path.basename(n).lower() in names]
+    have = {os.path.basename(n).lower() for n in ours}
+    out["ours"] = ours
+    out["elsewhere"] = [
+        p for p in strs("elsewhere")
+        if os.path.basename(p).lower() in names
+        and os.path.basename(p).lower() not in have
+        and not (os.path.basename(p).lower() in sub and _windows_file(p))]
+    out["missing"] = [n for n in strs("missing")
+                      if n.lower() in names and n.lower() not in have]
     return out
 
 

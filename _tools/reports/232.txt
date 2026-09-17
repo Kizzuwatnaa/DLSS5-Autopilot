@@ -1,0 +1,43 @@
+**Did the game start?** it started and ran
+
+**What happened**
+the game loaded C:\WINDOWS\system32\dxgi.dll from somewhere else, not ours
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.92
+- game: Cronos.The.New.Dawn.Deluxe.Edition
+- exe: Cronos-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: upstream
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**What ran, and what it loaded** (seen at 15 Sep 11:32)
+- process: Cronos-Win64-Shipping.exe
+- DLLs in the process: 157
+- ours, loaded: dxgi.dll, nvngx.dll.addon64
+- same name, loaded from elsewhere: C:\WINDOWS\system32\dxgi.dll
+- ours, not loaded: nvngx_dlssnr.dll
+
+**ReShade.log**
+```
+11:32:13:594 [183516] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:32:13:612 [183516] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:32:14:232 [183516] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:32:15:152 [183516] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:32:18:385 [182616] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 0 on NVSDK_NGX_D3D12_EvaluateFeature: OK  C:\WINDOWS\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_b20cc8aeaed64fc2\_nvngx.
+11:32:18:451 [182616] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 1 on NVSDK_NGX_D3D12_EvaluateFeature: OK  E:\GamesX6\Cronos.The.New.Dawn.Deluxe.Edition\Cronos\Binaries\Win64\Cronos-Win64-Shipping.
+11:32:18:508 [182616] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 2 on NVSDK_NGX_D3D12_EvaluateFeature: OK  E:\GamesX6\Cronos.The.New.Dawn.Deluxe.Edition\Cronos\Plugins\StreamlineCore\Binaries\Third
+11:32:18:558 [182616] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 3 on NVSDK_NGX_D3D12_EvaluateFeature: OK  E:\GamesX6\Cronos.The.New.Dawn.Deluxe.Edition\Cronos\Plugins\DLSS\Binaries\ThirdParty\Win6
+11:32:18:608 [182616] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] hook 4 on NVSDK_NGX_D3D12_EvaluateFeature: OK  C:\ProgramData\NVIDIA\NGX\models\dlssd\versions\20318464\files\160_E658700.bin
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

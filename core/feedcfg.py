@@ -159,11 +159,20 @@ OFA_PERF = {
 
 
 def bridge_defaults(native_dlss: bool) -> dict:
-    """Sensible starting point. synth_after only matters without native DLSS."""
+    """Sensible starting point.
+
+    A game with no DLSS of its own needs the substitute contract, and the
+    bridge's own README (1.4.12) is plain that `synth=1` is what allows it -
+    `synth_after` is only the delay before it is built, "a delay, not an
+    opt-in". Writing synth_after alone installed a bridge that waited for a
+    contract it was never allowed to build.
+    """
     # Said either way: a folder first installed as a game without DLSS keeps
-    # its synth_after through a later install that found the game's DLSS,
-    # and the substitute then costs the mirror the whole session.
-    return {"vk_mirror": 1, "synth_after": 0 if native_dlss else 3}
+    # its synth and synth_after through a later install that found the
+    # game's DLSS, and the substitute then costs the mirror the whole session.
+    if native_dlss:
+        return {"vk_mirror": 1, "synth": 0, "synth_after": 0}
+    return {"vk_mirror": 1, "synth": 1, "synth_after": 3}
 
 
 # From 1.4.0 the bridge replaces, at attach and before reading it, any
@@ -221,9 +230,9 @@ def write_bridge(dir_: Path, settings: dict | None = None) -> Path:
 
 def describe_bridge(settings: dict) -> list[str]:
     out = []
-    if int(number(settings.get("synth_after", 0))):
-        out.append(f"synth_after={settings['synth_after']} (synthetic contract "
-                   f"armed - the game has no DLSS of its own)")
+    if int(number(settings.get("synth", 0))):
+        out.append(f"synth=1, synth_after={settings.get('synth_after', 0)} (substitute "
+                   f"contract on - the game has no DLSS of its own)")
     g = settings.get("ofa_grid")
     if g is not None and int(number(g, 2)) != 2:
         out.append(f"ofa_grid={g} ({OFA_GRID.get(int(number(g, 2)), '?')})")

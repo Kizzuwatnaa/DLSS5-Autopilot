@@ -13,8 +13,8 @@ How it works, with no server anywhere:
   readable block and nothing that identifies them: the game's name and
   executable, the route, the build, the graphics API, the card's model and
   architecture, the driver, this tool's version, the outcome, and - where
-  the session was measured - the work area it ran at, what the model cost
-  a frame and the frame rate. No paths, no user name,
+  the session was measured - the work area it ran at, the milliseconds a frame
+  spent on what grows with that area, and the frame rate. No paths, no user name,
   no machine id, and nothing at all leaves without the button being pressed.
 * A workflow in the repository adds those up into `docs/compatibility.json`.
 * Every tool downloads that file and reads it before an install.
@@ -54,7 +54,8 @@ def record(game, route: str, result: str, *, api: str = "", build: str = "",
     """The one block a shared result carries. Nothing identifying in it.
 
     `measured` is what the session cost - the work area it ran at, the
-    model's cost a frame, the frame rate - as autotune.shared() returns
+    milliseconds a frame spent on what grows with that area, the frame
+    rate - as autotune.shared() returns
     it. Three numbers about a game, and nothing about a machine beyond
     the card that is named here anyway. The keys are taken one at a time
     rather than merged wholesale, so a future caller cannot widen what
@@ -244,7 +245,14 @@ def measured_note(entry: dict | None, route: str = "") -> str:
                 and not isinstance(v, bool) and v else None)
 
     ms, fps = number("ms"), number("fps")
-    if ms:
+    if ms and name == "feeder":
+        # The feeder logs no model cost. Its number is solved from frame
+        # rates at two work areas, so it is everything that grows with the
+        # area - the model, the feed and its shaders - and only an upper
+        # bound on the model's own share.
+        line += (f". The model and the feed together cost about {ms:.1f} ms "
+                 f"a frame there")
+    elif ms:
         line += f". The model cost about {ms:.1f} ms a frame there"
     if fps:
         line += f", at around {fps:.0f} fps"
@@ -365,7 +373,9 @@ def issue_url(rec: dict, note: str = "") -> str:
             f"driver {rec.get('driver') or '-'}\n"
             f"- tool: {rec.get('tool') or '-'}\n"
             + (f"- measured: {rec.get('res')}% work area"
-               + (f", {rec.get('ms')} ms of model a frame"
+               + ((f", {rec.get('ms')} ms a frame for the model and feed "
+                   f"together" if rec.get("route") == "feeder"
+                   else f", {rec.get('ms')} ms of model a frame")
                   if rec.get("ms") else "")
                + (f", {rec.get('fps')} fps" if rec.get("fps") else "")
                + "\n" if rec.get("res") else "")

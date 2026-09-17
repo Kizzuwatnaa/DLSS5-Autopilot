@@ -1,310 +1,290 @@
-r"""Look at every widget on every page the way a person would, and complain.
+r"""Look at everything drawn on every page of the 2.0 window, and complain.
 
     python _tools\gui_lint.py
 
-gui_scale_check measures whether each page fits. This looks at what is ON
-the page, widget by widget, at 100%, 150% and 200%, on every page and
-every route of the install page, and reports:
+gui_scale_check measures whether what a person needs is on the screen. This
+looks at what IS drawn, item by item, on the canvases of the window
+(core.ui) at 100% in 1280x800 and 1920x1080, at 150% and at 200%: the
+library, a game page with its settings open on every route, the video page
+with and without a player, the remix page, and the dlss page (some behind, all
+current, nothing found). It reports:
 
-  clipped    a label or button whose text is wider or taller than the room
-             it was given - the text is cut off on screen
-  offscreen  a widget whose right edge is past the window's
-  colour     a widget painted in a colour that is not in the palette - a
-             default grey or white left behind by Tk or ttk, the kind of
-             thing that made the scrollbars look broken
-  font       a widget whose font family is not the window's own - the
-             dropdowns were in Segoe UI inside a monospaced window
-  overlap    two mapped widgets drawn on top of each other in one parent
+  edge      a text item that runs past the canvas' right (or left) edge
+  covers    a text item lying on a control it does not belong to - the
+            canvas form of two widgets in one grid cell
+  label     a button whose label (or icon) is wider than the button
+  colour    a fill or outline that is not in core/ui/theme.py's palette, or
+            one of the few colours the window derives from it with
+            motion.mix / ink_on (listed in DERIVED below)
+  font      a text item in a family that is not theme.MONO_FAMILIES or
+            theme.ICON_FAMILIES
+  widget    a real Tk widget on a canvas (the search box) painted outside
+            the palette
 
-It found nothing is not the goal; it found nothing AND the screenshots look
-right is. Run it after any GUI change, before gui_scale_check.
+"It found nothing" is not the goal; nothing found AND the screenshots look
+right is. Run it after any change under core/ui, with gui_scale_check.
+Nothing is written outside a temporary folder (see ui_sandbox.py).
 """
 from __future__ import annotations
 
 import sys
-import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
+from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ui_sandbox import Sandbox   # noqa: E402
 
-from core import dlss, games, gui, prefs   # noqa: E402
-
-prefs.FILE = Path(tempfile.mkdtemp(prefix="lint_prefs_")) / "settings.json"
-# A window that finds a saved library from another version rescans the
-# disks at start; the one on the machine running this is not the test's.
-from core import library as _library_iso  # noqa: E402
-_library_iso.FILE = Path(tempfile.mkdtemp(prefix="lib_iso_")) / "library.json"
-
-PALETTE = {c.lower() for c in (
-    gui.BG, gui.PANEL, gui.FIELD, gui.LINE, gui.TXT, gui.BODY, gui.DIM,
-    gui.FAINT, gui.AMBER, gui.SLIDER_TROUGH, gui.SLIDER_HOT,
-    getattr(gui, "EDGE", ""), getattr(gui, "RUST", ""),
-    getattr(gui, "GREEN", ""), getattr(gui, "RED", ""),
-    getattr(gui, "RAIL", ""), getattr(gui, "HOVER", ""), "#e8bd7a") if c}
-FAMILIES = {f.lower() for f in gui.MONO}
 ISSUES: list[str] = []
+LAYER_PREFIXES = ("menu", "kit_tip", "toast")
 
 
-def hexcol(w: tk.Misc, c: str) -> str:
+def palette():
+    from core.ui import theme as T
+    from core.ui.motion import ink_on, mix
+    base = [T.BG, T.RAIL, T.SURF, T.SURF2, T.LINE, T.TEXT, T.MUTED, T.DIM, T.AMBER, T.OK, T.WARN, T.LOG_BG]
+    inks = sorted({ink_on(c) for c in base} | {"#111111", "#ffffff"})
+    allowed = {c.lower() for c in base + inks}
+    derived = set()
+    for a in base:
+        derived.add(mix(a, "#ffffff", 0.14))             # a primary or danger button under the pointer
+        derived.add(mix(T.BG, a, 0.10))                  # a banner's ground in its own colour
+        for ink in inks:
+            derived.add(mix(a, ink, 0.5))                # the progress bar inside a button
+    derived.add(mix(T.BG, T.SURF, 0.9))                  # the result box on a game page
+    return allowed, {c.lower() for c in derived}
+
+
+def _norm(w, colour: str) -> str:
+    c = str(colour).strip().lower()
+    if not c or c.startswith("#") and len(c) == 7:
+        return c
     try:
-        r, g, b = (v // 257 for v in w.winfo_rgb(c))
+        r, g, b = (v // 257 for v in w.winfo_rgb(colour))
         return f"#{r:02x}{g:02x}{b:02x}"
     except tk.TclError:
-        return c.lower()
+        return c
 
 
-def label(w: tk.Misc) -> str:
-    try:
-        t = w.cget("text")
-    except tk.TclError:
-        t = ""
-    name = w.winfo_class()
-    return f"{name}({str(t)[:28]!r})" if t else f"{name} {str(w)[-40:]}"
+def _in_layer(c, item) -> bool:
+    return any(t.startswith(LAYER_PREFIXES) for t in c.gettags(item))
 
 
-def walk(w: tk.Misc):
-    yield w
-    for c in w.winfo_children():
-        yield from walk(c)
-
-
-def hovers(root: tk.Tk, where: str) -> None:
-    """Open every "( ? )" and look at what comes up.
-
-    Moving a paragraph behind a marker took it out of every check this file
-    does - it is not in the window any more until the pointer asks. So the
-    pointer asks: each marker is entered, the tip is drawn, and the same
-    checks run over it. An empty one is a marker that explains nothing.
-    """
-    for w in walk(root):
-        if not isinstance(w, gui.Hint):
+def lint_canvas(c, kit, where: str, allowed, derived, families) -> None:
+    root = c.winfo_toplevel()
+    width = c.winfo_width()
+    controls = kit.controls() if kit is not None else []
+    boxes = {tag: c.bbox(tag) for tag, _k, _l in controls}
+    for item in c.find_all():
+        kind = c.type(item)
+        if c.itemcget(item, "state") == "hidden" or _in_layer(c, item):
             continue
-        text = (getattr(w, "hint_text", "") or "").strip()
-        if len(text) < 20:
-            ISSUES.append(f"{where}: a ( ? ) with nothing behind it "
-                          f"({text[:30]!r})")
-            continue
-        try:
-            w.event_generate("<Enter>", x=2, y=2)
-            w._tip.show(text, w.winfo_rootx(), w.winfo_rooty(), delay=0)
-            root.update()
-        except tk.TclError:
-            continue
-        tip = getattr(w._tip, "win", None)
-        if tip is None:
-            ISSUES.append(f"{where}: a ( ? ) whose tip never opened")
-            continue
-        if tip.winfo_width() <= 1 or tip.winfo_height() <= 1:
-            ISSUES.append(f"{where}: a tip drawn {tip.winfo_width()}x"
-                          f"{tip.winfo_height()}")
-        # ...and on the screen it was opened from.
-        if tip.winfo_rootx() < 0 or tip.winfo_rooty() < 0:
-            ISSUES.append(f"{where}: a tip at {tip.winfo_rootx()},"
-                          f"{tip.winfo_rooty()}")
-        w._tip.hide()
-        root.update()
-
-
-def check(root: tk.Tk, where: str) -> int:
-    root.update()
-    found = 0
-    rw = root.winfo_width()
-    for w in walk(root):
-        try:
-            if not w.winfo_ismapped() or w.winfo_width() <= 1:
-                continue
-        except tk.TclError:
-            continue
-        cls = w.winfo_class()
-        # clipped text: a label or button asks for more than it got
-        if cls in ("Label", "Button", "TButton", "Checkbutton", "TCheckbutton",
-                   "Radiobutton", "TRadiobutton"):
-            try:
-                wrap = int(str(w.cget("wraplength") or 0)) if cls == "Label" else 0
-            except (tk.TclError, ValueError):
-                wrap = 0
-            if not wrap and (w.winfo_reqwidth() > w.winfo_width() + 2
-                             or w.winfo_reqheight() > w.winfo_height() + 2):
-                ISSUES.append(f"{where}: clipped   {label(w)}  "
-                              f"asks {w.winfo_reqwidth()}x{w.winfo_reqheight()}, "
-                              f"got {w.winfo_width()}x{w.winfo_height()}")
-                found += 1
-        # off the right edge of the window
-        try:
-            right = w.winfo_rootx() + w.winfo_width() - root.winfo_rootx()
-            if right > rw + 2 and w.master is not None \
-                    and w.master.winfo_class() != "Canvas":
-                ISSUES.append(f"{where}: offscreen {label(w)} right edge "
-                              f"{right} > window {rw}")
-                found += 1
-        except tk.TclError:
-            pass
-        # colours that are not ours - only the ones that can be SEEN. A
-        # highlight colour with no highlight thickness, or an "active"
-        # colour on a widget that is never active, is Tk's default sitting
-        # unused, not a grey patch on the screen.
-        has_text = False
-        try:
-            has_text = bool(str(w.cget("text")).strip())
-        except tk.TclError:
-            pass
-        typed = cls in ("Entry", "Text", "Spinbox", "Listbox")
-        opts = ["bg"]
-        if has_text or typed:
-            opts.append("fg")
-        try:
-            if int(str(w.cget("highlightthickness") or 0)) > 0:
-                opts.append("highlightbackground")
-        except (tk.TclError, ValueError):
-            pass
-        if cls in ("Button", "Checkbutton", "Radiobutton", "Scale", "Spinbox"):
-            opts += ["activebackground"]
-        if cls in ("Checkbutton", "Radiobutton"):
-            opts.append("selectcolor")
-        if cls in ("Scale",):
-            opts.append("troughcolor")
-        if cls == "Spinbox":
-            opts.append("buttonbackground")
-        if typed:
-            opts.append("insertbackground")
-        # A disabled or read-only field does not paint with bg/fg at all:
-        # it has its own pair, and the fps box went white through exactly
-        # that gap while bg and fg both looked right.
-        try:
-            state = str(w.cget("state"))
-        except tk.TclError:
-            state = ""
-        if state == "disabled" and cls in ("Entry", "Spinbox"):
-            opts = [o for o in opts if o not in ("bg", "fg")]
-            opts += ["disabledbackground", "disabledforeground"]
-        elif state == "readonly" and cls in ("Entry", "Spinbox"):
-            opts = [o for o in opts if o != "bg"] + ["readonlybackground"]
-        elif state == "disabled" and cls in ("Label", "Button", "Checkbutton",
-                                             "Radiobutton"):
-            opts = [o for o in opts if o != "fg"] + ["disabledforeground"]
-        if cls == "Label":
-            try:
-                if w.cget("image") and not has_text:
-                    opts = []          # an image label shows only its image
-            except tk.TclError:
-                pass
+        tags = set(c.gettags(item))
+        # colours
+        opts = {"text": ("fill",), "line": ("fill",), "rectangle": ("fill", "outline"),
+                "oval": ("fill", "outline"), "polygon": ("fill", "outline")}.get(kind, ())
         for opt in opts:
+            v = _norm(c, c.itemcget(item, opt))
+            if v and v not in allowed and v not in derived:
+                ISSUES.append(f"{where}: colour  {kind} {opt}={v} tags={sorted(tags)[:3]}")
+        if kind == "window":
             try:
-                v = w.cget(opt)
-            except tk.TclError:
-                continue
-            if not v:
-                continue
-            h = hexcol(w, str(v))
-            if str(v).lower().startswith("system") or h not in PALETTE:
-                ISSUES.append(f"{where}: colour    {label(w)} {opt}={v} "
-                              f"({h}) is not in the palette")
-                found += 1
-        # one font family - for anything that draws text
-        if has_text or typed:
-            try:
-                f = w.cget("font")
-            except tk.TclError:
-                f = None
-            if f:
+                w = c.nametowidget(c.itemcget(item, "window"))
+                opts_w = ["bg", "fg", "insertbackground", "selectbackground", "selectforeground",
+                          "disabledbackground"]
                 try:
-                    fam = tk.font.Font(root=root, font=f).actual("family").lower()
-                except Exception:
-                    fam = ""
-                if fam and fam not in FAMILIES:
-                    ISSUES.append(f"{where}: font      {label(w)} is {fam!r}")
-                    found += 1
-    # overlaps between siblings laid out by grid or place
-    for w in walk(root):
-        kids = []
-        for c in w.winfo_children():
-            try:
-                if c.winfo_ismapped() and c.winfo_width() > 2 \
-                        and c.winfo_manager() in ("grid", "place"):
-                    kids.append((c, c.winfo_x(), c.winfo_y(),
-                                 c.winfo_width(), c.winfo_height()))
-            except tk.TclError:
+                    if int(str(w.cget("highlightthickness") or 0)) > 0:
+                        opts_w.append("highlightbackground")   # only a ring that is drawn is seen
+                except (tk.TclError, ValueError):
+                    pass
+                for opt in opts_w:
+                    try:
+                        v = _norm(w, w.cget(opt))
+                    except tk.TclError:
+                        continue
+                    if v and v not in allowed and v not in derived:
+                        ISSUES.append(f"{where}: widget  {w.winfo_class()} {opt}={v}")
+            except (KeyError, tk.TclError):
                 pass
-        def _inside(x, y) -> bool:
-            """Is x gridded INTO sibling y (grid's in_)? Then it sits on y
-            by design - the games page's filter lines are laid out that way."""
-            try:
-                return x.winfo_manager() == "grid" and \
-                    str(x.grid_info().get("in")) == str(y)
-            except tk.TclError:
-                return False
-
-        for i in range(len(kids)):
-            for j in range(i + 1, len(kids)):
-                a, ax, ay, aw, ah = kids[i]
-                b, bx, by, bw, bh = kids[j]
-                if _inside(a, b) or _inside(b, a):
-                    continue
-                if ax < bx + bw - 3 and bx < ax + aw - 3 \
-                        and ay < by + bh - 3 and by < ay + ah - 3:
-                    ISSUES.append(f"{where}: overlap   {label(a)} and {label(b)}")
-                    found += 1
-    return found
-
-
-def run(scale: float, size: str) -> None:
-    import tkinter.font  # noqa: F401
-    gui.SCALE = scale
-    root = tk.Tk()
-    root.geometry(f"{size}+30+30")
-    app = gui.App(root)
-    root.update()
-
-    d = Path(tempfile.mkdtemp(prefix="lint_game_"))
-    (d / "Game.exe").write_bytes(b"MZ" + b"\0" * 200)
-    (d / "nvngx_dlss.dll").write_bytes(b"MZ")
-    (d / "nvngx_dlssd.dll").write_bytes(b"MZ")
-    g = games.Game(name="A Game With A Fairly Long Name: Definitive Edition",
-                   folder=d, exe=d / "Game.exe", bitness=64, api="DX12",
-                   source="Steam")
-    app.all_games = [g]
-    app._fill()
-    tag = f"{int(scale * 100)}% {size}"
-    app._show(1); check(root, f"{tag} start")
-    app._show(4); check(root, f"{tag} video")
-    app._show(5); check(root, f"{tag} rtx remix")
-    app._show(2); check(root, f"{tag} library")
-    try:
-        app.tree.selection_set(app.tree.get_children()[0])
-        root.update()
-        check(root, f"{tag} library+selected")
-    except Exception:
-        pass
-    app.game = g
-    app._show(3); app._enter_install()
-    for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE,
-                  dlss.UPSTREAM, dlss.RENODX, dlss.STANDALONE):
-        try:
-            app._apply_route(route)
-        except Exception as e:
-            ISSUES.append(f"{tag} install/{route}: route raised {e!r}")
+        if kind != "text":
             continue
-        check(root, f"{tag} install/{route}")
-        hovers(root, f"{tag} install/{route}")
+        text = c.itemcget(item, "text")
+        if not text.strip():
+            continue
+        # fonts
+        try:
+            fam = root.tk.splitlist(c.itemcget(item, "font"))[0]
+        except (tk.TclError, IndexError):
+            fam = ""
+        if fam not in families:
+            ISSUES.append(f"{where}: font    {text[:30]!r} is {fam!r}")
+        box = c.bbox(item)
+        if not box:
+            continue
+        # past the edge
+        if box[2] > width + 1 or box[0] < -1:
+            ISSUES.append(f"{where}: edge    {text[:40]!r} spans {box[0]}..{box[2]} of {width}")
+        # lying on a control it is not part of
+        for tag, ckind, label in controls:
+            if tag in tags:
+                continue
+            b = boxes.get(tag)
+            if not b:
+                continue
+            if box[0] < b[2] - 1 and b[0] < box[2] - 1 and box[1] < b[3] - 1 and b[1] < box[3] - 1:
+                ISSUES.append(f"{where}: covers  {text[:30]!r} lies on {ckind} '{label}'")
+    # button labels wider than the button
+    for tag, ckind, label in controls:
+        if ckind != "button":
+            continue
+        items = c.find_withtag(tag)
+        rects = [i for i in items if c.type(i) == "rectangle"]
+        if not rects:
+            continue
+        bx1, _by1, bx2, _by2 = c.coords(rects[0])
+        for i in items:
+            if c.type(i) != "text" or not c.itemcget(i, "text").strip():
+                continue
+            tb = c.bbox(i)
+            if tb and (tb[0] < bx1 - 1 or tb[2] > bx2 + 1):
+                ISSUES.append(f"{where}: label   button '{label}' is {int(bx2 - bx1)} px, its text needs "
+                              f"{tb[2] - tb[0]} px ({tb[0] - bx1:+.0f}..{tb[2] - bx2:+.0f})")
+
+
+def lint_window(app, where, allowed, derived, families) -> None:
+    s = app.shell
+    app.root.update()
+    for canvas, kit, part in ((s.content, s.kit, "page"), (s.rail_c, s.rail_kit, "rail"),
+                              (s.bottom_c, s.bottom_kit, "bottom"), (s.banner_c, s.banner_kit, "banner")):
+        lint_canvas(canvas, kit, f"{where} {part}", allowed, derived, families)
+
+
+def dlss_states(games: list) -> list[tuple[str, dict]]:
+    """The dlss page's three states as the page's own cache, no scan and no
+    network: rows with some behind (an anti-cheat one among them), every
+    game current, and nothing found. Shared with gui_scale_check."""
+    import time
+    new = "310.9.1 (NVIDIA SDK)"
+    newest = {f: {"label": new, "version": "310.9.1"} for f in ("dlss", "dlssg", "dlssd")}
+
+    def e(fam, ver, state="original", original="", label="", backup=False):
+        return {"rel": {"dlss": "nvngx_dlss.dll", "dlssg": "nvngx_dlssg.dll",
+                        "dlssd": "nvngx_dlssd.dll"}[fam],
+                "family": fam, "version": ver, "state": state, "original": original,
+                "label": label, "backup": backup}
+
+    x64 = [g for g in games if g.bitness == 64]
+    seen = [str(g.folder) for g in games]
+    x86 = len(games) - len(x64)
+    behind = {str(x64[0].folder): {"name": x64[0].name, "entries": [
+        e("dlss", "3.7.20"), e("dlssg", "310.9.1", "updated", "3.5.0", new, True),
+        e("dlssd", "310.8.0", "install")], "anticheat": "", "running": ""}}
+    if len(x64) > 1:
+        behind[str(x64[1].folder)] = {"name": x64[1].name, "entries": [e("dlss", "2.5.1")],
+                                      "anticheat": "Easy Anti-Cheat", "anticheat_found":
+                                      "found: EasyAntiCheat", "running": ""}
+    current = {str(g.folder): {"name": g.name, "entries": [e("dlss", "310.9.1")], "anticheat": "",
+                               "running": ""} for g in x64}
+    now = time.time()
+    return [("some behind", {"at": now, "newest": newest, "games": behind, "seen": seen, "x86": x86}),
+            ("all current", {"at": now, "newest": newest, "games": current, "seen": seen, "x86": x86}),
+            ("nothing found", {"at": now, "newest": newest, "games": {str(g.folder): {
+                "name": g.name, "entries": []} for g in x64}, "seen": seen, "x86": x86})]
+
+
+def show_dlss(app, sb, data: dict) -> None:
+    """The dlss page drawn from `data`, with no read of the games started."""
+    from core.ui import ctl_dlss
+    app.dlss_data = data
+    with patch.object(ctl_dlss.DlssControl, "dlss_due", lambda self: False), \
+            patch.object(ctl_dlss.DlssControl, "dlss_recheck_running", lambda self: None):
+        app.shell.show("dlss", remember=False)
+        app.shell.redraw()
+        sb.pump(app.root, 0.3)
+
+
+def run(sb: Sandbox, scale: float, size: tuple[int, int], games: list, player) -> None:
+    from core import dlss, video
+    from core.ui import theme as T
+    probe = tk.Tk()
+    screen = (probe.winfo_screenwidth(), probe.winfo_screenheight())
+    probe.destroy()
+    w, h = min(size[0], screen[0]), min(size[1], screen[1] - 40)
+    app = sb.app(scale=scale, size=(w, h), visible=False)
+    root, shell = app.root, app.shell
+    allowed, derived = palette()
+    families = set(T.MONO_FAMILIES) | set(T.ICON_FAMILIES)
+    tag = f"{int(scale * 100)}% {w}x{h}"
     try:
-        for job in root.tk.call("after", "info"):
-            root.after_cancel(job)
-    except tk.TclError:
-        pass
-    root.destroy()
+        app.all_games = list(games)
+        shell.show("library", remember=False)
+        sb.until(root, lambda: all(app.card(g)["kind"] != "reading" for g in app.all_games), 20)
+        sb.pump(root, 0.5)
+        shell.redraw()
+        lint_window(app, f"{tag} library", allowed, derived, families)
+        # the update and crash banners, drawn once so their colours are looked at too
+        app.q.put(("update", ("9.9.9", "https://example.invalid")))
+        sb.pump(root, 0.2)
+        app.offer_crash_report()
+        sb.pump(root, 0.2)
+        lint_window(app, f"{tag} banners", allowed, derived, families)
+        shell.unbanner("update")
+        shell.unbanner("crash")
+
+        g = games[0]
+        app.open_game(g)
+        sb.until(root, lambda: not app.entering and app.support is not None, 20)
+        app.game_page.settings_open = True
+        for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
+                      dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
+            try:
+                app.set_setting("route", route)
+                shell.redraw()
+                sb.pump(root, 0.1)
+            except Exception as e:
+                ISSUES.append(f"{tag} game/{route}: drawing raised {type(e).__name__}: {e}")
+                continue
+            lint_window(app, f"{tag} game/{route}", allowed, derived, families)
+
+        shell.show("video", remember=False)
+        sb.pump(root, 0.2)
+        lint_window(app, f"{tag} video (no player)", allowed, derived, families)
+        with patch.object(video, "known", return_value=player), \
+                patch.object(video, "list_cameras", return_value=["A camera with a long name (USB)"]), \
+                patch.object(video, "list_screens", return_value=["Screen 1"]):
+            app.cameras = None
+            shell.show("video", remember=False)
+            sb.until(root, lambda: app.cameras is not None, 10)
+            sb.pump(root, 0.2)
+            lint_window(app, f"{tag} video", allowed, derived, families)
+        shell.show("remix", remember=False)
+        sb.pump(root, 0.5)
+        lint_window(app, f"{tag} remix", allowed, derived, families)
+        for state, data in dlss_states(games):
+            try:
+                show_dlss(app, sb, data)
+            except Exception as e:
+                ISSUES.append(f"{tag} dlss/{state}: drawing raised {type(e).__name__}: {e}")
+                continue
+            lint_window(app, f"{tag} dlss/{state}", allowed, derived, families)
+        for e in sb.errors:
+            ISSUES.append(f"{tag}: a Tk callback raised: {e.strip().splitlines()[-1]}")
+        sb.errors.clear()
+    finally:
+        sb.destroy(root)
 
 
 def main() -> int:
-    for scale, size in ((1.0, "1280x800"), (1.0, "1920x1080"),
-                        (1.5, "1920x1080"), (2.0, "2560x1440")):
-        run(scale, size)
-    # the same widget reported on every route is one problem, not seven
+    sb = Sandbox("lint_")
+    games = [sb.game("A Game With A Fairly Long Name: Definitive Edition", "DX11", 64, installed=True,
+                     extra=("nvngx_dlss.dll", "nvngx_dlssd.dll")),
+             sb.game("Grand Theft Auto IV", "DX9", 32, source="Steam"),
+             sb.game("Another Game", "DX12", 64)]
+    player = sb.game("Video player", "DX11", 64, installed=True)
+    player.kind = "video"
+    for scale, size in ((1.0, (1280, 800)), (1.0, (1920, 1080)), (1.5, (1920, 1080)), (2.0, (2560, 1440))):
+        run(sb, scale, size, games, player)
+    sb.close()
     seen, unique = set(), []
     for line in ISSUES:
         key = line.split(": ", 1)[1] if ": " in line else line
@@ -312,8 +292,8 @@ def main() -> int:
             seen.add(key)
             unique.append(line)
     if not unique:
-        print("nothing clipped, off the window, off the palette, in another "
-              "font, or overlapping - on any page, route or scale checked")
+        print("nothing past an edge, lying on a control, wider than its button, off the palette or in "
+              "another font - on any page, route or scale checked")
         return 0
     print(f"{len(unique)} distinct finding(s) ({len(ISSUES)} in all):\n")
     for line in unique:

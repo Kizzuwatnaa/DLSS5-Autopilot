@@ -502,7 +502,7 @@ def check_supported(g: games.Game) -> tuple[bool, str]:
         return False, g.error
     if g.exe_warning and (g.bitness not in (32, 64) or g.api not in games.APIS):
         return False, ("Choose this game's 'architecture' and 'graphics api' in "
-                       "its details on the games page - Windows protects its "
+                       "the game's settings - Windows protects its "
                        "executable, so they cannot be read from it.")
     if g.bitness not in (32, 64):
         return False, "Could not read the architecture."
@@ -619,6 +619,160 @@ def _find_runtime(root: Path, name: str,
         if hits:
             return base / hits[0]
     return None
+
+
+def _nested_game_dlss(root: Path, g, opt: "Options", x64: bool = True,
+                      ours=()) -> Path | None:
+    """The game's own nvngx_dlss.dll to replace, when it is not beside the exe.
+
+    Unreal keeps it under Plugins/.../ThirdParty and loads it from there, so
+    a copy put beside the executable is never the one that runs. #225 unticked
+    "keep the game's own", picked 310.9.1, and the overlay still said 3.7.20:
+    the choice was taken and nothing was swapped. None when the person keeps
+    the game's own, when one sits beside the exe (the existing paths handle
+    that), or on a 32-bit game.
+    """
+    # native_dlss is what the window read when the game was picked: with no
+    # DLSS anywhere in the game there is nothing to swap, and the walk
+    # below would run on the Tk thread for every preview (gate 1.9.1).
+    if opt.keep_game_dlss or not x64 or opt.path == UPSTREAM \
+            or not opt.native_dlss:
+        return None
+    mine = {str(o).replace("\\", "/") for o in ours or ()}
+    beside = root / DLSS
+    if beside.is_file() and DLSS not in mine:
+        return None          # the game's own is beside the exe: swapped there
+    # Our own copy beside the exe from an earlier install is not the game's:
+    # without looking past it, the second install ("update all", a new pick)
+    # left the nested runtime on the first install's build (gate 1.9.1).
+    bases = [root]
+    folder = getattr(g, "folder", None)
+    if folder is not None:
+        f_ = Path(folder)
+        # One walk when the exe's folder sits inside the game's: walking
+        # both covered the same tree twice, on the Tk thread for a preview.
+        bases = [f_] if (f_ == root or f_ in root.parents) else [root, f_]
+    for base in bases:
+        # The remembered walk, never a fresh one: preview() runs on the Tk
+        # thread, and a walk of a big engine tree costs the whole 6-second
+        # budget there with the window frozen - which is what #8, #18 and
+        # #32 were about. Detection already walked this folder with this
+        # very key (dlss.py's `walked(folder, skip_dir=install_dir)`), so
+        # the answer is in hand; when it is not, this pays for it once and
+        # every later click reads the cache.
+        try:
+            hits = [h for h in dlss.walked(Path(base), skip_dir=root)
+                    if os.path.basename(str(h)).lower() == DLSS]
+            # Detection's walk looks for five runtime names and stops after
+            # six matches, so "it found no nvngx_dlss.dll" is only an answer
+            # when it did not stop early. When it did, ask the same
+            # remembered walk the narrower question - once, and kept.
+            # ...and it stops on two more: 6000 folders and 6 seconds. None
+            # of the three is distinguishable from "there is nothing there",
+            # so the narrow question is simply always asked when the broad
+            # answer is empty. It is cached under its own key and preview()
+            # runs on a worker now, so it is paid once, off the Tk thread.
+            if not hits:
+                hits = [h for h in dlss.walked(Path(base), skip_dir=root,
+                                               names=(DLSS,))
+                        if os.path.basename(str(h)).lower() == DLSS]
+        except Exception:
+            hits = []
+        for h in hits:
+            found = Path(base) / h
+            # Compared as real paths: `base` is the folder as it was given
+            # (a junction, an 8.3 name) and `h` came back from a walk that
+            # resolved its root, so two spellings of one file would read as
+            # two files - and the install would "swap" what it just wrote.
+            if _same_path(found, beside):
+                continue
+            # And never a copy an earlier install of OURS put somewhere else
+            # in this game: swapping it would back up our own file, and the
+            # other install's uninstall would then hand the game ours as
+            # its original. Our own files are never game evidence.
+            if dlss._ours(found.parent, DLSS):
+                continue
+            return found
+    return None
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return os.path.normcase(os.path.realpath(str(a))) == \
+            os.path.normcase(os.path.realpath(str(b)))
+    except OSError:
+        return os.path.normcase(str(a)) == os.path.normcase(str(b))
+
+
+def _opti_dlss_target(root: Path, g, opt: "Options", ours=()) -> Path | None:
+    """The game's nvngx_dlss.dll to swap on the OptiScaler route.
+
+    Nothing else on this route writes one, so the game's own beside the
+    executable is swapped here too - not only a nested one (gate 1.9.1).
+    """
+    mine = {str(o).replace("\\", "/") for o in ours or ()}
+    beside = root / DLSS
+    # Spelled as the rest of this file spells it: "is it 64-bit", not "is it
+    # not 32-bit" - a game whose bitness could not be read is neither, and
+    # it must take the same answer a 32-bit one takes (#190). Applied to
+    # BOTH branches, so the guard does not rest on "OptiScaler never gets a
+    # 32-bit folder today" staying true (gate 1.9.1).
+    x64 = getattr(g, "bitness", None) == 64
+    # A backup beside it means an earlier install swapped this very file:
+    # the reinstall swaps it again. Detection reads that file as ours by
+    # then, so native_dlss is not asked for in that case (gate 1.9.1).
+    swapped_before = (root / (DLSS + BACKUP_SUFFIX)).is_file()
+    if x64 and not opt.keep_game_dlss and beside.is_file() and (
+            (opt.native_dlss and DLSS not in mine) or swapped_before):
+        return beside
+    return _nested_game_dlss(root, g, opt, x64=x64, ours=ours)
+
+
+def _preview_swap(write, pv, root: Path, have: Path, name: str) -> None:
+    """List a swapped runtime in the preview, as the RR swap is listed."""
+    try:
+        write(str(have.relative_to(root)))
+    except ValueError:
+        write(str(have))
+        pv.outside.append(f"replaces the game's own {name} at {have} - outside "
+                          f"the install folder, backed up beside itself")
+
+
+def _swap_nested_dlss(have: Path, fam: list, opt: "Options", rep, root: Path,
+                      dl, log) -> None:
+    """Replace the game's nested nvngx_dlss.dll, the way the RR swap does."""
+    try:
+        was = pe.file_version(have)
+        e = _place_family(fam, opt.dlss, have, rep, root, dl, DLSS, "dlss", log)
+    except PermissionError:
+        raise
+    except (sources.RateLimited, sources.Unavailable):
+        raise
+    except Exception as ex:
+        log(f"      nvngx_dlss could not be fetched ({ex}) - the game keeps "
+            f"the one it shipped")
+        rep.warnings.append("nvngx_dlss.dll was not swapped: the download did "
+                            "not arrive. The game keeps the runtime it "
+                            "shipped, and everything else installed normally.")
+        rep.skipped.append(DLSS)
+        return
+    try:
+        where = have.relative_to(root)
+    except ValueError:
+        where = have
+    log(f"      nvngx_dlss {_swapped(was, e['label'])}  ({where})")
+    # The dlss page keeps the game's own file as <name>.dlss5-dlss-original
+    # (core/dlssupdate.py; named here, not imported - it imports this
+    # module). With one beside it, what this install backed up is the
+    # page's update, and that is what uninstall brings back.
+    if have.with_name(have.name + ".dlss5-dlss-original").is_file():
+        rep.notes.append(f"dlss version: {e['label']} (the build the dlss page put in at {where} "
+                         f"is backed up and comes back on uninstall; the game's own stays "
+                         f"beside it for that page's restore)")
+    else:
+        rep.notes.append(f"dlss version: {e['label']} (the game's own at {where} "
+                         f"is backed up and comes back on uninstall)")
+    rep.components["dlss"] = e["label"]
 
 
 def _is_win64_dll(p: Path, least: int = 200_000) -> tuple[bool, str]:
@@ -1256,7 +1410,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
         if not flavour and not swap:
             pv.blockers.append(
                 "The RTX Remix runtime installed here has no DLSS 5 neural "
-                "pass (NVIDIA's own runtime has none). Tick 'swap the Remix "
+                "pass (NVIDIA's own runtime has none). Turn on 'swap the Remix "
                 "runtime' to replace it with a community build that does - "
                 "experimental: it also replaces any game-specific fixes the "
                 "mod's own runtime carries.")
@@ -1348,9 +1502,11 @@ def preview(g: games.Game, opt: Options) -> Preview:
 
     # 0b) DXVK
     if dxvk_from:
+        # A Source engine game takes it in bin, where its renderer looks (#224).
+        dsub = dxvk.target_dir(root, x64, dxvk_from)
         for name in dxvk.files_for(dxvk_from) or dxvk.FILES:
-            plain_backup(name)
-            write(name, keep=False)
+            plain_backup(rel(dsub, name))
+            write(rel(dsub, name), keep=False)
 
     # OptiScaler: the whole route in one go.
     if opt.path == OPTI:
@@ -1384,6 +1540,10 @@ def preview(g: games.Game, opt: Options) -> Preview:
         if _opti_needs_dlss(opt) and not (present(DLSS) and opt.keep_game_dlss
                                           and DLSS not in preinstalled):
             write(DLSS)
+        elif not _opti_needs_dlss(opt):
+            _nd = _opti_dlss_target(root, g, opt, ours=preinstalled)
+            if _nd is not None:
+                _preview_swap(write, pv, root, _nd, DLSS)
         for r in sorted(preinstalled):
             if present(r):
                 add(pv.writes, r)
@@ -1503,6 +1663,9 @@ def preview(g: games.Game, opt: Options) -> Preview:
     game_has = present(DLSS)
     if opt.path != UPSTREAM and not (x64 and game_has and opt.keep_game_dlss):
         write(rel(dlss_dir, DLSS))
+        _nd = _nested_game_dlss(root, g, opt, x64, ours=preinstalled)
+        if _nd is not None and not _same_path(_nd, root / rel(dlss_dir, DLSS)):
+            _preview_swap(write, pv, root, _nd, DLSS)
     if opt.path == STANDALONE and not (present(DLSSG) and opt.keep_game_dlss):
         write(DLSSG)
     if opt.dlssd:
@@ -1956,6 +2119,16 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
     Also written when an install FAILS part way: without it the orphaned files
     could not be cleaned up afterwards.
     """
+    # The remembered folder walk is dropped here rather than only at the
+    # start of install(): the preview and the swap now READ that cache
+    # mid-install, so an install that writes a runtime would otherwise
+    # leave the pre-write picture behind for the rest of the session
+    # (gate 1.9.1).
+    try:
+        dlss.forget_walk(g.folder)
+        dlss.forget_walk(root)
+    except Exception:
+        pass
     # Carry forward what an earlier install left that this one did not touch.
     # Without this the record only covers the LAST install, so a file written
     # the first time and merely left alone the second - nvngx_dlss.dll, say -
@@ -2088,6 +2261,14 @@ def options_from_manifest(root: Path) -> Options | None:
         # or the update would put the mod's neural-pass-less runtime back.
         remix_swap=bool((data.get("components") or {}).get("remix_runtime")),
         dlssd=str((data.get("components") or {}).get("dlssd") or ""),
+        # DXVK ticked by hand and ReShade's name picked by hand ("try d3d11.dll
+        # if dxgi does nothing") are what made the game work; an update that
+        # dropped them put it back to the state that did not. The record
+        # holds the DXVK version when it went in, and the proxy name used.
+        dxvk=bool(data.get("dxvk")) and path in (NATIVE, BRIDGE, FEEDER),
+        reshade_proxy=(str(data.get("proxy") or "")
+                       if path not in (OPTI, ROUTE_REMIX)
+                       and str(data.get("proxy") or "") in RESHADE_PROXIES else ""),
     )
 
 
@@ -2424,6 +2605,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     # Every step below can fail (network, rate limit, permissions). If it
     # does, we still record the files already written - otherwise they would
     # be orphaned in the game folder with no way to clean them up.
+    # The name OptiScaler went in under, once it is chosen: a failure part way
+    # must record THAT, not the ReShade proxy name - update and retry read
+    # the record's proxy back as opti_proxy and would put OptiScaler under a
+    # name the first attempt had avoided because it was taken.
+    oproxy = ""
     try:
         # --- 0) REFramework first, on an RE Engine game (see reengine.py) ---
         # Never on the remix route: Remix has already replaced the renderer
@@ -2465,7 +2651,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 raise InstallError(
                     "The RTX Remix runtime installed here has no DLSS 5 "
                     "neural pass - NVIDIA's own runtime has none, and only "
-                    "some community forks do.\n\nTick 'swap the Remix "
+                    "some community forks do.\n\nTurn on 'swap the Remix "
                     "runtime' to replace it with a build that has the pass. "
                     "That is experimental: a mod's runtime is often a fork "
                     "carrying fixes for this exact game, and replacing it "
@@ -2731,6 +2917,13 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                         f"{'FSR' if opt.upscaler == 'fsr' else 'XeSS'})")
                     rep.notes.append(f"dlss version: {e_['label']}")
                     rep.components["dlss"] = e_["label"]
+            else:
+                nested_ = _opti_dlss_target(root, g, opt,
+                                            ours=rep.preinstalled)
+                if nested_ is not None:
+                    begin("nvngx_dlss.dll")
+                    _swap_nested_dlss(nested_, catalog_["dlss"], opt, rep,
+                                      root, dl, log)
 
             begin("OptiScaler configuration")
             nr_settings = dict(opt.nr)
@@ -3021,7 +3214,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                             f"list - installing {e['label']} instead, which "
                             f"is the kind of build that pin exists to avoid. "
                             f"If the neural pass faults, pick {want} under "
-                            f"'dlss5 add-on' on the install page.")
+                            f"'dlss5 add-on' in the game's settings.")
                     log(f"      {miss}")
                     rep.warnings.append(miss)
                 f = dl(e["url"], f"renodx-{e['label']}.zip")
@@ -3096,6 +3289,10 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 log("      the game ships its own nvngx_dlss.dll, left untouched")
                 rep.skipped.append(DLSS)
             else:
+                # Looked for before the copy beside the exe is written, which
+                # would otherwise read as the game's own being right there.
+                nested = _nested_game_dlss(root, g, opt, x64,
+                                           ours=rep.preinstalled)
                 was = pe.file_version(dlss_dir / DLSS)
                 e = _place_family(catalog["dlss"], opt.dlss,
                                   dlss_dir / DLSS, rep, root, dl, DLSS,
@@ -3103,6 +3300,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 log(f"      nvngx_dlss {_swapped(was, e['label'])}")
                 rep.notes.append(f"dlss version: {e['label']}")
                 rep.components["dlss"] = e["label"]
+                # The copy beside the exe is not the one an Unreal game
+                # loads: its own under Plugins is swapped as well (#225).
+                if nested is not None and not _same_path(nested, dlss_dir / DLSS):
+                    _swap_nested_dlss(nested, catalog["dlss"], opt, rep, root,
+                                      dl, log)
 
         # Ray reconstruction. A swap, never an addition: the game asks for
         # this feature or it does not, and a runtime nothing calls is dead
@@ -3298,11 +3500,20 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 reshade_ini.write_shader_paths(root)
                 log("      shader search paths set, no technique enabled - the "
                     "add-on runs DLSS5_AIO_Feed and VORT itself")
+                # "F10 compares, F10 opens ReShade" is what this line read
+                # when the person picked F10 anyway, after being warned.
+                # One key with two jobs is worth a sentence, not a
+                # contradiction (gate 1.9.1).
+                _ovl = reshade_ini.overlay_key_name()
+                _keys = ("F10 compares and also opens ReShade - you picked it "
+                         "for the overlay, so one of the two will win"
+                         if _ovl == "F10" else
+                         f"F10 compares, {_ovl} opens ReShade")
                 rep.notes.append("standalone-dlssnr: turn the game's own DLSS, "
                                  "frame generation and anti-aliasing OFF. Game "
                                  "resolution = the monitor's gives DLAA, a lower "
-                                 "one gives DLSS Super Resolution. F10 compares, "
-                                 "Home opens ReShade; leave DLSS5_AIO_Feed and "
+                                 f"one gives DLSS Super Resolution. {_keys}"
+                                 "; leave DLSS5_AIO_Feed and "
                                  "vort_MotionEffects unticked, the add-on runs "
                                  "them. Its log is outside the game folder: "
                                  "%LOCALAPPDATA%\\RHI\\Logs\\standalone-dlssnr.log")
@@ -3368,7 +3579,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
     except PermissionError as e:
         note_failure(root, e)
-        _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+        _write_manifest(root, g, opt, rep, oproxy or proxy, level, complete=False)
         raise InstallError(
             f"Windows refused to write a file:\n{e}\n\n"
             f"Almost always this means the game (or its launcher) is running "
@@ -3377,7 +3588,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             f"clean up if you would rather start fresh.") from e
     except (sources.RateLimited, sources.Unavailable) as e:
         note_failure(root, e)
-        _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+        _write_manifest(root, g, opt, rep, oproxy or proxy, level, complete=False)
         log("")
         log(str(e))
         raise InstallError(str(e)) from e
@@ -3387,7 +3598,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             # Said in words, and recorded: the diagnosis reads this note
             # instead of telling someone with a full drive to install again.
             rep.notes.append(net.DISK_FULL_NOTE)
-            _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+            _write_manifest(root, g, opt, rep, oproxy or proxy, level, complete=False)
             raise InstallError(net.disk_full_message(e, root, net.CACHE)) from e
         if isinstance(e, InstallError):
             # The install's own refusal, raised part way through (the Remix
@@ -3399,7 +3610,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             said = " ".join(ln.strip() for ln in str(e).splitlines() if ln.strip())
             if said:
                 rep.notes.append(net.STOP_NOTE + said[:400])
-        _write_manifest(root, g, opt, rep, proxy, level, complete=False)
+        _write_manifest(root, g, opt, rep, oproxy or proxy, level, complete=False)
         log("")
         log(f"Install did not finish. {len(rep.written)} files were already "
             f"written and have been recorded, so 'Uninstall' can remove them.")
@@ -3488,6 +3699,13 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         # not.
         if not remix.is_remix_game(root):
             files.append("D3D9.dll")
+            # A Source game's DXVK sits where the engine loads it (#224).
+            for sub in ("bin/d3d9.dll", "bin/win64/d3d9.dll"):
+                try:
+                    if (root / sub).is_file() and dxvk.is_dxvk(root / sub):
+                        files.append(sub)
+                except Exception:
+                    pass
         else:
             log("RTX Remix is installed here: d3d9.dll is its runtime, left alone.")
         # A plain nvngx.dll is the standalone add-on's bridge only when the
@@ -3521,6 +3739,10 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
         # stays untouched unless it is confirmed to be ours by content.
         if refw.DINPUT8 not in files and refw.is_reframework(root / refw.DINPUT8):
             files.append(refw.DINPUT8)
+        # A runtime the dlss page updated sits beside the game's own under
+        # dlssupdate's suffix: it is the game's runtime, not a file of ours
+        # to delete by name.
+        files = [f for f in files if not (root / (f + ".dlss5-dlss-original")).is_file()]
         log("No install record found; cleaning up by known filenames.")
 
     # The manifest is a file in the game folder, and anything can write it -
@@ -3569,6 +3791,40 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             if rel not in files:
                 files.append(rel)
     except OSError:
+        pass
+    # A runtime swapped where the game keeps it (#225) can sit above the
+    # executable's folder - Ready or Not keeps DLSS under Plugins - so the
+    # safety net looks there too, with the same bounded walk as detection.
+    try:
+        gf = Path(getattr(g, "folder", None) or root)
+        if gf != root:
+            # A backup that belongs to a DIFFERENT install of ours in the
+            # same game must be left alone: restoring it would put that
+            # install's swapped runtime back and delete the build it is
+            # running on, silently. Our manifest lives in the install
+            # folder and never beside a nested runtime, so "is there a
+            # manifest next to it" could not tell them apart - what can is
+            # whether THIS install recorded the file the backup is of
+            # (gate 1.9.1).
+            mine = {str(f).replace("\\", "/").lower() for f in files}
+            for h in dlss.find_dlss_files(gf, names=(DLSS + BACKUP_SUFFIX,)):
+                p = gf / h
+                if root in p.parents or str(p) in files:
+                    continue
+                twin = str(p)[:-len(BACKUP_SUFFIX)].replace("\\", "/").lower()
+                rel_twin = ""
+                try:
+                    rel_twin = str(Path(twin).relative_to(gf)).replace(
+                        "\\", "/").lower()
+                except ValueError:
+                    pass
+                claimed = twin in mine or (rel_twin and rel_twin in mine)
+                # With no file list at all the record is gone (an install
+                # that was interrupted before it wrote one), and the net is
+                # the only thing that would put the game's file back.
+                if claimed or not files:
+                    files.append(str(p))
+    except Exception:
         pass
 
     all_suffixes = (BACKUP_SUFFIX,) + LEGACY_BACKUP_SUFFIXES
@@ -3631,14 +3887,21 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
     for name in _restore_sidelined(root, data.get("sidelined"), log):
         removed.append(name + SIDELINE_SUFFIX)
 
+    # Compared with one slash and one case: the no-record fallback lists
+    # "bin/d3d9.dll" and "D3D9.dll" while the backup sweep finds
+    # "bin\d3d9.dll...backup", and a mismatch deleted the file the restore
+    # had just put back (gate 1.9.1).
+    def _key(r: str) -> str:
+        return r.replace("\\", "/").lower()
+
     restored = set()
     for rel in files:
         s = next((s for s in all_suffixes if rel.endswith(s)), None)
         if s:
-            restored.add(rel[:-len(s)])
+            restored.add(_key(rel[:-len(s)]))
     stuck: list[str] = []
     for rel in files:
-        if any(rel.endswith(s) for s in all_suffixes) or rel in restored:
+        if any(rel.endswith(s) for s in all_suffixes) or _key(rel) in restored:
             continue
         p = root / rel
         if not p.is_file():
@@ -3784,12 +4047,27 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             pass
         log(f"Removed {len(removed)} items; {len(stuck)} could not be removed. "
             f"Close the game and its launcher, then uninstall again.")
+        _forget_walk(g, root)
         return removed
     man.unlink(missing_ok=True)
     for n in LEGACY_MANIFESTS:
         (root / n).unlink(missing_ok=True)
     log(f"Removed {len(removed)} items.")
+    _forget_walk(g, root)
     return removed
+
+
+def _forget_walk(g, root: Path) -> None:
+    """Drop the remembered folder walk - at the END as well as the start.
+
+    The safety net walks the game folder mid-uninstall, which fills the
+    cache with the folder as it was before the files came out.
+    """
+    try:
+        dlss.forget_walk(g.folder)
+        dlss.forget_walk(root)
+    except Exception:
+        pass
 
 
 def _delete(p: Path, attempts: int = 4) -> bool:

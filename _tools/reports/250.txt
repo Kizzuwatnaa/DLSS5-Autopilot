@@ -1,0 +1,47 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Doesnt work. Tried using autopilot.
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.92
+- game: Batman - Arkham Knight
+- exe: BatmanAK.exe
+- arch/api: 64-bit / DX12 (imports d3d9.dll, but ships nvngx_dlss.dll - the renderer is D3D12 or Vulkan, not DirectX 9. If the game is set to Vulkan, pick that in the settings before installing)
+- route: upstream
+- windows event: BatmanAK.exe faulted in GFSDK_GodraysLib.x64.dll 0xC0000005 at 2026-09-16 09:16:28 UTC
+
+**Diagnosis**: The game's DLSS call was never hooked - nothing to run on.
+- [warn] Another DLSS hook shares this folder: dlss5-lab-overlay-c65e2d0b143726c0.addon64
+- [ok] ReShade loaded add-on: DLSS 5 Swapper Overlay 0.0.0.0
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [warn] Other ReShade add-ons are loaded: DLSS 5 Swapper Overlay
+- [bad] The add-on never found the game's DLSS call.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**What ran, and what it loaded** (seen at 16 Sep 14:16)
+- process: BatmanAK.exe
+- DLLs in the process: 149
+- ours, loaded: dxgi.dll, nvngx.dll.addon64
+- same name, loaded from elsewhere: C:\WINDOWS\system32\dxgi.dll
+- ours, not loaded: nvngx_dlssnr.dll
+
+**ReShade.log**
+```
+14:16:49:998 [ 3104] | INFO  | Registered add-on "DLSS 5 Swapper Overlay" v0.0.0.0 using ReShade API version 20.
+14:16:50:015 [ 3104] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+14:16:52:288 [ 3104] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000000013916800, pDevice = 0000000013A6BC20, pDesc = 00000000012FCDB0, ppSwapChain = 000000009865AE68) ...
+14:17:47:027 [ 3104] | INFO  | Exiting ...
+14:17:47:028 [ 3104] | WARN  | Add-ons are still loaded! Application may crash on exit.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

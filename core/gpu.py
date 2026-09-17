@@ -155,42 +155,80 @@ def label(sm: int | None) -> str:
     return SM_NAMES.get(sm, "unknown") if sm is not None else "unknown"
 
 
+def _marketing(raw: str) -> str:
+    """"32.0.16.1692" -> "616.92"; anything else comes back as it was."""
+    parts = str(raw).split(".")
+    if len(parts) == 4 and parts[3].isdigit():
+        digits = (parts[2][-1:] if parts[2] else "") + parts[3]
+        if len(digits) >= 5:
+            return f"{digits[:-2]}.{digits[-2:]}"
+    return str(raw)
+
+
+def _as_number(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return ()
+
+
+_DRIVER: list = []
+
+
 def driver_version() -> str | None:
     """The NVIDIA driver version as people know it ("616.56"), or None.
 
-    The registry stores it as "32.0.16.1656": the last two groups carry the
-    marketing number - 16.1656 -> 616.56.
+    The driver's own nvapi64.dll in System32 carries the version of the
+    driver that is installed now ("32.0.16.1692" -> 616.92). The display
+    class in the registry was read first before 2.0, and it keeps an entry
+    for every NVIDIA card or driver the PC ever had: #242's machine ran
+    616.92 and the tool read an old 581.80 entry from it, then told that
+    person to update their driver. The registry is the fallback now, and
+    of several NVIDIA entries the newest is taken. Read once per run.
     """
+    if _DRIVER:
+        return _DRIVER[0]
+    found = None
     try:
-        import winreg
-        key = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as root:
-            i = 0
-            while True:
-                try:
-                    sub = winreg.EnumKey(root, i)
-                except OSError:
-                    break
-                i += 1
-                if not sub.isdigit():
-                    continue
-                try:
-                    with winreg.OpenKey(root, sub) as k:
-                        desc = str(winreg.QueryValueEx(k, "DriverDesc")[0])
-                        if "NVIDIA" not in desc.upper():
-                            continue
-                        raw = str(winreg.QueryValueEx(k, "DriverVersion")[0])
-                except OSError:
-                    continue
-                parts = raw.split(".")
-                if len(parts) == 4 and parts[3].isdigit():
-                    digits = (parts[2][-1:] if parts[2] else "") + parts[3]
-                    if len(digits) >= 5:
-                        return f"{digits[:-2]}.{digits[-2:]}"
-                return raw
+        import os
+        from . import pe
+        dll = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "nvapi64.dll"
+        if dll.is_file():
+            v = _marketing(pe.file_version(dll) or "")
+            if _as_number(v):
+                found = v
     except Exception:
-        pass
-    return None
+        found = None
+    if found is None:
+        best = None
+        try:
+            import winreg
+            key = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as root:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(root, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if not sub.isdigit():
+                        continue
+                    try:
+                        with winreg.OpenKey(root, sub) as k:
+                            desc = str(winreg.QueryValueEx(k, "DriverDesc")[0])
+                            if "NVIDIA" not in desc.upper():
+                                continue
+                            v = _marketing(str(winreg.QueryValueEx(k, "DriverVersion")[0]))
+                    except OSError:
+                        continue
+                    if best is None or _as_number(v) > _as_number(best):
+                        best = v
+        except Exception:
+            best = None
+        found = best
+    _DRIVER.append(found)
+    return found
 
 
 def hdr_on() -> bool | None:

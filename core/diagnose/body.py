@@ -18,24 +18,14 @@ from pathlib import Path
 from . import model
 from .model import *  # noqa: F401,F403
 from .evidence import *  # noqa: F401,F403
+from .helper import _helper_excerpt
+from .layer import _dxvk_files
 
 
 __all__ = [
-    "_block", "_last_lines", "_presence", "_reshade_died_early",
+    "_block", "_dlss_record_root", "_last_lines", "_presence",
     "_reshade_excerpt", "_their_provider", "_tool_log_lines", "issue_body"
 ]
-
-def _reshade_died_early(rtext: str) -> bool:
-    """Did ReShade's last session end before it did anything at all?
-
-    Only when the session is whole - it begins where ReShade began - and
-    holds none of the lines that say it got somewhere.
-    """
-    low = (rtext or "").lower()
-    if _RESHADE_STARTED not in low:
-        return False
-    return not any(k in low for k in _RESHADE_GOT_GOING)
-
 
 def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
     """The ReShade.log lines a report carries, fitted to its budget.
@@ -45,7 +35,10 @@ def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
     "Failed to find" beside it stayed, which replays to the opposite answer.
     Over budget, the lines nothing reads go first.
     """
-    kept = [ln for ln in text.splitlines() if any(k in ln for k in _RESHADE_KEEP)]
+    every = text.splitlines()
+    nrpre = _nrpre_picks(every)
+    kept = [ln for i, ln in enumerate(every) if i in nrpre or any(k in ln for k in _RESHADE_KEEP)]
+    held = {_HOOK_ADDRESSES.sub("", every[i].rstrip())[:200] for i in nrpre}
     if not kept and text.strip():
         # A log with none of those lines is still a log: ReShade started and
         # stopped before any add-on registered. The report printed "(none)"
@@ -57,13 +50,14 @@ def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
     # kind can end up in the excerpt, so the rest are not looked at twice.
     firm = set(sorted(i for i, ln in enumerate(kept)
                       if any(k in ln for k in _RESHADE_FIRM))[-8:])
+    firm |= {i for i, ln in enumerate(kept) if "[NRPRE] " in ln}
     firm |= set(sorted(i for i, ln in enumerate(kept)
                        if any(k in ln for k in _RESHADE_ALSO))[-8:])
     rest = [i for i in range(len(kept)) if i not in firm][-n:]
     lines = [_HOOK_ADDRESSES.sub("", kept[i].rstrip())[:200]
              for i in sorted(firm | set(rest))]
-    for spare in (lambda ln: not any(k in ln for k in _RESHADE_FIRM + _RESHADE_ALSO),
-                  lambda ln: not any(k in ln for k in _RESHADE_FIRM),
+    for spare in (lambda ln: ln not in held and not any(k in ln for k in _RESHADE_FIRM + _RESHADE_ALSO),
+                  lambda ln: ln not in held and not any(k in ln for k in _RESHADE_FIRM),
                   lambda ln: True):
         while len(lines) > n or len("\n".join(lines)) > budget:
             i = next((i for i, ln in enumerate(lines) if spare(ln)), None)
@@ -123,8 +117,42 @@ def _their_provider(install_dir: Path, prov: str, man: dict) -> str:
         return ""
 
 
-def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
-    """One line per file that decides whether anything can load at all."""
+_RECORD_LEVELS = 4
+
+
+def _dlss_record_root(install_dir: Path, game_root=None) -> Path | None:
+    """The folder holding the dlss page's record for this install, or None.
+
+    The page writes it in the game's root, which an Unreal game keeps three
+    levels above the exe (ReadyOrNot/Binaries/Win64): the game's own folder
+    when the caller knows it, else the first folder up from the exe's that
+    holds one, a bounded climb that stops at the drive root.
+    """
+    from .. import dlssupdate as _du
+    if game_root:
+        try:
+            if (Path(game_root) / _du.RECORD).is_file():
+                return Path(game_root)
+        except OSError:
+            pass
+    d = Path(install_dir)
+    for _ in range(_RECORD_LEVELS + 1):
+        try:
+            if (d / _du.RECORD).is_file():
+                return d
+        except OSError:
+            pass
+        if d.parent == d:
+            break
+        d = d.parent
+    return None
+
+
+def _presence(install_dir: Path, man: dict, route: str, game_root=None) -> list[str]:
+    """One line per file that decides whether anything can load at all.
+
+    `game_root` is the game's own folder when the caller knows it (the dlss
+    page's record lives there)."""
     names: list[str] = []
     extra: list[str] = []
     # Whether there is an install record at all has to be IN the report.
@@ -213,6 +241,36 @@ def _presence(install_dir: Path, man: dict, route: str) -> list[str]:
         there = (install_dir / where).is_file()
         extra.append(f"- {where}: {'present' if there else 'MISSING'} "
                      f"(swapped to {rr}; the game's own is backed up)")
+    # The game's own nvngx_dlss.dll replaced where it keeps it (#225): a
+    # swap is the first suspect when a game starts crashing.
+    _dl = (man.get("components") or {}).get("dlss")
+    # Every one of them, not the first the walk reached: a reinstall can
+    # swap the copy beside the executable AND a nested one, and which of
+    # the two a report showed was decided by os.walk order (gate 1.9.1).
+    _nbs = [f for f in (man.get("files") or [])
+            if isinstance(f, str)
+            # beside the exe (no slash) or nested (#225, gate 1.9.1)
+            and f.replace("\\", "/").lower().split("/")[-1]
+            == "nvngx_dlss.dll" + _BACKUP_SUFFIX]
+    for _nb in _nbs if _dl else []:
+        _w = _nb[:-len(_BACKUP_SUFFIX)]
+        _p = Path(_w) if Path(_w).is_absolute() else install_dir / _w
+        extra.append(f"- {_w}: {'present' if _p.is_file() else 'MISSING'} "
+                     f"(swapped to {_dl}; the game's own is backed up)")
+    # The dlss page swaps runtimes outside any install record: a crash after
+    # one names that build, or the report points at everything but the file
+    # that changed.
+    try:
+        from types import SimpleNamespace as _NS
+        from .. import dlssupdate as _du
+        _gf = _dlss_record_root(Path(install_dir), game_root)
+        for _e in _du.load_record(_NS(folder=Path(_gf), install_dir=Path(install_dir))) if _gf else []:
+            _p = Path(_gf) / _e["path"]
+            extra.append(f"- {_e['path']}: {'present' if _p.is_file() else 'MISSING'} "
+                         f"(updated on the dlss page to {_e['label'] or _e['written'] or '?'}; "
+                         f"the game's own {_e['original'] or ''} kept beside it)".replace("own  kept", "own kept"))
+    except Exception:
+        pass
     if route == "optiscaler":
         # Three builds can be installed here and their packages differ; a
         # report that does not say which one is unanswerable.
@@ -380,7 +438,8 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     d = Path(install_dir) if install_dir else None
     if d is not None and d.is_dir():
         man = _manifest(d)
-        files = "\n**Files in the folder**\n" + "\n".join(_presence(d, man, route)) + "\n"
+        files = "\n**Files in the folder**\n" + "\n".join(
+            _presence(d, man, route, getattr(game, "folder", None))) + "\n"
         reshade = _tail(d / RESHADE_LOG, 250_000)
         feed = _tail(d / FEED_LOG, 100_000)
         if route == "optiscaler":
@@ -394,6 +453,11 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     parts.append(_block("ReShade.log",
                         _reshade_excerpt(_last_session(reshade)), 1500))
     parts.append(_block("dlss5-feed.log", _last_lines(feed, 20), 1400))
+    # A 32-bit game's DLSS runs in the helper, and #252's report carried
+    # every log except the one that named the fault.
+    if route == "feeder" and d is not None and (d / HOST_LOG).is_file():
+        parts.append(_block("dlss5-feed-host.log",
+                            _helper_excerpt(_tail(d / HOST_LOG, 150_000)), 900))
     if route == "optiscaler":
         parts.append(_block("OptiScaler.log", _last_lines(opti, 20), 900))
     if route == "standalone":

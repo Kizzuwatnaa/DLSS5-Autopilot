@@ -179,13 +179,19 @@ OVERLAY_KEYS = {
     "F10": 0x79,
     "F11": 0x7A,
     "F12": 0x7B,
+    # Two more that full-size and compact boards both tend to keep, for a
+    # keyboard with no Home, Insert or navigation cluster at all (#214).
+    "Pause": 0x13,
+    "Scroll Lock": 0x91,
 }
 
 
 def overlay_key_name(default: str = "Home") -> str:
     """What to tell the person to press, given what they chose.
 
-    Every "press Home" and "press Insert" in the tool goes through here.
+    Every "press Home" and "press Insert" in the install instructions and
+    the diagnosis goes through here. The video player's own ReShade is not
+    written with this key and keeps Home.
     A person who rebound the key because their keyboard has neither (#88)
     must not then be told to press one of them.
     """

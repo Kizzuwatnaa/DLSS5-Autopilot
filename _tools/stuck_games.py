@@ -37,73 +37,11 @@ sys.path.insert(0, str(HERE))
 
 REPORTS = HERE / "reports"
 
-# (stage, who can fix it, the verdicts that mean it - matched on the start
-# of the printed verdict). In chain order, and every entry is a real
-# verdict string from core/diagnose.py.
-CHAIN = (
-    ("1 the install stopped", "us", (
-        "The install never finished",
-        "The install crashed",
-        "The install stopped",
-        "The drive was full",
-        "Nothing is installed in this folder",
-    )),
-    ("2 a file went missing after it", "the person's antivirus", (
-        "ReShade's",
-        "Files the install wrote are gone",
-        "The motion-vector shader was removed",
-    )),
-    ("3 nothing of ours loaded", "us", (
-        "Not started since the install",
-        "Not run yet, or OptiScaler never loaded",
-        "DXVK ran and ReShade did not",
-        "It started, and nothing here recorded the session",
-        "The install went beside a launcher",
-        "is running and has loaded nothing from this folder",
-    )),
-    ("4 the game refused the hook", "upstream", (
-        "The game refused OptiScaler's swapchain",
-        "The game refused the swapchain",
-    )),
-    ("5 loaded, the feed never got going", "upstream", (
-        "Inconclusive - the feed did not get far enough",
-        "Inconclusive - the add-on attached but built nothing",
-        "Remix ran; the neural pass was never even attempted",
-        "No Remix runtime",
-        "The Remix runtime here has no neural pass",
-    )),
-    ("6 set up, not switched on", "the person", (
-        "Set up correctly, but not switched on yet",
-        "Loaded and set up; no neural frame yet",
-    )),
-    ("7 loaded, and we cannot see", "us", (
-        "Inconclusive - open the overlay",
-        "Add-ons loaded. Confirm in",
-    )),
-    ("8 the add-on crashed", "upstream", (
-        "The feed crashed after starting",
-        "The crash is in the",
-    )),
-    ("9 the model refused", "upstream", (
-        "OptiScaler loaded, but the model refused or failed",
-    )),
-    ("10 the driver's runtime", "NVIDIA", (
-        "Driver 616.64+ faults",
-        "The driver has no DLSS 5 entry point",
-        "Every DLSS evaluate faults",
-    )),
-    ("0 working", "-", ("Working",)),
-)
-
-
-def stage(verdict: str) -> tuple[str, str]:
-    if not verdict.strip():
-        return "no verdict in the report", "-"
-    for name, who, starts in CHAIN:
-        for s in starts:
-            if s.lower() in verdict.lower():
-                return name, who
-    return "unmapped: " + verdict[:40], "?"
+# The chain and the matching live in core/verdicts.py, where the
+# autopilot pass reads them too: one list, so the tool that decides
+# whether another route is worth a try and the tool that says what to fix
+# next can never disagree about what a verdict means.
+from core.verdicts import CHAIN, stage  # noqa: E402,F401
 
 
 def header(text: str) -> dict:

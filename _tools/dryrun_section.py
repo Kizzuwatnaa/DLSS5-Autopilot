@@ -46,10 +46,13 @@ from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noq
                   pe, prefs, reshade_ini, sources, update, vulkan)
 from core import dxvk, refw, video, watch, community  # noqa: E402
 from core import mfg as _m141  # noqa: E402
-from core import gui as _gui  # noqa: E402
 import zipfile as _zf141  # noqa: E402,F811
 
-_gsrc = inspect.getsource(_gui)
+# The window's source, for a section that borrows `_gsrc` from earlier in the
+# suite. Read from disk, never imported: importing a UI module here would make this runner die at start
+# whenever the window does - which is the one time it is needed.
+_gsrc = "\n".join(p.read_text(encoding="utf8", errors="replace")
+                  for p in sorted((SRC_DIR / "core" / "ui").glob("*.py")))
 _readme = (SRC_DIR / "README.md").read_text(encoding="utf8")
 
 FAILS: list[str] = []

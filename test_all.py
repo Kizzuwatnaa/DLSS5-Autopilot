@@ -37,8 +37,9 @@ def _diag_src() -> str:
     __init__ holds no rules, so its parts are read instead.
     """
     from core import diagnose as _dp
-    return "\n".join(src_of(m) for m in (_dp.model, _dp.evidence, _dp.routes,
-                                         _dp.body, _dp.chain))
+    return "\n".join(src_of(m) for m in (_dp.model, _dp.evidence, _dp.process,
+                                         _dp.helper, _dp.routes, _dp.body,
+                                         _dp.chain))
 
 
 def src_of(obj) -> str:
@@ -95,6 +96,438 @@ def section(title: str) -> None:
     print("=" * 78)
 
 
+# ---------------------------------------------------------------- the window, for the checks
+# The 2.0 window (core/ui) keeps its logic in controller classes and draws
+# everything on a Canvas, so the checks below run that logic instead of
+# reading its source. These helpers are the four ways they do it:
+#
+#   _ui_isolated()   settings, the saved library and the watcher's record go
+#                    to a temporary folder for as long as a check needs them -
+#                    nothing here writes into the machine's own settings
+#   _UiThreads       stands in for `threading` inside a core.ui module: it
+#                    records every worker, runs it only when told to, and
+#                    knows whether the code asking is inside one - which is
+#                    how "off the Tk thread" is proven rather than read
+#   _ui_ctl()        the real controllers (library, game, watcher) with no
+#                    Tk at all: what they write, ask and queue is recorded
+#   _ui_live()       the real window on a real (invisible) Tk root, with the
+#                    network calls it makes at start switched off; clicks go
+#                    in as real events through _ui_click / _ui_pick
+#
+# Every one of them is built so a missing name is a FAIL on the check that
+# asked, not an AttributeError that ends the run.
+import contextlib as _ui_ctx
+
+
+@_ui_ctx.contextmanager
+def _ui_isolated():
+    from core import covers as _cv, library as _l, prefs as _p, watch as _w
+    saved = (_p.FILE, _l.FILE, _w.RECORD, _cv.ROOT, _cv.online, _cv.undecided)
+    d = Path(tempfile.mkdtemp(prefix="ui_iso_"))
+    _p.FILE, _l.FILE, _w.RECORD = d / "settings.json", d / "library.json", d / "record.json"
+    # a test game's cover is never looked up online: its made-up name would
+    # go to Steam's store, and the answer into the machine's art cache
+    _cv.ROOT, _cv.online, _cv.undecided = d / "art", (lambda: False), (lambda: False)
+    try:
+        yield d
+    finally:
+        _p.FILE, _l.FILE, _w.RECORD, _cv.ROOT, _cv.online, _cv.undecided = saved
+        shutil.rmtree(d, ignore_errors=True)
+
+
+class _UiThreads:
+    """`threading` for a core.ui module: Thread(target=...).start() is
+    recorded, and run at once (run=True) or when `go()` is called."""
+
+    def __init__(self, run: bool = True):
+        self.started: list = []
+        self.run = run
+        self.inside = 0
+        outer = self
+
+        class _T:
+            def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+                self.target, self.args, self.kwargs = target, args, kwargs or {}
+                self.done = False
+
+            def start(self):
+                outer.started.append(self)
+                if outer.run:
+                    outer._one(self)
+
+            def is_alive(self):
+                return False
+
+            def join(self, timeout=None):
+                pass
+
+        self.Thread = _T
+
+    def _one(self, t):
+        if t.done:
+            return
+        t.done = True
+        self.inside += 1
+        try:
+            t.target(*t.args, **t.kwargs)
+        finally:
+            self.inside -= 1
+
+    def go(self):
+        """Run every worker started so far (and any they start)."""
+        while any(not t.done for t in self.started):
+            for t in list(self.started):
+                self._one(t)
+
+    @property
+    def names(self) -> list:
+        return [getattr(t.target, "__qualname__", "?") for t in self.started]
+
+
+@_ui_ctx.contextmanager
+def _ui_threads(run: bool = True):
+    from core.ui import app as _a, ctl_game as _cg, ctl_library as _cl, ctl_watch as _cw
+    th = _UiThreads(run)
+    with patch.object(_cg, "threading", th), patch.object(_cl, "threading", th), \
+            patch.object(_cw, "threading", th), patch.object(_a, "threading", th):
+        yield th
+
+
+def _ui_ctl(game=None, support=None):
+    """The window's controllers with no window: LibraryControl, GameControl
+    and WatchControl on one object whose shell, root and log are recorders.
+    Call inside _ui_isolated() - the controllers read settings as they start."""
+    import queue as _queue
+    from core.ui import ctl_dlss as _cd, ctl_game as _cg, ctl_library as _cl, ctl_watch as _cw
+
+    class _Shell:
+        def __init__(self):
+            self.asked, self.answers, self.infos, self.toasts = [], [], [], []
+            self.busy_text = self.status_text = ""
+            self.page, self.log_open, self.watching = None, False, None
+
+        def ask(self, title, text, ok="ok", cancel="cancel", danger=False, accent=None):
+            self.asked.append((title, text, ok, cancel))
+            return self.answers.pop(0) if self.answers else False
+
+        def info(self, title, text):
+            self.infos.append((title, text))
+
+        error = info
+
+        def ask_text(self, title, prompt, initial=""):
+            self.asked.append((title, prompt, "save", "cancel"))
+            return None
+
+        def busy(self, text=""):
+            self.busy_text = text
+
+        def status(self, text):
+            self.status_text = text
+
+        def toggle_log(self, open_=None):
+            self.log_open = True if open_ is None else open_
+
+        def toast(self, *a, **k):
+            self.toasts.append((a, k))
+
+        def banner(self, *a, **k):
+            pass
+
+        def unbanner(self, *a, **k):
+            pass
+
+        def draw_rail(self):
+            pass
+
+        def redraw(self):
+            pass
+
+    class _Root:
+        def after(self, ms, fn=None, *a):
+            return "after#0"
+
+        def after_cancel(self, _job):
+            pass
+
+        def clipboard_clear(self):
+            pass
+
+        def clipboard_append(self, _t):
+            pass
+
+    class _Ctl(_cl.LibraryControl, _cg.GameControl, _cw.WatchControl, _cd.DlssControl):
+        def __init__(self):
+            self.q = _queue.Queue()
+            self.busy = False
+            self.game = None
+            self.said: list = []
+            self.shell = _Shell()
+            self.root = _Root()
+            self._crash_shown = False
+            self.crash_offered = False
+            self._library_init()
+            self._game_init()
+            self._watch_init()
+            self._dlss_init()
+
+        def write(self, text, tag=""):
+            self.said.append((str(text), tag))
+
+        def text(self) -> str:
+            return "\n".join(t for t, _tag in self.said)
+
+        def refresh(self, page, soft=False):
+            pass
+
+        def offer_crash_report(self):
+            self.crash_offered = True
+
+        def open_game(self, g):
+            self.enter_game(g)
+
+        def pump(self) -> list:
+            """Hand every queued message to its _on_<kind>, like App._pump,
+            but let a raise through - a check wants to see it."""
+            kinds = []
+            while not self.q.empty():
+                kind, payload = self.q.get_nowait()
+                kinds.append(kind)
+                getattr(self, f"_on_{kind}")(payload)
+            return kinds
+
+    c = _Ctl()
+    if game is not None:
+        c.game = game
+        c.settings = c.default_settings(game)
+        c.entry = {}
+    if support is not None:
+        c.support = support
+        c.route = support.recommended
+    return c
+
+
+def _ui_support(options, recommended=None, native_dlss=True, evidence=(), reason=""):
+    return dlss.Support(native_dlss=native_dlss, evidence=list(evidence),
+                        recommended=recommended or options[0], options=list(options),
+                        reason=reason)
+
+
+_UI_DIRS: list = []
+
+
+def _ui_cleanup() -> None:
+    """Remove the folders _ui_game made."""
+    while _UI_DIRS:
+        shutil.rmtree(_UI_DIRS.pop(), ignore_errors=True)
+
+
+def _ui_game(folder=None, name="Test Game", api="DX12", bitness=64, installed=False,
+             manifest=None):
+    """A game in a temporary folder with a real executable in it."""
+    if folder:
+        d = Path(folder)
+    else:
+        d = Path(tempfile.mkdtemp(prefix="ui_game_")) / name
+        _UI_DIRS.append(d.parent)
+    d.mkdir(parents=True, exist_ok=True)
+    exe = d / "Game.exe"
+    if not exe.is_file():
+        shutil.copyfile(X64, exe)
+    if installed or manifest:
+        man = {"version": 1, "complete": True, "exe": "Game.exe", "path": "feeder",
+               "api": api, "bitness": bitness, "files": []}
+        man.update(manifest or {})
+        (d / "dlss5-autopilot.json").write_text(json.dumps(man), encoding="utf8")
+    return games.Game(name=name, folder=d, exe=exe, bitness=bitness, api=api,
+                      api_detected=api, source="Manual", candidates=[exe])
+
+
+class _UiLive:
+    """The real window, invisible, with no network. close() puts back what
+    it changed."""
+
+    def __init__(self, scale: float = 1.0, games_=None):
+        import tkinter as tk
+        from core import community as _cm, library as _l, prefs as _p, watch as _w
+        from core.ui import app as _a, theme as _t
+        self.T = _t
+        self._iso = _ui_isolated()
+        self.tmp = self._iso.__enter__()
+        # Tk fonts belong to the interpreter that made them: a width cached
+        # under the last root raises once that root is gone.
+        getattr(_t, "_measure", {}).clear()
+        _t.set_scale(96 * scale)
+        self._patches = [patch.object(_a.App, n, lambda self, *a, **k: None)
+                         for n in ("check_update", "load_board", "load_shared", "load_catalog",
+                                   "check_stale")]
+        self._patches.append(patch.object(_cm, "fetch", lambda *a, **k: {}))
+        for p in self._patches:
+            p.start()
+        self.root = tk.Tk()
+        try:
+            self.root.attributes("-alpha", 0.0)
+        except tk.TclError:
+            pass
+        self.root.tk.call("tk", "scaling", 96 * scale / 72.0)
+        self.app = None
+        self.error = None
+        try:
+            self.app = _a.App(self.root)
+        except Exception as e:           # a window that cannot open is a FAIL, not a stop
+            import traceback as _tb
+            self.error = _tb.format_exc()
+            print("   (the window did not open: " + f"{type(e).__name__}: {e})")
+        self.settle(150)
+
+    @property
+    def ok(self) -> bool:
+        return self.app is not None
+
+    @property
+    def kit(self):
+        return self.app.shell.kit
+
+    @property
+    def canvas(self):
+        return self.app.shell.content
+
+    def settle(self, ms: int = 120) -> None:
+        end = time.monotonic() + ms / 1000.0
+        while True:
+            try:
+                self.root.update()
+            except Exception:
+                return
+            if time.monotonic() >= end:
+                return
+            time.sleep(0.01)
+
+    def until(self, cond, timeout: float = 6.0) -> bool:
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            try:
+                if cond():
+                    return True
+            except Exception:
+                pass
+            self.settle(30)
+        try:
+            return bool(cond())
+        except Exception:
+            return False
+
+    def log(self) -> str:
+        try:
+            return self.app.shell.log_text.get("1.0", "end")
+        except Exception:
+            return ""
+
+    def labels(self, kind=None) -> list:
+        try:
+            return [lab for _t, _k, lab in self.kit.controls(kind)]
+        except Exception:
+            return []
+
+    def _xy(self, canvas, tag):
+        canvas.update_idletasks()
+        box = canvas.bbox(tag)
+        if not box:
+            return None
+        x1, y1, x2, y2 = box
+        view_h = canvas.winfo_height()
+        top = canvas.canvasy(0)
+        if y1 < top or y2 > top + view_h:
+            try:
+                self.app.shell.scroll_to(max(0, y1 - view_h / 3))
+            except Exception:
+                canvas.yview_moveto(max(0.0, (y1 - 40) / max(1, self.app.shell.content_h)))
+            canvas.update_idletasks()
+            top = canvas.canvasy(0)
+        return int((x1 + x2) / 2 - canvas.canvasx(0)), int((y1 + y2) / 2 - top)
+
+    def click(self, tag, button: int = 1, canvas=None) -> bool:
+        """A real press and release in the middle of `tag`."""
+        c = canvas or self.canvas
+        xy = self._xy(c, tag) if tag else None
+        if xy is None:
+            return False
+        x, y = xy
+        c.event_generate("<Motion>", x=x, y=y)
+        c.event_generate(f"<ButtonPress-{button}>", x=x, y=y)
+        c.event_generate(f"<ButtonRelease-{button}>", x=x, y=y)
+        self.settle(60)
+        return True
+
+    def press(self, label: str, kind=None) -> bool:
+        return self.click(self.kit.find(label, kind))
+
+    def pick(self, label: str) -> bool:
+        """Click the row of the open menu whose text starts with `label`."""
+        top = self.kit.top()
+        if top is None:
+            return False
+        c = self.canvas
+        for item in c.find_withtag(top.tag):
+            if c.type(item) != "text":
+                continue
+            txt = str(c.itemcget(item, "text"))
+            if txt.startswith(label) or (txt.endswith(chr(0x2026)) and label.startswith(txt[:-1])):
+                row = [t for t in c.gettags(item) if t.startswith(top.tag + "r")]
+                if row:
+                    return self.click(row[0])
+        return False
+
+    def texts(self) -> list:
+        c = self.canvas
+        return [str(c.itemcget(i, "text")) for i in c.find_all() if c.type(i) == "text"]
+
+    def enter(self, g, support, extra=None) -> None:
+        """Open a game's page with detection answered: what the worker would
+        have put on the queue, put there by hand."""
+        a = self.app
+        with patch.object(dlss, "detect", lambda *a_, **k: support):
+            a.all_games = [g] + [x for x in a.all_games if x is not g]
+            a.game = None
+            a.open_game(g)
+        fit = {o: (True, "") for o in support.options}
+        ex = {"ac": None, "reengine": False, "shared": "", "dxvk": False,
+              "ok": (True, ""), "seen": None}
+        ex.update(extra or {})
+        # the real worker may land first; either way the page ends on this
+        self.until(lambda: not a.entering, 8.0)
+        a.q.put(("entered", (g, support, fit, ex)))
+        self.until(lambda: a.support is support and not a.entering, 4.0)
+        self.settle(150)
+
+    def close(self) -> None:
+        try:
+            if self.app is not None:
+                self.app.lookout.stop()
+        except Exception:
+            pass
+        try:
+            for job in self.root.tk.splitlist(self.root.tk.call("after", "info")):
+                self.root.after_cancel(job)
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        for p in self._patches:
+            try:
+                p.stop()
+            except RuntimeError:
+                pass
+        try:
+            self.T.set_scale(96)
+            getattr(self.T, "_measure", {}).clear()
+        except Exception:
+            pass
+        self._iso.__exit__(None, None, None)
+
+
 # ---------------------------------------------------------------- 1. imports
 section("1. every module imports cleanly, with warnings as errors")
 with warnings.catch_warnings():
@@ -103,7 +536,13 @@ with warnings.catch_warnings():
             "reshade_ini", "feedcfg", "dxvk", "dlss", "vulkan",
             "anticheat", "optiscaler", "diagnose", "selfupdate", "update", "watch",
             "log", "components", "profiles", "remix", "reengine", "refw",
-            "installer", "gui")
+            "installer", "verdicts", "lookout")
+    # The window is a package: every module in it, whatever it is called, so
+    # a new page cannot be added without being imported here.
+    mods = mods + tuple("ui." + p.stem for p in sorted(Path("core", "ui").glob("*.py"))
+                        if p.stem != "__init__")
+    check("the window's package has its modules",
+          {"ui.app", "ui.shell", "ui.kit", "ui.theme"} <= set(mods), mods)
     for m in mods:
         try:
             __import__(f"core.{m}")
@@ -118,7 +557,7 @@ from core import (diagnose, dlss, games, gpu, installer, net, optiscaler,  # noq
 
 check("no Turkish characters in any source", not any(
     any(ch in p.read_text(encoding="utf8") for ch in "şğıöçüŞĞİÖÇÜ")
-    for p in list(Path("core").glob("*.py")) + [Path("dlss5_autopilot.py")]))
+    for p in list(Path("core").rglob("*.py")) + [Path("dlss5_autopilot.py")]))
 
 # ---------------------------------------------------------------- 2. detection
 section("2. detection on the real library")
@@ -440,19 +879,19 @@ import tkinter as _tk  # noqa: E402
 # disks at start; the one on the machine running this is not the test's.
 from core import library as _library_iso  # noqa: E402
 _library_iso.FILE = Path(tempfile.mkdtemp(prefix="lib_iso_")) / "library.json"
-from core import gui as _gui  # noqa: E402
-_r = _tk.Tk()
-_app = _gui.App(_r)
-_r.update()
+from core.ui import ctl_game as _uig, ctl_library as _uil  # noqa: E402
 
 
 def _ticked_names() -> set[str]:
-    """Every "tick 'X'" / "untick 'X'" the tool says, joined across lines."""
+    """Every "tick 'X'" / "untick 'X'" the tool says, joined across lines -
+    in every module, the window's package included."""
     import ast as _ast
     import re as _re_t
     out = set()
     pat = _re_t.compile(r"\b(?:un)?tick(?:ed)? '([^'{}]+)'", _re_t.I)
-    for _f in sorted((SRC_DIR / "core").glob("*.py")):
+    for _f in sorted((SRC_DIR / "core").rglob("*.py")):
+        if _f == SRC_DIR / "core" / "gui.py":
+            continue            # the 1.9 window: nobody sees it any more
         for _n in _ast.walk(_ast.parse(_f.read_text(encoding="utf8"))):
             if isinstance(_n, _ast.JoinedStr):
                 _s = "".join(v.value if isinstance(v, _ast.Constant) else "{}"
@@ -465,100 +904,133 @@ def _ticked_names() -> set[str]:
     return out
 
 
-def _checkbox_texts(w) -> list[str]:
-    out = [str(w.cget("text")).lower()] if w.winfo_class() == "Checkbutton" else []
-    for c in w.winfo_children():
-        out += _checkbox_texts(c)
-    return out
-
-
 # Names in someone else's window (Remix's developer menu, ReShade's overlay).
 _FOREIGN_TICKS = {"Enable Neural Uplift (DLSS-NR)",
                   # ReShade's own Generic Depth tab
                   "Copy depth buffer before clear operations"}
-_boxes = _checkbox_texts(_r)
+
+# The window, read while it is up: every toggle its settings draw on every
+# route, every button on its pages, and the one button the autopilot checks
+# further down ask about. A check that cannot run is not a check that passed,
+# so what 1.9.0c needs is kept here in plain values.
+_TOGGLES: set = set()
+_LIVE_BUTTONS: list = []
+_AUTO_BTN: dict = {}
+_ui6c = _UiLive()
+check("the window opens", _ui6c.ok, _ui6c.error)
+if _ui6c.ok:
+    _a6c = _ui6c.app
+    _LIVE_BUTTONS += [b.lower() for b in _ui6c.labels("button")]
+    _rr6c = [dlss.FEEDER, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX, dlss.UPSTREAM,
+             dlss.STANDALONE, dlss.OPTI, dlss.REMIX]
+    for _api6c in ("DX11", "DX12"):
+        _g6c = _ui_game(name=f"Toggles {_api6c}", api=_api6c)
+        _ui6c.enter(_g6c, _ui_support(_rr6c, dlss.FEEDER,
+                                      evidence=["nvngx_dlss.dll", "nvngx_dlssd.dll"]))
+        if _api6c == "DX12":
+            _LIVE_BUTTONS += [b.lower() for b in _ui6c.labels("button")]
+            # the pass is pressed from here: where it sits and what it says
+            _ab = _ui6c.kit.find("autopilot", "button")
+            _ib = _ui6c.kit.find("install", "button")
+            _c6c = _ui6c.canvas
+            if _ab and _ib:
+                _AUTO_BTN["row"] = (_c6c.bbox(_ab)[1], _c6c.bbox(_ib)[1])
+                _AUTO_BTN["texts"] = [_c6c.itemcget(i, "text") for i in _c6c.find_withtag(_ab)
+                                      if _c6c.type(i) == "text"]
+                _xy = _ui6c._xy(_c6c, _ab)
+                _c6c.event_generate("<Motion>", x=_xy[0], y=_xy[1])
+                _ui6c.until(lambda: _c6c.find_withtag("kit_tip"), 3.0)
+                _AUTO_BTN["tip"] = " ".join(_c6c.itemcget(i, "text")
+                                            for i in _c6c.find_withtag("kit_tip")
+                                            if _c6c.type(i) == "text")
+                _c6c.event_generate("<Motion>", x=2, y=2)
+        _ui6c.press("settings", "button")
+        _ui6c.settle(350)
+        for _r6c in _rr6c:
+            _a6c.set_setting("route", _r6c)
+            _a6c.shell.redraw()
+            _ui6c.settle(40)
+            _TOGGLES |= {t.lower() for t in _ui6c.labels("toggle")}
+        _a6c.set_setting("route", dlss.FEEDER)
 _dead = sorted(n for n in _ticked_names() - _FOREIGN_TICKS
-               if not any(t.startswith(n.lower()) for t in _boxes))
+               if not any(t.startswith(n.lower()) for t in _TOGGLES))
 # Five messages sent people to tick 'swap the Remix runtime' and the window
 # never had that box (#148); 'feeder pre-release' was a dropdown entry.
-check("every 'tick X' the tool says names a checkbox that exists", not _dead, _dead)
+check("every 'tick X' the tool says names a toggle the window draws", not _dead,
+      (_dead, sorted(_TOGGLES)))
+check("...and the toggle #148 was about is really drawn, on the Remix route",
+      "swap the remix runtime" in _TOGGLES, sorted(_TOGGLES))
 
+if _ui6c.ok:
+    # a folder that has gone away must not abandon the whole list
+    _ghost = games.Game(name="Ghost", folder=Path("Z:/gone"))
+    _ghost.exe = Path("Z:/gone/x.exe")
+    _a6c.all_games = [_ghost]
+    _a6c.shell.show("library")
+    _ui6c.until(lambda: _a6c._rows.get((str(_ghost.folder), str(_ghost.exe))) is not None)
+    _a6c.shell.redraw()
+    _ui6c.settle(80)
+    _cards6c = _a6c.shell.pages["library"].cards
+    check("one unreadable game does not empty the list",
+          len(_cards6c) == 1 and _a6c.card(_ghost)["status"] in ("unreadable", "unsupported"),
+          (len(_cards6c), _a6c.card(_ghost)))
 
-def _button_texts(w, out=None):
-    out = [] if out is None else out
-    if w.winfo_class() in ("TButton", "Button"):
-        out.append(str(w.cget("text")).lower())
-    for c in w.winfo_children():
-        _button_texts(c, out)
-    return out
+    # an exception in a queue handler must not stop the pump for good
+    _a6c.q.put(("scanned", None))          # a payload _on_scanned cannot unpack
+    try:
+        _a6c._pump()
+        _a6c.q.put(("scan", "alive"))
+        _a6c._pump()
+        _pumped6c = _a6c.shell.busy_text
+    except Exception as _e6c:
+        _pumped6c = repr(_e6c)
+    check("the pump survives a handler that raises", _pumped6c == "alive", _pumped6c)
+    check("...and a message nobody handles is dropped, not raised",
+          (_a6c.q.put(("no_such_kind", 1)) or _a6c._pump() or True) and _a6c.q.empty())
 
+    # a game whose architecture could not be read must stay visible
+    _unk = games.Game(name="Unknown", folder=Path("Z:/g1"))
+    _unk.exe, _unk.bitness = Path("Z:/g1/x.exe"), None
+    _b64 = games.Game(name="Sixtyfour", folder=Path("Z:/g2"))
+    _b64.exe, _b64.bitness = Path("Z:/g2/x.exe"), 64
+    _a6c.all_games = [_unk, _b64]
+    _seen = {}
+    for _a in ("all", "64", "32"):
+        _a6c.set_arch(_a)
+        _seen[_a] = [x.name for x in _a6c.visible()]
+    _a6c.set_arch("all")
+    check("unknown architecture is never filtered away",
+          all("Unknown" in v for v in _seen.values()), str(_seen))
+    check("a known architecture still filters",
+          "Sixtyfour" not in _seen["32"], str(_seen["32"]))
 
-# Read here, while this window is still up: the suite destroys it long
-# before the sections that ask about it, and a check that cannot run is not
-# a check that passed.
-_LIVE_BUTTONS = _button_texts(_r)
-_AUTOROW = (_app.btn_auto.master is _app.autorow,
-            len(_app.autorow.winfo_children()))
-# ...and what the row says, so "experimental" cannot quietly leave it.
-_AUTOROW_TEXT = " ".join(
-    str(w.cget("text")) for w in _app.autorow.winfo_children()
-    if "text" in w.keys())
-# The mark on it, drawn rather than shipped: a square the height of the
-# text, beside the label, and actually painted (a blank image is a gap).
-_AUTO_ICON = (_app._auto_img.width(), _app._auto_img.height(),
-              str(_app.btn_auto.cget("compound")),
-              _app._auto_img.get(1, _app._auto_img.height() // 2))
-_AUTO_STYLE = str(_app.btn_auto.cget("style"))
-
-# a folder that has gone away must not abandon the whole list
-_ghost = games.Game(name="Ghost", folder=Path("Z:/gone"))
-_ghost.exe = Path("Z:/gone/x.exe")
-_app.all_games = [_ghost]
-_app._fill()
-check("one unreadable game does not empty the list",
-      len(_app.tree.get_children()) == 1)
-
-# an exception in a queue handler must not stop the pump for good
-_app.q.put(("scanned", None))          # payload that makes _fill raise
-_app._pump()
-_app.q.put(("scan", "alive"))
-_app._pump()
-check("the pump survives a handler that raises",
-      _app.scanlbl.cget("text") == "alive", _app.scanlbl.cget("text"))
-
-# a game whose architecture could not be read must stay visible
-_unk = games.Game(name="Unknown", folder=Path("Z:/g1"))
-_unk.exe, _unk.bitness = Path("Z:/g1/x.exe"), None
-_b64 = games.Game(name="Sixtyfour", folder=Path("Z:/g2"))
-_b64.exe, _b64.bitness = Path("Z:/g2/x.exe"), 64
-_app.all_games = [_unk, _b64]
-_seen = {}
-for _a in ("all", "64", "32"):
-    _app.arch.set(_a)
-    _app._fill()
-    _seen[_a] = [x.name for x in _app.shown]
-check("unknown architecture is never filtered away",
-      all("Unknown" in v for v in _seen.values()), str(_seen))
-check("a known architecture still filters",
-      "Sixtyfour" not in _seen["32"], str(_seen["32"]))
-# issue #30: the add-on dropdown opened on the newest build and passed it as
-# an explicit choice, so the driver pin to 4.55 never ran from the GUI
-_app.catalog = {"renodx": [{"label": "4.70", "tag": "4.70", "url": "u"},
-                           {"label": "4.55", "tag": "4.55", "url": "u"}],
-                "renodx_sf": []}
-_saved_find = _gui.prefs.find_renodx
-_gui.prefs.find_renodx = lambda sf=False: (None, [])
-_app._fill_addon_list(False)
-_o = _app._opts()
-check("the DLSS 5 add-on dropdown opens on auto, not on the newest build",
-      _app.cb_renodx.get().startswith("auto") and _app.cb_renodx["values"][1] == "4.70",
-      f"{_app.cb_renodx.get()!r} {_app.cb_renodx['values']}")
-check("...so the options carry no explicit add-on version and the installer's pins apply",
-      _o.renodx is None, repr(_o.renodx))
-_app.cb_renodx.set("4.70")
-check("a build picked from the list is still an explicit choice", _app._opts().renodx == "4.70")
-_gui.prefs.find_renodx = _saved_find
-_r.destroy()
+    # issue #30: the add-on dropdown opened on the newest build and passed it
+    # as an explicit choice, so the driver pin to 4.55 never ran from the GUI.
+    # Pressed through the page, the way a person does it.
+    with patch.object(prefs, "find_renodx", lambda sf=False: (None, [])):
+        _g30 = _ui_game(name="Addon Pick", api="DX12")
+        _ui6c.enter(_g30, _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+        _a6c.catalog = {"renodx": [{"label": "4.70", "tag": "4.70", "url": "u"},
+                                   {"label": "4.55", "tag": "4.55", "url": "u"}],
+                        "renodx_sf": []}
+        _ui6c.press("settings", "button")
+        _ui6c.settle(350)
+        _dd30 = _ui6c.kit.find("dlss5 add-on", "dropdown")
+        _shown30 = [_ui6c.canvas.itemcget(i, "text") for i in _ui6c.canvas.find_withtag(_dd30 or "none")
+                    if _ui6c.canvas.type(i) == "text"]
+        _o = _a6c.opts()
+        check("the DLSS 5 add-on dropdown opens on auto, not on the newest build",
+              bool(_dd30) and any(t.startswith("auto") for t in _shown30)
+              and [v for v, _l in _a6c.choices("renodx")][:2] == ["auto", "4.70"],
+              (_shown30, _a6c.choices("renodx")))
+        check("...so the options carry no explicit add-on version and the installer's pins apply",
+              _o.renodx is None, repr(_o.renodx))
+        _ui6c.press("dlss5 add-on", "dropdown")
+        _picked30 = _ui6c.pick("4.70")
+        check("a build picked from the list is still an explicit choice",
+              _picked30 and _a6c.opts().renodx == "4.70", (_picked30, _a6c.opts().renodx))
+_ui6c.close()
+_ui_cleanup()
 
 section("6d. a quarantined file is reported, not ignored")
 _d = Path(tempfile.mkdtemp(prefix="quar_"))
@@ -713,8 +1185,10 @@ check("once nothing is installed, nothing is adopted",
 shutil.rmtree(_d, ignore_errors=True)
 
 section("6h. the game list can be searched")
-from core import gui as _gui  # noqa: E402
-_m = _gui.App._matches       # the caller lowercases what was typed
+from core.ui import ctl_library as _uil  # noqa: E402
+check("the search is the library controller's own rule",
+      callable(getattr(_uil.LibraryControl, "matches", None)))
+_m = getattr(_uil.LibraryControl, "matches", lambda g, t: "missing")   # the caller lowercases what was typed
 _fake = games.Game(name="Cyberpunk 2077", source="Steam",
                    folder=Path(r"D:\SteamLibrary\common\Cyberpunk 2077"))
 check("an empty search matches everything", _m(_fake, []))
@@ -731,7 +1205,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 1.9.0", update.VERSION == "1.9.0", update.VERSION)
+check("version is 2.0.0", update.VERSION == "2.0.0", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -2599,9 +3073,30 @@ check("every conflict line says whether it is the folder, the game or a note",
       all(k in ("folder", "ingame", "note")
           for v in dlss.CONFLICTS.values() for k, _t in v),
       sorted({k for v in dlss.CONFLICTS.values() for k, _t in v}))
+# Run, not read: the game page's notes for a route, with the folder asked.
+with _ui_isolated(), _ui_threads(run=False):
+    _g23 = _ui_game(name="Conflicts")
+    _asked23: list = []
+    _hooks23: list = []
+
+    def _ngx23(root, path=""):
+        _asked23.append((Path(root), path))
+        return list(_hooks23)
+    with patch.object(installer, "other_ngx_hooks", _ngx23):
+        _c23 = _ui_ctl(_g23, _ui_support([dlss.NATIVE, dlss.STANDALONE], dlss.NATIVE))
+        _c23.apply_route(dlss.NATIVE)
+        _quiet23 = [t for _k, t in _c23.notes if "in this folder" in t]
+        _hooks23.append("OptiScaler.dll")
+        _c23.apply_route(dlss.NATIVE)
+        _loud23 = [t for _k, t in _c23.notes if "in this folder" in t]
+        _steps23 = [t for _k, t in _c23.route_steps(dlss.STANDALONE)]
 check("...and the window asks the folder before it says one",
-      "other_ngx_hooks(self.game.install_dir, path)" in src_of(_gui.App._apply_route)
-      and 'kind == "ingame"' in src_of(_gui.App._apply_route))
+      (_g23.install_dir, dlss.NATIVE) in _asked23 and not _quiet23
+      and _loud23 and "OptiScaler.dll" in _loud23[0], (_asked23, _quiet23, _loud23))
+check("...while what to switch off in the game is always said",
+      all(any(line in s for s in _steps23)
+          for k, line in dlss.CONFLICTS[dlss.STANDALONE] if k == "ingame"), _steps23)
+_ui_cleanup()
 check("the release lists the three assets and VORT",
       set(sources.STANDALONE_ASSETS) == {installer.STANDALONE_ADDON,
                                          installer.STANDALONE_BRIDGE,
@@ -3553,7 +4048,7 @@ check("an nvngx_dlss.dll our own manifest lists as written is NOT evidence (64-b
 check("our own nvngx_dlssnr.dll is NOT evidence (it would re-label every DX9 game after one install)",
       pe._ships_dlss(_d) == "")
 check("the d3d9 branch of detect_api consults it",
-      "_ships_dlss(path.parent)" in src_of(pe.detect_api))
+      "_ships_dlss(path.parent" in src_of(pe.detect_api))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("35. a scan cannot get stuck in a folder with no executables")
@@ -4075,6 +4570,25 @@ check("...and the folder it was found in is named as the evidence",
       any("Elytra" in e for e in _f.evidence), _f.evidence)
 shutil.rmtree(_d, ignore_errors=True)
 
+# #187: Rise of the Tomb Raider was told Riot Vanguard was installed. A
+# marker is a whole word of a name, never its middle, Vanguard is only its
+# own files, and Denuvo alone is copy protection, not anti-cheat.
+_d = Path(tempfile.mkdtemp(prefix="ac_187_"))
+for n in ("ROTTR.exe", "vanguard_outfit.pak", "Vanguard", "denuvo64.dll",
+          "RiceRicochetFX.bin", "gameguardians.txt"):
+    (_d / n).write_bytes(b"x")
+_f = anticheat.detect(_d, _d)
+check("#187: a single-player game with 'vanguard' or 'denuvo' in a name is not anti-cheat",
+      not _f.present, f"{_f.products} {_f.evidence}")
+(_d / "vgk.sys").write_bytes(b"x")
+(_d / "mhyprot3.sys").write_bytes(b"x")
+_f = anticheat.detect(_d, _d)
+check("...Vanguard's own driver and a numbered driver name still are",
+      "Riot Vanguard" in _f.products and "HoYoverse anti-cheat" in _f.products, _f.products)
+check("...and every warning names the file it rests on",
+      "vgk.sys" in _f.found and "vgk.sys" in anticheat.message(_f), _f.found)
+shutil.rmtree(_d, ignore_errors=True)
+
 import io
 import re
 import urllib.error as _ue
@@ -4146,8 +4660,16 @@ check("a proxy d3d9.dll (DXVK, ReShade) beside the exe is not consulted",
 (_d / "nvngx_dlss.dll").write_bytes(b"MZ")
 with open(_exe, "ab") as _f:
     _f.write(b"\0d3d9.dll\0")
+# DLSS has no 32-bit build, so beside a 32-bit executable it says nothing
+# about that executable (#190); beside a 64-bit one it still does.
+check("a run-time d3d9.dll in a 32-bit exe stays DX9 whatever DLSS sits beside it",
+      pe.detect_api(_exe)[0] == "DX9", pe.detect_api(_exe))
+_exe64 = _d / "Game64.exe"
+shutil.copyfile(r"C:\Windows\System32\where.exe", _exe64)
+with open(_exe64, "ab") as _f:
+    _f.write(b"\0d3d9.dll\0")
 check("a run-time d3d9.dll with the game's own DLSS beside it is still a modern renderer",
-      pe.detect_api(_exe)[0] == "DX12")
+      pe.detect_api(_exe64)[0] == "DX12", pe.detect_api(_exe64))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("47. issues #46-#48: an engine that merely names opengl32.dll is not an OpenGL game")
@@ -4181,8 +4703,7 @@ check("DLLs our routes drop (Streamline) and files named in our manifest are not
 (_d / "dlss5-autopilot.json").unlink()
 (_d / "UnityPlayer.dll").write_bytes(b"MZ" + b"\0" * 100)
 check("the side windows scale their pixels too",
-      "px(760)" in Path("core/remixui.py").read_text(encoding="utf8")
-      and "px(720)" in Path("core/compareui.py").read_text(encoding="utf8"))
+      "px(720)" in Path("core/compareui.py").read_text(encoding="utf8"))
 _launcher = _d / "Launcher.exe"
 _ship = _d / "Bin" / "Win64" / "Game-Win64-Shipping.exe"
 _ship.parent.mkdir(parents=True)
@@ -4206,8 +4727,21 @@ _ship.parent.rmdir()
 _ship.parent.parent.rmdir()
 check("the preview discloses an emulator config change",
       "its own config is switched" in src_of(installer.preview))
+
+def _card47(manifest, api="DX11"):
+    """What the library card says for an install recorded with this manifest."""
+    with _ui_isolated(), _ui_threads(run=False):
+        g = _ui_game(name="Card", api=api, manifest=manifest)
+        c = _ui_ctl()
+        c.all_games = [g]
+        c._rows[(str(g.folder), str(g.exe))] = (True, "feeder", installer.BETA, "beta", False, "")
+        return c.card(g)["status"]
+
+
+_s47 = (_card47({"api": "DX9", "proxy": diagnose.VULKAN_LAYER}),
+        _card47({"api": "DX9", "proxy": "d3d9.dll", "dxvk": True}))
 check("the game list does not flag a DXVK install as an API change",
-      'man.get("proxy") != diagnose.VULKAN_LAYER' in src_of(_gui))
+      not any(s.startswith("reinstall") for s in _s47), _s47)
 check("an unknown optiscaler build key in a manifest does not break the plan",
       any(s.startswith("OptiScaler (") for s in
           installer.plan(games.Game("X", _d, exe=_exe, bitness=64, api="DX12"),
@@ -4253,22 +4787,73 @@ _body = diagnose.issue_body("1.7.2", "RTX", 120, "616.64", _G(), "feeder", None,
 check("the report body carries the reason behind the detected API",
       "- arch/api: 64-bit / DX11 (Unity player beside the exe" in _body
       and "\n- route: feeder" in _body, _body[:600])
+_s47 = _card47({"api": "DX12", "proxy": "dxgi.dll"})
 check("the game list marks an install whose manifest api differs from the detected one",
-      'f"reinstall - was {man_api}"' in src_of(_gui))
+      _s47 == "reinstall - was DX12", _s47)
+check("...and says nothing of the kind where they agree",
+      not _card47({"api": "DX11", "proxy": "dxgi.dll"}).startswith("reinstall"))
+_ui_cleanup()
 shutil.rmtree(_d, ignore_errors=True)
 
 section("48. issue #40: pixel sizes follow the display scale, not only the fonts")
 import re as _re
-_gsrc = src_of(_gui)
-check("_gui.px() rounds to the display scale", _gui.px(26) == 26)
-_gui.SCALE = 2.0
-check("...and doubles at 200 %", _gui.px(26) == 52 and _gui.px(1060) == 2120)
-check("the Treeview row height is scaled", "rowheight=px(26)" in _gsrc)
-check("the window geometry and the side rail are scaled",
-      'px(1060)' in _gsrc and 'width=px(236)' in _gsrc)
-check("no bare wraplength is left", not _re.search(r"wraplength=\d", _gsrc))
-check("run() sets SCALE from the window's DPI", "SCALE = max(1.0, dpi / 96.0)" in _gsrc)
-_gui.SCALE = 1.0
+import types as _types48
+from core.ui import app as _uiapp48, theme as _uth, win as _uwin  # noqa: E402
+_uth.set_scale(96)
+check("px() rounds to the display scale", _uth.px(26) == 26)
+_uth.set_scale(192)
+check("...and doubles at 200 %", _uth.px(26) == 52 and _uth.px(1060) == 2120)
+_uth.set_scale(72)
+check("...and never shrinks below 100 %", _uth.SCALE == 1.0 and _uth.px(26) == 26)
+_uth.set_scale(96)
+
+# The window takes its scale from the DPI Windows reports for it, and tells
+# Tk the same number, so fonts and pixel lengths grow together.
+_calls48: list = []
+
+
+class _Root48:
+    def winfo_id(self):
+        return 4242
+
+    class tk:  # noqa: N801
+        @staticmethod
+        def call(*a):
+            _calls48.append(a)
+
+
+with patch.object(_uwin, "ctypes", _types48.SimpleNamespace(windll=_types48.SimpleNamespace(
+        user32=_types48.SimpleNamespace(GetDpiForWindow=lambda h: 144 if h == 4242 else 0)))):
+    _uwin.apply_scale(_Root48())
+check("the window's scale is its DPI over 96, and Tk is told the same",
+      _uth.SCALE == 1.5 and ("tk", "scaling", 2.0) in _calls48, (_uth.SCALE, _calls48))
+_uth.set_scale(96)
+
+# ...and run() asks for it on the real root before the first page is drawn.
+_order48: list = []
+
+
+class _Tk48:
+    def __init__(self):
+        _order48.append("root")
+
+    def mainloop(self):
+        _order48.append("mainloop")
+
+
+with patch.object(_uiapp48, "tk", _types48.SimpleNamespace(Tk=_Tk48)), \
+        patch.object(_uiapp48.win, "dpi_aware", lambda: _order48.append("dpi_aware")), \
+        patch.object(_uiapp48.win, "apply_scale", lambda r: _order48.append("apply_scale")), \
+        patch.object(_uiapp48, "App", lambda r: _order48.append("App")), \
+        patch.object(_uiapp48.log, "start", lambda *a: None), \
+        patch.object(_uiapp48.log, "install_handlers", lambda *a: None), \
+        patch.object(_uiapp48.log, "write", lambda *a, **k: None):
+    try:
+        _uiapp48.run()
+    except Exception as _e48:
+        _order48.append(f"raised {_e48!r}")
+check("run() is DPI-aware first and scales the root before it builds the window",
+      _order48[:5] == ["dpi_aware", "root", "apply_scale", "App", "mainloop"], _order48)
 
 section("49. issue #54: the exe carries its own root certificates")
 _ctx = net.ssl_context()
@@ -4337,8 +4922,17 @@ check("a failed TLS verification is explained, whatever exception type carried i
 check("Options carries the build and the manifest records it",
       hasattr(installer.Options(), "opti_build")
       and '"opti_build": opt.opti_build' in src_of(installer))
-check("the install page offers the build list",
-      "cb_optibuild" in src_of(_gui) and "opti_build=list(optiscaler.BUILDS)" in src_of(_gui))
+with _ui_isolated(), _ui_threads(run=False):
+    _c50 = _ui_ctl(_ui_game(name="Builds"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.OPTI))
+    _c50.apply_route(dlss.OPTI)
+    _k50 = [k for k, _l in _c50.choices("opti_build")]
+    _pick50 = [k for k in _k50 if k][-1] if any(_k50) else ""
+    _c50.set_setting("opti_build", _pick50)
+    _o50 = (_c50.shown_setting("opti_build"), _c50.opts().opti_build,
+            _c50.opts(dlss.FEEDER).opti_build)
+check("the install page offers the build list, and a pick reaches Options",
+      _k50 == list(optiscaler.BUILDS) and _o50 == (True, _pick50, ""), (_k50, _o50))
+_ui_cleanup()
 shutil.rmtree(_d, ignore_errors=True)
 shutil.rmtree(net.cache_dir() / "unpacked" / "t", ignore_errors=True)
 
@@ -4365,9 +4959,19 @@ if _setup is not None:
     check("...and a second unregister finds nothing", _xr.unregister() is False)
 _xr.layer_dir = _saved_dir
 shutil.rmtree(_d, ignore_errors=True)
+with _ui_isolated(), _ui_threads(run=False):
+    _c51 = _ui_ctl(_ui_game(name="VR", api="DX11"),
+                   _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+    _c51.apply_route(dlss.FEEDER)
+    _v51 = [_c51.shown_setting("vr"), _c51.opts().vr]
+    _c51.set_setting("vr", True)
+    _v51.append(_c51.opts().vr)
+    _c51.apply_route(dlss.OPTI)
+    _v51 += [_c51.shown_setting("vr"), _c51.opts().vr]
 check("Options.vr exists, the manifest records it and the install page offers it",
       hasattr(installer.Options(), "vr") and '"vr": bool(opt.vr)' in src_of(installer)
-      and "ck_vr" in src_of(_gui) and "vr=bool(self.vr.get())" in src_of(_gui))
+      and _v51 == [True, False, True, False, False], _v51)
+_ui_cleanup()
 check("the ReShade step registers the layer when asked, and uninstall drops it with the last VR game",
       "openxr.install_layer(setup, log)" in src_of(installer)
       and "prefs.openxr_games()" in src_of(installer))
@@ -4677,79 +5281,126 @@ section("55. issue #40 again: scaling the fonts is not the whole of a 4K display
 # The first round scaled the fonts and the row heights, and the report that
 # came back was "the text is readable now, but the log box next to the blue
 # arrow is one and a half lines". Three more things were wrong with it, and
-# none of them was a font.
-_gsrc = src_of(_gui)
+# none of them was a font: the window asked for more than the screen had,
+# row counts grew with the font, and what did not fit was cut off instead of
+# scrolling.
+#
+# So: the whole window, built for real at 100, 150, 200 and 300 per cent and
+# measured - the library and a game page with its settings open, on routes
+# that draw different rows. A 4K screen at 300% has the same room as a
+# 1280x720 one at 100%.
 
-# 1. The window asked for more than the screen. px(830) is 2490 at 300%, on
-#    a display 2160 tall, and minsize kept it there: the bottom of every
-#    page was off the screen and dragging could not bring it back.
-check("the window never asks for more height than the screen has",
-      "winfo_screenheight()" in _gsrc and "min(px(830)" in _gsrc, )
-check("...and minsize cannot pin it larger than the screen either",
-      _re.search(r"minsize\(min\(px\(\d+\), int\(sw", _gsrc) is not None)
 
-# 2. Text and Treeview heights are counted in rows, and a row grows with the
-#    font: 14 rows of log at 300% is three times the pixels it was at 100%.
-_gui.SCALE = 1.0
-check("lines() leaves row counts alone at 100 %", _gui.lines(14) == 14)
-_gui.SCALE = 3.0
-check("...and cuts them to about the same pixel height at 300 %", _gui.lines(14) == 5)
-check("...with a floor, so nothing collapses to nothing", _gui.lines(4, 6) == 6)
-_gui.SCALE = 1.0
-check("the log and the game list are sized in lines(), not bare rows",
-      "height=lines(14, 6)" in _gsrc and "height=lines(13, 4)" in _gsrc)
-
-# 3. Pack hands the first widget everything it asks for. The settings card
-#    is 1221 pixels at 300%, so whichever of the settings and the log was
-#    packed first took the window and the other got what was left.
-check("the install page splits the window between the settings and the log",
-      "_split" in _gsrc and "installscroll.set_height" in _gsrc)
-check("the pages that overflow can scroll",
-      _gsrc.count("Scroller(") >= 2 and "class Scroller" in _gsrc)
-check("the game list's detail row is packed from the bottom, so it survives a short window",
-      'det.pack(side="bottom"' in _gsrc)
-
-# The whole point: every page fits the window at every scale, and what does
-# not fit scrolls instead of being cut off. Built for real, measured for
-# real - a 4K screen at 300% has the same room as a 1280x720 one at 100%.
-def _fits(scale: float, w: int, h: int) -> list[str]:
-    _gui.SCALE = scale
-    root = _tk.Tk()
-    root.tk.call("tk", "scaling", 96 * scale / 72.0)
-    bad = []
+def _fits(scale: float, narrow: bool = False) -> list[str]:
+    bad: list[str] = []
+    ui = _UiLive(scale=scale)
+    if not ui.ok:
+        return [f"the window did not open: {ui.error}"]
+    a, c, root = ui.app, ui.canvas, ui.root
+    T = ui.T
     try:
-        app = _gui.App(root)
-        for _ in range(3):
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        ui.settle(200)
+        if root.winfo_width() > sw or root.winfo_height() > sh:
+            bad.append(f"window {root.winfo_width()}x{root.winfo_height()} on a {sw}x{sh} screen")
+        mw, mh = (int(v) for v in root.tk.splitlist(root.tk.call("wm", "minsize", root._w)))
+        if mw > sw or mh > sh:
+            bad.append(f"minsize {mw}x{mh} on a {sw}x{sh} screen")
+        if narrow:
+            # as small as the window lets a person drag it
             root.state("normal")
-            root.geometry(f"{w}x{h}")
-            root.update_idletasks()
-            root.update()
-        for n, name in ((1, "start"), (2, "game list"), (3, "install"),
-                        (4, "video"), (5, "rtx remix")):
-            app.step = n
-            app._show(n)
-            for _ in range(3):
-                root.update_idletasks()
-                root.update()
-            page = app.pages[n - 1]
-            # Every action the page offers has to be inside the window.
-            for w_ in page.winfo_children():
-                if w_.winfo_ismapped() and w_.winfo_height() <= 1 < w_.winfo_reqheight():
-                    bad.append(f"{name}: {w_.winfo_class()} squeezed to nothing")
-        # ...and at 300% the log is still readable.
-        if app.log.winfo_height() < 3 * (app.log.winfo_reqheight()
-                                         / max(1, int(app.log.cget("height")))):
-            bad.append(f"log under three lines at {scale:.0%}")
+            root.geometry(f"{mw}x{mh}")
+            ui.settle(250)
+            if root.winfo_width() > mw + 40:
+                bad.append(f"the window would not go down to its minsize ({root.winfo_width()} px)")
+
+        def controls(where):
+            view_w = c.winfo_width()
+            for tag, kind, label in ui.kit.controls():
+                box = c.bbox(tag)
+                if not box:
+                    continue
+                if box[0] < 0 or box[2] > view_w + 1:
+                    bad.append(f"{where}: {kind} '{label}' at x {box[0]}..{box[2]} in a {view_w} px page")
+                if kind == "button":
+                    rects = [i for i in c.find_withtag(tag) if c.type(i) == "rectangle"]
+                    texts = [i for i in c.find_withtag(tag) if c.type(i) == "text"]
+                    if rects and texts:
+                        r = c.coords(rects[0])
+                        for t in texts:
+                            tb = c.bbox(t)
+                            if tb and (tb[0] < r[0] - 1 or tb[2] > r[2] + 1):
+                                bad.append(f"{where}: the label of '{label}' runs out of its button "
+                                           f"({tb[0]}..{tb[2]} in {r[0]:.0f}..{r[2]:.0f})")
+
+        def scrolls(where, page_h):
+            view = c.winfo_height()
+            if a.shell.content_h < page_h:
+                bad.append(f"{where}: {page_h} px drawn, {a.shell.content_h} px scrollable")
+            if page_h > view + T.px(20):
+                c.yview_moveto(0)
+                c.event_generate("<Motion>", x=c.winfo_width() // 2, y=view // 2)
+                c.event_generate("<MouseWheel>", delta=-120, x=c.winfo_width() // 2, y=view // 2)
+                ui.settle(40)
+                if c.canvasy(0) <= 0:
+                    bad.append(f"{where}: {page_h} px on a {view} px view and the wheel does not scroll it")
+                c.yview_moveto(0)
+
+        # the library, with more games than any screen holds at 300%
+        many = []
+        for i in range(14):
+            g = games.Game(name=f"A game with a long enough name {i}", folder=Path(f"Z:/scale/{i}"))
+            g.exe, g.bitness, g.api = Path(f"Z:/scale/{i}/g.exe"), 64, "DX11"
+            many.append(g)
+        a.all_games = many
+        a.shell.show("library")
+        ui.settle(150)
+        page = a.shell.pages["library"]
+        controls("library")
+        scrolls("library", a.shell.content_h)
+        if not page.cards:
+            bad.append("library: no card drawn")
+
+        # a game page, settings open, on routes with different rows
+        g = _ui_game(name="A game whose name is long enough to need room", api="DX11")
+        ui.enter(g, _ui_support([dlss.FEEDER, dlss.OPTI, dlss.REMIX, dlss.STANDALONE], dlss.FEEDER,
+                                evidence=["nvngx_dlss.dll", "nvngx_dlssd.dll"]))
+        if a.shell.page is None or a.shell.page.name != "game":
+            bad.append("the game page did not open")
+        ui.press("settings", "button")
+        ui.settle(400)
+        for route in (dlss.FEEDER, dlss.OPTI, dlss.REMIX):
+            a.set_setting("route", route)
+            a.shell.redraw()
+            ui.settle(60)
+            controls(f"game page ({route})")
+            scrolls(f"game page ({route})", a.shell.content_h)
+            if not ui.kit.find("route", "dropdown"):
+                bad.append(f"game page ({route}): the settings did not draw")
+
+        # ...and at 300% the log still shows more than three lines
+        a.shell.toggle_log(True)
+        ui.settle(450)
+        import tkinter.font as _tkf
+        line = _tkf.Font(root=root, font=a.shell.log_text.cget("font")).metrics("linespace")
+        if a.shell.log_text.winfo_height() < 3 * line:
+            bad.append(f"log {a.shell.log_text.winfo_height()} px, under three {line} px lines")
+    except Exception as e:
+        import traceback as _tb
+        bad.append("raised: " + _tb.format_exc()[-400:])
     finally:
-        root.destroy()
-        _gui.SCALE = 1.0
+        ui.close()
+        _ui_cleanup()
     return bad
 
-_bad = []
-for _s, _w, _h in ((1.0, 1200, 900), (1.5, 1280, 720), (2.0, 1000, 700)):
-    _bad += [f"{_s:.0%}: {b}" for b in _fits(_s, _w, _h)]
-check("no page loses a widget off the window, at any scale", not _bad, _bad)
 
+_bad55 = {}
+for _s55, _n55 in ((1.0, False), (1.0, True), (1.5, False), (2.0, False), (3.0, False)):
+    _bad55[(_s55, _n55)] = _fits(_s55, _n55)
+for (_s55, _n55), _b55 in _bad55.items():
+    check(f"at {_s55:.0%}{' in a window dragged to its smallest' if _n55 else ''} the window fits "
+          f"the screen, every control fits the page, and what does not fit scrolls",
+          not _b55, _b55[:6])
 
 section("56. issue #67: the library found last time, without walking the disks again")
 
@@ -4829,13 +5480,69 @@ check("an unreadable cache just means the normal scan runs", _lib.load("1.7.3", 
 _lib.FILE.unlink()
 check("no cache at all is not an error", _lib.load("1.7.3", 89) is None)
 
-_gsrc = src_of(_gui)
-check("the GUI reads the cache at start and writes it after a scan",
-      "_load_cached" in _gsrc and "library.save(gs, rows" in _gsrc)
-check("...and writes it again when a folder is chosen or an install finishes",
-      _gsrc.count("_remember_library") >= 3, _gsrc.count("_remember_library"))
-check("rescan still does the full walk",
-      "def _scan" in _gsrc and "games.scan_all(" in _gsrc)
+# The window's side of it, run: what it opens on, and when it writes.
+from core.ui import app as _uiapp56, ctl_library as _uil  # noqa: E402
+with _ui_isolated(), _ui_threads(run=False) as _th56:
+    _g56a = _ui_game(name="Cached Game")
+    _row56 = (True, "feeder", "stable", "reliable", False, "")
+    _lib.save([_g56a], {(str(_g56a.folder), str(_g56a.exe)): _row56}, update.VERSION, 89)
+    _c56 = _ui_ctl()
+    _c56.sm = 89
+    _c56.check_stale = _c56.load_catalog = lambda: None     # both go to the network
+    _scans56: list = []
+    _c56.scan = lambda full=False: _scans56.append(full)
+    _c56.shell.show = lambda name, remember=True: None
+    _uiapp56.App._open_start(_c56)
+    check("the window opens on the saved library and does not walk the disks for it",
+          [g.name for g in _c56.all_games] == ["Cached Game"] and _scans56 == [],
+          ([g.name for g in _c56.all_games], _scans56))
+
+    def _saved56() -> list:
+        got = _lib.load(update.VERSION, 89)
+        return sorted(g.name for g in got[0]) if got else []
+
+    _lib.FILE.unlink(missing_ok=True)
+    _g56b = _ui_game(name="Scanned Game")
+    _c56._on_scanned(([_g56a, _g56b], {(str(_g56b.folder), str(_g56b.exe)): _row56}))
+    check("...and writes it after a scan",
+          _saved56() == ["Cached Game", "Scanned Game"], _saved56())
+
+    # A folder chosen by hand: its row is read on a worker, and the library is
+    # written when that row lands - not before, with the row missing.
+    _g56c = _ui_game(name="Picked Game")
+    _c56.root.after = lambda ms, fn=None, *a: fn and fn()
+    from tkinter import filedialog as _fd56
+    with patch.object(_fd56, "askdirectory", lambda **k: str(_g56c.folder)):
+        _c56.pick_folder()
+    _before56 = _saved56()
+    _th56.go()
+    _c56.pump()
+    check("...and again when a folder is chosen, once its row is read",
+          "Picked Game" not in _before56 and "Picked Game" in _saved56(),
+          (_before56, _saved56()))
+    _c56.game = _g56c
+    _lib.FILE.unlink(missing_ok=True)
+    _c56._rows[("x", "y")] = _row56
+    _c56._on_installed(installer.Report(written=["dxgi.dll"]))
+    check("...and again when an install finishes", "Picked Game" in _saved56(), _saved56())
+
+    # full rescan walks every store; the quick one reads only what is new
+    _walks56: list = []
+    with patch.object(games, "scan_all", lambda progress=None: (_walks56.append("full"), [_g56a])[1]), \
+            patch.object(games, "quick_scan",
+                         lambda known, progress=None: (_walks56.append("quick"), ([_g56a], []))[1]), \
+            patch.object(_uil.LibraryControl, "inspect_row", staticmethod(lambda g, sm: _row56)):
+        del _c56.scan                       # the real one again
+        _c56.scanning = False
+        _c56.scan(full=True)
+        _th56.go()
+        _c56.pump()
+        _c56.scan()
+        _th56.go()
+        _c56.pump()
+    check("rescan still does the full walk, and the quick one does not",
+          _walks56 == ["full", "quick"], _walks56)
+_ui_cleanup()
 _lib.FILE = _saved_file
 shutil.rmtree(_d, ignore_errors=True)
 
@@ -4950,10 +5657,52 @@ sources._json = lambda url: [
 check("...and y4my4my4m's '_with_DLSS' archive is still passed over",
       optiscaler.resolve(optiscaler.FORK) == ("v1", "https://x/plain.7z"),
       optiscaler.resolve(optiscaler.FORK))
+# wilsjo2's v0.8.4 page as it really is: the MFG unlock sorts first (#196).
+sources._json = lambda url: [
+    {"tag_name": "v0.8.4", "published_at": "2026-09-15T00:36:59Z", "assets": [
+        {"name": "OptiScaler-NR-v0.8.4-rtx40-mfg.zip",
+         "browser_download_url": "https://x/OptiScaler-NR-v0.8.4-rtx40-mfg.zip"},
+        {"name": "OptiScaler-NR-v0.8.4-rtx40-mfg.zip.sha256",
+         "browser_download_url": "https://x/a.sha256"},
+        {"name": "OptiScaler-NR-v0.8.4.zip",
+         "browser_download_url": "https://x/OptiScaler-NR-v0.8.4.zip"}]}]
+check("wilsjo2's standard zip is installed, not the RTX 40 MFG unlock (#196, #231)",
+      optiscaler.resolve(optiscaler.PRESR)
+      == ("v0.8.4", "https://x/OptiScaler-NR-v0.8.4.zip"),
+      optiscaler.resolve(optiscaler.PRESR))
 sources._json = _saved_json
+check("...and two archives of one release never share a cache entry",
+      optiscaler._archive_name("v0.8.4", "https://x/OptiScaler-NR-v0.8.4.zip")
+      != optiscaler._archive_name("v0.8.4",
+                                  "https://x/OptiScaler-NR-v0.8.4-rtx40-mfg.zip"))
 check("all three builds resolve against the real release pages",
       all(optiscaler.resolve(b)[1].startswith("https://")
           for b in optiscaler.BUILDS))
+
+
+def _fork_candidates(build):
+    """Archives the pick could still choose on a fork's newest release."""
+    api, skip = optiscaler.FORKS[build]
+    rels = [r for r in (sources.json_or_html(api) or [])
+            if isinstance(r, dict) and not r.get("draft")
+            and r.get("tag_name") != "nightly"
+            and any(a["name"].lower().endswith((".7z", ".zip"))
+                    for a in r.get("assets", []))]
+    rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    return [a["name"] for a in (rels[0]["assets"] if rels else [])
+            if a["name"].lower().endswith((".7z", ".zip"))
+            and not any(x in a["name"].lower() for x in skip)]
+
+
+# A second archive on the same release is how the MFG unlock reached every
+# card (#196): the pick takes the first, so more than one is a question.
+for _b in optiscaler.FORKS:
+    try:
+        _c = _fork_candidates(_b)
+        check(f"{_b}'s newest release leaves the pick exactly one archive",
+              len(_c) == 1, _c)
+    except Exception as _e:
+        check(f"{_b}'s release page could be read", False, _e)
 
 
 # With two forks' archives in the cache, the preview listed whichever one the
@@ -4992,22 +5741,75 @@ section("58. the release gate on 1.7.3's own changes")
 # compatibility row away because recomputing them was free; with the rows
 # saved for the next launch, that emptied the cache and gave the launch
 # after an install the whole folder walk again - on the Tk thread.
-_gsrc = src_of(_gui)
-check("an install drops only the row of the game it installed",
-      "_forget_row(self.game)" in _gsrc and "self._rows.clear()" not in
-      _gsrc.split("def _finish_ok")[1].split("def ")[0], )
-check("...and an empty set of rows is never written over a full one",
-      "self._rows or not library.FILE.is_file()" in _gsrc)
-check("...and the games that did change are read on a worker, not on the Tk thread",
-      "def _recheck_changed" in _gsrc
-      and "threading.Thread(target=work" in _gsrc.split("def _recheck_changed")[1][:1600]
-      and "games.enrich(g)" in _gsrc.split("def _recheck_changed")[1][:1600])
-check("...and _fill leaves those rows to the worker instead of reading them itself",
-      "str(g.folder) in self._recheck" in _gsrc)
-check("...keyed on the folder, which enrich() cannot reassign under it",
-      "self._recheck = {str(g.folder) for g in changed}" in _gsrc)
-check("...and a rescan makes a running recheck's answer stale, not authoritative",
-      "_recheck_id" in _gsrc and _gsrc.count("_recheck_id") >= 4)
+from core.ui import ctl_library as _uil58  # noqa: E402
+_row58 = (True, "feeder", "stable", "reliable", False, "")
+with _ui_isolated(), _ui_threads(run=False) as _th58:
+    _c58 = _ui_ctl()
+    _c58.sm = 89
+    _c58.check_stale = _c58.load_catalog = lambda: None
+    _g58a, _g58b = _ui_game(name="Installed Here"), _ui_game(name="Somebody Else")
+    _c58.all_games = [_g58a, _g58b]
+    for _x58 in (_g58a, _g58b):
+        _c58._rows[(str(_x58.folder), str(_x58.exe))] = _row58
+    _c58.game = _g58a
+    _c58._on_installed(installer.Report(written=["dxgi.dll"]))
+    check("an install drops only the row of the game it installed",
+          (str(_g58a.folder), str(_g58a.exe)) not in _c58._rows
+          and (str(_g58b.folder), str(_g58b.exe)) in _c58._rows, list(_c58._rows))
+
+    _lib.save([_g58a, _g58b], {(str(_g58b.folder), str(_g58b.exe)): _row58}, update.VERSION, 89)
+    _full58 = _lib.FILE.read_text(encoding="utf8")
+    _c58._rows.clear()
+    _c58.remember_library()
+    check("...and an empty set of rows is never written over a full one",
+          _lib.FILE.read_text(encoding="utf8") == _full58)
+
+    # A saved library where one game changed on disk: it opens at once, and
+    # that game is read again on a worker, keyed on its folder.
+    _enriched58: list = []
+    _real_enrich58 = games.enrich
+
+    def _enrich58(g, *a, **k):
+        _enriched58.append((g.name, _th58.inside > 0))
+        g.exe = g.folder / "Moved.exe"            # enrich may re-point the exe
+        return g
+    with patch.object(_lib, "load", lambda v, sm: ([_g58a, _g58b], {}, [_g58b])), \
+            patch.object(games, "enrich", _enrich58), \
+            patch.object(_uil58.LibraryControl, "inspect_row", staticmethod(lambda g, sm: _row58)):
+        _c58._recheck.clear()
+        _c58.load_cached()
+        check("...and the games that did change are read on a worker, not on the Tk thread",
+              _enriched58 == [] and any("_recheck_changed" in n for n in _th58.names),
+              (_enriched58, _th58.names))
+        check("...keyed on the folder, which enrich() cannot reassign under it",
+              _c58._recheck == {str(_g58b.folder)}, _c58._recheck)
+        _spawned58 = len(_th58.started)
+        check("...and a card leaves those rows to the worker instead of reading them itself",
+              _c58.row_of(_g58b) is None and len(_th58.started) == _spawned58
+              and _c58.card(_g58b)["status"] == "reading...", len(_th58.started) - _spawned58)
+        _gen58 = _c58._recheck_id
+        _th58.go()
+        check("...and the worker is where the game is read",
+              _enriched58 == [("Somebody Else", True)], _enriched58)
+        # a rescan starts while that worker's answer is still on its way
+        _c58._recheck_id += 1
+        _c58.pump()
+        check("...and a rescan makes a running recheck's answer stale, not authoritative",
+              (str(_g58b.folder), str(_g58b.exe)) not in _c58._rows
+              and _c58._recheck == {str(_g58b.folder)}, (_c58._rows, _c58._recheck))
+        _c58._recheck_id = _gen58
+        _c58.load_cached()
+        _th58.go()
+        _c58.pump()
+        check("...while the current one lands, and clears the folder it was keyed on",
+              (str(_g58b.folder), str(_g58b.exe)) in _c58._rows and not _c58._recheck,
+              (_c58._rows, _c58._recheck))
+    _before58 = _c58._recheck_id
+    with patch.object(_lib, "load", lambda v, sm: None):
+        _c58.scan(full=True)
+    check("...and a rescan is what moves that counter on",
+          _c58._recheck_id == _before58 + 1 and not _c58._recheck, _c58._recheck_id)
+_ui_cleanup()
 
 # A graphics API set by hand is kept in the settings, not in the library, so
 # a cached game came back with the renderer that was DETECTED - and would be
@@ -5334,12 +6136,50 @@ check("...and with no answers the old template still comes out",
 shutil.rmtree(_d, ignore_errors=True)
 
 from core import reportui as _reportui  # noqa: E402
+from core.ui import app as _uiapp60, ctl_game as _uig60  # noqa: E402
+from core import autotune as _tune  # noqa: E402
+import types as _types60  # noqa: E402
+
+
+def _report60(ask, with_game: bool = False):
+    """Press 'report a bug' with this dialog answer: (what happened in order,
+    what was raised)."""
+    order: list = []
+    with _ui_isolated(), _ui_threads(run=False):
+        c = _ui_ctl()
+        if with_game:
+            c.game = _ui_game(name="Reported")
+            c.shell.page = _types60.SimpleNamespace(name="game")
+
+        def _ask(root, name):
+            order.append("ask")
+            if isinstance(ask, Exception):
+                raise ask
+            return ask
+        with patch.object(_reportui, "ask", _ask), \
+                patch.object(_uiapp60.webbrowser, "open", lambda url: order.append("browser")), \
+                patch.object(gpu, "detect", lambda: ("RTX", 89)), \
+                patch.object(gpu, "driver_version", lambda: "616.92"):
+            try:
+                _uiapp60.App.report_bug(c, "bug")
+                raised = ""
+            except Exception as e:
+                raised = repr(e)
+    _ui_cleanup()
+    return order, raised
+
+
+_rp60 = _report60({"started": "yes", "what": "it went black at once"})
 check("the report button asks before it opens the browser",
-      "reportui.ask" in src_of(_gui.App._report_bug))
-check("...and cancelling the dialog cancels the report",
-      "cancelled on purpose" in src_of(_gui.App._report_bug))
+      _rp60 == (["ask", "browser"], ""), _rp60)
+_rp60 = _report60(None)
+check("...and cancelling the dialog cancels the report", _rp60 == (["ask"], ""), _rp60)
+_rp60 = _report60(RuntimeError("no dialog today"))
 check("...but a dialog that cannot open does not block reporting",
-      "answers, asked = None, False" in src_of(_gui.App._report_bug))
+      _rp60 == (["ask", "browser"], ""), _rp60)
+_rp60 = (_report60({"started": "yes"}, with_game=True), _report60({"started": "yes"}))
+check("...with a game open, or from the help menu with none picked",
+      all(r == (["ask", "browser"], "") for r in _rp60), _rp60)
 check("three answers to 'did it start', and a few words are required",
       len(_reportui.STARTED) == 3 and _reportui.MIN_WORDS >= 3)
 
@@ -5402,8 +6242,25 @@ check("the workflow reads the tool's own parser, not a copy of the format",
       "from core.community import parse" in
       (Path(__file__).resolve().parent / ".github" / "scripts"
        / "compatibility.py").read_text(encoding="utf8"))
-check("the note is fetched off the Tk thread",
-      "threading.Thread" in src_of(_gui.App._community_note))
+
+
+def _worker_only(call, module, name, ret=None):
+    """Run `call` with module.name recorded: (asked before any worker ran,
+    asked after, and whether each ask came from inside a worker)."""
+    seen: list = []
+    with _ui_threads(run=False) as th:
+        with patch.object(module, name, lambda *a, **k: (seen.append(th.inside > 0), ret)[1]):
+            call()
+            before = list(seen)
+            th.go()
+    return before, seen
+
+
+with _ui_isolated():
+    _c60 = _ui_ctl(_ui_game(name="Community"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _w60 = _worker_only(_c60.community_note, _comm, "fetch", {"games": {}})
+check("the note is fetched off the Tk thread", _w60 == ([], [True]), _w60)
+_ui_cleanup()
 
 # A result says whether it worked. Now it also says what it cost, which is
 # the question directly after it - and the one everybody, this tool
@@ -5421,9 +6278,43 @@ check("...and nothing else the caller happened to hand in",
       _recm)
 check("a session with no measurement carries no measurement",
       "res" not in _comm.record(_FakeGame(), "feeder", "failed"))
+
+
+def _share60(route, measured=None, answer=False, shown=None, detect=("RTX 4060 Ti", 89), shared=None):
+    """Press 'share the result' after a Working diagnosis on `route` (the
+    route on screen is `shown`, default the same): (what was asked, what the
+    browser was handed, the kwargs community.record got)."""
+    opened: list = []
+    recs: list = []
+    real_record = _comm.record
+    with _ui_isolated(), _ui_threads(run=False):
+        c = _ui_ctl(_ui_game(name="Shared"), _ui_support([dlss.FEEDER, dlss.OPTI], route))
+        c.route = shown or route
+        rep = diagnose.Report(route=route)
+        rep.verdict = "Working."
+        c._last_diag = rep
+        c._measured, c._measured_rows = measured, []
+        c.shell.answers = [answer]
+        with patch.object(_comm, "record", lambda *a, **k: (recs.append(k), real_record(*a, **k))[1]), \
+                patch.object(_uig60.webbrowser, "open", lambda u: opened.append(u)), \
+                patch.object(gpu, "detect", lambda: detect), \
+                patch.object(gpu, "driver_version", lambda: "616.92"), \
+                patch.object(_tune, "history", lambda *_a: []), \
+                patch.object(_tune, "shared", (lambda rows, m: dict(shared)) if shared is not None
+                             else _tune.shared):
+            c.share_result()
+    _ui_cleanup()
+    return c.shell.asked, opened, recs
+
+
+_opti_m60 = _tune.Measured(route="optiscaler", resolution=70, model_ms=6.4, frames=99)
+_sh60 = _share60("optiscaler", _opti_m60, answer=False)
 check("what leaves the machine is named on screen before the browser opens",
-      "what it cost" in src_of(_gui.App._share_result)
-      and "ms of model a frame" in src_of(_gui.App._share_result))
+      len(_sh60[0]) == 1 and "what it cost" in _sh60[0][0][1]
+      and "ms of model a frame" in _sh60[0][0][1] and _sh60[1] == [], _sh60[:2])
+_sh60b = _share60("optiscaler", _opti_m60, answer=True)
+check("...and the browser opens only once that has been agreed to",
+      len(_sh60b[1]) == 1 and "issues/new" in _sh60b[1][0], _sh60b[1])
 check("...and is in the issue body a person can read",
       "- measured: 70% work area" in urllib.parse.unquote(
           _comm.issue_url(_recm)), urllib.parse.unquote(
@@ -5440,8 +6331,18 @@ check("...and two do not",
 check("a game nobody measured says nothing at all",
       _comm.measured_note({"routes": {"feeder": {"worked": 9}}}, "feeder") == ""
       and _comm.measured_note(None) == "")
+with _ui_isolated(), _ui_threads(run=True):
+    _c60m = _ui_ctl(_ui_game(name="Measured", api="DX11"), _ui_support([dlss.OPTI], dlss.OPTI))
+    _c60m.route = dlss.OPTI
+    with patch.object(_comm, "fetch", lambda *a, **k: {"games": {}}), \
+            patch.object(_comm, "for_game", lambda data, g: _meas), \
+            patch.object(_comm, "advice", lambda *a, **k: []):
+        _c60m.community_note()
+    _c60m.pump()
 check("the note reaches the window with the rest of what others found",
-      "measured_note" in src_of(_gui.App._community_note))
+      "4 shared results" in _c60m.text() and "what other people found" in _c60m.text(),
+      _c60m.text()[-300:])
+_ui_cleanup()
 
 # The workflow's own arithmetic, run rather than read: a failure's settings
 # are the settings of a failure and must not count.
@@ -5574,7 +6475,9 @@ check("a game the model is not holding back is said to be that",
 check("...and no button offers to cut the dial underneath that sentence",
       _s3.resolution == 50, _s3.resolution)
 check("...and the extrapolation is not called a measurement",
-      any("with the model's cost taken out" in ln for ln in _s3.lines),
+      any("with everything the work area drives taken out" in ln
+          for ln in _s3.lines)
+      and not any("the model's cost taken out" in ln for ln in _s3.lines),
       _s3.lines)
 
 # The OptiScaler route logs the model's cost and no frame rate, so the
@@ -5591,13 +6494,57 @@ check("no target means no suggestion",
       _tune.suggest(_rows, 0, 100, "feeder", _m) is None)
 check("the suggestion is never outside the dial's range",
       _tune._clamp(3) == _tune.MIN_RES and _tune._clamp(400) == _tune.MAX_RES)
+from core import feedcfg as _fc60  # noqa: E402
+from core.ui import ctl_game as _uig60t  # noqa: E402
+
+
+def _tuned60(route, target=60, measured=None, cost=None, history=None, from_config=True):
+    """A controller after 'did it work?' measured a session: (controller,
+    what was written to a config)."""
+    wrote: list = []
+    m = measured or _tune.Measured(route=route, resolution=100, fps=47.0, frames=900)
+    m.from_config = from_config
+    c = _ui_ctl(_ui_game(name="Tuned", api="DX11"), _ui_support([dlss.FEEDER, dlss.OPTI], route))
+    c.route = route
+    c.target_fps = target
+    rep = diagnose.Report(route=route)
+    rep.verdict, rep.ran = "Working.", True
+    pats = [patch.object(_fc60, "write", lambda d, v: wrote.append(("feedcfg", v))),
+            patch.object(optiscaler, "enable_nr", lambda d, log=None, settings=None: wrote.append(("nr", settings)))]
+    if cost is not None:
+        pats.append(patch.object(_tune, "cost_lines", lambda rows, mm: list(cost)))
+    if history is not None:
+        pats.append(patch.object(_tune, "history", history))
+    for p in pats:
+        p.start()
+    try:
+        c._autotune(rep, m)
+    finally:
+        for p in pats:
+            p.stop()
+    return c, wrote
+
+
+with _ui_isolated(), _ui_threads(run=False):
+    _tn60, _wr60 = _tuned60("feeder", history=lambda d: [{"resolution": 100, "fps": 47.0},
+                                                          {"resolution": 50, "fps": 70.0}])
+    _sug60 = _tn60._tune
+    _wr60b: list = []
+    with patch.object(_fc60, "write", lambda d, v: _wr60b.append(("feedcfg", v))), \
+            patch.object(optiscaler, "enable_nr",
+                         lambda d, log=None, settings=None: _wr60b.append(("nr", settings))):
+        if _sug60 is not None:
+            _tn60.apply_tune()
+            _tn60.route = dlss.OPTI
+            _tn60._tune = _sug60
+            _tn60.apply_tune()
 check("applying it writes the config in place, and says when it takes effect",
-      "enable_nr" in src_of(_gui.App._apply_tune)
-      and "feedcfg.write" in src_of(_gui.App._apply_tune)
-      and "next run" in src_of(_gui.App._apply_tune))
-_tune_src = src_of(_gui.App._autotune) + src_of(_gui.App._autotuned)
-check("...and the measuring half writes nothing at all",
-      "enable_nr" not in _tune_src and "feedcfg.write" not in _tune_src)
+      _sug60 is not None
+      and _wr60b == [("feedcfg", {"work_resolution": _sug60.resolution}),
+                     ("nr", {"WorkingScale": round(_sug60.resolution / 100.0, 3)})]
+      and "next run" in _tn60.text() and _tn60._tune is None, (_sug60, _wr60b))
+check("...and the measuring half writes nothing at all", _wr60 == [], _wr60)
+_ui_cleanup()
 
 # What the dial costs, in milliseconds, out of the same solve. Every other
 # tool in this ecosystem sets this setting by feel; the numbers were being
@@ -5642,13 +6589,35 @@ check("a session that cannot be split shares no cost",
       "ms" not in _tune.shared([{"resolution": 100, "fps": 47.0}], _m),
       _tune.shared([{"resolution": 100, "fps": 47.0}], _m))
 check("and nothing measured shares nothing", _tune.shared([], None) == {})
+with _ui_isolated(), _ui_threads(run=False):
+    _aim60 = (_tuned60("feeder", target=0, cost=[])[0].text(),
+              _tuned60("feeder", target=0, cost=["50%  12.0 ms"])[0].text())
 check("the hint about 'aim for' is only printed under a table",
-      "if not target:\n            if cost:" in _tune_src,
-      _tune_src[_tune_src.index("if not target:"):][:70])
+      "aim for" not in _aim60[0] and "aim for" in _aim60[1], _aim60)
+
+# The Windows fault is read after the tuner - a tuner that raises must not
+# take the crash correction down with it.
+with _ui_isolated(), _ui_threads(run=False):
+    _cr60 = _ui_ctl(_ui_game(name="Tuner Raises", api="DX11"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _asked_crash60: list = []
+    _cr60._windows_crash = lambda rep: _asked_crash60.append(rep)
+    _cr60.what_next = lambda rep: None
+    _rep60 = diagnose.Report(route="feeder")
+    _rep60.verdict, _rep60.ran = "Working.", True
+
+    def _boom60(*a, **k):
+        raise RuntimeError("the tuner fell over")
+    with patch.object(_tune, "history", _boom60), patch.object(_tune, "remember", _boom60):
+        try:
+            _cr60.q.put(("diagnosed", (_cr60.game.install_dir, _rep60,
+                                       _tune.Measured(route="feeder", resolution=100, fps=47.0))))
+            _cr60.pump()
+            _raised60 = ""
+        except Exception as _e60:
+            _raised60 = repr(_e60)
 check("nothing new runs outside a try that the crash correction follows",
-      "self._autotuned(" in src_of(_gui.App._autotune)
-      and "except Exception" in src_of(_gui.App._autotune).split(
-          "self._autotuned(")[1][:200])
+      _raised60 == "" and _asked_crash60 == [_rep60], (_raised60, _asked_crash60))
+_ui_cleanup()
 # Two sessions five points apart solve a table the person can disbelieve.
 # They do not measure a number to put in front of strangers.
 _close = [{"resolution": 100, "fps": 47.0}, {"resolution": 95, "fps": 47.05}]
@@ -5666,32 +6635,38 @@ check("a half-written history does not raise, it is skipped",
 
 # The dropdown can be changed between "did it work?" and "share the
 # result" - the tool itself asks people to change it when a route fails.
-class _ShareApp:
-    game = _FakeGame()
-    _measured = _tune.Measured(route="optiscaler", resolution=70,
-                               model_ms=6.4, frames=99)
-    _measured_for = _gui.App._measured_for
-
-
-with patch.object(_tune, "history", lambda *_a: []):
-    check("a cost measured on one route is not published against another",
-          _ShareApp()._measured_for("feeder") == {}, "filed under feeder")
-    check("...and is published against its own",
-          _ShareApp()._measured_for("optiscaler").get("res") == 70)
+with _ui_isolated(), _ui_threads(run=False):
+    _sa60 = _ui_ctl(_ui_game(name="Share App"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.OPTI))
+    _sa60._measured = _opti_m60
+    with patch.object(_tune, "history", lambda *_a: []):
+        check("a cost measured on one route is not published against another",
+              _sa60.measured_for("feeder") == {}, "filed under feeder")
+        check("...and is published against its own",
+              _sa60.measured_for("optiscaler").get("res") == 70)
+_ui_cleanup()
+# the dropdown moved to feeder between 'did it work?' and 'share the result'
+_moved60 = _share60("optiscaler", _opti_m60, answer=True, shown="feeder")
+_kept60 = _share60("optiscaler", _opti_m60, answer=True)
 check("the record is built from the same route the measurement is checked "
       "against",
-      src_of(_gui.App._share_result).index("route = getattr(self")
-      < src_of(_gui.App._share_result).index("_measured_for"))
+      _moved60[2] and _moved60[2][0].get("measured") == {}
+      and _kept60[2] and _kept60[2][0].get("measured", {}).get("res") == 70,
+      ([r.get("measured") for r in _moved60[2]], [r.get("measured") for r in _kept60[2]]))
 
-check("the cost table is printed whether or not a target was typed",
-      _tune_src.index("cost_lines") < _tune_src.index("if not target"),
-      "the table is behind the target check")
-check("the rows it was solved from are dropped with it",
-      "_measured_rows" in src_of(_gui.App._forget_last_session))
-check("what the session cost is kept for the shared result",
-      "self._measured = m" in _tune_src
-      and "_measured_for(" in src_of(_gui.App._share_result)
-      and "autotune.shared" in src_of(_gui.App._measured_for))
+with _ui_isolated(), _ui_threads(run=False):
+    _tt60, _ = _tuned60("feeder", target=0, history=lambda d: [{"resolution": 100, "fps": 47.0},
+                                                               {"resolution": 50, "fps": 70.0}])
+    check("the cost table is printed whether or not a target was typed",
+          "what the work area costs here" in _tt60.text(), _tt60.text()[-300:])
+    check("what the session cost is kept for the shared result",
+          _tt60._measured is not None and _tt60._measured_rows
+          and _tt60.measured_for("feeder") == _tune.shared(_tt60._measured_rows, _tt60._measured)
+          and _tt60.measured_for("feeder") != {},
+          (_tt60._measured, _tt60.measured_for("feeder")))
+    _tt60._forget_last_session()
+    check("the rows it was solved from are dropped with it",
+          _tt60._measured_rows is None and _tt60._measured is None)
+_ui_cleanup()
 
 # The driver, said before the install instead of in the diagnosis after it:
 # 616.64 is named in 31 of the first 87 reports, more than any other single
@@ -5709,8 +6684,13 @@ check("an unknown driver says nothing", dlss.driver_warning("feeder", "") is Non
 check("driver_at_least can be asked about a version it was handed",
       gpu.driver_at_least("616.64", "617.10") is True
       and gpu.driver_at_least("616.64", "616.56") is False)
+with _ui_isolated(), _ui_threads(run=False):
+    _dw60 = _ui_ctl(_ui_game(name="Driver"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+    with patch.object(gpu, "driver_version", lambda: "616.64"):
+        _dw60.apply_route(dlss.FEEDER)
 check("the route note carries it before INSTALL is pressed",
-      "driver_warning" in src_of(_gui.App._apply_route))
+      any(k == "driver" and "4.55" in t for k, t in _dw60.notes), _dw60.notes)
+_ui_cleanup()
 
 # The other end of it. DOOM on driver 475.14 (#16) was told "the game has
 # not been started since the install" - true, and no use to anybody: that
@@ -5754,8 +6734,16 @@ check("...and reads the enabled bit, not the supported one",
       and "capable of it" in src_of(gpu.hdr_on))
 check("the display-config path struct is the size Windows expects",
       "refreshRateNum" in src_of(gpu.hdr_on), "72 bytes")
+_hdr60 = {}
+with _ui_isolated(), _ui_threads(run=False):
+    for _on60 in (None, False, True):
+        _h60 = _ui_ctl(_ui_game(name="HDR"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+        with patch.object(gpu, "hdr_on", lambda v=_on60: v):
+            _h60.hdr_note()
+        _hdr60[_on60] = _h60.text()
 check("nothing is said when the display is not in HDR",
-      "is not True" in src_of(_gui.App._hdr_note))
+      _hdr60[None] == "" and _hdr60[False] == "" and "HDR" in _hdr60[True], _hdr60)
+_ui_cleanup()
 
 # Issue #53: "does it work on an RX 7600". Both AMD routes are real and
 # neither is fetchable, and the answer has to say which and why.
@@ -5861,12 +6849,15 @@ check("...and OptiScaler's as hex, leaving the rest of the section alone",
       "ShortcutKey=0x79" in _ini and "Scale=auto" in _ini, _ini)
 def _key_name_is(label, vk, route_default):
     """What the tool would tell someone to press, having picked `label`."""
-    _saved = prefs.get("overlay_key")
+    # a settings file of its own: this check once wrote into the machine's real one
+    import tempfile as _tf
+    _real = prefs.FILE
+    prefs.FILE = Path(_tf.mkdtemp()) / "settings.json"
     try:
         prefs.set_("overlay_key", 0 if "default" in label else vk)
         return reshade_ini.overlay_key_name(route_default)
     finally:
-        prefs.set_("overlay_key", _saved or 0)
+        prefs.FILE = _real
 
 
 reshade_ini.set_overlay_key(_d, 0)
@@ -5985,8 +6976,13 @@ check("a game name that is not a file name is never put in a command",
       _wc.last_crash("..\\evil & del *", since=0) is None)
 check("the query is capped, so a diagnosis cannot hang on it",
       _wc.TIMEOUT <= 15 and "timeout=TIMEOUT" in src_of(_wc._ps))
-check("...and it is read off the Tk thread",
-      "threading.Thread" in src_of(_gui.App._windows_crash))
+with _ui_isolated():
+    _wcg60 = _ui_game(name="Crashy")
+    _wcc60 = _ui_ctl(_wcg60, _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _wcw60 = _worker_only(lambda: _wcc60._windows_crash(diagnose.Report(route="feeder")),
+                          _wc, "last_crash", None)
+check("...and it is read off the Tk thread", _wcw60 == ([], [True]), _wcw60)
+_ui_cleanup()
 check("the event goes into the report body",
       "windows event:" in src_of(diagnose.issue_body))
 
@@ -6130,23 +7126,58 @@ section("61. what the 1.8.0 release gate found")
 # LOGIC: the tuner was always one session behind - the history was read
 # before the new measurement was stored, so the second session still said
 # "one session is not enough" and only the third could solve.
-_gsrc = src_of(_gui.App._autotune) + src_of(_gui.App._autotuned)
+from core.ui import ctl_game as _uig61  # noqa: E402
+_order61: list = []
+with _ui_isolated(), _ui_threads(run=False):
+    with patch.object(_tune, "remember", lambda *a, **k: _order61.append("remember")), \
+            patch.object(_tune, "suggest", lambda *a, **k: (_order61.append("suggest"), None)[1]):
+        _tuned60("feeder", target=60)
 check("the measurement is recorded before the suggestion is worked out",
-      0 <= _gsrc.find("autotune.remember") < _gsrc.find("autotune.suggest"))
+      _order61 == ["remember", "suggest"], _order61)
+
+# The session's work area, read by the reader the diagnosis worker calls.
+_ms61: dict = {}
+with patch.object(_tune, "ran_at_exact", lambda d, route: 85), \
+        patch.object(_tune, "written_after", lambda d, route, p: _ms61.get("after", False)), \
+        patch.object(_tune, "measure", lambda feed, opti, route, res:
+                     _tune.Measured(route=route, resolution=res, fps=50.0)):
+    _msr61 = Path(tempfile.mkdtemp(prefix="measure61_"))
+    _m61a = _uig61.GameControl._measure_session(_msr61, "feeder", 100)
+    _ms61["after"] = True
+    _m61b = _uig61.GameControl._measure_session(_msr61, "feeder", 100)
+    shutil.rmtree(_msr61, ignore_errors=True)
 check("...and the session's own resolution comes from the config, not the slider",
-      "autotune.ran_at" in src_of(_gui.App._measure_session))
+      _m61a is not None and _m61a.resolution == 85 and _m61a.from_config, _m61a)
+
 # FEATURES: printing the table without a target put two 100 KB log tails, a
 # folder glob and a config read on the Tk thread for everybody, on every
 # press - work that used to happen only for the few who typed a frame rate.
+with _ui_isolated():
+    _dg61 = _ui_ctl(_ui_game(name="Diagnosed", api="DX11"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _dg61.route = dlss.FEEDER
+    _rep61 = diagnose.Report(route="feeder")
+    _rep61.verdict, _rep61.ran = "Working.", True
+    with patch.object(diagnose, "analyse", lambda *a, **k: _rep61):
+        _w61 = _worker_only(_dg61.diagnose, _uig61.GameControl, "_measure_session", None)
 check("the logs are read on the worker that was reading logs anyway",
-      "_measure_session" in src_of(_gui.App._diagnose)
-      and "threading.Thread" in src_of(_gui.App._diagnose))
-check("...and not on the thread drawing the window",
-      "_tail" not in _gsrc and "_opti_log" not in _gsrc)
-check("...and the reader itself touches no Tk",
-      not any(w in src_of(_gui.App._measure_session)
-              for w in ("self._log", "configure(", ".get()", "self.q.put")),
-      src_of(_gui.App._measure_session))
+      _w61 == ([], [True]), _w61)
+_tails61: list = []
+with _ui_isolated(), _ui_threads(run=False):
+    with patch.object(diagnose, "_tail", lambda *a, **k: (_tails61.append("tail"), "")[1]), \
+            patch.object(diagnose, "_opti_log", lambda *a, **k: (_tails61.append("opti_log"), None)[1]):
+        _tuned60("feeder", target=60)
+        _tuned60("feeder", target=0)
+check("...and not on the thread drawing the window", _tails61 == [], _tails61)
+_nt61: list = []
+_th61 = __import__("threading").Thread(
+    target=lambda: _nt61.append(_uig61.GameControl._measure_session(Path(tempfile.gettempdir()) / "nope61",
+                                                                   "feeder", 100)), daemon=True)
+_th61.start()
+_th61.join(20)
+check("...and the reader itself touches no Tk: a static function any thread can call",
+      isinstance(vars(_uig61.GameControl).get("_measure_session"), staticmethod) and _nt61 == [None],
+      _nt61)
+_ui_cleanup()
 # Run, not read: the prune and the suggestion both walk rows that come back
 # out of a file on a disk. A source-string check cannot see a raise.
 _JUNK = [17, {"resolution": "abc", "fps": 60}, {"resolution": 50, "fps": "0"},
@@ -6248,13 +7279,14 @@ check("...and one written before it is",
       not _tune.written_after(_cd, "feeder", _cd / "dlss5-feed.log"))
 check("...a missing file says nothing either way",
       not _tune.written_after(_cd, "feeder", _cd / "no-such.log"))
-_ms = src_of(_gui.App._measure_session)
 check("the window checks it before it believes the config",
-      "written_after" in _ms and _ms.index("ran_at_exact") < _ms.index("written_after"))
-check("...and a guessed work area is never recorded as a session",
-      "from_config" in src_of(_gui.App._autotuned)
-      and src_of(_gui.App._autotuned).index("from_config")
-      < src_of(_gui.App._autotuned).index("autotune.remember"))
+      _m61b is not None and _m61b.resolution == 100 and _m61b.from_config is False, _m61b)
+_rem61: list = []
+with _ui_isolated(), _ui_threads(run=False):
+    with patch.object(_tune, "remember", lambda *a, **k: _rem61.append(a)):
+        _tuned60("feeder", target=60, from_config=False)
+check("...and a guessed work area is never recorded as a session", _rem61 == [], _rem61)
+_ui_cleanup()
 
 _body2 = diagnose.issue_body("1.9.0", "RTX 4060 Ti", 89, "616.92",
                              _DialGame(), "feeder", None, "", None,
@@ -6309,35 +7341,81 @@ check("a manifest that cannot be read skips that file, not the loop",
 check("a card that could not be detected does not crash the share button",
       isinstance(_comm.record(_FakeGame(), "feeder", "worked",
                               gpu_name="")["gpu"], str))
+_nocard61 = _share60("feeder", None, answer=True, detect=(None, None))
 check("...and the GUI never passes None as the card name",
-      "gpu_name=name or \"\"" in src_of(_gui.App._share_result))
+      _nocard61[2] and _nocard61[2][0].get("gpu_name") == "" and len(_nocard61[1]) == 1,
+      [r.get("gpu_name") for r in _nocard61[2]])
 
 # LOGIC/FEATURES: one game's diagnosis must not be posted about another.
+with _ui_isolated(), _ui_threads(run=False):
+    _pk61 = _ui_ctl()
+    _pk61.load_catalog = lambda: None
+    _one61, _two61 = _ui_game(name="First"), _ui_game(name="Second")
+    _pk61.enter_game(_one61)
+    _pk61._last_diag, _pk61._last_crash = diagnose.Report(route="feeder"), object()
+    _pk61._tune = _tune.Suggestion(resolution=70)
+    _pk61.enter_game(_one61)
+    _kept61 = (_pk61._last_diag, _pk61._last_crash, _pk61._tune)
+    _pk61.enter_game(_two61)
 check("picking another game forgets the last diagnosis",
-      "_forget_last_session" in src_of(_gui.App._on_pick))
+      _kept61[0] is not None and _pk61._last_diag is None, _kept61)
 check("...including the Windows event and the tuning suggestion",
-      all(k in src_of(_gui.App._forget_last_session)
-          for k in ("_last_diag", "_last_crash", "_tune")))
+      _pk61._last_crash is None and _pk61._tune is None and _pk61.result is None)
+_ui_cleanup()
 
 # FEATURES: the failures worth sharing most are the ones that logged nothing.
+# Read on the page itself: the button is drawn under a verdict that says
+# the game never ran.
+_ui61 = _UiLive()
+if _ui61.ok:
+    _g61 = _ui_game(name="Never Ran")
+    _ui61.enter(_g61, _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _nr61 = diagnose.Report(route="feeder")
+    _nr61.verdict, _nr61.ran, _nr61.never_ran = "Not started since the install - run the game once.", False, True
+    _ui61.app._windows_crash = lambda rep: None
+    _ui61.app.what_next = lambda rep: None
+    _ui61.app.q.put(("diagnosed", (_g61.install_dir, _nr61, None)))
+    _ui61.until(lambda: _ui61.kit.find("share the result", "button"), 4.0)
 check("a session that never ran can still be shared",
-      'configure(state="normal")' in src_of(_gui.App._diagnosed))
+      _ui61.ok and bool(_ui61.kit.find("share the result", "button")), _ui61.labels("button"))
+_ui61.close()
+with _ui_isolated():
+    _dg61b = _ui_ctl(_ui_game(name="Diagnosed"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _w61b = _worker_only(_dg61b.diagnose, diagnose, "analyse", _rep61)
 check("...and the reading itself is off the Tk thread, like every long job",
-      "threading.Thread(target=work" in src_of(_gui.App._diagnose)
-      and "diagnose.analyse(" not in src_of(_gui.App._diagnosed))
+      _w61b == ([], [True]), _w61b)
+_ui_cleanup()
 
 # FEATURES: the overlay key belongs on every route that has an overlay.
-_asrc = src_of(_gui.App._apply_route)
+_ok61: dict = {}
+_ui61b = _UiLive()
+if _ui61b.ok:
+    _ui61b.enter(_ui_game(name="Overlay Key"), _ui_support([dlss.FEEDER, dlss.OPTI, dlss.REMIX], dlss.FEEDER))
+    _ui61b.press("settings", "button")
+    _ui61b.settle(350)
+    for _r61 in (dlss.FEEDER, dlss.OPTI, dlss.REMIX):
+        _ui61b.app.set_setting("route", _r61)
+        _ui61b.app.shell.redraw()
+        _ui61b.settle(40)
+        _ok61[_r61] = bool(_ui61b.kit.find("overlay key", "dropdown"))
+_ui61b.close()
+_ui_cleanup()
 check("the overlay key is offered on the OptiScaler route too",
-      "self.game and path != dlss.REMIX" in _asrc)
-check("...and its widgets come off the page when it does not apply",
-      "self.overlaykeyhint)" in _asrc and "grid_remove()" in _asrc)
+      _ok61.get(dlss.OPTI) is True and _ok61.get(dlss.FEEDER) is True, _ok61)
+check("...and its row comes off the page when it does not apply",
+      _ok61.get(dlss.REMIX) is False, _ok61)
 
 # TEXTS: nothing tells a person to press a key they may have rebound.
-check("every 'press the overlay key' line goes through the resolver",
-      not any("press Home" in src_of(m) or "press Insert" in src_of(m)
-              for m in (_gui.App._diagnose, _gui.App._finish_ok)
-              if callable(m)))
+_keys61: list = []
+with _ui_isolated(), _ui_threads(run=False):
+    prefs.set_("overlay_key", reshade_ini.OVERLAY_KEYS["F10"])
+    for _gb61 in (64, 32):
+        _kc61 = _ui_ctl(_ui_game(name="Keys", bitness=_gb61), _ui_support(list(dlss.LABELS), dlss.FEEDER))
+        for _r61 in dlss.LABELS:
+            _keys61 += [t for _k, t in _kc61.route_steps(_r61)
+                        if "press Home" in t or "press Insert" in t]
+_ui_cleanup()
+check("every 'press the overlay key' line goes through the resolver", not _keys61, _keys61)
 prefs.set_("overlay_key", reshade_ini.OVERLAY_KEYS["F10"])
 try:
     check("the resolver answers with the key that was chosen",
@@ -6410,8 +7488,8 @@ check("the compatibility workflow does not filter on the label",
       "labels=result" not in _wf and "state=all" in _wf)
 
 # FEATURES: the version is the delivery mechanism for the library rescan.
-check("the version is 1.9.0 in the file the build reads too",
-      "1.9.0.0" in (Path(__file__).resolve().parent
+check("the version is 2.0.0 in the file the build reads too",
+      "2.0.0.0" in (Path(__file__).resolve().parent
                     / "version_info.txt").read_text(encoding="utf8"))
 check("...and the release notes the workflow publishes exist",
       (Path(__file__).resolve().parent / "docs" / "releases"
@@ -6524,18 +7602,46 @@ check("a swap is warned about before it happens, in its own words",
       "anti-cheat can treat a changed file as tampering"
       in anticheat.swap_message("nvngx_dlssd.dll")
       and "keep the game's own" in anticheat.swap_message("x"))
+# Pressed on the page: a ray-reconstruction build picked from its dropdown,
+# and the 'keep the game's own nvngx_dlss' toggle clicked off.
+_sw62: dict = {}
+_ui62 = _UiLive()
+if _ui62.ok:
+    _g62 = _ui_game(name="Swap Warned", api="DX12")
+    (_g62.install_dir / "nvngx_dlss.dll").write_bytes(b"GAME OWN" + bytes(400))
+    _ui62.enter(_g62, _ui_support([dlss.NATIVE, dlss.FEEDER], dlss.NATIVE,
+                                  evidence=["nvngx_dlss.dll", "nvngx_dlssd.dll"]))
+    _ui62.app.catalog = {"dlssd": [{"label": "310.9.1 (NVIDIA SDK)"}], "dlss": [], "renodx": [],
+                         "dlssnr": []}
+    _ui62.press("settings", "button")
+    _ui62.settle(350)
+    _ui62.app.shell.clear_log()
+    _ui62.press("ray reconstruction", "dropdown")
+    _sw62["picked"] = _ui62.pick("310.9.1")
+    _sw62["build"] = _ui62.log()
+    _ui62.app.shell.clear_log()
+    _sw62["toggle"] = _ui62.press("keep the game's own nvngx_dlss", "toggle")
+    _sw62["keep"] = _ui62.log()
+    _sw62["opts"] = (_ui62.app.opts().dlssd, _ui62.app.opts().keep_game_dlss)
+_ui62.close()
+_ui_cleanup()
 check("...and the warning is shown when a build is chosen",
-      "_warn_swap" in src_of(_gui.App._on_dlssd)
-      and "anticheat.swap_message" in src_of(_gui.App._warn_swap))
+      _sw62.get("picked") and "as tampering" in _sw62.get("build", ""), _sw62.get("build", "")[-300:])
 check("...and unticking 'keep the game's own' warns the same way",
-      "_warn_swap" in src_of(_gui.App._on_keep_dlss)
-      and "command=self._on_keep_dlss" in src_of(_gui.App._page_install))
+      _sw62.get("toggle") and "as tampering" in _sw62.get("keep", ""), _sw62.get("keep", "")[-300:])
+check("...and both choices reach the install",
+      _sw62.get("opts") == ("310.9.1 (NVIDIA SDK)", False), _sw62.get("opts"))
 check("...and repeated in the notes the install leaves behind",
       "as tampering" in src_of(installer.install))
+with _ui_isolated(), _ui_threads(run=False):
+    _dn62 = _ui_ctl(_ui_game(name="Untouched"), _ui_support([dlss.NATIVE], dlss.NATIVE,
+                                                            evidence=["nvngx_dlssd.dll"]))
+    _dn62.apply_route(dlss.NATIVE)
+    _dno62 = _dn62.opts()
+_ui_cleanup()
 check("doing nothing is the default",
-      installer.Options().dlssd == ""
-      and 'dlssd=("" if self.cb_dlssd.get() in (DLSSD_KEEP'
-      in src_of(_gui.App._opts))
+      installer.Options().dlssd == "" and _dno62.dlssd == "" and _dno62.keep_game_dlss is True
+      and _dno62.dlss is None, (_dno62.dlssd, _dno62.keep_game_dlss, _dno62.dlss))
 
 
 section("63. the round that put the release together: the four shapes a "
@@ -6649,34 +7755,72 @@ check("...and the notes say so, naming the section the tool really writes",
 
 # Issue #98: a recorded fault outranks a log that stopped in a good place -
 # but only a fault from the session that log describes.
-_gsrc63 = src_of(_gui.App._crash_overrides)
+import calendar as _cal63  # noqa: E402
+import types as _types63  # noqa: E402
+from core.ui import ctl_game as _uig63, ctl_library as _uil63  # noqa: E402
+
+
+class _FakeApp:
+    """The window's game controller with nothing but a recorder around it:
+    crash_overrides, _reprint_verdict and the session window are the real
+    ones - what they print is the thing being checked."""
+
+    def __new__(cls, rep, where=None):
+        c = _ui_ctl()
+        c._last_diag = rep
+        if not where:
+            where = Path(tempfile.mkdtemp(prefix="crash_app_"))
+            _UI_DIRS.append(where)
+        c.game = _types63.SimpleNamespace(install_dir=Path(where), name="Crashed", installed=False,
+                                          exe=None, kind="game")
+        return c
+
+
+def _when63(offset: float) -> str:
+    """A Windows event time `offset` seconds from now, as wincrash writes it (UTC)."""
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + offset))
+
+
+# Issue #98: a recorded fault outranks a log that stopped in a good place -
+# but only a fault from the session that log describes.
+_sess63 = Path(tempfile.mkdtemp(prefix="crash_session_"))
+(_sess63 / "ReShade.log").write_text("INFO | Initializing crosire's ReShade\n", encoding="utf8")
+
+
+def _working63(offset):
+    rep = diagnose.Report(route="renodx")
+    rep.verdict = "Working."
+    app = _FakeApp(rep, _sess63)
+    app.crash_overrides(_wc.Crash(when=_when63(offset), exe="Game.exe", module="Game.exe",
+                                  code="0xC0000005", provider="Application Error"))
+    return rep.verdict
+
+
+with _ui_isolated(), _ui_threads(run=False):
+    _now63, _old63 = _working63(+60), _working63(-6 * 3600)
 check("a recorded crash overrides a Working verdict",
-      "Working" in _gsrc63 and "crashed" in _gsrc63)
+      "then the game crashed" in _now63, _now63)
 check("...only when it belongs to the session just diagnosed",
-      "_crash_is_this_session" in _gsrc63)
+      _old63 == "Working.", _old63)
+with _ui_isolated(), _ui_threads(run=False):
+    _sr63 = {}
+    for _off63 in (+60, -6 * 3600):
+        _rp63 = diagnose.Report(route="renodx")
+        _rp63.verdict = "Working."
+        _ap63 = _FakeApp(_rp63, _sess63)
+        _cr63 = _wc.Crash(when=_when63(_off63), exe="Game.exe", module="Game.exe",
+                          code="0xC0000005", provider="Application Error")
+        _ap63.q.put(("wincrash", (_ap63.game.install_dir, _cr63, ("Game.exe faulted", "in Game.exe"))))
+        _ap63.pump()
+        _sr63[_off63] = _ap63._last_crash is _cr63
 check("...and the shared record is held to the same window",
-      "_crash_is_this_session" in src_of(_gui.App._pump))
+      _sr63 == {60: True, -6 * 3600: False}, _sr63)
+shutil.rmtree(_sess63, ignore_errors=True)
 
 
 # #171: and it outranks the opposite verdict too. "Not started since the
 # install" is read off an absent log; a fault record for the game's own exe,
 # written after the install, says it started and died before anything loaded.
-class _FakeApp:
-    """Only what _crash_overrides touches."""
-
-    def __init__(self, rep):
-        self._last_diag = rep
-        self.said = []
-        self.game = None
-
-    def _crash_is_this_session(self, crash):
-        return True
-
-    def _log(self, text, tag=None):
-        self.said.append(text)
-
-    # The real one: what it prints is the thing being checked.
-    _reprint_verdict = _gui.App._reprint_verdict
 
 
 _c171 = _wc.Crash(when="2026-09-12 00:54:33", exe="GTA5.exe", module="GTA5.exe",
@@ -6687,9 +7831,10 @@ def _overridden(verdict, never_ran):
     rep = diagnose.Report(route="renodx")
     rep.verdict = verdict
     rep.never_ran = never_ran
-    app = _FakeApp(rep)
-    _gui.App._crash_overrides(app, _c171)
-    return rep.verdict, " ".join(app.said)
+    with _ui_isolated(), _ui_threads(run=False):
+        app = _FakeApp(rep)
+        app.crash_overrides(_c171)
+    return rep.verdict, " ".join(t for t, _tag in app.said)
 
 
 _v171, _s171 = _overridden("Not started since the install - run the game once.", True)
@@ -6902,11 +8047,11 @@ def _override(module, where, never_ran=True,
     rep.never_ran = never_ran
     rep.add(diagnose.WARN, "The game has not been started since the install.")
     rep.add(diagnose.INFO, "If you DID start it, it launches something else.")
-    app = _FakeApp(rep)
-    app.game = type("G", (), {"install_dir": where})()
-    _gui.App._crash_overrides(app, _wc.Crash(
-        when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
-        code="0xC0000005", provider="Application Error"))
+    with _ui_isolated(), _ui_threads(run=False):
+        app = _FakeApp(rep, where)
+        app.crash_overrides(_wc.Crash(
+            when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
+            code="0xC0000005", provider="Application Error"))
     return rep
 
 
@@ -6937,12 +8082,12 @@ def _override_said(module, where, route="renodx"):
     rep.verdict = "Not started since the install - run it once."
     rep.never_ran = True
     rep.add(diagnose.WARN, "The game has not been started since the install.")
-    app = _FakeApp(rep)
-    app.game = type("G", (), {"install_dir": where})()
-    _gui.App._crash_overrides(app, _wc.Crash(
-        when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
-        code="0xC0000005", provider="Application Error"))
-    return rep, "\n".join(app.said)
+    with _ui_isolated(), _ui_threads(run=False):
+        app = _FakeApp(rep, where)
+        app.crash_overrides(_wc.Crash(
+            when="2026-09-12 00:54:33", exe="GTA5.exe", module=module,
+            code="0xC0000005", provider="Application Error"))
+    return rep, "\n".join(t for t, _tag in app.said)
 
 
 _here2 = Path(tempfile.mkdtemp(prefix="diag_fault_screen_"))
@@ -6951,8 +8096,8 @@ check("the corrected verdict is printed on screen, not only in the report",
       _rep.verdict in _said, _said[:200])
 check("...and the fault finding is printed with it",
       "faulting" in _said, _said[:200])
-# The install page names that dropdown differently per route; the feeder
-# route has it on a row of its own (gui._apply_route, row 21).
+# The game page names that dropdown differently per route: 'loads as' on
+# OptiScaler, 'reshade loads as' on the ReShade routes (core/ui/setpanel.py).
 _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="optiscaler")
 check("...the optiscaler route is told about 'loads as'",
       "'loads as'" in _said and "reshade loads as" not in _said, _said[-200:])
@@ -6960,12 +8105,37 @@ _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="feeder")
 check("...and the feeder route, which has its own row for it, is told "
       "'reshade loads as'",
       "'reshade loads as'" in _said, _said[-200:])
-_asrc2 = src_of(_gui.App._apply_route)
+# Read off the page, route by route - and the name the diagnosis tells
+# people to change has to be a dropdown with that label.
+_px63: dict = {}
+_ui63 = _UiLive()
+if _ui63.ok:
+    _ui63.enter(_ui_game(name="Proxy Names", api="DX12"),
+                _ui_support([dlss.FEEDER, dlss.OPTI, dlss.REMIX], dlss.FEEDER))
+    _ui63.press("settings", "button")
+    _ui63.settle(350)
+    for _r63 in (dlss.FEEDER, dlss.OPTI, dlss.REMIX):
+        _ui63.app.set_setting("route", _r63)
+        _ui63.app.shell.redraw()
+        _ui63.settle(40)
+        _px63[_r63] = sorted(l for l in _ui63.labels("dropdown") if "loads as" in l)
+    _ui63.app.set_setting("route", dlss.FEEDER)
+    _ui63.app.shell.redraw()
+    _ui63.settle(40)
+    _ui63.press("reshade loads as", "dropdown")
+    _px63["picked"] = _ui63.pick("d3d11.dll")
+    _dd63 = _ui63.kit.find("reshade loads as", "dropdown")
+    _px63["shows"] = [_ui63.canvas.itemcget(i, "text") for i in _ui63.canvas.find_withtag(_dd63 or "none")
+                      if _ui63.canvas.type(i) == "text"]
+    _px63["opts"] = _ui63.app.opts().reshade_proxy
+_ui63.close()
+_ui_cleanup()
 check("the remix route shows no proxy dropdown - it installs no ReShade",
-      "elif path == dlss.REMIX:" in _asrc2 and "pair = None" in _asrc2)
-check("...and changing the name rebuilds the header line that promises it",
-      'self.cb_rproxy.bind("<<ComboboxSelected>>"'
-      in src_of(_gui.App._page_install))
+      _px63.get(dlss.REMIX) == [] and _px63.get(dlss.OPTI) == ["loads as"]
+      and _px63.get(dlss.FEEDER) == ["reshade loads as"], _px63)
+check("...and a name picked there is the name shown and the name installed",
+      _px63.get("picked") and "d3d11.dll" in _px63.get("shows", [])
+      and _px63.get("opts") == "d3d11.dll", _px63)
 _rep, _said = _override_said(str(_here2 / "GTA5.exe"), _here2, route="remix")
 check("...and the remix route, which installs no ReShade, is told neither",
       "loads as" not in _said, _said[-200:])
@@ -7022,23 +8192,23 @@ check("...and somebody else's overlay is neither",
 # after the window was put in its busy state and before the message that
 # takes it out of it.
 check("an exception with no message still names something",
-      _gui._first_line(TimeoutError()) == "TimeoutError"
-      and _gui._first_line(ValueError("first\nsecond")) == "first")
+      _uil63.first_line(TimeoutError()) == "TimeoutError"
+      and _uil63.first_line(ValueError("first\nsecond")) == "first")
 
 # The window that says whether a recorded fault belongs to this session must
 # never be silently switched off: a route whose log is not in the list would
 # have let every fault of the last fortnight speak for a clean session.
 _sw = Path(tempfile.mkdtemp(prefix="session_window_"))
 check("with nothing to date a crash against, the window is not just dropped",
-      _gui._last_log_write(_sw) == 0.0)
+      _uig63.last_log_write(_sw) == 0.0)
 (_sw / "dlss5-autopilot.json").write_text(json.dumps(
     {"version": 1, "complete": True, "exe": "Game.exe", "files": []}),
     encoding="utf8")
 check("...the install time stands in for it",
-      _gui._last_log_write(_sw) > 0)
+      _uig63.last_log_write(_sw) > 0)
 (_sw / "OptiScaler.log").write_text("x", encoding="utf8")
 check("...and a real log wins over that",
-      _gui._last_log_write(_sw) >= (_sw / "OptiScaler.log").stat().st_mtime)
+      _uig63.last_log_write(_sw) >= (_sw / "OptiScaler.log").stat().st_mtime)
 shutil.rmtree(_sw, ignore_errors=True)
 
 # When both sources fail, only the fallback's error is raised - so the
@@ -7387,12 +8557,48 @@ check("the report's ReShade.log excerpt does not pull hook lines from an "
       "older session", not any("EvaluateFeaturehooked" in ln for ln in _ex2)
       and any("Failed to find" in ln for ln in _ex2), _ex2)
 
-# The window takes the wheel from every dropdown, because ttk's class
-# binding changes the selection before any window-level handler runs.
-_gsrc_w = src_of(_gui.App.__init__)
-check("the dropdown class binding for the wheel is taken away",
-      'unbind_class(cls, "<MouseWheel>")' in _gsrc_w,
-      "no unbind_class(cls, <MouseWheel>) in App.__init__")
+# The wheel over a dropdown scrolls the page and never changes the choice -
+# ttk's class binding did, before any window-level handler ran. The 2.0
+# dropdowns are drawn, so this is asked with real wheel events: over a closed
+# dropdown, and over the open list of one.
+_wh64: dict = {}
+_ui64 = _UiLive()
+if _ui64.ok:
+    _ui64.enter(_ui_game(name="Wheel", api="DX12"),
+                _ui_support([dlss.FEEDER, dlss.OPTI, dlss.STANDALONE], dlss.FEEDER))
+    _ui64.press("settings", "button")
+    _ui64.settle(350)
+    _c64 = _ui64.canvas
+    _route_dd64 = _ui64.kit.find("route", "dropdown")
+    _xy64 = _ui64._xy(_c64, _route_dd64) if _route_dd64 else None
+    if _xy64:
+        _top0 = _c64.canvasy(0)
+        for _d64 in (-120, 120, -120):
+            _c64.event_generate("<Motion>", x=_xy64[0], y=_xy64[1])
+            _c64.event_generate("<MouseWheel>", delta=_d64, x=_xy64[0], y=_xy64[1])
+            _ui64.settle(30)
+        _wh64["closed"] = (_ui64.app.route, _ui64.app.settings.get("route", _ui64.app.route))
+        _c64.yview_moveto(0)
+        _ui64.settle(30)
+        _ui64.press("route", "dropdown")
+        _menu64 = _ui64.kit.top()
+        _wh64["opened"] = _menu64 is not None
+        if _menu64 is not None:
+            _bx64 = _c64.bbox(_menu64.tag)
+            _mx = int((_bx64[0] + _bx64[2]) / 2 - _c64.canvasx(0))
+            _my = int((_bx64[1] + _bx64[3]) / 2 - _c64.canvasy(0))
+            for _d64 in (-120, -120, 120):
+                _c64.event_generate("<Motion>", x=_mx, y=_my)
+                _c64.event_generate("<MouseWheel>", delta=_d64, x=_mx, y=_my,
+                                    rootx=_c64.winfo_rootx() + _mx, rooty=_c64.winfo_rooty() + _my)
+                _ui64.settle(30)
+            _wh64["open"] = (_ui64.app.route, _ui64.kit.top() is _menu64)
+_ui64.close()
+_ui_cleanup()
+check("the wheel over a dropdown does not change what it says",
+      _wh64.get("closed") == (dlss.FEEDER, dlss.FEEDER), _wh64)
+check("...nor over its open list, which stays open",
+      _wh64.get("opened") and _wh64.get("open") == (dlss.FEEDER, True), _wh64)
 
 section("1.8.1: self-update relaunch, the MFG unlock's new shape, a bad cached "
         "archive, OptiScaler's update nag (#136 #141 #140 #51)")
@@ -7913,9 +9119,8 @@ section("1.8.2: api.github.com answered by something else (#175), and the "
 sys.path.insert(0, str(SRC_DIR / "_tools"))
 import replay_report as _rr182  # noqa: E402
 
-# The window's own source, read here rather than borrowed: _gsrc is rebound
-# four times on the way down this file and by now it is one function's.
-_guisrc182 = src_of(_gui)
+from core.ui import ctl_game as _uig182, ctl_library as _uil182  # noqa: E402
+from core import wincrash as _wcx  # noqa: E402
 
 # #175, word for word out of the report: the chain verified and the NAME on
 # the certificate did not match, which the old answer read as a missing
@@ -8086,10 +9291,13 @@ check("...and that nothing is bundled",
 # Every control the README names in bold has to exist. A renamed button
 # leaves the document telling people to press something that is not there -
 # the same fault as #148, one surface out. Two words are enough to match on,
-# because some labels are built at run time ("update (3 newer)").
-_readme_src = "".join((SRC_DIR / "core" / n).read_text(encoding="utf8")
-                      for n in ("gui.py", "installer.py", "optiscaler.py",
-                                "dlss.py")).lower()
+# because some labels are built at run time ("update (3)").
+# Every module's text, the window's package included - read by what is
+# there, so a module that goes away cannot stop the run. The 1.9 window
+# (core/gui.py) is left out while it is still in the tree: nobody sees it.
+_readme_src = "".join(p.read_text(encoding="utf8")
+                      for p in sorted((SRC_DIR / "core").rglob("*.py"))
+                      if p != SRC_DIR / "core" / "gui.py").lower()
 _named, _gone = 0, []
 for _b in _re.findall(r"[*][*]([^*\n]{2,40})[*][*]", _readme):
     _t = _b.strip().rstrip(".")
@@ -8101,7 +9309,12 @@ for _b in _re.findall(r"[*][*]([^*\n]{2,40})[*][*]", _readme):
             or (_t[0].isupper() and not _t.isupper()):
         continue
     _named += 1
-    _probe = " ".join(_t.split()[:2]).strip(" ?:%-").lower()
+    # "try _route_": an _italic_ word is a placeholder the tool fills in
+    # ("try feeder"), so only the words before it are the control's name.
+    _words = [w for w in _t.split()]
+    _words = _words[:next((i for i, w in enumerate(_words) if w.startswith("_") and w.endswith("_")
+                           and len(w) > 2), len(_words))]
+    _probe = " ".join(_words[:2]).strip(" ?:%-").lower()
     if _probe and _probe not in _readme_src:
         _gone.append(_t)
 check("every control the README names in bold exists in the tool",
@@ -8435,8 +9648,21 @@ check("...and it leaves a marker, so the games page can say why",
       dlss.detect(_sd, _sd, "DX12", 64, sm=120,
                   driver="616.92").steered_from == dlss.FEEDER
       and not dlss.detect(_sd, _sd, "DX12", 64, sm=120).steered_from)
-check("...which the games page actually prints",
-      "steered_from" in _guisrc182)
+_st182 = dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92")
+with _ui_isolated(), _ui_threads(run=False):
+    _pg182 = _ui_ctl(_ui_game(name="Steered", api="DX12"))
+    _pg182.enter_game(_pg182.game)
+    with patch.object(gpu, "driver_version", lambda: "616.92"):
+        _pg182._on_entered((_pg182.game, _st182, {o: (True, "") for o in _st182.options},
+                            {"ac": None, "reengine": False, "shared": "", "dxvk": False,
+                             "ok": (True, ""), "seen": None}))
+_ui_cleanup()
+# The 1.9 list said "driver X: feeder reaches nvidia's runtime through the
+# add-on that faults"; the 2.0 page says it in the route's driver note, drawn
+# under the route - the reason is beside "standalone", which is the point.
+check("...which the games page actually prints: the driver, and the add-on the route avoids",
+      any(k == "driver" and "616.92" in t and "renodx" in t for k, t in _pg182.notes),
+      _pg182.notes)
 check("a game whose dropdown has no standalone entry is not steered to it",
       dlss.detect(_sd, _sd, "DX9", 32, sm=120, driver="616.92").recommended
       != dlss.STANDALONE)
@@ -8444,19 +9670,40 @@ check("a game whose dropdown has no standalone entry is not steered to it",
 check("a game that ships its own DLSS keeps OptiScaler - it never loads the add-on",
       dlss.detect(_sd, _sd, "DX12", 64, sm=120, driver="616.92").recommended
       == dlss.OPTI)
+_drv182: list = []
+_real_detect182 = dlss.detect
+with _ui_isolated(), _ui_threads(run=True):
+    with patch.object(gpu, "driver_version", lambda: "616.92"), \
+            patch.object(dlss, "detect", lambda *a, **k: (_drv182.append(k.get("driver")),
+                                                          _real_detect182(*a, **k))[1]):
+        _dv182 = _ui_ctl(_ui_game(name="Driver In", api="DX12"))
+        _dv182.load_catalog = lambda: None
+        _dv182.enter_game(_dv182.game)
+        _uil182.LibraryControl.inspect_row(_dv182.game, 120)
+_ui_cleanup()
 check("the window passes the driver in, or the steer never runs",
-      "driver=gpu.driver_version()" in _guisrc182,
-      len(_guisrc182))
+      _drv182 == ["616.92", "616.92"], _drv182)
 shutil.rmtree(_sd, ignore_errors=True)
 
 # #98: "It ran, and then the game crashed" was the end of the answer. The
 # reporter found the next step himself, and it is the one test that splits
 # the neural pass from everything else.
-_crash_src = src_of(_gui.App._crash_overrides)
+_split182: dict = {}
+for _r182 in ("optiscaler", "feeder"):
+    _rp182 = diagnose.Report(route=_r182)
+    _rp182.verdict = "Working."
+    with _ui_isolated(), _ui_threads(run=False):
+        _ap182 = _FakeApp(_rp182)
+        _ap182.crash_overrides(_wcx.Crash(when="2026-09-12 00:54:33", exe="Game.exe", module="Game.exe",
+                                         code="0xC0000005", provider="Application Error"))
+    _split182[_r182] = _ap182.text()
+_ui_cleanup()
 check("the crash verdict now carries the test that splits it in two (#98)",
-      "[DlssNr]" in _crash_src and "Enabled=false" in _crash_src)
+      "[DlssNr]" in _split182["optiscaler"] and "Enabled=false" in _split182["optiscaler"],
+      _split182["optiscaler"][-300:])
 check("...on the route whose ini that is, and something real on the others",
-      'route == "optiscaler"' in _crash_src and "uninstall" in _crash_src.lower())
+      "[DlssNr]" not in _split182["feeder"] and "uninstall" in _split182["feeder"].lower(),
+      _split182["feeder"][-300:])
 
 section("1.9.0: the folder nobody had, a launcher in front of the game, and "
         "asking the running process (#43 #191 #194)")
@@ -8625,6 +9872,32 @@ check("a DLL of that name loaded from elsewhere is the answer, not a guess",
           {"at": _now, "name": "Game.exe", "refused": "", "ours": [],
            "elsewhere": [r"C:\Windows\System32\dxgi.dll"],
            "missing": []}).verdict)
+check("System32's copy beside our own loaded proxy is not a conflict (#232)",
+      "another folder" not in _with_sighting(
+          {"at": _now, "name": "Game.exe", "refused": "", "ours": ["dxgi.dll"],
+           "elsewhere": [r"C:\WINDOWS\system32\dxgi.dll"],
+           "missing": []}).verdict)
+_s238 = watch.settle(
+    {"at": _now, "name": "F.E.A.R. 3.exe", "refused": "", "ours": ["d3d9.dll"],
+     "elsewhere": [r"C:\WINDOWS\SYSTEM32\dxgi.dll"],
+     "missing": ["dlss5-feed.addon32", "nvngx_dlss.dll", "nvngx_dlssnr.dll",
+                 "renodx-dlss5.addon64"]},
+    ["d3d9.dll", "dlss5-feed.addon32", "host64/dxgi.dll",
+     "host64/renodx-dlss5.addon64", "host64/nvngx_dlssnr.dll",
+     "host64/nvngx_dlss.dll"])
+check("...and the 32-bit helper's files are never the game's (#238)",
+      _s238["elsewhere"] == [] and _s238["missing"] == ["dlss5-feed.addon32"],
+      _s238)
+check("a 1.9.0 record keeps working when the reader has no file list",
+      watch.settle({"ours": ["x.dll"]}, None) == {"ours": ["x.dll"]}
+      and watch.settle("junk", ["a.dll"]) == {}
+      and watch.settle({"ours": [1, None], "elsewhere": "x",
+                        "missing": [{}]}, ["a.dll"])["elsewhere"] == [])
+check("only what the game has to load is warned about as not loaded (#231)",
+      not watch.essential("amd_fidelityfx_vk.dll", "dxgi.dll")
+      and watch.essential("dxgi.dll", "dxgi.dll")
+      and watch.essential("nvngx_dlssnr.dll")
+      and watch.essential("dlss5-feed.addon32"))
 check("ours loaded and still no log is its own answer",
       "ReShade is not initialising" in _with_sighting(
           {"at": _now, "name": "Game.exe", "refused": "", "ours": ["dxgi.dll"],
@@ -8643,16 +9916,65 @@ check("and the report carries what ran and what it loaded",
       diagnose._loaded_block(_wdir) == "")
 shutil.rmtree(_wdir, ignore_errors=True)
 
+from core.ui import ctl_game as _uig190  # noqa: E402
+from core import autopilot as _ap190  # noqa: E402
+
+
+class _Rec190:
+    """watch.Recorder, recorded: which folders the window asked to watch."""
+    added: list = []
+
+    def __init__(self, *a, **k):
+        pass
+
+    def add(self, folder, files, exe=""):
+        _Rec190.added.append(Path(folder))
+
+
+_w190: dict = {}
+with patch.object(watch, "Recorder", _Rec190):
+    _ui190 = _UiLive()
+    if _ui190.ok:
+        _gi190 = _ui_game(name="Watched Game", installed=True, manifest={"files": ["dxgi.dll"]})
+        _ui190.enter(_gi190, _ui_support([dlss.FEEDER], dlss.FEEDER))
+        _w190["texts"] = _ui190.texts()
+        _w190["watched"] = list(_Rec190.added)
+        _gn190 = _ui_game(name="Nothing Installed")
+        _Rec190.added.clear()
+        _ui190.enter(_gn190, _ui_support([dlss.FEEDER], dlss.FEEDER))
+        _w190["bare"] = list(_Rec190.added)
+        _w190["bare_texts"] = _ui190.texts()
+        # an install finishes on this one
+        (_gn190.install_dir / "dlss5-autopilot.json").write_text(json.dumps(
+            {"version": 1, "complete": True, "exe": "Game.exe", "path": "feeder",
+             "files": ["dxgi.dll"]}), encoding="utf8")
+        _ui190.app.shell.clear_log()
+        _ui190.app.q.put(("installed", installer.Report(written=["dxgi.dll"])))
+        _ui190.until(lambda: _ui190.app.result is not None, 4.0)
+        _ui190.settle(100)
+        _w190["installed"] = (list(_Rec190.added), _ui190.log(), _ui190.texts())
+        # ...and an autopilot pass that kept a route
+        _ui190.app.shell.clear_log()
+        _ui190.app.q.put(("autopilot", _ap190.Outcome(
+            attempts=[_ap190.Attempt(route="feeder", installed=True, started=True, ours=["dxgi.dll"])],
+            route="feeder", ok=True, installed="feeder")))
+        _ui190.until(lambda: (_ui190.app.result or {}).get("kind") == "autopilot", 4.0)
+        _ui190.settle(60)
+        _w190["autopilot"] = _ui190.log()
+    _ui190.close()
+_ui_cleanup()
 check("the window watches a game it has installed into, and says so",
-      "Recorder" in src_of(_gui.App._watch_this_game)
-      and "leave this window open while you play"
-      in src_of(_gui.App._route_instructions))
+      _gi190.install_dir in _w190.get("watched", [])
+      and any("watching this game" in t for t in _w190.get("texts", [])),
+      (_w190.get("watched"), [t for t in _w190.get("texts", []) if "watch" in t]))
 check("...and both paths that end in an install say what to press in the game",
-      "_route_instructions(" in src_of(_gui.App._finish_ok)
-      and "_route_instructions(" in src_of(_gui.App._autopilot_done))
+      "now launch the game" in _w190.get("installed", ("", "", ""))[1]
+      and "now launch the game" in _w190.get("autopilot", ""),
+      (_w190.get("installed", ("", "", ""))[1][-200:], _w190.get("autopilot", "")[-200:]))
 check("...and only where there is an install to watch",
-      "_previous_manifest" in src_of(_gui.App._watch_this_game)
-      and "if not man" in src_of(_gui.App._watch_this_game))
+      _w190.get("bare") == [] and not any("watching this game" in t for t in _w190.get("bare_texts", []))
+      and _gn190.install_dir in _w190.get("installed", ([], "", ""))[0],
+      (_w190.get("bare"), _w190.get("installed", ([], "", ""))[0]))
 check("the watcher writes nothing into a game folder",
       "LOCALAPPDATA" in (src_of(watch).split("RECORD =") + [""])[1][:200],
       "RECORD = ... is not where it was")
@@ -8685,25 +10007,87 @@ check("...and never a route this game is not offered (#148)",
                            "feeder", ["feeder"]) == "")
 check("...and nothing at all when no route has enough reports behind it",
       community.next_route({"games": {}}, _FakeGame("x.exe"), "feeder") == "")
+
+
+def _next190(verdict):
+    """A diagnosis with this verdict lands: (asked on the Tk thread, asked in
+    a worker, what the page wrote)."""
+    rep = diagnose.Report(route="feeder")
+    rep.verdict, rep.ran = verdict, True
+    asked: list = []
+    with _ui_isolated(), _ui_threads(run=False) as th:
+        c = _ui_ctl(_ui_game(name="Next Route"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+        c._windows_crash = lambda r: None
+        with patch.object(community, "fetch", lambda *a, **k: {"games": {}}), \
+                patch.object(community, "next_route",
+                             lambda *a, **k: (asked.append(th.inside > 0),
+                                              "the optiscaler route is the next one to try: 3 of 4")[1]), \
+                patch.object(community, "driver_note", lambda *a, **k: ""):
+            c.q.put(("diagnosed", (c.game.install_dir, rep, None)))
+            c.pump()
+            before = list(asked)
+            th.go()
+            c.pump()
+    _ui_cleanup()
+    return before, asked, c.text()
+
+
+_bad190 = _next190("Nothing of ours loaded - try another proxy name.")
+_good190 = _next190("Working.")
 check("the window says it under a verdict that is not 'Working'",
-      "_what_next(rep)" in src_of(_gui.App._diagnosed)
-      and "next_route" in src_of(_gui.App._what_next)
-      and "threading.Thread" in src_of(_gui.App._what_next))
+      _bad190[0] == [] and _bad190[1] == [True] and "next one to try" in _bad190[2]
+      and _good190[1] == [] and "next one to try" not in _good190[2], (_bad190[:2], _good190[:2]))
 
 # --- one click to the executable that actually ran --------------------------
-_guisrc190 = src_of(_gui)
-check("the row that moves the install to what really ran is its own row (#144)",
-      "self.wrongexe" in _guisrc190 and "btn_use_exe" in _guisrc190)
+_se190: dict = {}
+with _ui_isolated(), _ui_threads(run=False):
+    _gs190 = _ui_game(name="Launcher In Front", installed=True)
+    _ran190 = _gs190.folder / "bin" / "Game-Win64-Shipping.exe"
+    _ran190.parent.mkdir()
+    shutil.copyfile(X64, _ran190)
+    _out190 = Path(tempfile.mkdtemp(prefix="elsewhere_")) / "Other.exe"
+    shutil.copyfile(X64, _out190)
+    _cs190 = _ui_ctl(_gs190, _ui_support([dlss.FEEDER], dlss.FEEDER))
+    for _k190, _exe190 in (("inside", _ran190), ("outside", _out190), ("same", _gs190.exe)):
+        with patch.object(watch, "last_sighting", lambda d, since=0, e=_exe190: {"exe": str(e), "at": time.time()}):
+            _se190[_k190] = _cs190._seen_other_exe_for(_gs190)
+    shutil.rmtree(_out190.parent, ignore_errors=True)
+    # the page's own button, and what pressing it does
+    _cs190.seen_exe = _se190["inside"]
+    _cs190._last_diag = diagnose.Report(route="feeder")
+    _cs190.load_catalog = lambda: None
+    _chosen190: list = []
+    _real_enrich190 = games.enrich
+    with patch.object(games, "enrich", lambda g, *a, **k: (_chosen190.append(k.get("chosen")),
+                                                            _real_enrich190(g, *a, **k))[1]):
+        _cs190.use_seen_exe()
+    _se190["after"] = (_gs190.exe, _chosen190, _cs190._last_diag)
+_ui_cleanup()
 check("...shown only when the watcher saw a different executable, in this tree",
-      "g.folder not in other.parents" in src_of(_gui.App._seen_other_exe)
-      and "pack_forget" in src_of(_gui.App._offer_seen_exe))
+      _se190["inside"] == _ran190 and _se190["outside"] is None and _se190["same"] is None, _se190)
 check("...and it re-points the install the way the exe dropdown does",
-      "enrich(g, chosen=True)" in src_of(_gui.App._use_seen_exe)
-      and "_forget_last_session" in src_of(_gui.App._use_seen_exe))
+      _se190["after"][0] == _ran190 and True in _se190["after"][1] and _se190["after"][2] is None,
+      _se190["after"])
+_ui190b = _UiLive()
+_btn190 = []
+if _ui190b.ok:
+    _gb190 = _ui_game(name="Seen Exe")
+    _ui190b.enter(_gb190, _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _ui190b.app.seen_exe = _gb190.folder / "Game-Win64-Shipping.exe"
+    _ui190b.app.result = {"kind": "diagnosis", "ok": False, "ran": True, "title": "Not loaded.", "findings": []}
+    _ui190b.app.shell.redraw()
+    _ui190b.settle(60)
+    _btn190 = _ui190b.labels("button")
+_ui190b.close()
+_ui_cleanup()
+check("the button that moves the install to what really ran is its own button (#144)",
+      "use Game-Win64-Shipping.exe" in _btn190, _btn190)
 
 # --- half of "go and look in the overlay" is already known ------------------
 check("an add-on is looked for in the process, not only a .dll",
-      ".addon64" in src_of(watch.inspect))
+      {"renodx-dlss5.addon64", "dlss5-feed.addon32"}
+      <= watch.process_names(["renodx-dlss5.addon64", "dlss5-feed.addon32",
+                              "ReShade.ini"])[0])
 check("the routes that log no frames say what the process had loaded",
       _diag_src().count("_loaded_note(install_dir, man, rep)") >= 2)
 check("a foreign hook is never named twice in the same warning (#190)",
@@ -8778,12 +10162,12 @@ shutil.rmtree(_d, ignore_errors=True)
 # carries the line itself rather than saying nothing.
 check("a 500 from the download server is named as one",
       diagnose._install_crash(
-          '  File "core\\installer.py", line 1\n'
+          '  File "core\\installer.py", line 1, in install\n'
           "urllib.error.HTTPError: HTTP Error 500: Internal Server Error"
       )[0] == "the download server answered with an error")
 check("...and an exception nobody has seen before is still quoted",
       diagnose._install_crash(
-          '  File "core\\installer.py", line 1\nValueError: weird')
+          '  File "core\\installer.py", line 1, in install\nValueError: weird')
       == ("it stopped with an error", "ValueError: weird"))
 
 # The replay has to hand the traceback over too, or the one report that
@@ -8795,9 +10179,19 @@ check("...and a report without one hands over nothing",
 check("...and a report replayed by hand gets what the corpus check measures",
       "replay_report.machine(" in src_of(_vc._answer)
       and "replay_report.last_error(" in src_of(_vc._answer))
+from core import log as _log190b  # noqa: E402
+_handed190: list = []
+with _ui_isolated(), _ui_threads(run=True):
+    _cd190 = _ui_ctl(_ui_game(name="Failed Here"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _rp190 = diagnose.Report(route="feeder")
+    _rp190.verdict = "Not started."
+    with patch.object(installer, "last_failure", lambda d: f"FOLDER ERROR for {Path(d).name}"), \
+            patch.object(_log190b, "last_error", lambda *a, **k: "GLOBAL ERROR"), \
+            patch.object(diagnose, "analyse", lambda d, err="", *a, **k: (_handed190.append(err), _rp190)[1]):
+        _cd190.diagnose()
+_ui_cleanup()
 check("the window hands the diagnosis the error of an install into THIS folder",
-      "installer.last_failure(" in src_of(_gui.App._diagnose)
-      and "log.last_error()" not in src_of(_gui.App._diagnose))
+      _handed190 == ["FOLDER ERROR for Failed Here"], _handed190)
 check("...and the installer records the folder its own failure was for",
       all(w in src_of(installer.install) for w in ("note_failure(root, e)",))
       and src_of(installer.install).count("note_failure(") >= 3)
@@ -8998,8 +10392,19 @@ _ap.run(_g, installer.Options(), ["feeder", "optiscaler"], _ap.Hooks(
     seconds=1))
 check("each route is installed with the settings for THAT route",
       _asked == ["feeder", "optiscaler"], _asked)
+from core import anticheat as _ac190c  # noqa: E402
+from core.ui import ctl_game as _uig190c  # noqa: E402
+with _ui_isolated(), _ui_threads(run=False):
+    _oc190 = _ui_ctl(_ui_game(name="Other Route", api="DX12"),
+                     _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+    _oc190.apply_route(dlss.FEEDER)
+    _oo190 = (_oc190.opts().path, _oc190.opts(dlss.OPTI).path, _oc190.route,
+              _oc190.opts(dlss.OPTI).nr.get("WorkingScale"))
+_ui_cleanup()
 check("...and the window can answer for a route that is not the one on screen",
-      _gui.App._opts.__code__.co_varnames[:2] == ("self", "route"))
+      list(inspect.signature(_uig190c.GameControl.opts).parameters)[:2] == ["self", "route"]
+      and _oo190[:3] == (dlss.FEEDER, dlss.OPTI, dlss.FEEDER)
+      and _oo190[3] == round(optiscaler.NR_SCALE_DEFAULT / 100, 2), _oo190)
 
 # The module list is the whole point of the pass, and the summary tells
 # people the report carries it.
@@ -9011,17 +10416,83 @@ with patch.object(watch, "remember", lambda folder, s: _remembered.append(s)):
 check("what the game had loaded is written down, not only shown once",
       len(_remembered) == 1, _remembered)
 
+
+
+def _pass190(answers=(), cheat=False, planned=None, outcome=None):
+    """Press 'autopilot' with these dialog answers. What the window
+    asked, whether the pass ran and where, and the controller afterwards."""
+    ran: list = []
+    applied: list = []
+    watched: list = []
+
+    class _Rec:
+        def __init__(self, *a, **k):
+            pass
+
+        def add(self, folder, files, exe=""):
+            watched.append(Path(folder))
+    with _ui_isolated(), _ui_threads(run=False) as th:
+        g = _ui_game(name="Install And Test", api="DX12")
+        c = _ui_ctl(g, _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+        c.apply_route(dlss.FEEDER)
+        c.check_stale = lambda: None
+        c.shell.answers = list(answers)
+        found = _ac190c.Finding(["EasyAntiCheat"], ["EasyAntiCheat_x64.dll"]) if cheat \
+            else _ac190c.Finding([], [])
+        out = outcome or _ap.Outcome(
+            attempts=[_ap.Attempt(route="optiscaler", installed=True, started=True, ours=["dxgi.dll"])],
+            route="optiscaler", ok=True, installed="optiscaler")
+        real_apply = c.apply_route
+        c.apply_route = lambda p: (applied.append(p), real_apply(p))[1]
+        c._rows[(str(g.folder), str(g.exe))] = (True, "feeder", "beta", "beta", False, "")
+        pats = [patch.object(_ac190c, "detect", lambda d, f: found),
+                patch.object(_ap, "may_start", lambda g_, check_running=False: (True, "")),
+                patch.object(_ap, "run", lambda *a, **k: (ran.append(th.inside > 0), out)[1]),
+                patch.object(installer, "install", lambda *a, **k: ran.append("installer.install")),
+                patch.object(watch, "Recorder", _Rec)]
+        if planned is not None:
+            pats.append(patch.object(_ap, "plan", lambda *a, **k: list(planned)))
+        for p in pats:
+            p.start()
+        try:
+            try:
+                c.autopilot()
+                raised = ""
+            except Exception as e:
+                raised = repr(e)
+            before = list(ran)
+            # what the pass's install leaves behind
+            (g.install_dir / "dlss5-autopilot.json").write_text(json.dumps(
+                {"version": 1, "complete": True, "exe": "Game.exe", "path": "optiscaler",
+                 "files": ["dxgi.dll"]}), encoding="utf8")
+            th.go()
+            c.pump()
+            applied_before = list(applied)
+        finally:
+            for p in pats:
+                p.stop()
+    _ui_cleanup()
+    return {"asked": c.shell.asked, "before": before, "ran": ran, "raised": raised, "c": c,
+            "applied": applied_before, "watched": watched, "row": (str(g.folder), str(g.exe)) in c._rows}
+
+
+_cheat190 = _pass190(answers=[False], cheat=True)
 check("the window asks the anti-cheat question before it installs anything",
-      "anticheat.detect" in src_of(_gui.App._autopilot)
-      and "ban the account" in src_of(_gui.App._autopilot))
+      len(_cheat190["asked"]) == 1 and "EasyAntiCheat" in _cheat190["asked"][0][0]
+      and "ban the account" in _cheat190["asked"][0][1] and _cheat190["ran"] == [],
+      (_cheat190["asked"], _cheat190["ran"]))
+_ok190 = _pass190(answers=[True])
 check("...and the pass ends the way an install does",
-      all(w in src_of(_gui.App._autopilot_done)
-          for w in ("_select_route", "_forget_row", "_watch_this_game",
-                    "btn_remove", "_route_instructions")))
-check("...through _apply_route, so the dropdown and the next INSTALL agree",
-      "_apply_route" in src_of(_gui.App._select_route))
+      _ok190["c"].result and _ok190["c"].result.get("kind") == "autopilot"
+      and not _ok190["row"] and "now launch the game" in _ok190["c"].text()
+      and _ok190["c"].game.install_dir in _ok190["watched"] and not _ok190["c"].busy,
+      (_ok190["c"].result, _ok190["row"], _ok190["watched"], _ok190["c"].busy))
+check("...through apply_route, so the dropdown and the next INSTALL agree",
+      "optiscaler" in _ok190["applied"] and _ok190["c"].route == "optiscaler", _ok190["applied"])
+_none190 = _pass190(answers=[True], planned=[])
 check("a route list this game is not offered never reaches routes[0]",
-      "if not routes" in src_of(_gui.App._autopilot))
+      _none190["raised"] == "" and _none190["asked"] == [] and _none190["ran"] == [],
+      (_none190["raised"], _none190["asked"]))
 
 
 check("the route order starts with the one the tool recommended",
@@ -9036,36 +10507,53 @@ check("...and the route the shared results rescued this game with goes next",
       _order == ["feeder", "bridge", "optiscaler"], _order)
 
 
-# The button is in the window, on a row of its own, and it says what it does
+# The button is in the window, beside INSTALL, and it says what it does
 # before it does it: it starts somebody's game and it can install a second
 # route without asking again (#144 is the shape of hiding that in a corner).
-# Both facts were read off the live window at the top of this file.
+# What the page drew was read off the live window in 6c.
 check("the window has the button this pass is driven from",
-      any("autopilot" in b for b in _LIVE_BUTTONS),
+      any("autopilot" == b.strip() for b in _LIVE_BUTTONS),
       [b for b in _LIVE_BUTTONS if b.strip()][:8])
-check("...on a row of its own, not squeezed in beside the five that write nothing",
-      _AUTOROW == (True, 3), _AUTOROW)
-check("...in the colour that says it writes to the disk, like INSTALL",
-      _AUTO_STYLE == "Accent.TButton", _AUTO_STYLE)
-check("...and it carries a mark of its own, painted at the text's height",
-      _AUTO_ICON[0] == _AUTO_ICON[1] >= 9 and _AUTO_ICON[2] == "left"
-      and tuple(_AUTO_ICON[3])[:3] != (0, 0, 0), _AUTO_ICON)
+check("...in the row of actions INSTALL is in, not tucked away under settings",
+      bool(_AUTO_BTN.get("row")) and abs(_AUTO_BTN["row"][0] - _AUTO_BTN["row"][1]) <= 1,
+      _AUTO_BTN.get("row"))
+check("...and it carries a mark of its own beside its words",
+      len([t for t in _AUTO_BTN.get("texts", []) if t]) == 2
+      and "autopilot" in _AUTO_BTN.get("texts", []), _AUTO_BTN.get("texts"))
 # It ends the pass once the install it is running finishes - it does not
-# go on to start the game. The line used to promise the whole route.
-_stop_src = src_of(_gui.App._autopilot_stop)
+# go on to start the game. The line used to promise the whole route. Pressed
+# on the page, while a pass runs.
+_st190: dict = {}
+_ui190c = _UiLive()
+if _ui190c.ok:
+    _ui190c.enter(_ui_game(name="Stoppable"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+    _ui190c.app.busy, _ui190c.app.action = True, "autopilot"
+    _ui190c.app.shell.redraw()
+    _ui190c.settle(60)
+    _st190["pressed"] = _ui190c.press("stop", "button")
+    _st190["after"] = (_ui190c.app._auto_stop, _ui190c.app.busy, _ui190c.app.action)
+    _st190["log"] = _ui190c.log()
+    _ui190c.app.busy, _ui190c.app.action = False, ""
+_ui190c.close()
+_ui_cleanup()
 check("...and it can be stopped, without stopping mid-install",
-      "stopping when this install finishes" in _stop_src
-      and "mid-install" in _stop_src, _stop_src)
+      _st190.get("pressed") and _st190.get("after") == (True, True, "stopping")
+      and "stopping when this install finishes" in _st190.get("log", ""), _st190.get("after"))
 check("...and the pass reads that while it waits, not after the route",
       "stop" in src_of(_ap.attempt) and "stop" in src_of(_ap.wait_closed))
-_ask = src_of(_gui.App._autopilot)
+_consent190 = [a for a in _ok190["asked"] if a[0] == "autopilot"]
 check("...and says, where it is pressed, that it is experimental",
-      "experimental" in _ask.lower()
-      and "experimental" in _AUTOROW_TEXT.lower(), _AUTOROW_TEXT)
+      "experimental" in _AUTO_BTN.get("tip", "").lower()
+      and _consent190 and "experimental" in _consent190[0][1].lower(),
+      (_AUTO_BTN.get("tip"), _consent190[:1]))
 check("the consent screen says it will start the game and install a second route",
-      "start" in _ask and "install the next route" in _ask and "Go ahead?" in _ask)
+      _consent190 and "start" in _consent190[0][1] and "install the next route" in _consent190[0][1]
+      and _consent190[0][2] == "go ahead", _consent190[:1])
+_cancel190 = _pass190(answers=[False])
+check("...and cancelling it installs nothing",
+      _cancel190["ran"] == [] and len(_cancel190["asked"]) == 1, _cancel190["ran"])
 check("...and the pass itself runs off the Tk thread",
-      "threading.Thread(target=work" in _ask and "autopilot.run(" in _ask)
+      _ok190["before"] == [] and _ok190["ran"] == [True], (_ok190["before"], _ok190["ran"]))
 check("...and never names a route this game is not offered (#148)",
       "remix" not in _ap.plan("feeder", ["feeder", "optiscaler"]))
 shutil.rmtree(_d, ignore_errors=True)
@@ -9320,7 +10808,7 @@ check("the Remix log is one of the blocks a report is taken apart into",
       _rr.BLOCKS.get("remix-dxvk.log") == "remix")
 
 
-section("1.9.0: the diagnosis is five files, and stays five files")
+section("1.9.0: the diagnosis is split by what each part answers, and stays split")
 
 # It was one 3,703-line module, and every fix in this project had to go into
 # it. It is split by what each part answers now; these checks are what keeps
@@ -9328,19 +10816,43 @@ section("1.9.0: the diagnosis is five files, and stays five files")
 # or a name that stops being reachable under the old path fails here.
 from core import diagnose as _dpkg  # noqa: E402
 
-_parts = {"model": 400, "evidence": 1000, "routes": 900, "body": 500,
-          "chain": 1400}
+# No headroom left on purpose. evidence went 1000 -> 1083 across 1.9.1 (the
+# watcher's settle/essential reads, then the Vulkan-layer verdicts) and model
+# gained the shared never-ran list, so both caps are now exactly what is on
+# disk: the next line added to either one fails this check. 2.0 moved
+# _loaded_note out into process.py (what the process had, and a second DLSS
+# hook beside ours, #250) and the cap followed it down to 1037.
+#
+# 2.0 moved _through_layer, _addon_in, _layer_clash, _layer_detail and
+# _dxvk_files into layer.py, between model and evidence, and body.py takes
+# _dxvk_files from there. The same round moved _nrpre_picks out of routes.py
+# and _reshade_died_early out of body.py into evidence.py: both read a log,
+# and body importing routes for one was a part importing a later one.
+# evidence's cap followed it down to 1026.
+#
+# model is 11 over its 1.9.1 share, all of it 2.0: _RAN_SKIP_PART (the dlss
+# page's .dlss5-dlss-* files are not a session), the dlss page's record in
+# _RAN_SKIP, and the "ui" package in _install_modules' exclusions. None of
+# it can move down: model imports nothing, and layer.py is about the Vulkan
+# layer, not about what a session left on disk.
+_parts = {"model": 414, "layer": 104, "evidence": 1026, "process": 150,
+          "helper": 150, "routes": 900, "body": 500, "chain": 1400}
 _sizes = {n: sum(1 for _ in open(SRC_DIR / "core" / "diagnose" / f"{n}.py",
                                  encoding="utf8"))
           for n in _parts}
 check("no part of the diagnosis has grown past its share",
       all(_sizes[n] <= cap for n, cap in _parts.items()), _sizes)
 
-# model <- evidence <- routes/body <- chain. A part importing a later one is
-# a cycle waiting to happen, and the end of the split.
-_ALLOWED = {"model": set(), "evidence": {"model"},
-            "routes": {"model", "evidence"}, "body": {"model", "evidence"},
-            "chain": {"model", "evidence", "routes", "body"}}
+# model <- layer <- evidence <- routes/body <- chain. A part importing a later
+# one is a cycle waiting to happen, and the end of the split.
+_ALLOWED = {"model": set(), "layer": {"model"},
+            "evidence": {"model", "layer"},
+            "process": {"model", "layer", "evidence"},
+            "helper": {"model", "layer", "evidence"},
+            "routes": {"model", "layer", "evidence", "process"},
+            "body": {"model", "layer", "evidence", "helper"},
+            "chain": {"model", "layer", "evidence", "process", "helper",
+                      "routes", "body"}}
 _upward = []
 for _n in _parts:
     _txt = (SRC_DIR / "core" / "diagnose" / f"{_n}.py").read_text(encoding="utf8")
@@ -9363,6 +10875,3164 @@ check("every name the rest of the tree reaches is still under diagnose.",
 check("...and the patched three are only where they are patched",
       not any(hasattr(_dpkg, n) for n in _dpkg.PATCHED)
       and all(hasattr(_dpkg.model, n) for n in _dpkg.PATCHED), _dpkg.PATCHED)
+
+
+section("1.9.1: the diagnosis backlog - crash frames, route markers, shared ms")
+
+# The install crash is read off the frames, and the modules that count are
+# read off the installer's own imports rather than a list that rots.
+_im = diagnose.model._install_modules()
+# The window's own modules (core/ui/*.py, by the name a traceback frame
+# carries) are never install modules, whatever they are called.
+_ui_mods191 = {p.stem for p in Path("core", "ui").glob("*.py")}
+check("the modules an install crash can die in are read from the installer",
+      {"installer", "net", "sources", "mfg", "optiscaler"} <= _im
+      and not ({"gui", "games", "library", "chain", "log"} & _im)
+      and len(_ui_mods191) > 5 and not (_ui_mods191 & _im),
+      (sorted(_im), sorted(_ui_mods191 & _im)))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_tools"))
+import replay_report as _rr191  # noqa: E402
+_t197 = (Path("_tools") / "reports" / "197.txt").read_text(encoding="utf8",
+                                                          errors="replace")
+_tb197 = _rr191.last_error(_t197)
+check("#197's own traceback is an install crash",
+      diagnose._install_crash(_tb197)[0]
+      == "the secure connection to the download failed", _tb197[-200:])
+_cut = _tb197[_tb197.find('net.py", line'):]
+check("...and still one when the tail has cut the installer's frames off",
+      "installer.py" not in _cut and diagnose._install_crash(_cut)[0], _cut)
+_t148 = (Path("_tools") / "reports" / "148.txt").read_text(encoding="utf8",
+                                                          errors="replace")
+check("#148's library.py error is not an install crash",
+      diagnose._install_crash(_rr191.last_error(_t148)) == ("", ""))
+check("...nor a scan that failed in games.py, nor a message naming the installer",
+      diagnose._install_crash(
+          '  File "core\\gui.py", line 1, in work\n'
+          '  File "core\\games.py", line 9, in scan\nOSError: x') == ("", "")
+      and diagnose._install_crash("RuntimeError: see installer.py") == ("", ""))
+# ...nor a crash in the 2.0 window, frame by frame as a worker there raises it
+check("a traceback from the window's package is not an install crash",
+      all(diagnose._install_crash(
+          'Traceback (most recent call last):\n'
+          f'  File "core\\ui\\{_n191}.py", line 7, in work\n'
+          '  File "core\\ui\\kit.py", line 3, in draw\nAttributeError: x') == ("", "")
+          for _n191 in sorted(_ui_mods191)), sorted(_ui_mods191))
+check("...while an install that dies under the window's worker still is one",
+      diagnose._install_crash(
+          'Traceback (most recent call last):\n'
+          '  File "core\\ui\\ctl_game.py", line 786, in work\n'
+          '  File "core\\installer.py", line 900, in install\n'
+          '  File "core\\net.py", line 12, in download\nOSError: x')[0] != "")
+
+# A folder whose record is gone is read by the route its files belong to.
+_i191 = installer
+for _files, _want in (([_i191.UPSTREAM_ADDON, _i191.RENODX], "upstream"),
+                      ([_i191.RENODX_SF], "renodx"),
+                      ([_i191.RENODX], "native"),
+                      ([_i191.FEEDER_ADDON64, _i191.RENODX], "feeder"),
+                      ([_i191.STANDALONE_ADDON, _i191.STANDALONE_BRIDGE],
+                       "standalone"),
+                      ([_i191.BRIDGE_ADDON, _i191.RENODX], "bridge"),
+                      (["OptiScaler.ini", "dxgi.dll"], "optiscaler")):
+    _d = Path(tempfile.mkdtemp(prefix="route_files_"))
+    for _n in _files:
+        (_d / _n).write_bytes(b"MZ")
+    check(f"a folder holding {', '.join(_files)} is read as {_want}",
+          diagnose._route_from_files(_d) == _want,
+          diagnose._route_from_files(_d))
+    shutil.rmtree(_d, ignore_errors=True)
+
+# The feeder's shared ms is solved from frame rates: everything that grows
+# with the area, not the model alone, and the words say so.
+from urllib.parse import unquote as _unq  # noqa: E402
+_body_f = _unq(community.issue_url({"route": "feeder", "res": 75, "ms": 7.2,
+                                    "result": "worked", "game": "G"}))
+_body_o = _unq(community.issue_url({"route": "optiscaler", "res": 75,
+                                    "ms": 7.2, "result": "worked",
+                                    "game": "G"}))
+check("a shared feeder result does not call its ms the model's",
+      "model and feed together" in _body_f
+      and "ms of model a frame" not in _body_f
+      and "ms of model a frame" in _body_o)
+_mn = community.measured_note(
+    {"measured": {"feeder": {"n": max(3, community.MIN_MEASURED), "res": 75,
+                             "ms": 7.2}}}, "feeder")
+check("...nor the sentence the next person with the game reads",
+      "model and the feed together" in _mn and "model cost" not in _mn, _mn)
+
+
+section("1.9.1: both builds of a game, and Source's bin (#190, #224)")
+
+
+def _pe_stub(machine: int, size: int = 300_000) -> bytes:
+    """A file whose PE header says 32-bit (0x14c) or 64-bit (0x8664)."""
+    import struct as _st
+    b = bytearray(bytes(size))
+    b[0:2] = b"MZ"
+    _st.pack_into("<I", b, 0x3C, 0x80)
+    b[0x80:0x84] = b"PE" + bytes(2)
+    _st.pack_into("<H", b, 0x84, machine)
+    return bytes(b)
+
+
+# #190's folder: "exe: Subnautica32.exe", "arch/api: 32-bit / DX12 (no
+# graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS
+# Frame Generation/Ray Reconstruction - the real renderer is D3D12)".
+_sn = Path(tempfile.mkdtemp(prefix="sn190_")) / "Subnautica"
+_sn.mkdir()
+(_sn / "Subnautica.exe").write_bytes(_pe_stub(0x8664))
+(_sn / "Subnautica32.exe").write_bytes(_pe_stub(0x14C))
+_picked = pe.find_game_exes(_sn)
+check("the 64-bit build is picked over its 32-bit sibling (#190)",
+      _picked and _picked[0].name == "Subnautica.exe", _picked)
+check("...and the 32-bit one is still there to pick by hand (gate 1.9.1)",
+      "Subnautica32.exe" in [p.name for p in _picked],
+      [p.name for p in _picked])
+(_sn / "nvngx_dlssg.dll").write_bytes(_pe_stub(0x8664))
+(_sn / "D3D12").mkdir()
+(_sn / "D3D12" / "D3D12Core.dll").write_bytes(_pe_stub(0x8664))
+check("a 64-bit runtime beside a 32-bit exe is not evidence it is DX12",
+      not pe._has_d3d12_agility_sdk(_sn, 32)
+      and pe._ships_dlss(_sn, 32) == "")
+check("...and still is for the 64-bit exe beside it",
+      pe._has_d3d12_agility_sdk(_sn, 64) and pe._ships_dlss(_sn, 64))
+check("every promotion in detect_api is told the exe's bitness",
+      src_of(pe.detect_api).count("_has_d3d12_agility_sdk(path.parent, bits)") == 3
+      and src_of(pe.detect_api).count("_ships_dlss(path.parent, bits)") == 2)
+_solo = Path(tempfile.mkdtemp(prefix="sn190c_")) / "Game"
+_solo.mkdir()
+(_solo / "Game32.exe").write_bytes(_pe_stub(0x14C))
+check("...a lone 32-bit exe named Game32 keeps first place",
+      [p.name for p in pe.find_game_exes(_solo)][:1] == ["Game32.exe"])
+shutil.rmtree(_sn.parent, ignore_errors=True)
+shutil.rmtree(_solo.parent, ignore_errors=True)
+
+# #224: "because of the Source Engine structure, the DXVK d3d9.dll must be
+# placed inside the \bin folder."
+from core import dxvk as _dxvk224  # noqa: E402
+_hl = Path(tempfile.mkdtemp(prefix="hl2_224_"))
+(_hl / "hl2.exe").write_bytes(_pe_stub(0x14C))
+check("a folder that is not Source keeps DXVK beside the exe",
+      _dxvk224.target_dir(_hl, False, "DX9") == "")
+(_hl / "bin").mkdir()
+(_hl / "bin" / "shaderapidx9.dll").write_bytes(_pe_stub(0x14C))
+check("a 32-bit Source game takes DXVK's d3d9.dll in bin",
+      _dxvk224.target_dir(_hl, False, "DX9") == "bin")
+check("...a 64-bit exe does not take a 32-bit bin",
+      _dxvk224.target_dir(_hl, True, "DX9") == "")
+(_hl / "bin" / "win64").mkdir()
+(_hl / "bin" / "win64" / "shaderapidx9.dll").write_bytes(_pe_stub(0x8664))
+check("...the 64-bit build takes bin/win64",
+      _dxvk224.target_dir(_hl, True, "DX9") == "bin/win64")
+check("...and DX11 through DXVK is never moved",
+      _dxvk224.target_dir(_hl, False, "DX11") == "")
+_tgz_src = Path(tempfile.mkdtemp(prefix="dxvk_tgz_"))
+(_tgz_src / "x32").mkdir()
+(_tgz_src / "x32" / "d3d9.dll").write_bytes(_pe_stub(0x14C))
+import tarfile as _tf224  # noqa: E402
+_tgz = _tgz_src / "dxvk.tar.gz"
+with _tf224.open(_tgz, "w:gz") as _t:
+    _t.add(_tgz_src / "x32" / "d3d9.dll", arcname="dxvk-9/x32/d3d9.dll")
+(_hl / "bin" / "d3d9.dll").write_bytes(b"SOMEONE ELSE'S" + bytes(10))
+with patch.object(_dxvk224, "resolve", lambda: ("9.9", "https://x/dxvk.tgz")), \
+        patch.object(_dxvk224.net, "download", lambda url, name: _tgz):
+    _ver, _w224 = _dxvk224.install(_hl, False, None, api="DX9")
+check("the install writes it there and records the path",
+      _w224 == ["bin/d3d9.dll.dlss5-autopilot-backup", "bin/d3d9.dll"]
+      and (_hl / "bin" / "d3d9.dll").read_bytes()[:2] == b"MZ"
+      and not (_hl / "d3d9.dll").exists(), _w224)
+check("the diagnosis looks for DXVK where it was recorded, and not at the "
+      "32-bit helper's dxgi.dll",
+      diagnose._dxvk_files({"dxvk": "9.9", "files": [
+          "bin/d3d9.dll", "bin/d3d9.dll.dlss5-autopilot-backup",
+          "host64/dxgi.dll", "dlss5-feed.addon32"]}) == ["bin/d3d9.dll"]
+      and diagnose._dxvk_gone(_hl, {"dxvk": "9.9",
+                                    "files": ["bin/d3d9.dll"]}) == [])
+check("an install recorded before 1.9.1 is still read",
+      diagnose._dxvk_files({"dxvk": "2.4", "files": ["d3d9.dll"]})
+      == ["d3d9.dll"])
+check("the preview announces the file where the install puts it",
+      "rel(dsub, name)" in src_of(installer.preview))
+shutil.rmtree(_hl, ignore_errors=True)
+shutil.rmtree(_tgz_src, ignore_errors=True)
+
+
+section("1.9.1: the game's own nvngx_dlss.dll is swapped where it lives (#225)")
+
+_d = Path(tempfile.mkdtemp(prefix="nested_dlss_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_nest = _d / "ReadyOrNot" / "Plugins" / "Nvidia" / "DLSS" / "Binaries" \
+    / "ThirdParty" / "Win64"
+_nest.mkdir(parents=True)
+(_nest / "nvngx_dlss.dll").write_bytes(b"GAME OWN 3.7.20" + bytes(500))
+_g = games.manual(_d)
+_o = installer.Options(path=dlss.OPTI, native_dlss=True, keep_game_dlss=False,
+                       dlss="310.9.1 (NVIDIA SDK)")
+check("unticking 'keep the game's own' finds the copy Unreal loads",
+      installer._nested_game_dlss(_d, _g, _o) == _nest / "nvngx_dlss.dll")
+check("...and nothing is swapped while the box stays ticked",
+      installer._nested_game_dlss(_d, _g, installer.Options(
+          path=dlss.OPTI, native_dlss=True)) is None)
+check("...nor on the upstream route, which never touches it",
+      installer._nested_game_dlss(_d, _g, installer.Options(
+          path=dlss.UPSTREAM, native_dlss=True, keep_game_dlss=False)) is None)
+_rel225 = "ReadyOrNot/Plugins/Nvidia/DLSS/Binaries/ThirdParty/Win64/nvngx_dlss.dll"
+for _route in (dlss.OPTI, dlss.BRIDGE):
+    _pv = installer.preview(_g, installer.Options(
+        path=_route, native_dlss=True, keep_game_dlss=False))
+    check(f"{_route}: the preview names the swap, as a write and a backup",
+          _rel225 in {w.replace("\\", "/") for w in _pv.writes}
+          and any(b.replace("\\", "/").startswith(_rel225) for b in _pv.backups),
+          (_pv.writes, _pv.backups))
+_blob = Path(tempfile.mkdtemp(prefix="nested_blob_")) / "new.dll"
+_blob.write_bytes(_fake_dll())
+_rep225 = installer.Report()
+_log225: list = []
+installer._swap_nested_dlss(
+    _nest / "nvngx_dlss.dll",
+    [{"label": "310.9.1 (NVIDIA SDK)", "tag": "v310.9.1",
+      "url": "https://x/nvngx_dlss.dll", "raw": "nvngx_dlss.dll"}],
+    _o, _rep225, _d, lambda url, name: _blob, _log225.append)
+_w225 = {w.replace("\\", "/") for w in _rep225.written}
+check("the install replaces it in place and keeps the game's own beside it",
+      (_nest / "nvngx_dlss.dll").read_bytes() == _blob.read_bytes()
+      and (_nest / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).read_bytes()
+      .startswith(b"GAME OWN")
+      and _rel225 in _w225 and _rel225 + installer.BACKUP_SUFFIX in _w225,
+      (_w225, _log225))
+check("...and says which file it swapped",
+      any("Plugins" in l for l in _log225) and _rep225.components.get("dlss"),
+      _log225)
+# nothing beside the exe; the detection found the game's own DLSS deeper in
+with _ui_isolated(), _ui_threads(run=False):
+    _ns191 = _ui_ctl(_ui_game(name="Nested DLSS"), _ui_support([dlss.BRIDGE], dlss.BRIDGE, native_dlss=True))
+    _ns191.set_setting("keep_dlss", False)
+    _ns191b = _ui_ctl(_ui_game(name="No DLSS"), _ui_support([dlss.BRIDGE], dlss.BRIDGE, native_dlss=False))
+    _ns191b.set_setting("keep_dlss", False)
+_ui_cleanup()
+check("the warning before a swap fires for a game whose DLSS is nested too",
+      "as tampering" in _ns191.text() and "as tampering" not in _ns191b.text(),
+      (_ns191.text()[-200:], _ns191b.text()[-200:]))
+shutil.rmtree(_d, ignore_errors=True)
+shutil.rmtree(_blob.parent, ignore_errors=True)
+
+
+section("1.9.1: what people asked for - sort, hide, start, a bigger log "
+        "(#201, #241, #234, #214)")
+# Imported again here so the section also runs on its own (dryrun_section).
+import tkinter as _tk  # noqa: E402
+from core import library as _library_iso  # noqa: E402
+from core import autopilot as _ap  # noqa: E402
+from core.ui import ctl_library as _uil191, shell as _ush191  # noqa: E402
+
+# A hand-edited sort or log share in settings.json: refused, not raised.
+_sorted191 = {}
+with _ui_isolated(), _ui_threads(run=False):
+    for _v191 in ("junk", ["nope", 1], ["api", 1], 7):
+        prefs.set_("games_sort", _v191)
+        _cs191 = _ui_ctl()
+        _sorted191[repr(_v191)] = _cs191.sort
+_share191 = {}
+_ui191s = _UiLive()
+if _ui191s.ok:
+    for _v191 in ("nan", "inf", [1], 0.5, 5):
+        prefs.set_("log_share", _v191)
+        _sh191 = object.__new__(_ush191.Shell)
+        _sh191.root, _sh191.motion = _ui191s.root, _ui191s.app.shell.motion
+        _sh191.drawer = _tk.Frame(_ui191s.root)
+        try:
+            _sh191._build_log()
+            _share191[repr(_v191)] = _sh191.log_share
+        except Exception as _e191:
+            _share191[repr(_v191)] = repr(_e191)
+_ui191s.close()
+check("a hand-edited sort or log share in settings.json is refused, not raised",
+      _sorted191 == {"'junk'": "", "['nope', 1]": "", "['api', 1]": "api", "7": ""}
+      and _share191 == {"'nan'": 0.0, "'inf'": 0.0, "[1]": 0.0, "0.5": 0.5, "5": 0.0},
+      (_sorted191, _share191))
+
+_ui191 = _UiLive()
+try:
+    _a191 = _ui191.app
+    _gl191 = [_ui_game(name=_n) for _n in ("Bravo Game", "Alpha Game", "Charlie Game")]
+    if _ui191.ok:
+        _a191.all_games = list(_gl191)
+        _a191.shell.show("library")
+        _ui191.until(lambda: all(_a191._rows.get((str(g.folder), str(g.exe))) is not None
+                                 for g in _gl191), 15.0)
+        _a191.shell.redraw()
+        _ui191.settle(80)
+    _page191 = _a191.shell.pages["library"] if _ui191.ok else None
+
+    def _names191():
+        return [c["g"].name for c in _page191.cards] if _page191 else []
+
+    def _sort191(label):
+        return _ui191.press("view") and _ui191.pick(label) and (_ui191.settle(60) or True)
+
+    # A real click on "view", then on the sort, the way a mouse does it.
+    _sort191("sort: name")
+    check("sorting the library by name, from its view menu (#201)",
+          _names191() == ["Alpha Game", "Bravo Game", "Charlie Game"], _names191())
+    check("...the menu says which way it is sorted, and it is remembered",
+          prefs.get("games_sort") == ["name", False]
+          and any("by name" in t for t in _ui191.texts()), prefs.get("games_sort"))
+    _sort191("sort: name")
+    check("...a second pick reverses it", _names191()
+          == ["Charlie Game", "Bravo Game", "Alpha Game"], _names191())
+    _sort191("sort: scan order")
+    check("...and 'scan order' puts the scan's order back",
+          _names191() == ["Bravo Game", "Alpha Game", "Charlie Game"]
+          and prefs.get("games_sort") == ["", False], (_names191(), prefs.get("games_sort")))
+    _sort191("sort: name")
+    _sort191("sort: name")
+    _open191 = [c["tag"] for c in (_page191.cards if _page191 else []) if c["g"].name == "Bravo Game"]
+    _ui191.click(_open191[0] if _open191 else None)
+    _ui191.settle(120)
+    check("a sorted card still opens the game it shows",
+          _a191.game is not None and _a191.game.name == "Bravo Game"
+          and _a191.shell.page is not None and _a191.shell.page.name == "game",
+          getattr(_a191.game, "name", None))
+    _a191.shell.show("library")
+    _sort191("sort: scan order")
+    _ui191.settle(60)
+
+    # Hiding, through the card's own right-click menu.
+    _hid191 = [c["tag"] for c in (_page191.cards if _page191 else []) if c["g"].name == "Bravo Game"]
+    _ui191.click(_hid191[0] if _hid191 else None, button=3)
+    _menu191 = _ui191.kit.top() is not None
+    _ui191.pick("hide from the list")
+    _ui191.settle(60)
+    check("right-click on a card opens its menu, and 'hide' takes the game off the list",
+          _menu191 and "Bravo Game" not in _names191(), (_menu191, _names191()))
+    check("...and the count says where it went",
+          any("1 hidden" in t for t in _ui191.texts()), [t for t in _ui191.texts() if "hidden" in t])
+    _ui191.press("view")
+    _ui191.pick("show hidden games")
+    _ui191.settle(60)
+    check("...'show hidden games' brings it back, greyed",
+          "Bravo Game" in _names191() and _a191.card(_gl191[0])["dim"] is True, _names191())
+    _ui191.press("view")
+    _ui191.pick("hide hidden games")
+    _ui191.settle(60)
+    for _g in _gl191:
+        _a191.set_hidden(_g, True)
+    _ui191.settle(60)
+    check("...and a list with every game hidden says how to get them back",
+          any("all 3 games are hidden" in t for t in _ui191.texts())
+          and bool(_ui191.kit.find("show all games", "link")),
+          [t for t in _ui191.texts() if "hidden" in t])
+    for _g in _gl191:
+        _a191.set_hidden(_g, False)
+    _ui191.settle(60)
+    # the keyboard reaches the same menu: arrows to a card, then the menu key
+    _ui191.canvas.focus_force()
+    _ui191.canvas.event_generate("<KeyPress>", keysym="Right")
+    _ui191.settle(40)
+    _ui191.canvas.event_generate("<KeyPress>", keysym="F10", state=0x1)
+    _ui191.canvas.event_generate("<KeyPress>", keysym="App")
+    _ui191.settle(40)
+    check("right-click and the keyboard's menu key both open that menu",
+          _ui191.kit.top() is not None, "no menu after Right, Shift+F10 and the menu key")
+    _ui191.kit.close_all()
+
+    # The log drawer: its title bar is a handle.
+    _sh191 = _a191.shell
+    _sh191.toggle_log(True)
+    _ui191.settle(400)
+    _head191 = _sh191.log_head
+    _h0 = _sh191.drawer.winfo_height()
+    _y = _head191.winfo_rooty() + 5
+    _head191.event_generate("<ButtonPress-1>", x=5, y=5, rootx=_head191.winfo_rootx() + 5, rooty=_y)
+    _ui191.settle(20)
+    _head191.event_generate("<B1-Motion>", x=5, y=-150, rootx=_head191.winfo_rootx() + 5,
+                            rooty=_y - 150, state=0x100)
+    _ui191.settle(20)
+    _head191.event_generate("<ButtonRelease-1>", x=5, y=-150, rootx=_head191.winfo_rootx() + 5,
+                            rooty=_y - 150)
+    _ui191.settle(120)
+    check("dragging the log's title bar up gives the log more of the window (#234)",
+          _sh191.drawer.winfo_height() > _h0 and 0.1 <= float(prefs.get("log_share") or 0) <= 0.9,
+          (_h0, _sh191.drawer.winfo_height(), prefs.get("log_share")))
+    _a191.write("before the pop-out")
+    _ui191.click(_sh191.log_head_kit.find("pop out"), canvas=_head191)
+    _ui191.settle(60)
+    _a191.write("after the pop-out", "ok")
+    _pt = _sh191.log_popped.get("1.0", "end") if _sh191.log_popped is not None else ""
+    check("'pop out' opens the log in its own window, with what it held and "
+          "what comes after", "before the pop-out" in _pt
+          and "after the pop-out" in _pt, _pt[-200:])
+    # The window's own close button, through the handler Windows would call.
+    if getattr(_sh191, "_logwin", None) is not None:
+        _ui191.root.tk.call(_sh191._logwin.protocol("WM_DELETE_WINDOW"))
+    _a191.write("with the window closed")
+    check("...and closing it costs the pane nothing",
+          "with the window closed" in _ui191.log() and _sh191.log_popped is None)
+    _sh191.toggle_log(False)
+    _ui191.settle(300)
+
+    # Start the game (#241): 'play' on an installed game runs the same rules
+    # the autopilot pass does.
+    _gp191 = _ui_game(name="Playable", installed=True)
+    _ui191.enter(_gp191, _ui_support([dlss.FEEDER, dlss.STANDALONE], dlss.FEEDER))
+    _started = []
+    with patch.object(_ap, "start", lambda g: (_started.append(g) or (True, ""))):
+        _ui191.press("play", "button")
+        _ui191.until(lambda: _started and "> started" in _ui191.log(), 5.0)
+        _ui191.settle(80)
+    check("'play' starts the picked game and says so",
+          _started == [_gp191] and "> started" in _ui191.log(), _ui191.log()[-300:])
+    _ui191.settle(40)
+    _pb191 = _ui191.kit.find("play", "button")
+    _pbe191 = [_ui191.canvas.itemcget(i, "fill") for i in _ui191.canvas.find_withtag(_pb191 or "none")
+               if _ui191.canvas.type(i) == "text"]
+    _again191 = []
+    with patch.object(_ap, "start", lambda g: (_again191.append(g) or (True, ""))):
+        _ui191.press("play", "button")
+        _ui191.settle(150)
+    check("...and waits before it can start a second copy",
+          _again191 == [] and getattr(_a191, "launching", False) is True, (_again191, _pbe191))
+    _a191.launching = False
+    _a191.shell.redraw()
+    _ui191.settle(40)
+    with patch.object(_ap, "start", lambda g: (False, "a launcher, not the game")):
+        _ui191.press("play", "button")
+        _ui191.until(lambda: "a launcher, not the game" in _ui191.log(), 5.0)
+    check("...and when it may not, it says why, on its own, and starts "
+          "nothing",
+          "> a launcher, not the game" in _ui191.log()
+          and "not started from here" not in _ui191.log(),
+          _ui191.log()[-200:])
+
+    # #214: the overlay key is a dropdown, and F10 is taken on one route.
+    _a191.set_setting("route", dlss.STANDALONE)
+    _ui191.press("settings", "button")
+    _ui191.settle(350)
+    _ui191.press("overlay key", "dropdown")
+    _f10_191 = _ui191.pick("F10")
+    _ui191.settle(60)
+    check("F10 as the overlay key on the standalone route warns about its "
+          "before/after key", _f10_191 and "before/after key" in _ui191.log(), _f10_191)
+    check("keys for a keyboard with no navigation cluster are offered",
+          {"Pause", "Scroll Lock"} <= set(reshade_ini.OVERLAY_KEYS)
+          and {"Pause", "Scroll Lock"} <= {k for k, _l in _a191.choices("overlay_key")})
+finally:
+    _ui191.close()
+    _ui_cleanup()
+_feed191 = _share60("feeder", _tune.Measured(route="feeder", resolution=100, fps=47.0, frames=900),
+                    answer=False, shared={"res": 70, "ms": 9.3, "fps": 60.0})
+check("the screen names a feeder's shared ms the way the issue body does",
+      _feed191[0] and "feed together" in _feed191[0][0][1], _feed191[0][:1])
+
+section("1.9.1 gate: what the first review found")
+
+_d = Path(tempfile.mkdtemp(prefix="gate191_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_nest = _d / "G" / "Plugins" / "DLSS" / "Win64"
+_nest.mkdir(parents=True)
+(_nest / "nvngx_dlss.dll").write_bytes(b"GAME OWN" + bytes(600))
+(_d / "nvngx_dlss.dll").write_bytes(b"OURS" + bytes(600))
+_g = games.manual(_d)
+_o = installer.Options(path=dlss.BRIDGE, native_dlss=True, keep_game_dlss=False)
+check("a reinstall still swaps the nested runtime past our own copy beside the exe",
+      installer._nested_game_dlss(_d, _g, _o, ours={"nvngx_dlss.dll"})
+      == _nest / "nvngx_dlss.dll")
+check("...while the game's own copy beside the exe is swapped where it is",
+      installer._nested_game_dlss(_d, _g, _o) is None)
+check("a game with no DLSS never walks its folders for one (the Tk thread)",
+      installer._nested_game_dlss(_d, _g, installer.Options(
+          path=dlss.BRIDGE, native_dlss=False, keep_game_dlss=False)) is None)
+_oo = installer.Options(path=dlss.OPTI, native_dlss=True, keep_game_dlss=False)
+check("on the OptiScaler route the game's own DLSS beside the exe is swapped too",
+      installer._opti_dlss_target(_d, _g, _oo) == _d / "nvngx_dlss.dll")
+check("...and past our own copy there, the nested one",
+      installer._opti_dlss_target(_d, _g, _oo, ours={"nvngx_dlss.dll"})
+      == _nest / "nvngx_dlss.dll")
+(_d / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).write_bytes(b"GAME OWN")
+check("...but a copy it swapped there before is swapped again on a reinstall, "
+      "even once detection reads it as ours",
+      installer._opti_dlss_target(_d, _g, installer.Options(
+          path=dlss.OPTI, native_dlss=False, keep_game_dlss=False),
+          ours={"nvngx_dlss.dll"}) == _d / "nvngx_dlss.dll")
+(_d / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).unlink()
+check("a Vulkan-layer verdict never fires when an add-on is in the process",
+      diagnose.evidence._addon_in(["d3d9.dll", "dlss5-feed.addon32"])
+      and not diagnose.evidence._addon_in(["d3d9.dll"]))
+shutil.rmtree(_d, ignore_errors=True)
+
+_nm, _sb = watch.process_names(["bin/d3d9.dll", "dxgi.dll",
+                                "OptiScaler/D3D12_Optiscaler/D3D12Core.dll"])
+check("a Source game's bin/d3d9.dll must be loaded; OptiScaler's D3D12Core "
+      "is optional (#224)", "d3d9.dll" not in _sb and "d3d12core.dll" in _sb,
+      (_nm, _sb))
+
+_wd = Path(tempfile.mkdtemp(prefix="gate191dx_"))
+(_wd / "dlss5-autopilot.json").write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+     "api": "DX11", "proxy": diagnose.VULKAN_LAYER, "dxvk": True,
+     "path": "native", "files": ["d3d11.dll", "dxgi.dll",
+                                 "renodx-dlss5.addon64"]}), encoding="utf8")
+for _n in ("d3d11.dll", "dxgi.dll", "renodx-dlss5.addon64", "ReShade.ini",
+           "nvngx_dlssnr.dll"):
+    (_wd / _n).write_bytes(b"MZ")
+_rec_was = watch.RECORD
+watch.RECORD = Path(tempfile.mkdtemp(prefix="gate191rec_")) / "s.json"
+watch.RECORD.write_text(json.dumps({os.path.normcase(str(_wd)): {
+    "at": time.time() + 5, "name": "Game.exe", "refused": "",
+    "ours": ["d3d11.dll", "dxgi.dll"], "elsewhere": [],
+    "missing": ["renodx-dlss5.addon64"]}}), encoding="utf8")
+try:
+    with patch.object(diagnose.model, "_layer_state", lambda man: (True, True)):
+        _v238 = diagnose.analyse(_wd).verdict
+finally:
+    watch.RECORD = _rec_was
+    shutil.rmtree(_wd, ignore_errors=True)
+check("DXVK loaded and no log names ReShade's Vulkan layer, not a proxy (#238)",
+      "Vulkan layer is not reaching" in _v238, _v238)
+check("the report lists a nested nvngx_dlss.dll this install swapped (#225)",
+      '"nvngx_dlss.dll" + _BACKUP_SUFFIX'
+      in (Path(diagnose.__file__).parent / "body.py").read_text(encoding="utf8"))
+
+# Ready or Not's shape: the exe under Binaries, DLSS under Plugins, and an
+# install record that lost the nested entry. The safety net still finds it.
+_top = Path(tempfile.mkdtemp(prefix="gate191un_"))
+_bin = _top / "Binaries" / "Win64"
+_bin.mkdir(parents=True)
+shutil.copyfile(X64, _bin / "Game.exe")
+_pl = _top / "Plugins" / "DLSS" / "Binaries" / "ThirdParty" / "Win64"
+_pl.mkdir(parents=True)
+(_pl / "nvngx_dlss.dll").write_bytes(b"SWAPPED" + bytes(400))
+(_pl / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).write_bytes(
+    b"GAME OWN" + bytes(400))
+(_bin / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "Game.exe", "path": "optiscaler",
+     "files": []}), encoding="utf8")
+_gu = games.manual(_top)
+_gu.exe = _bin / "Game.exe"
+try:
+    installer.uninstall(_gu, on_log=lambda t: None)
+except Exception as _e:
+    check("uninstall over a nested swap runs", False, _e)
+check("DXVK not loading on a DXVK install is warned about, not filed as optional",
+      watch.essential("d3d9.dll", diagnose.VULKAN_LAYER, ("d3d9.dll",))
+      and not watch.essential("d3d9.dll", diagnose.VULKAN_LAYER))
+check("two copies of one runtime in the record are both ours to the watcher",
+      "setdefault" in src_of(watch.inspect)
+      and "any(_same_file(h, m) for m in mine)" in src_of(watch.inspect))
+
+# No install record, DXVK in bin, the game's own d3d9.dll backed up beside
+# it: the restore must not be undone by the delete that follows.
+_un = Path(tempfile.mkdtemp(prefix="gate191nomf_"))
+shutil.copyfile(X64, _un / "Game.exe")
+(_un / "bin").mkdir()
+_dxvk_blob = b"MZ" + b"DXVK" + bytes(500)
+(_un / "bin" / "d3d9.dll").write_bytes(_dxvk_blob)
+(_un / "bin" / ("d3d9.dll" + installer.BACKUP_SUFFIX)).write_bytes(
+    b"GAME OWN" + bytes(500))
+with patch.object(installer.dxvk, "is_dxvk",
+                  lambda p: Path(p).read_bytes()[:6] == b"MZDXVK"):
+    try:
+        installer.uninstall(games.manual(_un), on_log=lambda t: None)
+    except Exception as _e:
+        check("uninstall without a record runs", False, _e)
+check("a restored game file is never deleted by the cleanup after it",
+      (_un / "bin" / "d3d9.dll").is_file()
+      and (_un / "bin" / "d3d9.dll").read_bytes().startswith(b"GAME OWN"),
+      sorted(p.name for p in (_un / "bin").iterdir()))
+shutil.rmtree(_un, ignore_errors=True)
+check("uninstall puts back a nested runtime the record lost (#225)",
+      (_pl / "nvngx_dlss.dll").read_bytes().startswith(b"GAME OWN")
+      and not (_pl / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).exists(),
+      sorted(p.name for p in _pl.iterdir()))
+shutil.rmtree(_top, ignore_errors=True)
+
+
+section("1.9.1 gate, second pass: names tied to their source, and the fixes")
+
+import re  # noqa: E402
+from core import autopilot, components, dxvk  # noqa: E402
+
+# A name copied from another module drifts apart from it in silence.
+check("the watcher's helper-folder list is the installer's own HOST_DIR",
+      watch._OTHER_PROCESS_DIRS == (installer.HOST_DIR.lower(),),
+      f"{watch._OTHER_PROCESS_DIRS} vs {installer.HOST_DIR}")
+check("every folder DXVK is installed into is one the diagnosis reads back",
+      all(d in dxvk.TARGET_DIRS for d in ("", "bin", "bin/win64")),
+      str(dxvk.TARGET_DIRS))
+_line = re.search(r"for sub in \(([^\n]*)\):", src_of(dxvk.target_dir))
+_subs = set(re.findall(r'"([^"]*)"', _line.group(1))) if _line else set()
+check("...and every folder target_dir itself names is in that list",
+      bool(_subs) and _subs <= set(dxvk.TARGET_DIRS) and "" in dxvk.TARGET_DIRS,
+      f"{sorted(_subs)} vs {dxvk.TARGET_DIRS}")
+
+# The OptiScaler package, chosen by shape as well as by name: the name is
+# what rotted last time (#196, #231).
+_two = [{"name": "OptiScaler-NR-v0.8.4-rtx40-mfg.zip", "browser_download_url": "a"},
+        {"name": "OptiScaler-NR-v0.8.4.zip", "browser_download_url": "b"}]
+def _picked(assets, skip) -> str:
+    """The chosen name, or "" - a regression must FAIL the suite, not end it."""
+    got = optiscaler._pick_archive(assets, skip)
+    return str(got.get("name", "")) if isinstance(got, dict) else ""
+
+
+check("the skip list picks the standard package",
+      _picked(_two, ("rtx40-mfg",)) == "OptiScaler-NR-v0.8.4.zip")
+check("...and so does the shape, when the variant is renamed upstream",
+      _picked(_two, ("this-no-longer-matches",)) == "OptiScaler-NR-v0.8.4.zip")
+check("...and a skip list that eats every archive still installs one",
+      optiscaler._pick_archive(_two, ("optiscaler",)) is not None)
+check("a release carrying one archive is not a choice",
+      _picked(_two[:1], ("rtx40-mfg",)) == "OptiScaler-NR-v0.8.4-rtx40-mfg.zip")
+check("a release with no archive at all resolves to nothing",
+      optiscaler._pick_archive([{"name": "notes.txt"}], ()) is None)
+
+# ...and the person who already has the wrong package is told so IN the tool.
+_cd = Path(tempfile.mkdtemp(prefix="gate2comp_"))
+(_cd / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "complete": True, "tool": "1.9.0",
+     "opti_build": optiscaler.PRESR,
+     "components": {"optiscaler": "v0.8.4"}}), encoding="utf8")
+check("a fork install made before the fix is marked to install again",
+      any(i.outdated and i.note for i in components.check(_cd)),
+      "; ".join(f"{i.installed} {i.outdated} {i.note}"
+                for i in components.check(_cd)))
+(_cd / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "complete": True, "tool": "1.9.1",
+     "opti_build": optiscaler.PRESR,
+     "components": {"optiscaler": "v0.8.4"}}), encoding="utf8")
+check("...and one made after it is left alone",
+      not any(i.outdated for i in components.check(_cd)))
+shutil.rmtree(_cd, ignore_errors=True)
+
+
+class _NoFolder:
+    exe = Path("C:/nowhere/Game.exe")
+    install_dir = Path("C:/nowhere")
+    folder = None
+    source = "manual"
+
+
+_ok, _why = autopilot.may_start(_NoFolder())
+check("a folder that cannot be read for anti-cheat refuses, and does not start",
+      _ok is False and "anti-cheat" in _why, _why)
+
+# The remembered record is read with today's rules - all three of its lists.
+_settled = watch.settle(
+    {"ours": ["host64/renodx-dlss5.addon64", "d3d9.dll"], "elsewhere": [],
+     "missing": ["dlss5-feed.addon32"]},
+    ["d3d9.dll", "dlss5-feed.addon32", "host64/renodx-dlss5.addon64"])
+check("the helper's own add-on is not read as one the game loaded (#238)",
+      _settled["ours"] == ["d3d9.dll"], str(_settled.get("ours")))
+
+_detail = diagnose.evidence._layer_detail(
+    ["d3d9.dll"], ["dlss5-feed.addon32"],
+    {"dxvk": True, "files": ["d3d9.dll"]}, "then")
+check("the Vulkan-layer verdict names the file that is NOT in the process",
+      "dlss5-feed.addon32" in _detail, _detail[:80])
+check("...and says the loaded DLL is DXVK's, not ReShade's",
+      "DXVK's" in _detail)
+check("...and offers something to do before an issue to open",
+      "install again" in _detail and "issue" in _detail
+      and _detail.index("install again") < _detail.index("issue"))
+from core.ui import ctl_game as _uig_g2  # noqa: E402
+from core import wincrash as _wcx  # noqa: E402
+_F10_g2 = getattr(_uig_g2, "F10_CLASH", "")
+# "One string, not copies" is a fact about the source, so the source is what
+# is read - every module of the tool, the window's package included.
+_copies_g2 = sum(p.read_text(encoding="utf8").count('"!! the overlay key is F10')
+                 for p in (SRC_DIR / "core").rglob("*.py") if p != SRC_DIR / "core" / "gui.py")
+check("the F10 clash text is one named string, not a copy",
+      "'overlay key'" in _F10_g2 and _copies_g2 == 1, (_F10_g2, _copies_g2))
+
+# The preview runs on the Tk thread, so its folder walk has to be the
+# remembered one - #8, #18 and #32 were all this shape.
+_pd = Path(tempfile.mkdtemp(prefix="gate2walk_"))
+shutil.copyfile(X64, _pd / "Game.exe")
+(_pd / "Plugins" / "DLSS" / "Win64").mkdir(parents=True)
+(_pd / "Plugins" / "DLSS" / "Win64" / "nvngx_dlss.dll").write_bytes(
+    b"GAME OWN" + bytes(400))
+_pg = games.manual(_pd)
+_po = installer.Options(path=dlss.BRIDGE, native_dlss=True, keep_game_dlss=False)
+dlss.forget_walk()
+_walks = []
+_real_walk = dlss.find_dlss_files
+try:
+    dlss.find_dlss_files = lambda *a, **k: (_walks.append(1),
+                                            _real_walk(*a, **k))[1]
+    installer._nested_game_dlss(_pd, _pg, _po)
+    _first = len(_walks)
+    installer._nested_game_dlss(_pd, _pg, _po)
+    _again = len(_walks)
+finally:
+    dlss.find_dlss_files = _real_walk
+check("the preview's nested-runtime look-up walks a game's tree once, not "
+      "once per click",
+      _again == _first and _first >= 1, f"{_first} walk(s), then {_again}")
+shutil.rmtree(_pd, ignore_errors=True)
+
+# Two installs in one game: uninstalling one must not revert the other.
+_mg = Path(tempfile.mkdtemp(prefix="gate2two_"))
+_aa, _bb = _mg / "Binaries" / "Win64", _mg / "Binaries" / "Win32"
+for _x in (_aa, _bb):
+    _x.mkdir(parents=True)
+    shutil.copyfile(X64, _x / "Game.exe")
+_np = _mg / "Plugins" / "DLSS" / "Win64"
+_np.mkdir(parents=True)
+(_np / "nvngx_dlss.dll").write_bytes(b"A SWAPPED" + bytes(400))
+(_np / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).write_bytes(
+    b"GAME OWN" + bytes(400))
+(_bb / installer.MANIFEST).write_text(json.dumps(
+    {"version": 1, "complete": True, "exe": "Game.exe", "path": "optiscaler",
+     "files": ["OptiScaler.ini"]}), encoding="utf8")
+(_bb / "OptiScaler.ini").write_text("x", encoding="utf8")
+_gb = games.manual(_mg)
+_gb.exe = _bb / "Game.exe"
+try:
+    installer.uninstall(_gb, on_log=lambda t: None)
+except Exception as _e:
+    check("uninstalling one of two installs in a game runs", False, _e)
+check("uninstalling one install leaves the other install's swapped runtime "
+      "where it is",
+      (_np / "nvngx_dlss.dll").read_bytes().startswith(b"A SWAPPED")
+      and (_np / ("nvngx_dlss.dll" + installer.BACKUP_SUFFIX)).is_file(),
+      sorted(p.name for p in _np.iterdir()))
+shutil.rmtree(_mg, ignore_errors=True)
+
+
+# --- the second gate pass: what it found, as checks ------------------------
+# Six strings the first pass's fixes wrote had nothing looking at them, and
+# the F10 check looked at one of its two places.
+_said_g2: dict = {}
+with _ui_isolated(), _ui_threads(run=False):
+    _c_g2 = _ui_ctl(_ui_game(name="F10 Twice"), _ui_support([dlss.FEEDER, dlss.STANDALONE], dlss.FEEDER))
+    _c_g2.apply_route(dlss.FEEDER)
+    prefs.set_("overlay_key", reshade_ini.OVERLAY_KEYS["F10"])
+    _c_g2.said.clear()
+    _c_g2.apply_route(dlss.STANDALONE)                  # the route is switched onto F10
+    _said_g2["route"] = [t for t, _tag in _c_g2.said]
+    prefs.set_("overlay_key", 0)
+    _c_g2.said.clear()
+    _c_g2.set_setting("overlay_key", "F10")             # the key is switched onto the route
+    _said_g2["key"] = [t for t, _tag in _c_g2.said]
+    prefs.set_("overlay_key", 0)
+    _said_g2["steps"] = [t for _k, t in _c_g2.route_steps(dlss.FEEDER)]
+check("the F10 clash is said from BOTH places, out of one string",
+      bool(_F10_g2) and _F10_g2 in _said_g2["route"] and _F10_g2 in _said_g2["key"],
+      (_said_g2["route"][:3], _said_g2["key"][:3]))
+check("the post-install line that names the overlay key control is still there",
+      any("no such key on your keyboard" in t and "'overlay key'" in t for t in _said_g2["steps"]),
+      _said_g2["steps"][-4:])
+_ui_cleanup()
+# The texts about parts that are not current, read where they are drawn.
+_st_g2: dict = {}
+_ui_g2 = _UiLive()
+if _ui_g2.ok:
+    _gs_g2 = _ui_game(name="Stale Parts", installed=True)
+    _ui_g2.app.all_games = [_gs_g2]
+    _ui_g2.app._rows[(str(_gs_g2.folder), str(_gs_g2.exe))] = (True, "feeder", "beta", "beta", False, "")
+    _ui_g2.app.stale = {str(_gs_g2.install_dir): 2}
+    _ui_g2.app.shell.show("library")
+    _ui_g2.settle(80)
+    _st_g2["card"] = _ui_g2.app.card(_gs_g2)["status"]
+    _st_g2["library"] = _ui_g2.texts()
+    _ui_g2.press("scan", "button")
+    _st_g2["menu"] = _ui_g2.texts()
+    _ui_g2.kit.close_all()
+    _ui_g2.enter(_gs_g2, _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _ui_g2.app.stale = {str(_gs_g2.install_dir): 2}
+    _ui_g2.app.shell.redraw()
+    _ui_g2.settle(60)
+    _st_g2["page"] = _ui_g2.texts()
+    _st_g2["buttons"] = _ui_g2.labels("button")
+_ui_g2.close()
+_ui_cleanup()
+check("the game-list badge for a part that is not current is still there",
+      _st_g2.get("card") == "update (2)" and "update (2)" in _st_g2.get("library", []), _st_g2.get("card"))
+check("the library's count of games to install again is still there",
+      any(t.startswith("update all") and "1 with newer parts" in t for t in _st_g2.get("menu", [])),
+      [t for t in _st_g2.get("menu", []) if "update" in t])
+check("the game page's line about parts that are not current is still there",
+      any("have a newer build" in t for t in _st_g2.get("page", []))
+      and "update (2)" in _st_g2.get("buttons", []),
+      ([t for t in _st_g2.get("page", []) if "newer" in t], _st_g2.get("buttons")))
+check("the standalone note says what happens when F10 is BOTH keys",
+      "one of the two will win" in src_of(installer))
+check("a record with no file list is not labelled 'only if the game asks'",
+      '"- not loaded: "' in src_of(diagnose.evidence._loaded_block)
+      and "also written, loaded only if the game asks"
+      in src_of(diagnose.evidence._loaded_block))
+
+# A game whose bitness could not be read takes a 32-bit game's answer, not a
+# 64-bit one's - on both branches of the OptiScaler swap.
+_ub = Path(tempfile.mkdtemp(prefix="gate2bits_"))
+shutil.copyfile(X64, _ub / "Game.exe")
+(_ub / "nvngx_dlss.dll").write_bytes(b"GAME OWN" + bytes(400))
+_ug = games.manual(_ub)
+_ug.bitness = None
+check("an exe whose bitness could not be read is not swapped as 64-bit",
+      installer._opti_dlss_target(_ub, _ug, installer.Options(
+          path=dlss.OPTI, native_dlss=True, keep_game_dlss=False)) is None)
+_ug.bitness = 64
+check("...and a 64-bit one still is",
+      installer._opti_dlss_target(_ub, _ug, installer.Options(
+          path=dlss.OPTI, native_dlss=True, keep_game_dlss=False))
+      == _ub / "nvngx_dlss.dll")
+shutil.rmtree(_ub, ignore_errors=True)
+
+# The shape rule only holds between names that are one package plus a
+# suffix; against an unrelated archive the release's own order wins.
+check("an unrelated shorter archive does not win the shape rule",
+      _picked([{"name": "OptiScaler_DLSSNR_v0.1.zip",
+                "browser_download_url": "a"},
+               {"name": "debug.zip", "browser_download_url": "b"}], ())
+      == "OptiScaler_DLSSNR_v0.1.zip")
+
+# One question, one remembered answer - and a six-name walk cannot answer a
+# one-name question when it stopped at its cap.
+_wd = Path(tempfile.mkdtemp(prefix="gate3walk_"))
+(_wd / "sub").mkdir()
+(_wd / "sub" / "nvngx_dlss.dll").write_bytes(b"x" * 200)
+dlss.forget_walk()
+dlss.walked(_wd)
+(_wd / "sub" / "sl.interposer.dll").write_bytes(b"x" * 200)
+check("a walk asked for other names is not served the first walk's answer",
+      dlss.walked(_wd, names=("sl.interposer.dll",))
+      != dlss.walked(_wd, names=("nvngx_dlss.dll",)))
+check("...and forget_walk clears every one of a folder's answers",
+      (dlss.forget_walk(_wd) or True)
+      and not [k for k in dlss._WALK_CACHE if k[0] == dlss._walk_key(_wd)])
+shutil.rmtree(_wd, ignore_errors=True)
+check("the walk is forgotten when the manifest is written, not only before "
+      "the install",
+      "forget_walk" in src_of(installer._write_manifest))
+with _ui_isolated():
+    _pv_g2 = _ui_ctl(_ui_game(name="Preview"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+    _pvw_g2 = _worker_only(_pv_g2.preview, installer, "preview", None)
+_ui_cleanup()
+check("the preview runs off the Tk thread, like every other folder walk",
+      _pvw_g2 == ([], [True]), _pvw_g2)
+
+# Proof that the game ran must silence every sentence that assumed it did
+# not - from one list, used by both readers.
+_dnr_g2: list = []
+_real_dnr_g2 = diagnose.drop_never_ran
+with _ui_isolated(), _ui_threads(run=False):
+    _rp_g2 = diagnose.Report(route="renodx")
+    _rp_g2.verdict, _rp_g2.never_ran = "Not started since the install - run it once.", True
+    _rp_g2.add(diagnose.WARN, "The game has not been started since the install.")
+    _ap_g2 = _FakeApp(_rp_g2)
+    with patch.object(diagnose, "drop_never_ran",
+                      lambda fs: (_dnr_g2.append(len(fs)), _real_dnr_g2(fs))[1]):
+        _ap_g2.crash_overrides(_wcx.Crash(when="2026-09-12 00:54:33", exe="Game.exe", module="Game.exe",
+                                         code="0xC0000005", provider="Application Error"))
+_ui_cleanup()
+check("the never-ran findings come off one shared list",
+      "drop_never_ran" in src_of(diagnose.chain._explain_no_log)
+      and _dnr_g2 and not any("has not been started" in f.title for f in _rp_g2.findings),
+      (_dnr_g2, [f.title for f in _rp_g2.findings]))
+_diag_all = _diag_src()
+check("...and every phrase on that list is one the diagnosis really writes",
+      all(_p in _diag_all for _p in diagnose.NEVER_RAN_SAID),
+      [_p for _p in diagnose.NEVER_RAN_SAID if _p not in _diag_all])
+
+
+class _F:
+    def __init__(self, t, d=""):
+        self.title, self.detail = t, d
+
+
+check("...and it prunes on the detail as well as the title",
+      [f.title for f in diagnose.drop_never_ran(
+          [_F("Never started", "the game has not been started since the "
+                                "install"),
+           _F("kept", "nothing to see here")])] == ["kept"])
+check("...but the finding that the game's own files changed - proof it ran - survives",
+      [f.title for f in diagnose.drop_never_ran(
+          [_F("Something in the game's own files changed after the install.",
+              "so it looks as though it has been run since")])]
+      == ["Something in the game's own files changed after the install."])
+
+# The launch refusal must be about the GAME, not about our own helper.
+check("the already-running refusal is asked for only where it is paid for",
+      "check_running" in src_of(autopilot.may_start)
+      and "check_running=True" in src_of(autopilot.start))
+
+_rd = Path(tempfile.mkdtemp(prefix="gate3run_"))
+(_rd / installer.HOST_DIR).mkdir()
+shutil.copyfile(X64, _rd / "Game.exe")
+shutil.copyfile(X64, _rd / installer.HOST_DIR / "dlss5-feed-host64.exe")
+_rg = games.manual(_rd)
+_rg.exe = _rd / "Game.exe"
+
+
+def _proc(path):
+    return watch.Proc(pid=1, ppid=0, name=Path(path).name, path=str(path))
+
+
+with patch.object(autopilot.watch, "from_folder",
+                  lambda *a, **k: [_proc(_rd / installer.HOST_DIR
+                                         / "dlss5-feed-host64.exe")]):
+    _ok_helper, _why_helper = autopilot.may_start(_rg, check_running=True)
+check("our own 64-bit helper running is not 'the game is already running'",
+      _ok_helper is True, _why_helper)
+with patch.object(autopilot.watch, "from_folder",
+                  lambda *a, **k: [_proc(_rd / "Game.exe")]):
+    _ok_game, _why_game = autopilot.may_start(_rg, check_running=True)
+check("...and the game itself running is", _ok_game is False, _why_game)
+check("the refusal stands on its own, with no 'start the game now' in "
+      "front of it",
+      '"start it" in note' not in src_of(autopilot.attempt))
+shutil.rmtree(_rd, ignore_errors=True)
+
+
+section("2.0: a second DLSS hook in the verdict, and the 64-bit helper's own log "
+        "(#250 #252)")
+
+# #250: DLSS 5 Swapper's overlay add-on loaded beside neural-upstream, and
+# the verdict said "Add-ons loaded. Confirm in the overlay" with the other
+# hook as a warning under it. #252: a 32-bit feed shipping frames at 135 fps
+# to a helper whose device was removed, answered "Inconclusive" - and the
+# report did not carry the helper's log at all. Real lines throughout.
+sys.path.insert(0, str(SRC_DIR / "_tools"))
+import replay_report as _rr20  # noqa: E402
+import verdict_check as _vc20  # noqa: E402
+
+_a250 = _vc20._answer(SRC_DIR / "_tools" / "reports" / "250.txt")
+check("#250: a second DLSS hook loaded beside ours is the verdict, not a "
+      "warning under 'Add-ons loaded'",
+      _a250["verdict"].startswith("Another DLSS hook was loaded beside ours "
+                                  "(DLSS 5 Swapper Overlay)")
+      and "bad: Another DLSS hook was loaded beside ours: DLSS 5 Swapper Overlay"
+      in _a250["findings"], _a250)
+check("...and it is not said twice, once as a hook and once as 'other add-ons'",
+      not any(f.startswith("warn: Other ReShade add-ons") for f in _a250["findings"]),
+      _a250["findings"])
+check("#250: nvngx_dlssnr.dll not loaded when the game was seen is not a "
+      "warning - NGX loads it when the feature is created",
+      "warn: ...and not nvngx_dlssnr.dll." not in _a250["findings"]
+      and any(f.startswith("info: nvngx_dlssnr.dll was not loaded yet")
+              for f in _a250["findings"]), _a250["findings"])
+
+_t250 = (SRC_DIR / "_tools" / "reports" / "250.txt").read_text(encoding="utf8")
+_log250 = _rr20._blocks(_t250)["reshade"]
+# The same session as the reporter's own machine read it: the add-on logged
+# its settings and never a hook (the report's excerpt drops [NRPRE] lines).
+_nrpre250 = ("14:16:50:020 [ 3104] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] "
+             "settings loaded: enabled=1 cadence=1 codec=1 pw=1.000 knee=0.75\n")
+
+
+def _up250(extra: str) -> "diagnose.Report":
+    _lines = _log250.splitlines(True)
+    _d = _rr20.build("upstream", "DX12", "BatmanAK.exe",
+                     {"reshade": "".join(_lines[:2]) + extra + "".join(_lines[2:])},
+                     state=_rr20.folder_state(_t250))
+    try:
+        return diagnose.analyse(_d)
+    finally:
+        shutil.rmtree(_d, ignore_errors=True)
+
+
+_r = _up250(_nrpre250)
+check("...a verdict the logs do name keeps its own words, with the hook added",
+      _r.verdict.startswith("The game's DLSS call was never hooked")
+      and "beside ours too (DLSS 5 Swapper Overlay)" in _r.verdict, _r.verdict)
+_r = _up250(_nrpre250
+            + "14:16:50:030 [ 3104] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] "
+              "hook 0 on NVSDK_NGX_D3D12_EvaluateFeature: OK  C:\\w\\_nvngx.dll\n"
+            + "14:16:55:000 [ 3104] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] "
+              "HB #7561 handle=0x1 | pw=1.0000 meas=0.0000 valid=0 upd=0 | hdr=2 "
+              "det=1 knee=0.750 kmeas=0.750 | expfresh=7559 fromgame=0 | "
+              "net=2228x1256 finalvalid=1 | cad=1 async=0 | erfail=0 grfail=0 "
+              "passthru=0\n")
+check("...and frames through with it loaded stay 'Working.', the hook a warning",
+      _r.verdict == "Working."
+      and any(f.level == "warn" and f.title.startswith("Another DLSS hook")
+              for f in _r.findings), (_r.verdict, [(f.level, f.title) for f in _r.findings]))
+_lines = [ln for ln in _log250.splitlines(True) if "NR Pre-Upscale" not in ln]
+_d = _rr20.build("upstream", "DX12", "BatmanAK.exe", {"reshade": "".join(_lines)},
+                 state=_rr20.folder_state(_t250))
+_r = diagnose.analyse(_d)
+shutil.rmtree(_d, ignore_errors=True)
+check("...but not 'beside ours' when ours never loaded: that stays the answer",
+      not _r.verdict.startswith("Another DLSS hook")
+      and not any(f.title.startswith("Another DLSS hook was loaded") for f in _r.findings)
+      and any("did not load" in f.title for f in _r.findings if f.level == "bad"),
+      (_r.verdict, [f.title for f in _r.findings]))
+check("the MFG unlock this tool installs, an HDR RenoDX add-on and the route's "
+      "own add-ons are not foreign hooks",
+      diagnose._foreign_hooks(["Universal RTX 40 MFG Unlock V1.2", "MFG Unlock",
+                               "RenoDX Unity Engine", "DLSS5 NR Pre-Upscale"],
+                              "upstream") == []
+      and diagnose._foreign_hooks(["DLSS 5 Feed 0.15.1", "DLSS 5 Neural Rendering"],
+                                  "feeder") == []
+      and diagnose._foreign_hooks(["DLSS 5 Neural Rendering"], "upstream")
+      == ["DLSS 5 Neural Rendering"])
+
+_a252 = _vc20._answer(SRC_DIR / "_tools" / "reports" / "252.txt")
+check("#252: a feed shipping frames to the 64-bit helper is its own answer, "
+      "not 'Inconclusive'",
+      _a252["verdict"].startswith("Frames reach the 64-bit helper")
+      and "warn: The game is handing its frames to the 64-bit helper (600 "
+          "frames at 135.7 fps)." in _a252["findings"], _a252)
+_t252 = (SRC_DIR / "_tools" / "reports" / "252.txt").read_text(encoding="utf8")
+_feed252 = _rr20._blocks(_t252)["feed"]
+_d = _rr20.build("feeder", "DX9", "wow.exe", {"feed": _feed252}, bitness=32,
+                 state=_rr20.folder_state(_t252))
+_r = diagnose.analyse(_d)
+check("...and 'present probe: 0 presents' is not read as the helper standing "
+      "still - the same log says the game kept presenting",
+      any("kept presenting while they read 0" in f.detail for f in _r.findings),
+      [f.detail[-80:] for f in _r.findings])
+
+# The helper's log from #252's own thread (driver rolled back to 616.56).
+_host252 = (
+    "05:29:31.783  dlss5-feed-host64 commit a6c23bd (built Sep 14 2026 08:15:58)\n"
+    "05:29:31.784  [host] DLSS 5 add-on file: renodx-dlss5.addon64\n"
+    "05:29:31.786  [host] DLSS 5 add-on: v5.2.1 (file version 0.2026.828.2110) -- "
+    "v4.7+ (lazy adoption, colour bridge, workset pool) engine\n"
+    "05:29:31.786  [host] NeuralUplift=1 (user-set; leaving it alone)\n"
+    "05:29:33.349  [host] NGX feature requirements: feature 18 (neural rendering, "
+    "what nvngx_dlssnr.dll backs) -> the query itself failed 0xBAD00012 (NotImplemented)\n"
+    "05:29:33.889  [host] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)\n"
+    "05:29:34.839  [host] feature ready: 2560x1440 DLAA flags=74\n"
+    "05:29:37.923  [host] Present failed 0x887A0005 (1 so far). This window holds "
+    "its last picture until one succeeds; the feed runs on a separate queue and "
+    "is unaffected.\n"
+    "05:29:38.332  [host] 120 presents in a row could not go through: this window "
+    "has stopped repainting and the consumer is missing frames. The feed itself "
+    "is unaffected; a window that looks frozen from here is this, not a hang.\n"
+    "05:29:39.575  [host] neural consumer outcome: consumer did not intercept (no "
+    "feature-18 create/evaluate evidence after 300 feeder evaluations)\n")
+_hd = _d / diagnose.HOST_LOG
+_hd.parent.mkdir(parents=True, exist_ok=True)
+_hd.write_text(_host252, encoding="utf8")
+(_d / "dlss5-feed.log").write_text(
+    _feed252 + "04:42:49.000  [feed32] frame 1 delivered (2560x1440, reset=0)\n",
+    encoding="utf8")
+_r = diagnose.analyse(_d)
+check("#252's helper log names the fault: the helper's device was removed, "
+      "and that outranks a delivered frame",
+      _r.verdict.startswith("The 64-bit helper lost its graphics device")
+      and "The 64-bit helper lost its graphics device (Present failed "
+          "0x887A0005)." in [f.title for f in _r.findings if f.level == "bad"]
+      and "The neural add-on in the helper never created the DLSS 5 feature."
+      in [f.title for f in _r.findings if f.level == "bad"], (_r.verdict, [f.title for f in _r.findings if f.level == "bad"]))
+_body = diagnose.issue_body("9.9", "x", None, "?", None, "feeder", _r, "",
+                            Path("C:/x/autopilot.log"), _d)
+check("the report carries the helper's log on the feeder route, and the "
+      "replay reads it back",
+      "**dlss5-feed-host.log**" in _body
+      and "Present failed 0x887A0005" in _rr20._blocks(_body).get("host", "")
+      and len(_body) <= 6000, len(_body))
+shutil.rmtree(_d, ignore_errors=True)
+
+_ok_host = ("19:54:05.203  [host] feature ready: 1920x1071 DLAA flags=74\n"
+            "19:54:03.491  [host] present skipped: DWM still holds the back "
+            "buffer (1 so far; the game is never made to wait for it)\n"
+            "19:54:05.208  [host] frame 1 evaluated\n"
+            "20:16:05.540  [host] pipe closed by the game\n"
+            "20:16:05.556  [host] exit 0\n")
+check("the owner's working Bayonetta helper session names no fault",
+      diagnose._helper_verdict(diagnose.Report(), _ok_host) is False)
+check("...nor a helper that could not read its ReShade.log to check",
+      diagnose._helper_verdict(diagnose.Report(),
+          "[host] neural consumer outcome: consumer did not intercept "
+          "(ReShade.log is unavailable)\n") is False)
+check("...nor 'did not intercept' with neural rendering switched off",
+      diagnose._helper_verdict(diagnose.Report(),
+          "[host] NeuralUplift=0 (user-set; leaving it alone)\n"
+          "[host] neural consumer outcome: consumer did not intercept (no "
+          "feature-18 create/evaluate evidence after 300 feeder evaluations)\n")
+      is False)
+check("...and only the helper's last run is read",
+      diagnose._helper_verdict(diagnose.Report(),
+          _host252 + "06:00:00.000  dlss5-feed-host64 commit a6c23bd (built x)\n"
+          + _ok_host) is False)
+
+
+section("2.0: keeping a game's DLSS up to date, beside a DLSS 5 install "
+        "(dlssupdate)")
+
+# The DLSS page replaces runtimes the GAME ships, for games DLSS 5 was never
+# installed into too - the same files the installer swaps. Two writers of
+# one file is where a user's original was lost before ("reinstall keeps
+# backups"), so every order of the two is played here on real folders, with
+# DLLs Windows itself reads a version from, and the installer's own swap
+# and uninstall.
+sys.path.insert(0, str(SRC_DIR / "_tools"))
+import fake_pe as _fpe  # noqa: E402
+from core import dlssupdate as _du  # noqa: E402
+import stat as _du_stat  # noqa: E402
+
+_du_saved = (prefs.FILE,)
+_du_tmp = Path(tempfile.mkdtemp(prefix="dlssupdate_"))
+prefs.FILE = _du_tmp / "settings.json"          # never the owner's settings
+_du_blobs = _du_tmp / "blobs"
+_du_blobs.mkdir()
+_DU_NEST = "Engine/Plugins/Runtime/Nvidia/DLSS/Binaries/ThirdParty/Win64"
+
+
+def _du_cat(v):
+    return {f: [{"tag": f"v{v}", "label": f"{v} (NVIDIA SDK)", "raw": n, "size": 0,
+                 "url": f"https://raw.githubusercontent.com/NVIDIA/DLSS/v{v}/{n}"}]
+            for f, n, _l in _du.FAMILIES}
+
+
+def _du_download(url, name, progress=None, **_k):
+    # "dlss-310.9.1 (NVIDIA SDK).dll" -> a real 64-bit DLL stamped 310.9.1
+    v = name.split("-", 1)[1].split(" ")[0]
+    p = _du_blobs / name.replace(" ", "_")
+    p.write_bytes(_fpe.dll(v))
+    if progress:
+        progress(1, 1)
+    return p
+
+
+def _du_game(tag, bits=64):
+    d = _du_tmp / tag
+    nest = d / _DU_NEST
+    nest.mkdir(parents=True)
+    (d / "Game.exe").write_bytes(_fpe.dll("1.0.0", size=5000))
+    (nest / "nvngx_dlss.dll").write_bytes(_fpe.dll("3.7.20") + b"GAME-OWN-SR")
+    (d / "nvngx_dlssg.dll").write_bytes(_fpe.dll("3.5.0") + b"GAME-OWN-FG")
+    dlss.forget_walk()
+    return (games.Game(name=tag, folder=d, exe=d / "Game.exe", bitness=bits, api="DX12"),
+            nest / "nvngx_dlss.dll", d / "nvngx_dlssg.dll")
+
+
+def _du_by(g, fam):
+    # Never None: a check that reads .state from a missing row must FAIL,
+    # not raise and end the run with every later section unrun.
+    return next((e for e in _du.scan(g) if e.family == fam),
+                _du.Entry(Path("missing"), "", fam, "", state="missing"))
+
+
+def _du_install_swap(g, sr, v="310.10.0"):
+    """What a DLSS 5 install with 'keep the game's own' unticked does: the
+    installer's own target choice, swap and record."""
+    opt = installer.Options(path=dlss.OPTI, native_dlss=True, keep_game_dlss=False,
+                            dlss=f"{v} (NVIDIA SDK)")
+    target = installer._nested_game_dlss(g.install_dir, g, opt)
+    rep = installer.Report()
+    installer._swap_nested_dlss(
+        target, _du_cat(v)["dlss"], opt, rep, g.install_dir,
+        lambda url, name: _du_download(url, f"dlss-{v} (NVIDIA SDK).dll"), lambda *_: None)
+    installer._write_manifest(g.install_dir, g, opt, rep, "dxgi.dll", installer.BETA, complete=True)
+    return target
+
+
+_du_nowatch = patch.object(_du.watch, "from_folder", lambda *a, **k: [])
+_du_net = patch.object(_du.net, "download", _du_download)
+_du_nowatch.start()
+_du_net.start()
+try:
+    _C1, _C2 = _du_cat("310.9.1"), _du_cat("310.10.0")
+    check("the newest build per family comes from NVIDIA's list, with its number",
+          _du.newest(_C1)["dlss"]["version"] == "310.9.1"
+          and set(_du.newest(_C1)) == {"dlss", "dlssg", "dlssd"}
+          and _du.newest({}) == {}, _du.newest(_C1))
+
+    # -- update -> restore ------------------------------------------------
+    _g, _sr, _fg = _du_game("order_update_restore")
+    _own_sr, _own_fg = _sr.read_bytes(), _fg.read_bytes()
+    _s0 = {e.family: e for e in _du.scan(_g)}
+    check("scan: the nested super resolution and the frame generation beside the exe, "
+          "with Windows' own version read",
+          set(_s0) == {"dlss", "dlssg"} and _s0["dlss"].version == "3.7.20"
+          and _s0["dlssg"].version == "3.5.0" and _s0["dlss"].state == _du.ORIGINAL,
+          {k: (e.rel, e.version, e.state) for k, e in _s0.items()})
+    check("...both are older than NVIDIA's newest",
+          _du.outdated(_s0["dlss"], _du.newest(_C1)["dlss"])
+          and _du.outdated(_s0["dlssg"], _du.newest(_C1)["dlssg"]))
+    _r = _du.update(_g, catalog=_C1)
+    check("update: both replaced, each backed up beside itself, and recorded",
+          _r.ok and len(_r.done) == 2
+          and pe.file_version(_sr) == "310.9.1" and pe.file_version(_fg) == "310.9.1"
+          and _du._ours(_sr).read_bytes() == _own_sr and _du._ours(_fg).read_bytes() == _own_fg
+          and len(_du.load_record(_g)) == 2, (_r, _du.load_record(_g)))
+    check("...the report says what moved, in numbers",
+          "super resolution  3.7.20 -> 310.9.1" in _r.done, _r.done)
+    _e = _du_by(_g, "dlss")
+    check("...and the scan reads it back as updated, current, from 3.7.20",
+          _e.state == _du.UPDATED and _e.original == "3.7.20"
+          and not _du.outdated(_e, _du.newest(_C1)["dlss"]), _e)
+    _r = _du.restore(_g)
+    check("restore: the game's own bytes are back, no backup and no record left",
+          _r.ok and _sr.read_bytes() == _own_sr and _fg.read_bytes() == _own_fg
+          and not _du._ours(_sr).exists() and not _du._ours(_fg).exists()
+          and not _du.record_path(_g).exists(), _r)
+
+    # -- update -> DLSS 5 install -> DLSS 5 uninstall -> restore -----------
+    _g, _sr, _fg = _du_game("order_update_install_uninstall")
+    _own_sr = _sr.read_bytes()
+    _du.update(_g, catalog=_C1)
+    _ours_sr = _sr.read_bytes()
+    _t = _du_install_swap(_g, _sr)
+    check("a DLSS 5 install over an updated file swaps that very file (ours is not "
+          "hidden from it)", _t == _sr and pe.file_version(_sr) == "310.10.0", _t)
+    check("...its backup holds OUR build, and ours still holds the game's own",
+          (_sr.with_name(_sr.name + installer.BACKUP_SUFFIX)).read_bytes() == _ours_sr
+          and _du._ours(_sr).read_bytes() == _own_sr)
+    _e = _du_by(_g, "dlss")
+    _r = _du.update(_g, catalog=_du_cat("310.11.0"), families=["dlss"])
+    check("...the page reads it as the install's, and does not update it",
+          _e.state == _du.INSTALL and not _du.outdated(_e, _du.newest(_C2)["dlss"])
+          and pe.file_version(_sr) == "310.10.0"
+          and any("DLSS 5 install" in s for s in _r.skipped), (_e, _r))
+    installer.uninstall(_g)
+    check("uninstalling DLSS 5 leaves the DLSS update in place",
+          _sr.read_bytes() == _ours_sr and _du._ours(_sr).read_bytes() == _own_sr
+          and _du_by(_g, "dlss").state == _du.UPDATED, _du_by(_g, "dlss"))
+    _du.restore(_g)
+    check("...and restore then puts the game's own back",
+          _sr.read_bytes() == _own_sr and not _du._ours(_sr).exists()
+          and not _du.record_path(_g).exists())
+
+    # -- update -> DLSS 5 install -> restore -> DLSS 5 uninstall ------------
+    _g, _sr, _fg = _du_game("order_update_install_restore_uninstall")
+    _own_sr = _sr.read_bytes()
+    _du.update(_g, catalog=_C1)
+    _du_install_swap(_g, _sr)
+    _r = _du.restore(_g)
+    check("restore under a DLSS 5 install leaves the install's file and hands the "
+          "game's own to the install's backup",
+          pe.file_version(_sr) == "310.10.0"
+          and _sr.with_name(_sr.name + installer.BACKUP_SUFFIX).read_bytes() == _own_sr
+          and not _du._ours(_sr).exists()
+          and any("comes back when DLSS 5 is uninstalled" in n for n in _r.notes), _r)
+    installer.uninstall(_g)
+    check("...so the DLSS 5 uninstall afterwards restores the game's own",
+          _sr.read_bytes() == _own_sr)
+
+    # -- DLSS 5 install (keep_game_dlss False) -> update -> DLSS 5 uninstall
+    _g, _sr, _fg = _du_game("order_install_update_uninstall")
+    _own_sr, _own_fg = _sr.read_bytes(), _fg.read_bytes()
+    _du_install_swap(_g, _sr)
+    _inst_sr = _sr.read_bytes()
+    _r = _du.update(_g, catalog=_du_cat("310.11.0"))
+    check("an update after a DLSS 5 swap leaves the install's file alone and "
+          "updates the rest",
+          _sr.read_bytes() == _inst_sr and not _du._ours(_sr).exists()
+          and pe.file_version(_fg) == "310.11.0" and len(_r.done) == 1
+          and any("set by the DLSS 5 install" in s for s in _r.skipped), _r)
+    installer.uninstall(_g)
+    check("...the DLSS 5 uninstall restores the game's own super resolution and "
+          "keeps the frame generation update",
+          _sr.read_bytes() == _own_sr and pe.file_version(_fg) == "310.11.0"
+          and _du._ours(_fg).read_bytes() == _own_fg
+          and _du_by(_g, "dlss").state == _du.ORIGINAL)
+    _r = _du.update(_g, catalog=_du_cat("310.11.0"))
+    check("...and after it the super resolution can be updated here",
+          pe.file_version(_sr) == "310.11.0" and _du._ours(_sr).read_bytes() == _own_sr, _r)
+
+    # -- update twice -> restore -------------------------------------------
+    _g, _sr, _fg = _du_game("order_update_twice")
+    _own_sr = _sr.read_bytes()
+    _du.update(_g, catalog=_C1)
+    _r = _du.update(_g, catalog=_C2)
+    _rec = {r["family"]: r for r in _du.load_record(_g)}
+    check("a second update keeps the first backup and the game's own version on record",
+          pe.file_version(_sr) == "310.10.0" and _du._ours(_sr).read_bytes() == _own_sr
+          and _rec["dlss"]["original"] == "3.7.20" and _rec["dlss"]["written"] == "310.10.0",
+          (_r, _rec))
+    _du.restore(_g)
+    check("...and restore after two updates is the game's own", _sr.read_bytes() == _own_sr)
+    _r = _du.update(_g, catalog=_C1)
+    _r2 = _du.update(_g, catalog=_C1)
+    check("updating a current file is skipped, not rewritten",
+          _r.ok and not _r2.done and any("is current" in s for s in _r2.skipped), _r2)
+
+    # -- restore with the backup missing -----------------------------------
+    _du._ours(_sr).unlink()
+    _now = _sr.read_bytes()
+    _r = _du.restore(_g, families=["dlss"])
+    check("restore with the backup gone keeps the only copy there is, drops the "
+          "entry and says so",
+          _sr.read_bytes() == _now and any("is gone" in n for n in _r.notes)
+          and not any(r["family"] == "dlss" for r in _du.load_record(_g)), _r)
+    _du.restore(_g)
+
+    # -- a launcher put its own file back ------------------------------------
+    _g, _sr, _fg = _du_game("order_launcher_replaced")
+    _du.update(_g, catalog=_C1)
+    _sr.write_bytes(_fpe.dll("310.12.0"))           # the game updated itself
+    _notes = _du.settle(_g)
+    _e = _du_by(_g, "dlss")
+    check("a file replaced with a newer one is left and it is said - and the "
+          "game's own stays where restore finds it (another tool may have written the newer one)",
+          pe.file_version(_sr) == "310.12.0" and _e.state == _du.UPDATED and _e.backup is not None
+          and b"GAME-OWN-SR" in _du._ours(_sr).read_bytes()
+          and any("nvngx_dlss.dll" in n and "310.12.0" in n for n in _notes), (_e, _notes))
+    _sr.write_bytes(_du._ours(_sr).read_bytes())      # a launcher verifies: exactly the game's own again
+    _notes = _du.settle(_g) + _du.settle(_g)
+    check("...a launcher putting exactly the game's own back removes the now duplicate backup - "
+          "no copies pile up, and the file reads as the game's own",
+          not _du._ours(_sr).exists() and _du_by(_g, "dlss").state == _du.ORIGINAL
+          and not list(_sr.parent.glob("nvngx_dlss.dll.dlss5-dlss-*")), (_notes,
+          [q.name for q in _sr.parent.iterdir()]))
+    _fg.write_bytes(_fpe.dll("3.1.0"))               # something put an OLDER one there
+    _notes = _du.settle(_g)
+    _e = _du_by(_g, "dlssg")
+    check("...an older one keeps the game's own backup, still restorable",
+          _du._ours(_fg).exists() and _e.state == _du.UPDATED and _e.backup is not None, (_e, _notes))
+    _r = _du.restore(_g)
+    _disp = list(_fg.parent.glob("nvngx_dlssg.dll" + _du.DISPLACED_SUFFIX + "-*"))
+    check("...and restoring it then brings the game's own back, keeping the file that was in the way",
+          b"GAME-OWN-FG" in _fg.read_bytes() and not _du._ours(_fg).exists()
+          and len(_disp) == 1 and pe.file_version(_disp[0]) == "3.1.0", (_r, _disp))
+
+    # -- the second review's sequences: a writer that is not us ------------------------
+    # an install writes the file while the update downloads (both used to run at once)
+    _g, _sr, _fg = _du_game("concurrent_install")
+    _own_sr = _sr.read_bytes()
+
+    def _du_racing(url, name, progress=None, **_k):
+        if name.startswith("dlss-"):
+            _du_install_swap(_g, _sr)         # lands while the download is in flight
+        return _du_download(url, name, progress)
+    with patch.object(_du.net, "download", _du_racing):
+        _r = _du.update(_g, catalog=_C1, families=["dlss"])
+    check("a file written by someone else during the download is not backed up as the game's "
+          "own and not overwritten",
+          not _r.ok and "changed while the update was downloading" in _r.error
+          and not _du._ours(_sr).exists() and pe.file_version(_sr) == "310.10.0"
+          and _sr.with_name(_sr.name + installer.BACKUP_SUFFIX).read_bytes() == _own_sr, _r)
+
+    # the game patched itself after the update, then DLSS 5 swapped THAT file
+    _g, _sr, _fg = _du_game("handover_not_ours")
+    _du.update(_g, catalog=_C1, families=["dlss"])
+    _sr.write_bytes(_fpe.dll("310.12.0") + b"GAME-PATCH")
+    _du_install_swap(_g, _sr)
+    _ibak = _sr.with_name(_sr.name + installer.BACKUP_SUFFIX)
+    _r = _du.restore(_g)
+    check("restore under a DLSS 5 install whose backup is NOT our build hands nothing over",
+          b"GAME-PATCH" in _ibak.read_bytes() and b"GAME-OWN-SR" in _du._ours(_sr).read_bytes()
+          and any("uninstall DLSS 5 first" in n for n in _r.notes), _r)
+    installer.uninstall(_g)
+    _r = _du.restore(_g)
+    check("...after the DLSS 5 uninstall, restore brings the original and keeps the patched file aside",
+          b"GAME-OWN-SR" in _sr.read_bytes()
+          and any(b"GAME-PATCH" in q.read_bytes()
+                  for q in _sr.parent.glob("nvngx_dlss.dll" + _du.DISPLACED_SUFFIX + "-*")), _r)
+
+    # another tool writes a newer build, then puts OUR build back; then two updates and a restore
+    _g, _sr, _fg = _du_game("foreign_then_ours_back")
+    _du.update(_g, catalog=_C1, families=["dlss"])
+    _ours_b = _sr.read_bytes()
+    _sr.write_bytes(_fpe.dll("310.9.2") + b"SWAPPER")
+    _du.settle(_g)
+    _sr.write_bytes(_ours_b)
+    _du.update(_g, catalog=_C2, families=["dlss"])
+    _r = _du.restore(_g, families=["dlss"])
+    check("a tool swapping builds behind the page's back never costs the game's own: restore "
+          "still ends on 3.7.20", b"GAME-OWN-SR" in _sr.read_bytes(), (_r, pe.file_version(_sr)))
+
+    # the page updated to a build, then a DLSS 5 install swapped in that very build
+    _g, _sr, _fg = _du_game("install_same_build")
+    _du.update(_g, catalog=_C1, families=["dlss"])
+    _du_install_swap(_g, _sr, v="310.9.1")
+    _e = _du_by(_g, "dlss")
+    _r = _du.update(_g, catalog=_C2, families=["dlss"])
+    check("a DLSS 5 install of the same build over a page update reads as the install's, and a later "
+          "update skips it instead of failing on every attempt",
+          _e.state == _du.INSTALL and _r.ok and any("DLSS 5 install" in x for x in _r.skipped), (_e, _r))
+
+    # a runtime that disappeared
+    _g, _sr, _fg = _du_game("runtime_gone")
+    _du.update(_g, catalog=_C1, families=["dlssg"])
+    _fg.unlink()
+    _du.settle(_g)
+    _e = _du_by(_g, "dlssg")
+    _r = _du.restore(_g)
+    check("a runtime that vanished is listed as missing, and restore puts the game's own back",
+          _e.state == _du.MISSING and b"GAME-OWN-FG" in _fg.read_bytes() and not _du._ours(_fg).exists(),
+          (_e, _r))
+
+    # a record that claims the game's own file is ours
+    _g, _sr, _fg = _du_game("record_lies")
+    _du.record_path(_g).write_text(json.dumps({"files": [
+        {"path": _DU_NEST + "/nvngx_dlss.dll", "family": "dlss", "written": "3.7.20",
+         "size": _sr.stat().st_size, "original": "1.0"}]}), encoding="utf8")
+    _own_sr = _sr.read_bytes()
+    _du.update(_g, catalog=_C1, families=["dlss"])
+    check("a record entry that names the game's own build is not trusted: a backup is made first",
+          pe.file_version(_sr) == "310.9.1" and _du._ours(_sr).read_bytes() == _own_sr)
+
+    # the uninstall that runs with no install record deletes runtimes by name
+    _g, _sr, _fg = _du_game("no_manifest_uninstall")
+    _du.update(_g, catalog=_C1, families=["dlssg"])
+    installer.uninstall(_g)
+    check("a DLSS 5 uninstall with no install record leaves a runtime this page updated",
+          pe.file_version(_fg) == "310.9.1" and _du._ours(_fg).is_file())
+
+    # one runtime updated, the next refused
+    _g, _sr, _fg = _du_game("partial")
+    os.chmod(_fg, _du_stat.S_IREAD)
+    try:
+        _r = _du.update(_g, catalog=_C1)
+    finally:
+        os.chmod(_fg, _du_stat.S_IREAD | _du_stat.S_IWRITE)
+    check("a failure after one runtime went through does not say 'nothing was changed'",
+          len(_r.done) == 1 and "Windows refused" in _r.error and "Nothing was changed" not in _r.error, _r)
+
+    # -- refusals --------------------------------------------------------------
+    _g, _sr, _fg = _du_game("refuse_anticheat")
+    (_g.folder / "EasyAntiCheat").mkdir()
+    _before = _sr.read_bytes()
+    _r = _du.update(_g, catalog=_C1)
+    check("anti-cheat: refused without an explicit yes, and the refusal names it",
+          _r.refused == _du.R_ANTICHEAT and "Easy Anti-Cheat" in _r.error
+          and _sr.read_bytes() == _before and not _du.record_path(_g).exists(), _r)
+    _r = _du.update(_g, catalog=_C1, allow_anticheat=True)
+    check("...and done when the person said yes", _r.ok and pe.file_version(_sr) == "310.9.1", _r)
+
+    _g, _sr, _fg = _du_game("refuse_32bit", bits=32)
+    _r = _du.update(_g, catalog=_C1)
+    check("32-bit games: nothing is listed and an update is refused",
+          _du.scan(_g) == [] and _r.refused == _du.R_32BIT and pe.file_version(_sr) == "3.7.20", _r)
+    _g, _sr, _fg = _du_game("x86_runtime")
+    _fg.write_bytes(_fpe.dll("3.5.0", machine=0x14C))
+    check("...and a 32-bit runtime inside a 64-bit game is not listed",
+          [e.family for e in _du.scan(_g)] == ["dlss"])
+
+    _g, _sr, _fg = _du_game("refuse_running")
+    with patch.object(_du.watch, "from_folder",
+                      lambda *a, **k: [watch.Proc(7, 1, "Game.exe", str(_g.folder / "Game.exe"))]):
+        _r = _du.update(_g, catalog=_C1)
+    check("a running game is refused by name, nothing touched",
+          _r.refused == _du.R_RUNNING and "Game.exe is running" in _r.error
+          and pe.file_version(_sr) == "3.7.20", _r)
+
+    _g, _sr, _fg = _du_game("refuse_readonly")
+    _before = _sr.read_bytes()
+    os.chmod(_sr, _du_stat.S_IREAD)
+    try:
+        _r = _du.update(_g, catalog=_C1, families=["dlss"])
+    finally:
+        os.chmod(_sr, _du_stat.S_IREAD | _du_stat.S_IWRITE)
+    check("a file Windows will not replace: the reason names the file, the original "
+          "is untouched and no backup or record is left",
+          not _r.ok and "Windows refused to replace" in _r.error and str(_sr) in _r.error
+          and _sr.read_bytes() == _before and not _du._ours(_sr).exists()
+          and not _du.record_path(_g).exists(), _r)
+
+    _g, _sr, _fg = _du_game("bad_download")
+    _before = _sr.read_bytes()
+
+
+    def _du_page(url, name, progress=None):
+        # what a proxy or a DNS filter answers in place of the file
+        (_du_blobs / "page.dll").write_bytes(b"<html>blocked</html>" * 20000)
+        return _du_blobs / "page.dll"
+    with patch.object(_du.net, "download", _du_page):
+        _r = _du.update(_g, catalog=_C1)
+    check("a download that is not a 64-bit DLL changes nothing",
+          not _r.ok and "Nothing was changed" in _r.error and _sr.read_bytes() == _before
+          and not _du._ours(_sr).exists(), _r)
+
+    # -- own files and the record as untrusted input --------------------------
+    _g, _sr, _fg = _du_game("own_files")
+    (_g.folder / "host64").mkdir()
+    (_g.folder / "host64" / "nvngx_dlssd.dll").write_bytes(_fpe.dll("310.2.1"))
+    (_g.folder / "Binaries").mkdir()
+    (_g.folder / "Binaries" / "host64").mkdir()
+    (_g.folder / "Binaries" / "host64" / "nvngx_dlssd.dll").write_bytes(_fpe.dll("310.2.1"))
+    (_g.folder / "nvngx_dlssd.dll").write_bytes(_fpe.dll("310.2.1"))
+    _du.record_path(_g).write_text(json.dumps({"files": [
+        {"path": "host64/nvngx_dlssd.dll", "family": "dlssd", "written": "310.2.1"}]}),
+        encoding="utf8")
+    (_g.folder / installer.MANIFEST).write_text(json.dumps(
+        {"files": ["nvngx_dlssd.dll", "dxgi.dll"], "complete": True}), encoding="utf8")
+    dlss.forget_walk()
+    check("our host64 helper and a runtime a DLSS 5 install added are never listed",
+          sorted(e.family for e in _du.scan(_g)) == ["dlss", "dlssg"],
+          [(e.rel, e.state) for e in _du.scan(_g)])
+    _du.record_path(_g).write_text(json.dumps({"files": [
+        {"path": "../elsewhere/nvngx_dlss.dll", "family": "dlss", "written": "1"},
+        {"path": "Game.exe", "family": "dlss", "written": "1"},
+        {"path": "nvngx_dlssg.dll", "family": "nope"},
+        "junk"]}), encoding="utf8")
+    check("record entries outside the folder, naming another file or a family that "
+          "does not exist are dropped", _du.load_record(_g) == [], _du.load_record(_g))
+    _du.record_path(_g).write_text("{not json", encoding="utf8")
+    check("...and a record that is not JSON reads as empty", _du.load_record(_g) == [])
+    _du.record_path(_g).unlink()
+
+    # -- the record lost after an update --------------------------------------
+    _g, _sr, _fg = _du_game("record_lost")
+    _own_sr = _sr.read_bytes()
+    _du.update(_g, catalog=_C1)
+    _du.record_path(_g).unlink()
+    _e = _du_by(_g, "dlss")
+    _du.update(_g, catalog=_C2)
+    check("a backup with no record is adopted, never overwritten",
+          _e.state == _du.UPDATED and _du._ours(_sr).read_bytes() == _own_sr
+          and pe.file_version(_sr) == "310.10.0", _e)
+    _g2, _sr2, _fg2 = _du_game("crash_after_backup")
+    shutil.copyfile(_sr2, _du._ours(_sr2))           # backup made, swap never happened
+    check("a backup of the very same build (a crash before the swap) reads as the game's own",
+          _du_by(_g2, "dlss").state == _du.ORIGINAL)
+    _du.restore(_g)
+    check("...and restore still brings the game's own back", _sr.read_bytes() == _own_sr)
+except Exception as _du_ex:
+    import traceback as _du_tb
+    check("the dlssupdate section ran to its end", False,
+          "".join(_du_tb.format_exception(_du_ex))[-400:])
+finally:
+    _du_net.stop()
+    _du_nowatch.stop()
+    prefs.FILE = _du_saved[0]
+    dlss.forget_walk()
+    shutil.rmtree(_du_tmp, ignore_errors=True)
+
+
+section("2.0: covers for games outside Steam - Epic, Xbox, Steam's store, chosen by hand")
+# The library showed an icon for every game Steam did not install. The
+# lookups below go online, so every check here runs on temporary folders
+# with the network patched to raise - and says so when it was asked.
+import base64 as _b64c
+import struct as _stc
+import urllib.request as _urc
+import zlib as _zlc
+from core import covers as _cv, prefs as _pfc
+from core.ui import art as _art
+
+
+def _cv_png(w=2, h=2):
+    raw = b"".join(b"\x00" + b"\x80\x40\x20" * w for _ in range(h))
+
+    def chunk(t, d):
+        return _stc.pack(">I", len(d)) + t + d + _stc.pack(">I", _zlc.crc32(t + d) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", _stc.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", _zlc.compress(raw)) + chunk(b"IEND", b""))
+
+
+class _CvGame:
+    def __init__(self, name, folder, source="Folder", exe=None):
+        self.name, self.folder, self.source, self.exe, self.kind = name, Path(folder), source, exe, "game"
+
+
+_cv_calls: list = []
+
+
+def _cv_no_net(*a, **k):
+    _cv_calls.append(a[0] if a else k)
+    raise OSError("the network is switched off in this check")
+
+
+_cv_tmp = Path(tempfile.mkdtemp(prefix="covers_"))
+_cv_saved = (_cv.ROOT, _pfc.FILE, _cv.EPIC_DATA)
+_cv.ROOT, _pfc.FILE = _cv_tmp / "art", _cv_tmp / "settings.json"
+# lookups only run after the person said yes to the library's question
+check("covers: never asked means no lookup at all, and the question is still open",
+      _cv.undecided() is True and _cv.online() is False)
+_pfc.set_("online_art", True)
+_cv_p = patch.object(_urc, "urlopen", _cv_no_net)
+_cv_p.start()
+try:
+    # ---- Epic: catcache.bin is base64 of a JSON list, matched through the manifest
+    _cv_items = [{"id": "item1", "namespace": "ns1", "title": "Some Game",
+                  "keyImages": [{"type": "DieselGameBox", "url": "https://cdn1.epicgames.com/item/ns1/wide"},
+                                {"type": "DieselGameBoxTall", "url": "https://cdn1.epicgames.com/item/ns1/tall"},
+                                {"type": "DieselGameBoxLogo", "url": "http://insecure.example/logo"},
+                                {"type": "Thumbnail", "url": "https://cdn1.epicgames.com/item/ns1/thumb"}]},
+                 {"id": "other", "namespace": "ns2", "keyImages": []}, "junk", {"no": "id"}]
+    _cv_cat = _cv.parse_catcache(_b64c.b64encode(json.dumps(_cv_items).encode()) + b"\r\n")
+    check("covers: catcache.bin parses to catalog items by id, junk entries skipped",
+          sorted(_cv_cat) == ["item1", "other"], sorted(_cv_cat))
+    check("covers: a catcache that is not base64 JSON is an empty catalog, not a raise",
+          _cv.parse_catcache(b"<html>nope") == {} and _cv.parse_catcache(b"") == {})
+    _cv_man = _cv_tmp / "Manifests"
+    _cv_man.mkdir()
+    (_cv_man / "a.item").write_text(json.dumps({"DisplayName": "Some Game",
+                                                "InstallLocation": "C:/Program Files/Epic Games/SomeGame",
+                                                "CatalogItemId": "item1", "CatalogNamespace": "ns1"}),
+                                    encoding="utf8")
+    (_cv_man / "b.item").write_text("{broken", encoding="utf8")
+    _cv_m = _cv.epic_manifest(r"c:\program files\epic games\somegame", _cv_man)
+    check("covers: the Epic manifest is found by its install folder, slashes and case aside",
+          bool(_cv_m) and _cv_m.get("CatalogItemId") == "item1", _cv_m)
+    check("...and not for another folder",
+          _cv.epic_manifest(r"C:\Program Files\Epic Games\SomeGame2", _cv_man) is None)
+    _cv_u = _cv.epic_urls(_cv_m, _cv_cat)
+    check("covers: tall is the cover, wide the background; an http:// logo is not used",
+          _cv_u == {"cover": "https://cdn1.epicgames.com/item/ns1/tall",
+                    "hero": "https://cdn1.epicgames.com/item/ns1/wide"}, _cv_u)
+    check("covers: an item from another namespace is not this game's",
+          _cv.epic_urls(dict(_cv_m, CatalogNamespace="nsX"), _cv_cat) == {})
+
+    # ---- Xbox: the folder's own manifest names its pictures, scale variants included
+    _cv_xb = _cv_tmp / "XboxGames" / "Game" / "Content"
+    (_cv_xb / "Assets").mkdir(parents=True)
+    (_cv_xb / "MicrosoftGame.config").write_text(
+        '<Game><ShellVisuals DefaultDisplayName="Game" StoreLogo="Assets\\StoreLogo.png" '
+        'Square150x150Logo="Assets\\Logo150.png" SplashScreenImage="Assets/Splash.png"/></Game>',
+        encoding="utf8")
+    (_cv_xb / "Assets" / "Logo150.scale-100.png").write_bytes(_cv_png(2, 2))
+    (_cv_xb / "Assets" / "Logo150.scale-200.png").write_bytes(_cv_png(8, 8))
+    (_cv_xb / "Assets" / "Splash.png").write_bytes(_cv_png(4, 2))
+    _cv_x = _cv.xbox(_cv_xb)
+    check("covers: an Xbox folder's square logo (largest scale) is the cover, its splash the background",
+          _cv_x.get("cover") == _cv_xb / "Assets" / "Logo150.scale-200.png"
+          and _cv_x.get("hero") == _cv_xb / "Assets" / "Splash.png", _cv_x)
+    (_cv_xb / "MicrosoftGame.config").write_text(
+        '<Game><ShellVisuals Square150x150Logo="..\\..\\..\\secret.png"/></Game>', encoding="utf8")
+    (_cv_tmp / "secret.png").write_bytes(_cv_png())
+    check("...and a manifest path that climbs out of the folder is not followed",
+          _cv.xbox(_cv_xb) == {}, _cv.xbox(_cv_xb))
+
+    # ---- the name matcher, on the shapes Steam's store search really answers
+    _cv_div = [{"id": 2221490, "name": "Tom Clancy\u2019s The Division\u00ae 2", "type": "app"},
+               {"id": 365590, "name": "Tom Clancy\u2019s The Division\u00ae", "type": "app"},
+               {"id": 556470, "name": "Tom Clancy\u2019s The Division\u00ae - Survival", "type": "app"}]
+    _cv_ds = [{"id": 3280350, "name": "DEATH STRANDING 2: ON THE BEACH", "type": "app"},
+              {"id": 3669170, "name": "DEATH STRANDING 2: ON THE BEACH - Upgrade to Digital Deluxe Edition",
+               "type": "app"}]
+    _cv_gw = [{"id": 1817250, "name": "Ghostwire: Tokyo - Prelude", "type": "app"},
+              {"id": 1702820, "name": "Ghostwire: Tokyo - Deluxe Upgrade", "type": "app"},
+              {"id": 1944840, "name": "Ghostwire: Tokyo Original Game Soundtrack", "type": "app"}]
+    _cv_cases = [
+        ("Tom Clancy's The Division", _cv_div, 365590),
+        ("Tom Clancy's The Division 2", _cv_div, 2221490),
+        ("Tom Clancy's The Division", _cv_div[:1], None),                      # only the sequel
+        ("DEATH STRANDING 2", _cv_ds, 3280350),                                # name + subtitle
+        ("DEATH STRANDING", _cv_ds, None),                                     # the first game is not the second
+        ("Ghostwire Tokyo", _cv_gw, None),                                     # DLC and soundtrack only
+        ("Ghostwire Tokyo", [{"id": 1475810, "name": "Ghostwire: Tokyo", "type": "app"}] + _cv_gw, 1475810),
+        ("Grand Theft Auto IV: The Complete Edition",
+         [{"id": 12210, "name": "Grand Theft Auto IV: The Complete Edition", "type": "app"}], 12210),
+        ("Grand Theft Auto IV", [{"id": 12210, "name": "Grand Theft Auto IV: The Complete Edition"}], 12210),
+        ("Grand Theft Auto V", [{"id": 12210, "name": "Grand Theft Auto IV: The Complete Edition"}], None),
+        ("HELLDIVERS\u2122 2", [{"id": 553850, "name": "HELLDIVERS\u2122 2", "type": "app"}], 553850),
+        ("Alan Wake 2", [{"id": 3274290, "name": "Beat Saber - Monstercat Mixtape 2 - Alan Walker - \"Wake Up\""}],
+         None),
+        ("Some Folder", [], None),
+        ("", _cv_div, None),
+        ("Batman Arkham", [{"id": 1, "name": "Batman Arkham: City"}, {"id": 2, "name": "Batman Arkham: Knight"}],
+         None),                                                                # two subtitles: which one?
+        ("Control", [{"id": 1, "name": "Control: The Foundation"}], None),     # one word: no subtitle guess
+        ("Assassin's Creed Shadows", [{"id": "x", "name": "Assassin's Creed Shadows"},
+                                      {"id": 3159330, "name": "Assassin\u2019s Creed Shadows", "type": "app"}],
+         3159330),                                                             # a bad id is skipped
+        ("Cyberpunk 2077", [{"id": 1, "name": "Cyberpunk 2077", "type": "dlc"}], None),
+    ]
+    _cv_bad = [(n, want, _cv.match(n, items)) for n, items, want in _cv_cases
+               if _cv.match(n, items) != want]
+    check(f"covers: the name matcher takes the game and nothing near it ({len(_cv_cases)} names)",
+          not _cv_bad, _cv_bad)
+
+    # ---- the negative cache and its expiry
+    _cv_g = _CvGame("Nothing Like It", _cv_tmp / "games" / "Nothing")
+    check("covers: a game never asked about is pending", _cv.pending(_cv_g))
+    _cv._write_meta(_cv_g, {"miss": 1000.0, "ttl": _cv.MISS_TTL})
+    check("covers: a recorded miss holds for its week...",
+          not _cv.pending(_cv_g, now=1000.0 + _cv.MISS_TTL - 60))
+    check("...and asks again after it", _cv.pending(_cv_g, now=1000.0 + _cv.MISS_TTL + 60))
+    _cv._write_meta(_cv_g, {"miss": 1000.0, "ttl": _cv.FAIL_TTL})
+    check("covers: a failed connection holds for a day, not a week",
+          _cv.FAIL_TTL == 24 * 3600 and _cv.MISS_TTL == 7 * 24 * 3600 and
+          _cv.pending(_cv_g, now=1000.0 + _cv.FAIL_TTL + 60)
+          and not _cv.pending(_cv_g, now=1000.0 + _cv.FAIL_TTL - 60))
+    _cv._write_meta(_cv_g, {"miss": 1000.0, "ttl": _cv.MISS_TTL})
+    _cv_g.name = "Nothing Like It 2"
+    check("covers: a renamed game is a new question", _cv.pending(_cv_g, now=1001.0))
+    _cv_g.name = "Nothing Like It"
+    check("covers: two game folders never share a cache folder",
+          _cv.key(r"D:\Games\A") != _cv.key(r"D:\Games\B")
+          and _cv.key(r"D:\Games\A") == _cv.key("d:/games/a/"))
+
+    # ---- a failed lookup is recorded, never raised, never retried in a loop
+    _cv_calls.clear()
+    _cv_h = _CvGame("Offline Game", _cv_tmp / "games" / "Offline")
+    _cv_r = _cv.lookup(_cv_h)
+    check("covers: no network - the lookup answers False and records a one-day miss",
+          _cv_r is False and _cv._meta(_cv_h).get("ttl") == 24 * 3600 and not _cv.pending(_cv_h),
+          (_cv_r, _cv._meta(_cv_h)))
+    check("...after asking once, over HTTPS, at Steam's store",
+          len(_cv_calls) == 1 and getattr(_cv_calls[0], "full_url", "").startswith(
+              "https://store.steampowered.com/api/storesearch/?term=Offline%20Game"),
+          [getattr(c, "full_url", c) for c in _cv_calls])
+
+    # ---- online_art off: not one request, and nothing queued
+    _pfc.set_("online_art", False)
+    _cv_calls.clear()
+    _cv_o = _CvGame("Private Game", _cv_tmp / "games" / "Private", source="Epic")
+    _cv_r = _cv.lookup(_cv_o)
+    check("covers: online_art off - lookup asks nothing, writes nothing",
+          _cv_r is False and not _cv_calls and not _cv.dir_of(_cv_o).exists(), _cv_calls)
+    _art._found.clear()
+    with patch.object(_art, "_want", side_effect=AssertionError("queued")) as _cv_want:
+        _art.find(_cv_o)
+    check("...and art.find queues no lookup", not _cv_want.called)
+    _pfc.set_("online_art", True)
+
+    # ---- what a server sends is checked before it is kept
+    _cv_big = _cv_tmp / "big.jpg"
+    _cv_big.write_bytes(b"\xff\xd8\xff\xe0" + b"\0" * (_cv.MAX_BYTES + 10))
+    _cv_html = _cv_tmp / "page.jpg"
+    _cv_html.write_bytes(b"<!doctype html><title>login</title>")
+    _cv_ok = _cv_tmp / "mine.png"
+    _cv_ok.write_bytes(_cv_png(4, 6))
+    _cv_u1 = _CvGame("Chosen", _cv_tmp / "games" / "Chosen")
+    _cv_s1 = _cv.set_user(_cv_u1, "cover", _cv_big)
+    _cv_s2 = _cv.set_user(_cv_u1, "cover", _cv_html)
+    check("covers: a picture over 8 MB and an HTML page named .jpg are refused, with a reason",
+          "MB" in _cv_s1 and "not a JPEG, PNG or BMP" in _cv_s2 and not _cv.user(_cv_u1), (_cv_s1, _cv_s2))
+    check("covers: a picture Windows cannot draw is refused and not left behind",
+          "could not read" in _cv.set_user(_cv_u1, "cover", _cv_ok, readable=lambda p: False)
+          and not _cv.user(_cv_u1))
+    check("covers: magic bytes decide, not the name",
+          _cv.image_ext(b"\xff\xd8\xff\xe0JFIF") == ".jpg" and _cv.image_ext(_cv_png()) == ".png"
+          and _cv.image_ext(b"<html>") is None and _cv.image_ext(b"") is None)
+
+    class _CvResp:
+        def __init__(self, body, length=None):
+            self.body, self.status = body, 200
+            self.headers = {"Content-Length": str(len(body) if length is None else length)}
+
+        def read(self, n=-1):
+            return self.body if n < 0 else self.body[:n]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    with patch.object(_urc, "urlopen", lambda *a, **k: _CvResp(b"\xff\xd8\xff", length=_cv.MAX_BYTES + 1)):
+        _cv_r1 = _cv._get("https://example.invalid/a.jpg")
+    with patch.object(_urc, "urlopen", lambda *a, **k: _CvResp(b"x" * 64, length=0)):
+        _cv_r2 = _cv._get("https://example.invalid/a.jpg", limit=32)
+    check("covers: a download declared or read past the cap is dropped", _cv_r1 is None and _cv_r2 is None,
+          (_cv_r1, _cv_r2))
+    _cv_e = _CvGame("Portal Page", _cv_tmp / "games" / "Portal")
+    with patch.object(_cv, "_get", lambda url, limit=_cv.MAX_BYTES: (
+            json.dumps({"items": [{"id": 77, "name": "Portal Page", "type": "app"}]}).encode()
+            if "storesearch" in url else b"<html>captive portal</html>")):
+        _cv_r = _cv.lookup(_cv_e)
+    check("covers: a captive portal answering 200 for every image leaves no cover, and a miss",
+          _cv_r is False and not _cv.got(_cv_e) and _cv._meta(_cv_e).get("ttl") == _cv.MISS_TTL,
+          (_cv_r, _cv.got(_cv_e)))
+    _cv_urls = _cv.steam_urls(3280350, {"asset_url_format": "steam/apps/3280350/${FILENAME}?t=1",
+                                       "library_capsule_2x": "9b523fd411eeaefe80f238489745325a1cd2317f/"
+                                                             "library_capsule_2x.jpg",
+                                       "library_hero": "../../evil/library_hero.jpg"})
+    check("covers: Steam's hashed asset paths come first; a path that climbs out is not used",
+          _cv_urls["cover"][0].endswith("/3280350/9b523fd411eeaefe80f238489745325a1cd2317f/"
+                                        "library_capsule_2x.jpg?t=1")
+          and not any("evil" in u for u in _cv_urls["hero"]), _cv_urls)
+
+    # ---- a picture chosen by hand wins, and the reset takes it back out
+    _cv_ch = _CvGame("Chosen Two", _cv_tmp / "games" / "Chosen2")
+    _cv._store(_cv_ch, "got-", "cover", _cv_png(2, 3))
+    _art._found.clear()
+    _cv_heard: list = []
+    _art.listen(lambda f: _cv_heard.append(f))
+    check("covers: a chosen PNG is copied into the cache", _art.choose(_cv_ch, "cover", _cv_ok) == "",
+          _cv.user(_cv_ch))
+    _cv_a = _art.find(_cv_ch)
+    check("...wins over a downloaded cover, and the window hears about it",
+          _cv_a.cover is not None and _cv_a.cover.name.startswith("user-cover") and _cv_a.chosen
+          and _cv_heard == [str(_cv_ch.folder)], (_cv_a, _cv_heard))
+    _cv_ok.unlink()
+    _art._found.clear()
+    check("...and is a copy: the original can move", _art.find(_cv_ch).cover.is_file())
+    _art.reset(_cv_ch)
+    _cv_a = _art.find(_cv_ch)
+    check("covers: 'use the automatic pictures' goes back to the downloaded cover",
+          _cv_a.cover is not None and _cv_a.cover.name.startswith("got-cover") and not _cv_a.chosen, _cv_a)
+
+    # ---- the Tk thread asks from memory; the network runs on the art thread
+    _cv_t = _CvGame("Threaded Game", _cv_tmp / "games" / "Threaded")
+    _art._found.clear()
+    with patch.object(_cv, "user", side_effect=AssertionError("disk")), \
+            patch.object(_art, "_index", side_effect=AssertionError("walk")):
+        _cv_pk = _art.peek(_cv_t)
+    check("covers: art.peek reads no folder and no file", _cv_pk is None)
+    _cv_th = _UiThreads(run=False)
+    _cv_seen: list = []
+
+    def _cv_lookup(game, appid=None):
+        _cv_seen.append(_cv_th.inside)
+        _cv._store(game, "got-", "cover", _cv_png())
+        return True
+    _cv_heard.clear()
+    with patch.object(_art, "threading", _cv_th), patch.object(_cv, "lookup", _cv_lookup):
+        _art._asked.discard(_cv.key(_cv_t.folder))
+        _art.find(_cv_t)
+        _cv_before = list(_cv_seen)
+        _art.find(_cv_t)                                    # asked twice before it lands
+        _cv_th.go()
+    check("covers: art.find only queues the lookup; it runs on a worker, once",
+          _cv_before == [] and _cv_seen == [1] and _cv_th.names.count("_work") == 1,
+          (_cv_before, _cv_seen, _cv_th.names))
+    check("...and when it lands the window is told, and the next find has the cover",
+          _cv_heard == [str(_cv_t.folder)] and _art.find(_cv_t).cover is not None, _cv_heard)
+    _cv_heard.clear()
+    _art._found.clear()
+    with patch.object(_art, "threading", _cv_th), patch.object(_cv, "lookup", _cv_lookup):
+        for _p_ in _cv.got(_cv_t).values():
+            _p_.unlink()
+        _art.find(_cv_t)
+        _cv_th.go()
+    check("covers: a game already asked about this run is not asked again", len(_cv_seen) == 1, _cv_seen)
+    from core.ui import gamepage as _gpc
+    check("covers: the game page's draw asks art.peek, not art.find (it runs on every redraw)",
+          "art.peek(" in src_of(_gpc.GamePage.draw) and "art.find(" not in src_of(_gpc.GamePage.draw))
+
+    # ---- the window: ("art", folder) drops that game's images only
+    with _ui_isolated():
+        _cv_c = _ui_ctl()
+        _cv_c.covers = {r"D:\A|176x264": {"kind": "icon"}, r"D:\AB|176x264": {"kind": "icon"}}
+        _cv_c.pump()
+        _art._listeners[0](r"D:\A")
+        _cv_k = _cv_c.pump()
+        check("covers: an ('art', folder) message drops that game's cards, not a neighbour's",
+              _cv_k == ["art"] and list(_cv_c.covers) == [r"D:\AB|176x264"], (_cv_k, _cv_c.covers))
+        _cv_c.shell.page = None
+        _cv_c.set_online_art(False)
+        check("covers: the view menu's switch is the online_art setting",
+              _pfc.get("online_art", True) is False)
+finally:
+    _cv_p.stop()
+    _cv.ROOT, _pfc.FILE, _cv.EPIC_DATA = _cv_saved
+    _art._found.clear()
+    shutil.rmtree(_cv_tmp, ignore_errors=True)
+
+# ---- the real window: right-click a card, pick 'choose cover...', a real file dialog answer
+_cv_live = _UiLive()
+try:
+    if not check("covers: the window opened for the right-click check", _cv_live.ok, _cv_live.error):
+        raise RuntimeError("no window")
+    _cv_dir = Path(tempfile.mkdtemp(prefix="covers_live_"))
+    _cv_png_path = _cv_dir / "cover.png"
+    _cv_png_path.write_bytes(_cv_png(6, 9))
+    _ui_live_game = _ui_game(name="Picture Game")
+    _cv_live.app.all_games = [_ui_live_game]
+    _cv_live.app.shell.show("library")
+    _cv_live.settle(300)
+    _cv_card = next((cd["tag"] for cd in _cv_live.app.shell.page.cards if cd["g"] is _ui_live_game), None)
+    _cv_live.click(_cv_card, button=3)
+    _cv_menu = [str(_cv_live.canvas.itemcget(i, "text")) for i in _cv_live.canvas.find_withtag(
+        _cv_live.kit.top().tag) if _cv_live.canvas.type(i) == "text"] if _cv_live.kit.top() else []
+    check("covers: a card's right-click menu offers choose cover / background / logo",
+          all(any(t.startswith(w) for t in _cv_menu) for w in
+              ("choose cover", "choose background", "choose logo")), _cv_menu)
+    with patch("tkinter.filedialog.askopenfilename", lambda **k: str(_cv_png_path)):
+        _cv_picked = _cv_live.pick("choose cover")
+        _cv_landed = _cv_live.until(lambda: "cover" in _cv.user(_ui_live_game), 6.0)
+    _cv_live.settle(300)
+    check("covers: picking it copies the file into the art cache and says so",
+          _cv_picked and _cv_landed and "cover set" in str(_cv_live.app.shell.status_text),
+          (_cv_picked, _cv_landed, getattr(_cv_live.app.shell, "status_text", "")))
+    # the new cover redrew the grid: the card is found again, as a person would
+    _cv_card = next((cd["tag"] for cd in _cv_live.app.shell.page.cards if cd["g"] is _ui_live_game), None)
+    _cv_live.click(_cv_card, button=3)
+    _cv_menu = [str(_cv_live.canvas.itemcget(i, "text")) for i in _cv_live.canvas.find_withtag(
+        _cv_live.kit.top().tag) if _cv_live.canvas.type(i) == "text"] if _cv_live.kit.top() else []
+    check("...after which the menu offers the automatic pictures back",
+          any(t.startswith("use the automatic pictures") for t in _cv_menu), _cv_menu)
+    shutil.rmtree(_cv_dir, ignore_errors=True)
+except RuntimeError:
+    pass
+finally:
+    _cv_live.close()
+    _art._found.clear()
+
+
+section("2.0: the dlss page in the real window, every state, real events "
+        "(dlss_page_check)")
+
+# The page is driven in its own process: the sandbox switches the network
+# off and moves every settings file for the life of that process, which must
+# not leak into the sections of this run. Each of its checks comes back as
+# one check here, and a run that died part way is a failure of its own - a
+# half-run check looks green (see the memory note).
+_dpc = subprocess.run([sys.executable, str(SRC_DIR / "_tools" / "dlss_page_check.py")],
+                      capture_output=True, text=True, encoding="utf-8", errors="replace",
+                      timeout=600, cwd=str(SRC_DIR))
+_dpc_lines = [ln for ln in _dpc.stdout.splitlines() if ln.startswith(("   PASS  ", "   FAIL  "))]
+for _ln in _dpc_lines:
+    check("dlss page: " + _ln[9:].split("   ")[0], _ln.startswith("   PASS  "),
+          "" if _ln.startswith("   PASS  ") else _ln[9:])
+check("dlss page: the check ran to its end",
+      _dpc.returncode == 0 and "FAILED: none" in _dpc.stdout and len(_dpc_lines) >= 48,
+      (_dpc.returncode, len(_dpc_lines), _dpc.stderr[-400:]))
+
+
+section("2.0 gate: DLSS evidence beside our own files, dlss page backups, the page's reads, "
+        "the covers switch")
+
+import queue as _g2q  # noqa: E402
+import re as _g2re  # noqa: E402
+import threading as _g2th  # noqa: E402
+from types import SimpleNamespace as _G2NS  # noqa: E402
+sys.path.insert(0, str(SRC_DIR / "_tools"))
+import fake_pe as _g2fpe  # noqa: E402
+from core import dlssupdate as _g2du, covers as _g2cov, anticheat as _g2ac  # noqa: E402
+from core.ui import ctl_dlss as _g2ctl  # noqa: E402
+
+_g2tmp = Path(tempfile.mkdtemp(prefix="gate20_"))
+_g2saved = (prefs.FILE, _g2cov.ROOT)
+prefs.FILE = _g2tmp / "settings.json"         # never the owner's settings or art cache
+_g2cov.ROOT = _g2tmp / "art"
+try:
+    # -- 1. our own files are not another DLSS tool ------------------------------------
+    def _g2folder(tag, files, manifest=None):
+        d = _g2tmp / tag
+        d.mkdir(parents=True)
+        for n in files:
+            (d / n).write_bytes(b"MZ")
+        if manifest is not None:
+            (d / "dlss5-autopilot.json").write_text(json.dumps(
+                {"files": manifest, "complete": True}), encoding="utf8")
+        return d
+
+    _g2opti = ["OptiScaler.ini", "nvngx.dll_dlssnr.dll", "dxgi.dll", "nvngx_dlssnr.dll"]
+    _g2d = _g2folder("opti_ours", _g2opti + ["nvngx_dlss.dll"], manifest=_g2opti)
+    check("gate 2.0 #1: our own optiscaler install files do not hide the game's nvngx_dlss.dll",
+          pe._ships_dlss(_g2d) == "nvngx_dlss.dll", pe._ships_dlss(_g2d))
+    _g2d = _g2folder("opti_by_hand", ["OptiScaler.ini", "nvngx_dlss.dll"])
+    check("...while OptiScaler put in by hand still does", pe._ships_dlss(_g2d) == "")
+    _g2d = _g2folder("renodx_hdr", ["renodx-residentevil4.addon64", "nvngx_dlss.dll",
+                                   "dlss5-dx11-bridge.addon64"])
+    check("...a RenoDX HDR add-on and our old dx11 bridge are not a DLSS tool",
+          pe._ships_dlss(_g2d) == "nvngx_dlss.dll", pe._ships_dlss(_g2d))
+    _g2r250 = (SRC_DIR / "_tools" / "reports" / "250.txt").read_text(encoding="utf8", errors="replace")
+    _g2sw = _g2re.search(r"dlss5-lab-overlay-[0-9a-f]+\.addon64", _g2r250)
+    _g2d = _g2folder("swapper250", [_g2sw.group(0) if _g2sw else "dlss5-lab-overlay-x.addon64",
+                                    "nvngx_dlss.dll", "dxgi.dll", "nvngx.dll.addon64"])
+    check("...and #250's swapper overlay add-on (named in the report) still does",
+          bool(_g2sw) and pe._ships_dlss(_g2d) == "", (bool(_g2sw), pe._ships_dlss(_g2d)))
+    # the file list is the installer's, the add-on rule narrower on purpose
+    _g2inst = {n.lower() for n in installer.OTHER_NGX_HOOKS}
+    check("...pe's foreign file list is the installer's (minus the standalone caller bridge and "
+          "add-ons, which the name rule catches)",
+          {n for n in _g2inst if not n.endswith(".addon64")} - {installer.STANDALONE_BRIDGE.lower()}
+          == set(pe._FOREIGN_NGX_FILES)
+          and all(pe._foreign_ngx({n}) for n in _g2inst if n.endswith(".addon64")),
+          sorted(_g2inst ^ set(pe._FOREIGN_NGX_FILES)))
+
+    # -- 2. the dlss page's backups are not the game running -------------------------------
+    _g2d = _g2tmp / "ran" / "Binaries" / "Win64"
+    _g2d.mkdir(parents=True)
+    _g2now = time.time()
+    for _n in ("nvngx_dlss.dll.dlss5-dlss-original", "nvngx_dlss.dll.dlss5-dlss-displaced-1758000000",
+               "nvngx_dlss.dll.dlss5-dlss-part", "dlss5-dlss-update.json",
+               ".dlss5-dlss-write-test-abc"):
+        (_g2d / _n).write_bytes(b"x")
+    with patch.object(diagnose.model, "_user_data_roots", lambda: []):
+        _g2ran = diagnose._game_ran(_g2d, "Game.exe", _g2now - 3600, set())
+        check("gate 2.0 #2: fresh dlss page backups and its record are not 'the game ran'",
+              _g2ran == ("", 0.0), _g2ran)
+        (_g2d / "GameUserSettings.ini").write_bytes(b"x")
+        _g2ran = diagnose._game_ran(_g2d, "Game.exe", _g2now - 3600, set())
+        check("...while a file the game writes still is", _g2ran[0] == "GameUserSettings.ini", _g2ran)
+
+    # -- 3. the bug report finds the page's record three levels up ---------------------------
+    _g2root = _g2tmp / "Ready Or Not"
+    _g2exe = _g2root / "ReadyOrNot" / "Binaries" / "Win64"
+    _g2exe.mkdir(parents=True)
+    _g2rel = "ReadyOrNot/Plugins/DLSS/Binaries/ThirdParty/Win64/nvngx_dlss.dll"
+    (_g2root / _g2rel).parent.mkdir(parents=True)
+    (_g2root / _g2rel).write_bytes(b"MZ")
+    (_g2root / _g2du.RECORD).write_text(json.dumps({"files": [
+        {"path": _g2rel, "family": "dlss", "original": "3.7.20", "written": "310.9.1",
+         "size": 2, "label": "310.9.1 (NVIDIA SDK)"}]}), encoding="utf8")
+    check("gate 2.0 #3: the record is found three levels above an Unreal exe, with and without the game root",
+          diagnose._dlss_record_root(_g2exe) == _g2root
+          and diagnose._dlss_record_root(_g2exe, _g2root) == _g2root,
+          diagnose._dlss_record_root(_g2exe))
+    _g2lines = "\n".join(diagnose._presence(_g2exe, {}, "feeder"))
+    check("...and the report's file list carries the page's update",
+          "updated on the dlss page to 310.9.1" in _g2lines, _g2lines[-300:])
+    _g2deep = _g2tmp / "deep" / "a" / "b" / "c" / "d" / "e"
+    _g2deep.mkdir(parents=True)
+    (_g2tmp / "deep" / _g2du.RECORD).write_text("{}", encoding="utf8")
+    check("...the climb is bounded (five levels up is not this game's) and stops at a drive root",
+          diagnose._dlss_record_root(_g2deep) is None
+          and diagnose._dlss_record_root(Path(_g2tmp.anchor)) is None)
+
+    # -- 4. a traceback of window frames is not an install crash ----------------------------
+    check("gate 2.0 #4: the install module walk stops at the 2.0 window's package",
+          _g2re.search(r'n in \([^)]*"ui"', src_of(diagnose.model._install_modules)) is not None)
+    _g2tb = ('Traceback (most recent call last):\n'
+             '  File "C:\\a\\core\\ui\\{m}.py", line 5, in go\n'
+             'URLError: <urlopen error [Errno 11001] getaddrinfo failed>\n')
+    check("...a frame under core/ui named like an install module is the window's",
+          diagnose._install_crash(_g2tb.format(m="net")) == ("", "")
+          and diagnose._install_crash(_g2tb.format(m="net").replace("\\ui\\", "\\"))[0],
+          diagnose._install_crash(_g2tb.format(m="net")))
+
+    # -- 5. an update over our own build with the game's backup gone ---------------------------
+    _g2blobs = _g2tmp / "blobs"
+    _g2blobs.mkdir()
+
+    def _g2cat(v):
+        return {f: [{"tag": f"v{v}", "label": f"{v} (NVIDIA SDK)", "raw": n, "size": 0,
+                     "url": f"https://raw.githubusercontent.com/NVIDIA/DLSS/v{v}/{n}"}]
+                for f, n, _l in _g2du.FAMILIES}
+
+    def _g2download(url, name, progress=None, **_k):
+        v = name.split("-", 1)[1].split(" ")[0]
+        p = _g2blobs / name.replace(" ", "_")
+        p.write_bytes(_g2fpe.dll(v))
+        return p
+
+    def _g2game(tag, files=(("nvngx_dlss.dll", "3.7.20"),), bits=64, extra=()):
+        d = _g2tmp / "games" / tag
+        d.mkdir(parents=True)
+        (d / "Game.exe").write_bytes(_g2fpe.dll("1.0.0", size=5000))
+        for rel, v in files:
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_bytes(_g2fpe.dll(v) + tag.encode())
+        for x in extra:
+            (d / x).mkdir(parents=True, exist_ok=True)
+        return games.Game(name=tag, folder=d, exe=d / "Game.exe", bitness=bits, api="DX12")
+
+    with patch.object(_g2du.watch, "from_folder", lambda *a, **k: []), \
+            patch.object(_g2du.net, "download", _g2download):
+        _g2g = _g2game("backup_gone")
+        _g2sr = _g2g.folder / "nvngx_dlss.dll"
+        _g2du.update(_g2g, catalog=_g2cat("310.9.1"))
+        _g2du._ours(_g2sr).unlink()
+        _g2rep = _g2du.update(_g2g, catalog=_g2cat("310.10.0"))
+        _g2e = next((e for e in _g2du.scan(_g2g, fresh=True)), None)
+        _g2rec = _g2du.load_record(_g2g)
+        check("gate 2.0 #5: updating our own build with the game's backup gone makes no 'backup' of our build",
+              _g2rep.ok and _g2du.pe.file_version(_g2sr) == "310.10.0" and not _g2du._ours(_g2sr).exists()
+              and _g2rec and _g2rec[0]["original"] == "3.7.20",
+              (_g2rep.error, _g2du._ours(_g2sr).exists(), _g2rec))
+        check("...the page labels it 'backup gone', not the game's own",
+              _g2e is not None and _g2e.state == _g2du.UPDATED and _g2e.backup is None, _g2e)
+        _g2rep = _g2du.restore(_g2g)
+        check("...and restore leaves the file there and says the backup is gone",
+              _g2du.pe.file_version(_g2sr) == "310.10.0" and any("is gone" in n for n in _g2rep.notes),
+              _g2rep.notes)
+        # the order the invariant protects: a first update still backs up the game's own
+        _g2g = _g2game("first_update")
+        _g2du.update(_g2g, catalog=_g2cat("310.9.1"))
+        check("...while a first update still keeps the game's own beside it",
+              _g2du.pe.file_version(_g2du._ours(_g2g.folder / "nvngx_dlss.dll")) == "3.7.20")
+
+    # -- 6/7. the page's reads: detection's walk, only what changed, coalesced re-reads -------
+    _g2g = _g2game("walk_reuse", files=(
+        ("Engine/Plugins/DLSS/Win64/nvngx_dlss.dll", "3.7.20"),))
+    dlss.forget_walk()
+    dlss.walked(_g2g.folder, skip_dir=_g2g.install_dir)        # what detection asks
+    _g2walks = []
+    with patch.object(dlss, "find_dlss_files", lambda *a, **k: _g2walks.append(a) or []):
+        _g2c = _g2du._candidates(_g2g, False)
+    check("gate 2.0 #6: the page's read reuses detection's walk of the folder instead of walking again",
+          not _g2walks and any(p.name == "nvngx_dlss.dll" for p in _g2c), (_g2walks, _g2c))
+    dlss.forget_walk()
+
+    class _G2App(_g2ctl.DlssControl):
+        def __init__(self, gs):
+            self._dlss_init()
+            self.all_games, self.busy, self.scanning, self.action = list(gs), False, False, ""
+            self.q = _g2q.Queue()
+            self.asked, self.later, self.hid = [], [], set()
+            self.shell = _G2NS(status=lambda *a, **k: None, pages={}, page=None,
+                               busy=lambda *a, **k: None,
+                               ask=lambda title, text, *a, **k: self.asked.append(text) or False)
+            self.root = _G2NS(after=lambda ms, fn: self.later.append(fn))
+
+        def refresh(self, *a, **k):
+            pass
+
+        def have_library(self):
+            return True
+
+        def hidden(self):
+            return set(self.hid)
+
+        def write(self, *a, **k):
+            pass
+
+        def pump(self, until, seconds=10.0):
+            end = time.time() + seconds
+            while time.time() < end:
+                try:
+                    kind, payload = self.q.get(timeout=0.1)
+                except _g2q.Empty:
+                    if until():
+                        return True
+                    continue
+                getattr(self, f"_on_{kind}")(payload)
+                if until():
+                    return True
+            return until()
+
+    _g2reads = []
+    _g2real_scan = _g2du.scan
+
+    _g2hold = _g2th.Event()
+    _g2hold.set()
+
+    def _g2scan(g, fresh=False):
+        _g2reads.append((g.name, _g2th.get_ident()))
+        _g2hold.wait(10)
+        time.sleep(0.02)
+        return _g2real_scan(g, fresh)
+
+    _g2A = _g2game("pA")
+    _g2B = _g2game("pB", extra=("EasyAntiCheat",))
+    _g2C = _g2game("pC")
+    _g2D = _g2game("pD")
+    _g2U = _g2game("pUnread")
+    _g2U.bitness = None
+    with patch.object(_g2du, "scan", _g2scan), patch.object(_g2du, "running", lambda *a, **k: ""), \
+            patch.object(_g2ctl.watch, "procs", lambda: []), \
+            patch.object(_g2du.sources, "nvidia_dlss", lambda: _g2cat("310.9.1")):
+        _g2du._NEWEST = {}
+        _g2app = _G2App([_g2A, _g2B, _g2U])
+        _g2app.dlss_scan()
+        _g2app.pump(lambda: not _g2app.dlss_scanning)
+        _g2data = _g2app.dlss_state()
+        check("gate 2.0 #7: a game whose bitness is not read yet is neither read nor counted 32-bit",
+              sorted(n for n, _t in _g2reads) == ["pA", "pB"] and _g2data.get("x86") == 0
+              and str(_g2U.folder) not in _g2data.get("seen"), (_g2reads, _g2data.get("x86")))
+        _g2reads.clear()
+        _g2app.all_games.append(_g2C)
+        check("...one new game makes the read due", _g2app.dlss_due())
+        _g2app.dlss_scan()
+        _g2app.pump(lambda: not _g2app.dlss_scanning)
+        check("gate 2.0 #6: and that read reads the new game only, keeping the others' rows",
+              [n for n, _t in _g2reads] == ["pC"]
+              and {str(_g2A.folder), str(_g2B.folder), str(_g2C.folder)} <= set(_g2app.dlss_state()["games"]),
+              _g2reads)
+        _g2reads.clear()
+        (_g2A.folder / "patched.txt").write_bytes(b"x")
+        os.utime(_g2A.folder, (time.time() + 120, time.time() + 120))
+        _g2app.all_games.append(_g2D)
+        _g2app.dlss_scan()
+        _g2app.pump(lambda: not _g2app.dlss_scanning)
+        check("...a later one reads the new game and the one whose folder changed, not the rest",
+              sorted(n for n, _t in _g2reads) == ["pA", "pD"], _g2reads)
+        _g2reads.clear()
+        _g2app.dlss_scan(fresh=True)
+        _g2app.pump(lambda: not _g2app.dlss_scanning)
+        check("...and 'check again' still reads every game",
+              sorted(n for n, _t in _g2reads) == ["pA", "pB", "pC", "pD"], _g2reads)
+        _g2reads.clear()
+        # the first read held open, so every later call lands while it runs
+        _g2hold.clear()
+        _g2app.dlss_reread(_g2A)
+        _g2app.pump(lambda: len(_g2reads) >= 1, 5)
+        for _g in (_g2B, _g2C, _g2D, _g2A, _g2B, _g2C):
+            _g2app.dlss_reread(_g)
+        _g2hold.set()
+        _g2app.pump(lambda: not _g2app._dlss_rereading and len(_g2reads) >= 5, 15)
+        check("gate 2.0 #6: many re-reads in a row are one worker, a game queued twice is read once more "
+              "(A again: asked after its read began)",
+              [n for n, _t in _g2reads] == ["pA", "pB", "pC", "pD", "pA"]
+              and len({t for _n, t in _g2reads}) == 1, _g2reads)
+        # a library scan running: the page waits for it
+        _g2reads.clear()
+        _g2app.scanning = True
+        _g2app.dlss_scan(fresh=True)
+        check("gate 2.0 #7: no read of the games starts while the library is scanning, one waits for it",
+              not _g2app.dlss_scanning and len(_g2app.later) == 1, len(_g2app.later))
+        _g2app.dlss_scan(fresh=True)
+        _g2app.scanning = False
+        for _fn in list(_g2app.later):
+            _fn()
+        _g2app.pump(lambda: not _g2app.dlss_scanning)
+        check("...and it runs once when the scan ends", len(_g2reads) == 4 and len(_g2app.later) == 1,
+              (_g2reads, len(_g2app.later)))
+        # hidden games
+        _g2app.hid = {str(_g2B.folder)}
+        check("gate 2.0 #7: a hidden game is not on the page and not in update all",
+              _g2B not in _g2app._dlss_games()
+              and all(r["g"] is not _g2B for r in _g2app.dlss_rows() + _g2app.dlss_todo()))
+        _g2app.hid = set()
+        # the anti-cheat question names the file
+        _g2app.dlss_update(_g2B)
+        check("gate 2.0 #7: the anti-cheat question names the file it rests on",
+              _g2app.asked and "EasyAntiCheat" in _g2app.asked[-1], _g2app.asked)
+        # NVIDIA's newest is asked again on 'check again'
+        _g2du._NEWEST = {}
+        _g2du.newest()
+        with patch.object(_g2du.sources, "nvidia_dlss", lambda: _g2cat("310.10.0")):
+            _g2old = _g2du.newest().get("dlss", {}).get("version")
+            _g2new = _g2du.newest(refresh=True).get("dlss", {}).get("version")
+        with patch.object(_g2du.sources, "nvidia_dlss", lambda: {}):
+            _g2off = _g2du.newest(refresh=True)
+        check("gate 2.0 #7: 'check again' asks NVIDIA's list again; a failed ask keeps the last answer "
+              "for updates",
+              _g2old == "310.9.1" and _g2new == "310.10.0" and _g2off == {}
+              and _g2du.newest().get("dlss", {}).get("version") == "310.10.0", (_g2old, _g2new, _g2off))
+        check("...and the page's read passes 'check again' on",
+              "du.newest(refresh=fresh)" in src_of(_g2ctl.DlssControl.dlss_scan))
+    _g2du._NEWEST = {}
+
+    # -- 8. the covers switch holds mid-lookup ------------------------------------------------
+    _g2jpg = b"\xff\xd8\xff" + b"0" * 64
+    _g2calls = []
+
+    class _G2Resp:
+        headers = {}
+
+        def __init__(self, body):
+            self.body = body
+
+        def read(self, n=-1):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _g2urlopen(req, timeout=None, context=None):
+        _g2calls.append(getattr(req, "full_url", req))
+        prefs.set_(_g2cov.PREF, False)       # switched off while this request was out
+        return _G2Resp(_g2jpg)
+
+    prefs.set_(_g2cov.PREF, True)
+    _g2cg = games.Game(name="Covers Game", folder=_g2tmp / "covers_game", exe=None, source="Steam")
+    with patch.object(_g2cov.urllib.request, "urlopen", _g2urlopen):
+        _g2got = _g2cov.lookup(_g2cg, appid="1234")
+    check("gate 2.0 #8: switching online covers off stops a running lookup at its next request",
+          len(_g2calls) == 1, _g2calls)
+    check("...and nothing it downloaded, and no 'miss', is written",
+          not _g2got and not _g2cov.got(_g2cg) and not (_g2cov.dir_of(_g2cg) / "meta.json").exists(),
+          (_g2got, _g2cov.got(_g2cg)))
+    prefs.set_(_g2cov.PREF, True)
+    check("...while switched on, the same picture is kept",
+          _g2cov._store(_g2cg, "got-", "cover", _g2jpg) is not None)
+finally:
+    prefs.FILE, _g2cov.ROOT = _g2saved
+    shutil.rmtree(_g2tmp, ignore_errors=True)
+
+
+section("2.0 gate: toasts over redraws, the watcher's offer, kit bindings, one window")
+
+import ast as _g3ast  # noqa: E402
+import threading as _g3th  # noqa: E402
+import tkinter as _g3tk  # noqa: E402
+from types import SimpleNamespace as _G3NS  # noqa: E402
+from core import lookout as _g3look, verdicts as _g3v  # noqa: E402
+from core import log as _g3log  # noqa: E402
+from core.ui import app as _g3app, ctl_watch as _g3cw, kit as _g3kit, tray as _g3tray  # noqa: E402
+
+# -- verdicts: every fragment is a string the tool prints -----------------------------
+_g3texts = []
+for _g3f in sorted((SRC_DIR / "core" / "diagnose").glob("*.py")) + [SRC_DIR / "core" / "ui" / "ctl_game.py"]:
+    for _g3n in _g3ast.walk(_g3ast.parse(_g3f.read_text(encoding="utf8"))):
+        if isinstance(_g3n, _g3ast.Constant) and isinstance(_g3n.value, str):
+            _g3texts.append(_g3n.value.lower())
+        elif isinstance(_g3n, _g3ast.JoinedStr):
+            _g3texts.append("".join(v.value if isinstance(v, _g3ast.Constant) else "{}"
+                                    for v in _g3n.values).lower())
+_g3unprinted = [s for _n, _w, frs in _g3v.CHAIN for s in frs if not any(s.lower() in t for t in _g3texts)]
+check("gate 2.0 watcher: every verdict fragment in core/verdicts.py is a string the tool prints",
+      not _g3unprinted, _g3unprinted)
+
+_g3cases = [
+    ("Not started since the install - run the game once, then check again.", "3 ", True),
+    ("Not run yet, or OptiScaler did not load.", "3 ", True),
+    ("Loaded into F.E.A.R. 3.exe at 15 Sep 20:12, and no log was written - ReShade's Vulkan layer is "
+     "not reaching the game.", "3 ", True),
+    ("Game.exe ran at 15 Sep 20:12 and loaded nothing from this folder - try another proxy name.", "3 ", True),
+    ("It started and closed during start-up - ReShade attached and nothing else got to run.", "5 ", True),
+    ("The add-on runs but never produces a frame.", "5 ", True),
+    ("DLSS never started - the add-on crashed creating the feature.", "8 ", True),
+    ("The neural feature was refused by NGX (0xBAD00005).", "9 ", True),
+    ("Neural rendering stopped after it started.", "9 ", True),
+    ("ReShade's dxgi.dll is missing from the folder - reinstall.", "2 ", False),
+    ("ReShade's Vulkan layer is not registered - install again.", "2 ", False),
+    ("Inconclusive - the feed did not get far enough to tell.", "5 ", False),
+    ("The install went beside a launcher, not the game - install again beside the executable that draws.",
+     "3 ", False),
+    ("Not started since the install - run the game once, then check again. Another DLSS hook was loaded "
+     "beside ours too (Working DLSS Swapper) - test without it.", "3 ", False),
+    ("Another DLSS hook was loaded beside ours (The crash is in the Swapper) - move it out of the game "
+     "folder and test with ours alone.", "11 ", False),
+]
+_g3bad = [(v[:50], _g3v.stage(v)[0], _g3v.route_failed(v)) for v, st, rf in _g3cases
+          if not _g3v.stage(v)[0].startswith(st) or _g3v.route_failed(v) != rf]
+check("gate 2.0 watcher: the verdicts are staged where they belong and offer a route only when one "
+      "can help (#238 is not antivirus, a feed that cannot tell and a second hook offer none)",
+      not _g3bad, _g3bad)
+_g3base = json.loads((SRC_DIR / "_tools" / "verdict_baseline.json").read_text(encoding="utf8"))
+_g3unm = sorted({v["verdict"][:60] for v in _g3base.values() if _g3v.stage(v["verdict"])[0].startswith("unmapped")})
+check("gate 2.0 watcher: no verdict in the 84-report baseline is unmapped", not _g3unm, _g3unm)
+_g3sg = subprocess.run([sys.executable, str(SRC_DIR / "_tools" / "stuck_games.py"), "--json"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+                       cwd=str(SRC_DIR))
+check("...and _tools/stuck_games.py still runs on the chain", _g3sg.returncode == 0 and _g3sg.stdout.startswith("["),
+      _g3sg.stderr[-300:])
+
+# -- the watcher: a route for "nothing of ours loaded", kept, bounded, out of a job's way ----
+with _ui_isolated():
+    _g3g = _ui_game(installed=True, name="Watch Gate")
+    _g3c = _ui_ctl()
+    _g3c.all_games = [_g3g]
+    _g3rep = _G3NS(ran=False, never_ran=True, route="feeder", findings=[],
+                   verdict="Not started since the install - run the game once, then check again.")
+    check("gate 2.0 watcher: a game the watcher saw run and close with nothing loaded is offered the next route",
+          _g3c.next_route(_g3g, _g3rep, ["feeder", "optiscaler"], seen=True)[0] == "optiscaler",
+          _g3c.next_route(_g3g, _g3rep, ["feeder", "optiscaler"], seen=True))
+    _g3c.plans.clear()
+    check("...and the same verdict for a game nobody saw start offers nothing",
+          _g3c.next_route(_g3g, _g3rep, ["feeder", "optiscaler"], seen=False) == ("", ""))
+    _g3c.plans.clear()
+    _g3c._on_lookdiag((str(_g3g.install_dir), _g3rep, ["feeder", "optiscaler"]))
+    _g3saved = (prefs.get("last_verdicts") or {}).get(str(_g3g.install_dir)) or {}
+    check("gate 2.0 watcher: the offer is kept with the answer, so it outlives a restart",
+          _g3saved.get("next") == "optiscaler" and "feeder" in str(_g3saved.get("why"))
+          and _g3c.shell.toasts and "try optiscaler" in str(_g3c.shell.toasts[-1]), _g3saved)
+
+    # a job on the folder: the close is left to the job
+    _g3c.shell.toasts.clear()
+    _g3c.verdicts.clear()
+    _g3c.busy, _g3c.action, _g3c.game = True, "autopilot", _g3g
+    with _ui_threads(run=False) as _g3t:
+        _g3c._on_look(("closed", str(_g3g.install_dir), 60.0))
+        _g3c._on_lookdiag((str(_g3g.install_dir), _g3rep, ["feeder", "optiscaler"]))
+    check("gate 2.0 watcher: a game closing while an autopilot pass runs on it is not read, answered or offered",
+          not _g3t.started and not _g3c.shell.toasts and not _g3c.verdicts, (_g3t.names, _g3c.shell.toasts))
+    _g3c.busy, _g3c.action, _g3c.game = False, "", None
+    _g3c.dlss_job = str(_g3g.folder)
+    with _ui_threads(run=False) as _g3t:
+        _g3c._on_look(("closed", str(_g3g.install_dir), 60.0))
+    check("...nor while its DLSS is being updated", not _g3t.started, _g3t.names)
+    _g3c.dlss_job = None
+    with _ui_threads(run=False) as _g3t:
+        _g3c._on_look(("closed", str(_g3g.install_dir), 60.0))
+    check("...and with no job it is read as before", len(_g3t.started) == 1, _g3t.names)
+
+    # Windows' fault record: the watcher's answer agrees with "did it work?"
+    _g3crash = _G3NS(when="", exe="Game.exe", module="nvngx_dlssnr.dll")
+    _g3work = _G3NS(ran=True, never_ran=False, route="feeder", findings=[], verdict="Working.")
+    _g3asked = []
+    while not _g3c.q.empty():
+        _g3c.q.get_nowait()
+    with _ui_threads(run=True), \
+            patch.object(_g3cw.diagnose, "analyse", lambda *a, **k: _g3work), \
+            patch.object(_g3cw.diagnose, "windows_crash",
+                         lambda folder, exe: _g3asked.append(exe) or (_g3crash, ("t", "d"))):
+        _g3c._on_look(("closed", str(_g3g.install_dir), 60.0))
+    _g3msg = _g3c.q.get_nowait() if not _g3c.q.empty() else ("", ())
+    check("gate 2.0 watcher: a closed game's worker reads Windows' fault record beside its logs",
+          _g3msg[0] == "lookdiag" and len(_g3msg[1]) == 4 and _g3msg[1][3] is _g3crash
+          and _g3asked == ["Game.exe"], (_g3msg[0], _g3asked))
+    _g3c.shell.toasts.clear()
+    _g3c._on_lookdiag(_g3msg[1])
+    _g3e = _g3c.verdicts.get(str(_g3g.install_dir)) or {}
+    check("...and a 'Working' session that ended in a crash is answered as a crash, naming the module",
+          _g3e.get("ok") is False and str(_g3e.get("said")).startswith("It ran, and then the game crashed")
+          and "crashed in nvngx_dlssnr.dll" in str(_g3c.shell.toasts[-1:]), (_g3e, _g3c.shell.toasts[-1:]))
+    with patch.object(_g3cw, "crash_is_this_session", lambda c, d: False):
+        _g3c._on_lookdiag(_g3msg[1])
+    check("...while a fault from an earlier launch leaves it working",
+          (_g3c.verdicts.get(str(_g3g.install_dir)) or {}).get("ok") is True)
+
+    # try <route>: bounded, cancelled by another game, says when busy
+    _g3after = []
+    _g3c.root.after = lambda ms, fn=None, *a: _g3after.append(fn) or "after#1"
+    _g3auto = []
+    _g3c.autopilot = lambda routes=None, ask=True: _g3auto.append(routes)
+    _g3c.open_game = lambda g: setattr(_g3c, "game", g)
+    _g3c.support = None
+    _g3now = [1000.0]
+    with patch.object(_g3cw, "time", _G3NS(monotonic=lambda: _g3now[0])):
+        _g3c.try_next(_g3g, "optiscaler")
+        _g3after.pop()()                         # not read yet: waits
+        _g3now[0] += 11.0
+        _g3after.pop()()                         # past the wait: gives up, says so
+    check("gate 2.0 watcher: 'try <route>' stops waiting after its limit and says what to do",
+          not _g3after and not _g3auto and "press autopilot" in _g3c.shell.status_text, _g3c.shell.status_text)
+    _g3other = _ui_game(name="Other Game")
+    _g3c.support = None
+    _g3c.try_next(_g3g, "optiscaler")
+    _g3c.game = _g3other
+    _g3after.pop()()
+    _g3c.game, _g3c.support = _g3g, object()
+    check("...another game opened in the meantime cancels it, and a later visit installs nothing",
+          not _g3after and not _g3auto, (_g3after, _g3auto))
+    _g3c.busy, _g3c.action = True, "installing"
+    _g3c.try_next(_g3g, "optiscaler")
+    check("...and while the tool is busy it says so instead of doing nothing",
+          "busy with installing" in _g3c.shell.status_text and not _g3after, _g3c.shell.status_text)
+    _g3c.busy, _g3c.action = False, ""
+    _g3c.try_next(_g3g, "optiscaler")
+    _g3after.pop()()
+    check("...and a game whose page is read runs the pass from that route", len(_g3auto) == 1, _g3auto)
+
+    # a hand-edited plan that is not a dict
+    prefs.set_("autopilot_plans", {str(_g3g.install_dir): ["feeder"], "x": 3})
+    try:
+        _g3c2 = _ui_ctl()
+        _g3c2.all_games = [_g3g]
+        _g3np = _g3c2.next_route(_g3g, _g3rep, ["feeder", "optiscaler"])
+    except Exception as _g3e:
+        _g3np = repr(_g3e)
+    check("gate 2.0 watcher: a hand-edited autopilot_plans entry that is not a plan is ignored, not raised",
+          _g3np == ("optiscaler", _g3v.why_next(_g3rep.verdict, "feeder")), _g3np)
+_ui_cleanup()
+
+# -- the pump: only a job's own end clears busy ----------------------------------------
+_g3pump = _G3NS(q=__import__("queue").Queue(), busy=True,
+                wrote=[], root=_G3NS(after=lambda *a: None))
+_g3pump.write = lambda t, tag="": _g3pump.wrote.append(t)
+_g3pump.offer_crash_report = lambda: None
+_g3pump._pump = lambda: None
+
+
+def _g3raise(_p):
+    raise RuntimeError("drawing failed")
+
+
+_g3pump._on_prog = _g3raise
+_g3pump._on_installed = _g3raise
+with patch.object(_g3log, "exception", lambda *a, **k: None), patch.object(_g3log, "crashed", lambda: False):
+    _g3pump.q.put(("prog", (10, "copying")))
+    _g3app.App._pump(_g3pump)
+    _g3busy_prog = _g3pump.busy
+    _g3pump.q.put(("installed", None))
+    _g3app.App._pump(_g3pump)
+check("gate 2.0 pump: a progress handler that raises leaves busy set while the job's worker still writes",
+      _g3busy_prog is True, _g3busy_prog)
+check("...and a job-ending handler that raises still ends the job", _g3pump.busy is False)
+_g3kinds = set()
+for _g3f in (SRC_DIR / "core" / "ui").glob("ctl_*.py"):
+    _g3src = _g3f.read_text(encoding="utf8")
+    for _g3m in __import__("re").finditer(r"def _on_(\w+)\(self[^)]*\) -> None:\n((?:        .*\n|\n)+)", _g3src):
+        if "_idle()" in _g3m.group(2) or "busy = False" in _g3m.group(2) or "busy, self.action = False" in _g3m.group(2):
+            _g3kinds.add(_g3m.group(1))
+check("...and every handler that clears busy is one the pump knows ends a job",
+      _g3kinds and _g3kinds <= _g3app.JOB_ENDS, sorted(_g3kinds - _g3app.JOB_ENDS))
+
+# -- one window ---------------------------------------------------------------------------
+
+
+class _G3Win:
+    def __init__(self, err=0, main=0, visible=False, iconic=False, tray=0, boom=False):
+        self.calls, self.err, self.main, self.visible, self.iconic, self.tray = [], err, main, visible, iconic, tray
+        self.boom = boom
+
+    def __call__(self):
+        me = self
+        if self.boom:
+            raise OSError("no user32")
+
+        class K:
+            @staticmethod
+            def CreateMutexW(a, b, name):
+                me.calls.append(("mutex", name))
+                return 77
+
+        class U:
+            @staticmethod
+            def FindWindowW(cls, title):
+                me.calls.append(("find", cls, title))
+                return me.main if cls == "TkTopLevel" else me.tray
+
+            @staticmethod
+            def IsWindowVisible(h):
+                return me.visible
+
+            @staticmethod
+            def IsIconic(h):
+                return me.iconic
+
+            @staticmethod
+            def ShowWindow(h, n):
+                me.calls.append(("show", h, n))
+
+            @staticmethod
+            def SetForegroundWindow(h):
+                me.calls.append(("front", h))
+
+            @staticmethod
+            def PostMessageW(h, m, wp, lp):
+                me.calls.append(("post", h, m, lp))
+        return K, U, (lambda: me.err)
+
+
+_g3w = _G3Win(err=0)
+_g3first = _g3app.already_open(_g3w())
+check("gate 2.0 one window: the first copy takes the mutex and opens", _g3first is False and _g3app._mutex == 77
+      and ("mutex", "Local\\DLSS5AutopilotWindow") in _g3w.calls, _g3w.calls)
+_g3w = _G3Win(err=183, main=11, visible=True, iconic=True)
+check("...a second copy brings the open window forward (restored from the taskbar) and does not open",
+      _g3app.already_open(_g3w()) is True and ("show", 11, 9) in _g3w.calls and ("front", 11) in _g3w.calls,
+      _g3w.calls)
+_g3w = _G3Win(err=183, main=11, visible=False, tray=22)
+check("...a window hidden in the tray is opened the way a click on the icon opens it",
+      _g3app.already_open(_g3w()) is True
+      and ("post", 22, _g3tray.WM_TRAY, _g3tray.WM_LBUTTONUP) in _g3w.calls, _g3w.calls)
+check("...no window to find (still starting) or Windows' calls failing opens this copy rather than nothing",
+      _g3app.already_open(_G3Win(err=183)()) is False and _g3app.already_open(_G3Win(boom=True)) is False)
+_g3tkcalls = []
+with patch.object(_g3app, "already_open", lambda: True), patch.object(_g3log, "start", lambda *a: None), \
+        patch.object(_g3log, "write", lambda *a, **k: None), \
+        patch.object(_g3app.tk, "Tk", lambda *a, **k: _g3tkcalls.append(1) or (_ for _ in ()).throw(RuntimeError())):
+    _g3rc = _g3app.run()
+check("...and run() returns before any window is built when one is open", _g3rc == 0 and not _g3tkcalls, (_g3rc, _g3tkcalls))
+check("...and the check is in run() only, not in the CLI modes or App()",
+      "already_open" not in (SRC_DIR / "dlss5_autopilot.py").read_text(encoding="utf8")
+      and "already_open" not in src_of(_g3app.App.__init__))
+
+# -- the watcher switched off and on within one poll ------------------------------------
+_g3ticks = []
+_g3lk = _g3look.Lookout(lambda ev: None, poll=1.0)
+_g3lk._tick = lambda: _g3ticks.append(1)
+_g3lk.start()
+time.sleep(0.2)
+_g3lk.stop()
+_g3lk.start()
+time.sleep(1.4)
+_g3alive = _g3lk.alive
+_g3n = len(_g3ticks)
+_g3lk.stop()
+check("gate 2.0 watcher: off and on again within one poll leaves it watching", _g3alive and _g3n >= 2,
+      (_g3alive, _g3n))
+
+# -- settings: one writer at a time, never a half file, never {} written back -------------
+with _ui_isolated() as _g3d:
+    prefs.set_("installs", ["C:/Games/A"])
+    _g3errs = []
+
+    def _g3writer(i):
+        try:
+            for j in range(15):
+                prefs.set_(f"k{i}_{j}", j)
+        except Exception as e:
+            _g3errs.append(repr(e))
+    _g3ths = [_g3th.Thread(target=_g3writer, args=(i,)) for i in range(8)]
+    for _t in _g3ths:
+        _t.start()
+    for _t in _g3ths:
+        _t.join(60)
+    _g3all = prefs.load()
+    check("gate 2.0 settings: eight threads writing at once lose no key",
+          not _g3errs and all(f"k{i}_{j}" in _g3all for i in range(8) for j in range(15))
+          and _g3all.get("installs") == ["C:/Games/A"], (_g3errs, len(_g3all)))
+    _g3rep_calls = []
+    _g3real_replace = os.replace
+    with patch.object(prefs.os, "replace", lambda a, b: _g3rep_calls.append(str(b)) or _g3real_replace(a, b)):
+        prefs.set_("x", 1)
+    check("...written beside and moved over, so a reader never meets half a file",
+          _g3rep_calls == [str(prefs.FILE)] and not list(_g3d.glob("*.tmp")), (_g3rep_calls, list(_g3d.iterdir())))
+    prefs.FILE.write_text('{"installs": ["C:/Games/A"], "x"', encoding="utf8")
+    _g3got = prefs.get("installs")
+    prefs.set_("y", 2)
+    _g3after_write = json.loads(prefs.FILE.read_text(encoding="utf8"))
+    check("...a truncated file reads as the last good one, and the next write keeps the installs list",
+          _g3got == ["C:/Games/A"] and _g3after_write.get("installs") == ["C:/Games/A"]
+          and _g3after_write.get("y") == 2, (_g3got, _g3after_write))
+    prefs.FILE.write_text("[]", encoding="utf8")
+    try:
+        _g3lst = (prefs.get("installs"), prefs.get("nothing", "dflt"))
+    except Exception as _g3e:
+        _g3lst = repr(_g3e)
+    check("...and a settings.json that is a list does not break every read", _g3lst == (["C:/Games/A"], "dflt"),
+          _g3lst)
+
+# -- the real window: toasts, animations, bindings, widgets --------------------------------
+_g3live = _UiLive()
+try:
+    if not _g3live.ok:
+        check("gate 2.0 window: the window opened", False, _g3live.error)
+        raise RuntimeError
+    _g3a = _g3live.app
+    _g3sh = _g3a.shell
+    _g3cv = _g3live.canvas
+    _g3live.settle(200)
+    _g3pressed = []
+    _g3sh.toast("Watch Gate closed", "nothing loaded", actions=[("open", lambda: _g3pressed.append(1), True)],
+                timeout=0)
+    _g3tag = next(x.tag for x in _g3live.kit.layers if x.tag.startswith("toast"))
+    _g3sh.redraw()                       # what refresh("game") did right after the toast
+    _g3sliding = _g3sh.motion.busy(_g3tag)
+    _g3live.settle(450)
+    _g3order = list(_g3cv.find_all())
+    _g3top_page = max((_g3order.index(i) for i in _g3cv.find_withtag("page")), default=-1)
+    _g3low_toast = min((_g3order.index(i) for i in _g3cv.find_withtag(_g3tag)), default=-1)
+    check("gate 2.0 window: a toast survives a page redraw, above the page, still sliding in",
+          _g3low_toast > _g3top_page >= 0 and _g3sliding
+          and any(x.tag == _g3tag for x in _g3live.kit.layers), (_g3low_toast, _g3top_page, _g3sliding))
+    _g3live.press("open", "button")
+    _g3live.settle(400)
+    check("...and its button still works with a real click after the redraw",
+          _g3pressed == [1] and not _g3cv.find_withtag(_g3tag), (_g3pressed, _g3cv.find_withtag(_g3tag)))
+
+    # a menu opened after a toast stays open when the toast times out
+    _g3sh.toast("second", "", timeout=0)
+    _g3tag2 = next(x.tag for x in _g3live.kit.layers if x.tag.startswith("toast"))
+    _g3live.kit.menu(40, 40, [("one", lambda: None), ("two", lambda: None)])
+    _g3menu = _g3live.kit.top()
+    _g3sh._toast_out(_g3tag2)
+    _g3live.settle(400)
+    check("gate 2.0 window: a toast timing out closes only itself, not the menu opened after it",
+          _g3live.kit.top() is _g3menu and not _g3cv.find_withtag(_g3tag2), [x.tag for x in _g3live.kit.layers])
+    _g3live.kit.pop()
+    # a layer whose items are gone does not swallow the next click
+    _g3live.kit.push(_g3kit.Layer("gone_layer", lambda animate: None))
+    check("...and a layer whose items a redraw deleted is dropped instead of swallowing the next click",
+          _g3live.kit.top() is None, [x.tag for x in _g3live.kit.layers])
+
+    # the log drawer keeps opening through a redraw; a page animation stops
+    _g3sh.toggle_log(True)
+    _g3sh.motion.run("glow", 5000, lambda k: None)
+    _g3sh.redraw()
+    _g3drawer_moving, _g3glow = _g3sh.motion.busy("drawer"), _g3sh.motion.busy("glow")
+    _g3live.settle(400)
+    check("gate 2.0 window: a redraw stops the page's animations and not the log drawer opening",
+          _g3drawer_moving and not _g3glow and _g3sh.log_open and _g3sh.drawer.winfo_height() > 50,
+          (_g3drawer_moving, _g3glow, _g3sh.drawer.winfo_height()))
+    _g3sh.toggle_log(False)
+    _g3live.settle(300)
+
+    # bindings, commands, widgets and the registry do not grow with redraws
+    def _g3lines(c, tag, seq):
+        return len([ln for ln in str(c.tag_bind(tag, seq)).splitlines() if ln.strip()])
+    for _ in range(3):
+        _g3sh.draw_rail()
+    _g3cmds_rail = len(_g3sh.rail_c._tclCommands or [])
+    for _ in range(5):
+        _g3sh.draw_rail()
+    check("gate 2.0 window: a rail item redrawn five times has one hover handler, and no Tcl command leaks",
+          _g3lines(_g3sh.rail_c, "nav_help", "<Enter>") == 1 and _g3lines(_g3sh.rail_c, "nav_help", "<Button-1>") == 1
+          and len(_g3sh.rail_c._tclCommands or []) == _g3cmds_rail,
+          (_g3lines(_g3sh.rail_c, "nav_help", "<Enter>"), _g3cmds_rail, len(_g3sh.rail_c._tclCommands or [])))
+    _g3live.click("nav_help", canvas=_g3sh.rail_c)
+    check("...and the redrawn item still answers a real click", _g3live.kit.top() is not None
+          and str(_g3live.kit.top().tag).startswith("menu"))
+    _g3live.kit.close_all()
+    for _ in range(5):
+        _g3sh.status(f"status {_}")
+    _g3cmds_bottom = len(_g3sh.bottom_c._tclCommands or [])
+    for _ in range(5):
+        _g3sh.status(f"status again {_}")
+    check("...nor the status line's link, redrawn with every status", len(_g3sh.bottom_c._tclCommands or []) == _g3cmds_bottom,
+          (_g3cmds_bottom, len(_g3sh.bottom_c._tclCommands or [])))
+
+    _g3sh.show("library")
+    _g3live.settle(150)
+    for _ in range(2):
+        _g3sh.redraw()
+    _g3n_cmd, _g3n_reg = len(_g3cv._tclCommands or []), len(_g3live.kit.registry)
+    for _ in range(5):
+        _g3sh.redraw()
+    _g3entries = [w for w in _g3cv.winfo_children() if isinstance(w, _g3tk.Entry)]
+    check("gate 2.0 window: five library redraws leave one search box, and no handler or registry growth",
+          len(_g3entries) == 1 and len(_g3cv._tclCommands or []) == _g3n_cmd
+          and len(_g3live.kit.registry) == _g3n_reg,
+          (len(_g3entries), _g3n_cmd, len(_g3cv._tclCommands or []), _g3n_reg, len(_g3live.kit.registry)))
+    _g3field = _g3sh.pages["library"].field
+    check("...the search box still jumps to the games on Down, and a plain text box does not submit on it",
+          bool(_g3field.entry.bind("<Down>"))
+          and not _g3live.kit.field(10, 10, 200, "name", on_enter=lambda: None, glyph=None).entry.bind("<Down>"))
+    _g3sh.redraw()
+
+    # a dialog leaves no handler on the main window
+    _g3cfg = len([ln for ln in str(_g3live.root.bind("<Configure>")).splitlines() if ln.strip()])
+    # answered once the dialog is really up: a single timer that fired before
+    # the dialog existed left the whole suite waiting on it for hours
+    def _g3answer(tries=[0]):
+        if _g3sh.dialog is not None:
+            _g3sh.dialog._finish(True)
+        elif tries[0] < 200:
+            tries[0] += 1
+            _g3live.root.after(50, _g3answer)
+    _g3live.root.after(150, _g3answer)
+    _g3sh.ask("gate", "a question")
+    _g3live.root.after(150, lambda: _g3answer([0]))
+    _g3sh.ask("gate", "another")
+    _g3cfg2 = len([ln for ln in str(_g3live.root.bind("<Configure>")).splitlines() if ln.strip()])
+    check("gate 2.0 window: an answered dialog takes its handler on the main window with it",
+          _g3cfg2 == _g3cfg, (_g3cfg, _g3cfg2))
+except RuntimeError:
+    pass
+except Exception as _g3e:
+    # a raise here would end the suite with every later section unrun
+    check("gate 2.0 window: the window checks ran to their end", False, repr(_g3e))
+finally:
+    _g3live.close()
+
+
+section("2.0 gate: the game page, the library and remix - what the release review found")
+
+# Each check below failed on the tree the review read. They run the real
+# controllers (_ui_ctl) or the real window (_UiLive), never a source grep.
+import queue as _q_rg
+import threading as _thr_rg
+import zipfile as _zip_rg
+from core import autopilot as _ap_rg, mfg as _mfg_rg, remixdl as _rdl_rg  # noqa: E402
+from core.ui import ctl_game as _cg_rg, ctl_library as _cl_rg, remixpage as _rp_rg  # noqa: E402
+
+
+def _rg_main_counter(target, name):
+    """Wrap target.name; count only the calls made on the Tk (main) thread."""
+    real = getattr(target, name)
+    calls: list = []
+
+    def wrapped(*a, **k):
+        if _thr_rg.current_thread() is _thr_rg.main_thread():
+            calls.append(a[:1])
+        return real(*a, **k)
+    return patch.object(target, name, wrapped), calls
+
+
+_rg: dict = {}
+_live_rg = _UiLive()
+try:
+    if _live_rg.ok:
+        _a_rg = _live_rg.app
+        # --- 1: a settings redraw walks no folder on the Tk thread ------------
+        _a_rg.sm = _mfg_rg.ADA                       # an RTX 40 card: the mfg row's rule is asked
+        _g1_rg = _ui_game(name="Walked Game", api="DX12")
+        _live_rg.enter(_g1_rg, _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER))
+        _live_rg.press("settings", "button")
+        _live_rg.settle(300)
+        _p1, _walks1 = _rg_main_counter(dlss, "find_dlss_files")
+        _p2, _renodx1 = _rg_main_counter(prefs, "find_renodx")
+        with _p1, _p2:
+            _a_rg.shell.redraw()
+            _a_rg.set_setting("route", dlss.OPTI)
+            _a_rg.set_setting("route", dlss.FEEDER)
+            _a_rg.opts()
+            _live_rg.settle(100)
+        _rg["walks"], _rg["renodx"] = len(_walks1), len(_renodx1)
+
+        # --- 2: a burst of download progress is a few paints, not a redraw each
+        _a_rg.busy, _a_rg.action, _a_rg.job_game, _a_rg.progress = True, "installing", _g1_rg, (0, "starting")
+        _a_rg.shell.redraw()
+        _live_rg.settle(80)
+        _redraws2 = [0]
+        _real_redraw2 = _a_rg.shell.redraw
+
+        def _count_redraw2():
+            _redraws2[0] += 1
+            _real_redraw2()
+        _a_rg.shell.redraw = _count_redraw2
+        for _i in range(400):
+            _a_rg.q.put(("prog", (_i // 4, f"nvngx_dlssnr.zip - {_i} MB")))
+        _live_rg.settle(700)
+        _rg["prog_redraws"] = _redraws2[0]
+        _rg["prog_texts"] = [t for t in _live_rg.texts() if "installing" in t or "nvngx_dlssnr.zip" in t]
+        _a_rg._idle()
+        _a_rg.shell.show("video")
+        _live_rg.settle(80)
+        _a_rg.video_busy, _a_rg.video_progress = "downloading", (0, "starting")
+        _real_redraw2()
+        _live_rg.settle(60)
+        _redraws2[0] = 0
+        for _i in range(400):
+            _a_rg.q.put(("vprog", (_i // 4, f"ffmpeg - {_i} MB")))
+        _live_rg.settle(700)
+        _rg["vprog_redraws"] = _redraws2[0]
+        _rg["vprog_texts"] = [t for t in _live_rg.texts() if "downloading" in t]
+        _a_rg.video_busy, _a_rg.video_progress = "", None
+        del _a_rg.shell.redraw
+        _a_rg.open_game(_g1_rg)
+        _live_rg.settle(200)
+
+        # --- 6, 7, 8: an installed game with newer parts; warnings; an offer --
+        _g6_rg = _ui_game(name="Stale And Warned", installed=True)
+        _live_rg.enter(_g6_rg, _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER, native_dlss=True))
+        _a_rg.stale = {str(_g6_rg.install_dir): 2}
+        _a_rg.result = {"kind": "installed", "title": "installed",
+                        "warnings": ["dlssnr 310.2 does not match your card - installed anyway"]}
+        _a_rg.set_setting("keep_dlss", False)
+        _a_rg.verdicts[str(_g6_rg.install_dir)] = {"ok": False, "said": "never drew a frame", "fps": None,
+                                                   "next": "optiscaler", "why": "the feeder never saw a frame"}
+        _a_rg.shell.redraw()
+        _live_rg.settle(120)
+        _rg["buttons6"] = _live_rg.labels("button")
+        _rg["texts7"] = _live_rg.texts()
+        _tried8: list = []
+        _a_rg.try_next = lambda g, route: _tried8.append((g, route))
+        _rg["clicked8"] = _live_rg.press("try optiscaler", "button")
+        _rg["tried8"] = [(g is _g6_rg, r) for g, r in _tried8]
+        del _a_rg.try_next
+
+        # --- 13: the backdrop cache holds the page on screen only --------------
+        _a_rg.shell.show("library")
+        _live_rg.settle(100)
+        _page13 = _a_rg.game_page
+        _buf13 = bytes(4 * 4 * 3)
+        for _n13 in ("One", "Two", "Three"):
+            _g13 = _ui_game(name=f"Backdrop {_n13}")
+            _a_rg.game = _g13
+            _page13.width = 640
+            _page13.got_backdrop((f"{_g13.folder}|640", _buf13, 4, 4, 100, False))
+        _rg["backdrops"] = len(_page13.backdrops)
+        _rg["frames"] = max((len(v.get("frames") or []) for v in _page13.backdrops.values()), default=0)
+        _a_rg._on_cover((f"{_g13.folder}|4x4", _buf13, 4, 4, None, "cover"))
+        _c13 = _a_rg.covers.get(f"{_g13.folder}|4x4") or {}
+        _rg["cover_images"] = len(_c13.get("levels") or []) + (1 if _c13.get("dim") is not None else 0)
+
+        # --- 14: one library redraw reads each installed game's record once -----
+        _a_rg.all_games = [_g6_rg]
+        _a_rg._rows[(str(_g6_rg.folder), str(_g6_rg.exe))] = (True, "feeder", "beta", "beta", False, "")
+        _a_rg.shell.show("library")
+        _live_rg.settle(150)
+        _p14, _man14 = _rg_main_counter(diagnose, "_manifest")
+        with _p14:
+            _a_rg.set_filter("installed")
+        _rg["manifest_reads"] = len(_man14)
+        _a_rg.set_filter("all")
+finally:
+    _live_rg.close()
+    _ui_cleanup()
+
+check("1: a settings redraw, a route change and opts() walk no game folder on the Tk thread (RTX 40, DX12)",
+      _rg.get("walks") == 0, _rg.get("walks"))
+check("1: ...and read no renodx add-on in Downloads or on the Desktop there either",
+      _rg.get("renodx") == 0, _rg.get("renodx"))
+check("2: 400 download progress messages are a few redraws, not 400",
+      _rg.get("prog_redraws", 999) <= 3, _rg.get("prog_redraws"))
+check("2: ...and the button still shows where the download is, painted in place",
+      any("99%" in t for t in _rg.get("prog_texts", [])), _rg.get("prog_texts"))
+check("2: the video page's download progress the same way",
+      _rg.get("vprog_redraws", 999) <= 3 and any("99%" in t for t in _rg.get("vprog_texts", [])),
+      (_rg.get("vprog_redraws"), _rg.get("vprog_texts")))
+check("6: an installed game with newer parts: update (2) leads, play and did it work? stay beside it",
+      {"update (2)", "play", "did it work?"} <= set(_rg.get("buttons6", [])), _rg.get("buttons6"))
+check("7: the install's warnings are drawn in the result block, its title says how many",
+      any("does not match your card" in t for t in _rg.get("texts7", []))
+      and any(t.startswith("installed - 1 warning") for t in _rg.get("texts7", [])),
+      [t for t in _rg.get("texts7", []) if "install" in t][:6])
+check("7: unticking 'keep the game's own nvngx_dlss' puts the swap warning on the page, not only in the log",
+      any("nvngx_dlss.dll is swapped" in t for t in _rg.get("texts7", [])),
+      [t for t in _rg.get("texts7", []) if "swap" in t])
+check("8: a next route the watcher kept is offered on the page, with why, and the button tries it",
+      any("the feeder never saw a frame" in t for t in _rg.get("texts7", []))
+      and _rg.get("clicked8") and _rg.get("tried8") == [(True, "optiscaler")],
+      (_rg.get("clicked8"), _rg.get("tried8")))
+check("13: after three games the game page keeps one backdrop, of three frames",
+      _rg.get("backdrops") == 1 and 0 < _rg.get("frames", 0) <= 3, (_rg.get("backdrops"), _rg.get("frames")))
+check("13: a cover is three images (rest, hover, dimmed), not six",
+      0 < _rg.get("cover_images", 0) <= 3, _rg.get("cover_images"))
+check("14: one library redraw reads an installed game's record once",
+      _rg.get("manifest_reads") == 1, _rg.get("manifest_reads"))
+
+# --- 3: a job that ends while another game is on the page ------------------
+with _ui_isolated(), _ui_threads(run=False):
+    _c3 = _ui_ctl()
+    _gA3 = _ui_game(name="Job Game", installed=True)
+    _gB3 = _ui_game(name="Page Game", installed=True)
+    _c3.all_games = [_gA3, _gB3]
+    _c3.verdicts = {str(_gA3.install_dir): {"ok": False, "said": "x", "next": "optiscaler"},
+                    str(_gB3.install_dir): {"ok": True, "said": "Working."}}
+    _c3.game, _c3.settings, _c3.entry = _gB3, _c3.default_settings(_gB3), {}
+    _c3.support, _c3.route = _ui_support([dlss.FEEDER, dlss.OPTI], dlss.FEEDER), dlss.FEEDER
+    _rereads3: list = []
+    _c3.dlss_reread = lambda g: _rereads3.append(g)
+    _c3.busy, _c3.action, _c3.job_game = True, "autopilot", _gA3
+    _out3 = _ap_rg.Outcome(attempts=[_ap_rg.Attempt(route=dlss.OPTI, installed=True, started=True,
+                                                    ours=["dxgi.dll"])],
+                           route=dlss.OPTI, ok=True, installed=dlss.OPTI)
+    _c3.q.put(("autopilot", (_gA3, _out3, ([dlss.FEEDER, dlss.OPTI], [dlss.FEEDER]), [dlss.FEEDER, dlss.OPTI])))
+    _c3.pump()
+    _s3 = {"route": _c3.route, "result": _c3.result, "planA": _c3.plans.get(str(_gA3.install_dir)),
+           "planB": _c3.plans.get(str(_gB3.install_dir)), "vA": str(_gA3.install_dir) in _c3.verdicts,
+           "vB": str(_gB3.install_dir) in _c3.verdicts, "rereads": [g.name for g in _rereads3], "busy": _c3.busy}
+    _c3.busy, _c3.action, _c3.job_game = True, "installing", _gA3
+    _c3.steps = []
+    _c3.q.put(("installed", (_gA3, installer.Report(written=["dxgi.dll"]), dlss.OPTI)))
+    _c3.q.put(("fail", (_gA3, "it stopped")))
+    _c3.pump()
+    _s3.update(result2=_c3.result, steps2=list(_c3.steps))
+check("3: an autopilot pass that ends while another game is open leaves that page's route and result alone",
+      _s3["route"] == dlss.FEEDER and _s3["result"] is None and not _s3["busy"], _s3)
+check("3: ...and its plan, verdict and DLSS re-read go to the game it ran on",
+      (_s3["planA"] or {}).get("tried") == [dlss.FEEDER, dlss.OPTI] and _s3["planB"] is None
+      and not _s3["vA"] and _s3["vB"] and _s3["rereads"] == ["Job Game"], _s3)
+check("3: an install or a failure of another game does not write this page's result or steps",
+      _s3["result2"] is None and _s3["steps2"] == [], (_s3["result2"], _s3["steps2"]))
+_ui_cleanup()
+
+# --- 4: an installed game opens on the route and settings it was installed with
+with _ui_isolated(), _ui_threads(run=False) as _th4:
+    _s4: dict = {}
+    for _name4, _api4, _man4, _offer4 in (
+            ("On OptiScaler", "DX12", {"path": dlss.OPTI, "proxy": "winmm.dll", "opti_build": optiscaler.PRESR,
+                                       "nr": {"WorkingScale": 0.6, "Preset": 2, "Style": 1}, "fg": True,
+                                       "keep_game_dlss": False}, [dlss.FEEDER, dlss.OPTI]),
+            ("On The Feeder", "DX11", {"path": dlss.FEEDER, "proxy": "d3d11.dll", "provider": 2,
+                                       "feeder_tag": "v0.13.1", "feed_cfg": {"work_resolution": 80, "preset": 5}},
+                                     [dlss.BRIDGE, dlss.FEEDER])):
+        _g4 = _ui_game(name=_name4, api=_api4, manifest=_man4)
+        _c4 = _ui_ctl()
+        _c4.sm, _c4.catalog = 120, {"dlss": []}
+        _sup4 = _ui_support(_offer4, _offer4[0])
+        with patch.object(dlss, "detect", lambda *a, **k: _sup4), patch.object(gpu, "driver_version", lambda: ""), \
+                patch.object(community, "fetch", lambda *a, **k: {}):
+            _c4.enter_game(_g4)
+            _th4.go()
+            _c4.pump()
+        _inst4 = installer.options_from_manifest(_g4.install_dir)
+        _o4 = _c4.opts()
+        _f4 = ("path", "provider", "opti_proxy", "opti_build", "fg", "keep_game_dlss", "feeder_tag",
+               "reshade_proxy", "dxvk", "remix_swap")
+        _s4[_name4] = {"diff": [f for f in _f4 if getattr(_o4, f) != getattr(_inst4, f)],
+                       "nr": _o4.nr, "feed": _o4.feed, "route": _c4.route}
+check("4: a game installed on a route that is not the recommended one opens on that route, and opts() is "
+      "what was installed (OptiScaler: build, proxy name, frame generation, model dials, the DLSS swap)",
+      _s4["On OptiScaler"]["route"] == dlss.OPTI and _s4["On OptiScaler"]["diff"] == []
+      and _s4["On OptiScaler"]["nr"].get("WorkingScale") == 0.6 and _s4["On OptiScaler"]["nr"].get("Preset") == 2
+      and _s4["On OptiScaler"]["nr"].get("Style") == 1, _s4.get("On OptiScaler"))
+check("4: ...and on the feeder: provider, the pinned feeder, ReShade's name, work area and preset",
+      _s4["On The Feeder"]["route"] == dlss.FEEDER and _s4["On The Feeder"]["diff"] == []
+      and _s4["On The Feeder"]["feed"] == {"work_resolution": 80, "preset": 5}, _s4.get("On The Feeder"))
+_ui_cleanup()
+
+# --- 5: 'update (n)' is asked for when the window opens on the saved library
+with _ui_isolated(), _ui_threads(run=False):
+    _c5 = _ui_ctl()
+    _g5 = _ui_game(name="Cached And Installed", installed=True)
+    _asked5: list = []
+    _c5.check_stale = lambda: _asked5.append(1)
+    with patch.object(_cl_rg.library, "load", lambda *a, **k: ([_g5], {}, [])):
+        _opened5 = _c5.load_cached()
+check("5: opening on the saved library asks which installed games have newer parts",
+      _opened5 and _asked5 == [1], (_opened5, _asked5))
+_ui_cleanup()
+
+# --- 7 (F10), 8 (update all), 10, 11 on the controllers -----------------------
+with _ui_isolated(), _ui_threads(run=False):
+    _c7 = _ui_ctl(_ui_game(name="F10 On The Page"), _ui_support([dlss.FEEDER, dlss.STANDALONE], dlss.FEEDER))
+    prefs.set_("overlay_key", reshade_ini.OVERLAY_KEYS["F10"])
+    _c7.apply_route(dlss.STANDALONE)
+    _notes7 = list(_c7.notes)
+    prefs.set_("overlay_key", 0)
+    check("7: the F10 clash is a note on the page as well as a line in the log",
+          any("F10" in t for _k, t in _notes7), _notes7)
+
+    _c8 = _ui_ctl()
+    _g8 = _ui_game(name="Updated All", installed=True)
+    _c8.all_games = [_g8]
+    _c8.verdicts = {str(_g8.install_dir): {"ok": False, "said": "x", "next": "optiscaler", "why": "y"}}
+    _rereads8: list = []
+    _c8.dlss_reread = lambda g: _rereads8.append(g)
+    _c8.busy = True
+    _c8.q.put(("updated_all", (1, [_g8], 0)))
+    _c8.pump()
+    check("8: update all drops the updated games' old verdicts (and offers) and reads their DLSS again",
+          str(_g8.install_dir) not in _c8.verdicts and _rereads8 == [_g8] and not _c8.busy
+          and str(_g8.install_dir) not in (prefs.get("last_verdicts") or {}),
+          (list(_c8.verdicts), [g.name for g in _rereads8]))
+
+    _c10 = _ui_ctl()
+    _g10a, _g10b = _ui_game(name="Store One"), _ui_game(name="Store Two")
+    with patch.object(games, "same_exe_once", lambda gs: [g for g in gs if g.name != "Store Two"]):
+        _c10._on_scanned(([_g10a, _g10b], {}))
+    check("10: a rescan keeps what same_exe_once returned (one entry per executable)",
+          [g.name for g in _c10.all_games if g.name.startswith("Store")] == ["Store One"],
+          [g.name for g in _c10.all_games])
+
+    _c11 = _ui_ctl()
+    _g11 = _ui_game(name="Anti Cheat Installed", installed=True)
+    _g11b = _ui_game(name="Was Another Api", api="DX12", manifest={"api": "DX11"})
+    _c11.all_games = [_g11, _g11b]
+    _c11._rows[(str(_g11.folder), str(_g11.exe))] = (True, "feeder", "beta", "beta", True, "EasyAntiCheat")
+    _c11._rows[(str(_g11b.folder), str(_g11b.exe))] = (True, "feeder", "beta", "beta", False, "")
+    _c11.stale = {str(_g11.install_dir): 2}
+    _card11 = _c11.card(_g11)
+    _todo11, _skip11 = _c11.update_targets()
+    _c11.update_all()
+    check("11: an installed game with anti-cheat stays in the installed and update tabs",
+          _card11["kind"] == "update" and _c11.counts()["installed"] == 2, (_card11, _c11.counts()))
+    check("11: update all leaves it alone and says why; its count is what it acts on",
+          _todo11 == [] and _skip11 == [_g11] and _c11.shell.asked == []
+          and "anti-cheat" in _c11.shell.status_text and not _c11.busy,
+          ([g.name for g in _todo11], [g.name for g in _skip11], _c11.shell.status_text))
+    check("11: a 'reinstall - was DX11' card is not counted as something update all does",
+          _c11.card(_g11b)["status"].startswith("reinstall") and _g11b not in _todo11)
+
+    # 14: covers landing together are one library redraw
+    _c14 = _ui_ctl()
+    _jobs14: list = []
+    _c14.root.after = lambda ms, fn=None, *a: (_jobs14.append(fn), f"after#{len(_jobs14)}")[1]
+    _redraws14: list = []
+    _c14.refresh = lambda page, soft=False: _redraws14.append(page)
+    for _i in range(20):
+        _c14._on_cover((f"X:/g{_i}|4x4", None, 4, 4, None, "none"))
+    _before14 = list(_redraws14)
+    for _fn in list(_jobs14):
+        _fn and _fn()
+    check("14: twenty covers landing are one library redraw, 100 ms later",
+          _before14 == [] and len(_jobs14) == 1 and _redraws14 == ["library"], (_before14, len(_jobs14), _redraws14))
+
+    # L8: a hand-edited settings file
+    prefs.set_("games_sort", [["name"], True])
+    prefs.set_("target_fps", 1e999)
+    try:
+        _c_l8 = _ui_ctl(_ui_game(name="Odd Settings"), _ui_support([dlss.FEEDER], dlss.FEEDER))
+        _c_l8.set_setting("target_fps", "1e999")
+        _l8 = (_c_l8.sort, _c_l8.target(), _c_l8.target_fps)
+    except Exception as _e8:
+        _l8 = repr(_e8)
+    check("L8: games_sort [[...]] and target_fps 1e999 in settings do not stop the window",
+          _l8 == ("", 0, ""), _l8)
+
+    # a built-in profile carries the work area, not a route
+    _c_pf = _ui_ctl(_ui_game(name="Balanced Here", api="DX12"), _ui_support([dlss.FEEDER, dlss.OPTI], dlss.OPTI))
+    _c_pf.apply_route(dlss.OPTI)
+    _c_pf.load_profile("Balanced")
+    check("profiles: a built-in preset on OptiScaler keeps the route and sets the work area",
+          _c_pf.route == dlss.OPTI and _c_pf.settings["workres"] == 75 and _c_pf.opts().nr.get("WorkingScale") == 0.75,
+          (_c_pf.route, _c_pf.settings.get("workres")))
+_ui_cleanup()
+
+# --- L2: the session start reads two small parts of a big ReShade.log -----------
+_d_l2 = Path(tempfile.mkdtemp(prefix="rg_l2_"))
+(_d_l2 / "ReShade.log").write_text("12:00:00:000 [1] first\n" + ("x" * 120 + "\n") * 4000
+                                   + "12:10:30:500 [1] last\n", encoding="utf8")
+_mt_l2 = (_d_l2 / "ReShade.log").stat().st_mtime
+_start_l2 = _cg_rg.session_start(_d_l2)
+check("L2: the session start comes from the first and last stamped lines of a 480 KB log",
+      abs(_start_l2 - (_mt_l2 - 630.5)) < 0.01, (_start_l2, _mt_l2))
+shutil.rmtree(_d_l2, ignore_errors=True)
+
+# --- 12: a remix mod with more than 50 files -------------------------------
+_d12 = Path(tempfile.mkdtemp(prefix="rg_remix_"))
+_zip12 = _d12 / "mod.zip"
+with _zip_rg.ZipFile(_zip12, "w") as _z12:
+    _z12.writestr("Mod/.trex/d3d9.dll", b"MZ")
+    _z12.writestr("Mod/rtx.conf", b"x")
+    for _i in range(60):
+        _z12.writestr(f"Mod/rtx-remix/mods/f{_i:02d}.dds", b"d")
+_fetch12 = _rdl_rg.Fetch(tag="v1", name="mod.zip", url="u", size=_zip12.stat().st_size)
+
+
+def _dl12(url, name, progress=None, **k):
+    if progress:
+        progress(512, 1024)
+        progress(1024, 1024)
+    return _zip12
+
+
+_game12 = _d12 / "game"
+_game12.mkdir()
+_calls12: list = []
+
+
+def _raises12(done, total):
+    _calls12.append((done, total))
+    if isinstance(total, str) and done:
+        raise RuntimeError("stopped part way")
+
+
+with patch.object(_rdl_rg, "resolve", lambda url: _fetch12), patch.object(_rdl_rg.net, "download", _dl12), \
+        patch.object(_rdl_rg.remix, "is_remix_game", lambda d: False):
+    try:
+        _rdl_rg.install("https://github.com/a/b", _game12, progress=_raises12)
+        _stop12 = ""
+    except RuntimeError as _e12:
+        _stop12 = str(_e12)
+    _rec12 = _rdl_rg.installed(_game12) or {}
+    check("12: a remix install that stops part way still writes its record of what it wrote",
+          _stop12 == "stopped part way" and len(_rec12.get("files") or []) >= 26
+          and all((_game12 / f).is_file() for f in _rec12.get("files") or []) and _rec12.get("complete") is False,
+          (_stop12, len(_rec12.get("files") or []), _rec12.get("complete")))
+    shutil.rmtree(_game12, ignore_errors=True)
+    _game12.mkdir()
+
+    class _App12:
+        busy, action, job_game = False, "", None
+        q = _q_rg.Queue()
+
+        def write(self, *a):
+            pass
+
+    class _Shell12:
+        page = None
+        infos: list = []
+
+        def redraw(self):
+            pass
+
+        def info(self, *a):
+            self.infos.append(a)
+
+        status = info
+
+    _pg12 = object.__new__(_rp_rg.RemixPage)
+    _pg12.app, _pg12.shell, _pg12.busy_mod, _pg12.state = _App12(), _Shell12(), None, {}
+    _mod12 = remixlist.MODS[0]
+    _th12 = _UiThreads(run=True)
+    with patch.object(_rp_rg, "threading", _th12):
+        _pg12.app.busy = True
+        _pg12.fetch(_mod12, games.Game(name="Remix", folder=_game12, exe=_game12 / "x.exe"))
+        _refused12 = _pg12.busy_mod is None and _pg12.app.q.empty() and bool(_Shell12.infos)
+        _pg12.app.busy = False
+        _pg12.fetch(_mod12, games.Game(name="Remix", folder=_game12, exe=_game12 / "x.exe"))
+    _msgs12 = []
+    while not _pg12.app.q.empty():
+        _msgs12.append(_pg12.app.q.get_nowait())
+    _done12 = [p for k, p in _msgs12 if k == "remixed"]
+    if _done12:
+        _pg12.done(_done12[0])
+    check("12: the remix page takes both progress shapes, and a 60-file mod installs with its record",
+          len(_done12) == 1 and _done12[0][1] is True and len((_rdl_rg.installed(_game12) or {}).get("files") or []) == 62
+          and not _pg12.app.busy, ([d[1:] for d in _done12], [p for k, p in _msgs12 if k == "log"][:3]))
+    check("12: a remix fetch is refused while another job is running",
+          _refused12, _Shell12.infos)
+shutil.rmtree(_d12, ignore_errors=True)
+
+
+section("2.0: the driver version is the installed driver's, not an old registry entry (#242)")
+
+# #242 ran 616.92 and was told to update from 581.80: the display class in
+# the registry keeps an entry for every NVIDIA card or driver the PC ever
+# had, and the first one found was used.
+check("32.0.16.1692 reads as 616.92, 32.0.15.8180 as 581.80",
+      gpu._marketing("32.0.16.1692") == "616.92" and gpu._marketing("32.0.15.8180") == "581.80")
+_drv_root = Path(tempfile.mkdtemp(prefix="drv_"))
+(_drv_root / "System32").mkdir()
+(_drv_root / "System32" / "nvapi64.dll").write_bytes(b"MZ")
+gpu._DRIVER.clear()
+try:
+    import winreg as _wr242
+    with patch.dict(os.environ, {"SystemRoot": str(_drv_root)}), \
+            patch.object(pe, "file_version", lambda p: "32.0.16.1692"), \
+            patch.object(_wr242, "OpenKey", side_effect=AssertionError("registry read")):
+        _drv_a = gpu.driver_version()
+    gpu._DRIVER.clear()
+    (_drv_root / "System32" / "nvapi64.dll").unlink()
+
+    class _Key:
+        def __init__(self, name):
+            self.name = name
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    _entries = {"0000": ("NVIDIA GeForce RTX 3080", "32.0.15.8180"),
+                "0001": ("AMD Radeon(TM) Graphics", "32.0.21045.5002"),
+                "0002": ("NVIDIA GeForce RTX 4060 Ti", "32.0.16.1692")}
+    _order = list(_entries)
+
+    def _enum(root, i):
+        if i >= len(_order):
+            raise OSError("no more")
+        return _order[i]
+
+    def _open(root, sub=None):
+        return _Key(sub)
+
+    def _query(k, name):
+        desc, ver = _entries[k.name]
+        return (desc if name == "DriverDesc" else ver, 1)
+    with patch.dict(os.environ, {"SystemRoot": str(_drv_root)}), \
+            patch.object(_wr242, "OpenKey", _open), patch.object(_wr242, "EnumKey", _enum), \
+            patch.object(_wr242, "QueryValueEx", _query):
+        _drv_b = gpu.driver_version()
+finally:
+    gpu._DRIVER.clear()
+    shutil.rmtree(_drv_root, ignore_errors=True)
+check("the driver's own nvapi64.dll answers, and the registry is not read", _drv_a == "616.92", _drv_a)
+check("without it, the newest of several NVIDIA registry entries is taken, not the first", _drv_b == "616.92", _drv_b)
 
 
 section("RESULT")

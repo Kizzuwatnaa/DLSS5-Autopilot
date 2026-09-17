@@ -18,6 +18,7 @@ from pathlib import Path
 from . import model
 from .model import *  # noqa: F401,F403
 from .evidence import *  # noqa: F401,F403
+from .process import _loaded_note
 
 
 __all__ = [
@@ -216,7 +217,7 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
                      f"(0x{pres.group(1).upper()}).",
                 "OptiScaler replaces the swapchain to put its upscaler in the "
                 "frame, and this game's own Present call would not accept it, "
-                "so the engine stops. Two things on the install page, one at "
+                "so the engine stops. Two things in the game's settings, one at "
                 "a time: the 'loads as' dropdown (winmm.dll instead of "
                 "dxgi.dll, so OptiScaler enters later), then another entry in "
                 "'optiscaler build'. If both close the same way, the feeder "
@@ -406,9 +407,9 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
     if not _remix.runtime_flavour(trex):
         rep.add(BAD, "This Remix runtime has no DLSS 5 neural pass.",
                 "NVIDIA's own runtime has none, and neither does this one, so "
-                "there is nothing to switch on. Install again with 'swap the "
-                "Remix runtime' ticked to replace it with a community build "
-                "that has the pass.")
+                "there is nothing to switch on. Turn on 'swap the Remix "
+                "runtime' and install again to replace it with a community "
+                "build that has the pass.")
         rep.verdict = "The Remix runtime here has no neural pass - use the swap option."
         return rep
     if key and conf.is_file() and not _remix.option_set(conf, key):
@@ -444,7 +445,7 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
                     "game that reaches Remix through a translator of its own "
                     "(d3d8to9, dgVoodoo) is not a case it is tested on. "
                     "Press uninstall - the mod's runtime comes back - and "
-                    "install again with 'swap the Remix runtime' unticked.")
+                    "install again with 'swap the Remix runtime' off.")
             rep.verdict = ("The swapped Remix runtime is the first suspect - "
                            "uninstall puts the mod's own back.")
             # The game left no log of its own: the Windows fault record is
@@ -625,7 +626,8 @@ def _analyse_upstream(rep: Report, rtext: str) -> Report:
     if on and on.group(1) == "0":
         rep.add(BAD, "Neural rendering is switched off.",
                 "The add-on loaded with enabled=0. Open the ReShade overlay "
-                "(Home) and switch it on in the " + UPSTREAM_PANEL + ".")
+                f"({_overlay_key('Home')}) and switch it on in the "
+                + UPSTREAM_PANEL + ".")
         rep.verdict = "Loaded, but switched off in the " + UPSTREAM_PANEL + "."
         return rep
 
@@ -643,7 +645,8 @@ def _analyse_upstream(rep: Report, rtext: str) -> Report:
         return rep
 
     rep.add(INFO, "The add-on loaded and set itself up, but never ran.",
-            "Open the ReShade overlay (Home), the " + UPSTREAM_PANEL +
+            f"Open the ReShade overlay ({_overlay_key('Home')}), the "
+            + UPSTREAM_PANEL +
             ", and check it is switched on; then play a few seconds and "
             "check again.")
     rep.verdict = "Loaded and set up; no neural frame yet."

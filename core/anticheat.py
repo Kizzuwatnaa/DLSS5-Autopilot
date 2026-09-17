@@ -14,25 +14,38 @@ useful than letting someone install and wonder.
 
 Detection is by file, not by name list, so it covers games nobody has told us
 about.
+
+A marker matches a whole word of a file or folder name, never the middle of
+one: "vanguard" inside some asset name told the owner of Rise of the Tomb
+Raider - a single-player game - that Riot Vanguard was installed (#187). And
+every warning names the file it rests on, so a wrong one can be checked.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# (marker fragment, product). Matched case-insensitively against file and
-# directory names in and around the install folder.
+# (marker, product). Matched case-insensitively against file and directory
+# names in and around the install folder, as a whole word: the character
+# before it and after it (digits after it aside, mhyprot3.sys) must not be a
+# letter or digit.
 MARKERS: tuple[tuple[str, str], ...] = (
     ("beservice", "BattlEye"),
     ("beclient", "BattlEye"),
     ("battleye", "BattlEye"),
     ("easyanticheat", "Easy Anti-Cheat"),
     ("eac_launcher", "Easy Anti-Cheat"),
+    # Riot Vanguard installs under Program Files, never into a game folder;
+    # only its own two files are evidence, not the word.
     ("vgk.sys", "Riot Vanguard"),
-    ("vanguard", "Riot Vanguard"),
+    ("vgc.exe", "Riot Vanguard"),
     ("gameguard", "nProtect GameGuard"),
     ("xigncode", "XIGNCODE3"),
-    ("denuvo", "Denuvo Anti-Cheat"),
+    # Denuvo alone is the copy protection most single-player games carry;
+    # only its anti-cheat product is anti-cheat.
+    ("denuvo-anti-cheat", "Denuvo Anti-Cheat"),
+    ("denuvoanticheat", "Denuvo Anti-Cheat"),
     ("punkbuster", "PunkBuster"),
     ("faceit", "FACEIT AC"),
     ("ricochet", "Ricochet"),
@@ -56,6 +69,20 @@ MARKERS: tuple[tuple[str, str], ...] = (
 )
 
 
+_PATTERNS = tuple(
+    (re.compile(r"(?<![a-z0-9])" + re.escape(frag) + r"\d*(?![a-z0-9])"), product)
+    for frag, product in MARKERS)
+
+
+def match(name: str) -> str | None:
+    """The product a file or folder name belongs to, or None."""
+    low = name.lower()
+    for pat, product in _PATTERNS:
+        if pat.search(low):
+            return product
+    return None
+
+
 @dataclass
 class Finding:
     products: list[str]
@@ -69,6 +96,11 @@ class Finding:
     def summary(self) -> str:
         return ", ".join(sorted(set(self.products)))
 
+    @property
+    def found(self) -> str:
+        """The files the warning rests on, for the person to check."""
+        return "found: " + ", ".join(self.evidence) if self.evidence else ""
+
 
 def detect(install_dir: Path, folder: Path) -> Finding:
     """Look for anti-cheat in and just below the game folder."""
@@ -76,12 +108,10 @@ def detect(install_dir: Path, folder: Path) -> Finding:
     evidence: list[str] = []
 
     def look(p: Path) -> None:
-        low = p.name.lower()
-        for frag, product in MARKERS:
-            if frag in low:
-                products.append(product)
-                evidence.append(p.name)
-                return
+        product = match(p.name)
+        if product:
+            products.append(product)
+            evidence.append(p.name)
 
     for d in {install_dir, folder}:
         if not d.is_dir():
@@ -133,4 +163,4 @@ def swap_message(name: str) -> str:
 
 
 def message(f: Finding) -> str:
-    return WARNING.format(product=f.summary)
+    return WARNING.format(product=f.summary) + (f"\n\n({f.found})" if f.found else "")

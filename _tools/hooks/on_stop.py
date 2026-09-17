@@ -7,7 +7,7 @@ was asked, because asking depended on remembering.
 Three questions, about three seconds, and it says nothing at all unless one
 of them fails - a hook that talks every time is a hook nobody reads:
 
-  1. does every core module still compile?
+  1. does every core module (core/ui too) still compile?
   2. does the suite itself still parse?
   3. do all 84 saved reports still get the answers they got?
 
@@ -30,14 +30,21 @@ def _parses(p: Path) -> str:
         ast.parse(p.read_text(encoding="utf8", errors="replace"), str(p))
         return ""
     except SyntaxError as e:
-        return f"{p.name}: line {e.lineno}: {e.msg}"
+        try:
+            name = p.relative_to(SRC).as_posix()     # core/ui/app.py, not app.py
+        except ValueError:
+            name = p.name
+        return f"{name}: line {e.lineno}: {e.msg}"
     except OSError:
         return ""
 
 
 def main() -> int:
     bad: list[str] = []
-    for p in sorted((SRC / "core").glob("*.py")):
+    # recursive: the 2.0 window lives in core/ui, and a flat glob never saw it
+    for p in sorted((SRC / "core").rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
         why = _parses(p)
         if why:
             bad.append(why)

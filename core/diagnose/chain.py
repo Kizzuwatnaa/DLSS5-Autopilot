@@ -19,6 +19,8 @@ from pathlib import Path
 from . import model
 from .model import *  # noqa: F401,F403
 from .evidence import *  # noqa: F401,F403
+from .process import *  # noqa: F401,F403
+from .helper import *  # noqa: F401,F403
 from .routes import *  # noqa: F401,F403
 from .body import *  # noqa: F401,F403
 
@@ -211,6 +213,12 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
     # Before any of the guesses: if the game is up right now, none of this
     # has to be guessed at all.
     if _live_evidence(install_dir, man, rep):
+        # The process was seen, so every guess written above is no longer
+        # true, and #238's report printed one right above the sighting. The
+        # same prune the window applies to a fault record, from the same
+        # list - one fragment against the title alone left the rest of them
+        # on the screen (gate 1.9.1).
+        rep.findings = model.drop_never_ran(rep.findings)
         return rep
 
     # Then: an executable that is a launcher explains all of them, and it is
@@ -258,11 +266,11 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 "the game draws with OpenGL. Unity and other engines name "
                 "OpenGL among their backends yet draw with Direct3D on "
                 "Windows, and then nothing here is ever loaded. Pick "
-                "DirectX 11 or DirectX 12 in the 'graphics api' dropdown on the "
-                "install page and install again.")
+                "DirectX 11 or DirectX 12 in the 'graphics api' dropdown in the "
+                "game's settings and install again.")
     elif proxy:
         alt = "d3d11.dll" if proxy.lower() == "dxgi.dll" else "dxgi.dll"
-        # The same mapping the crash override uses (gui._crash_overrides):
+        # The same mapping the crash override uses (ctl_game.crash_overrides):
         # optiscaler calls it 'loads as'; the feeder carries its
         # motion-vector provider on that row and the ReShade name on one of
         # its own; Remix installs no ReShade, so there is nothing to name.
@@ -276,7 +284,7 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                  else "'reshade loads as'")
         rep.add(INFO, f"Or the {app} ignores {proxy}.",
                 f"Some load the graphics DLLs in a way that skips {proxy}. "
-                + (f"Set {_drop} to {alt} on the install page and install "
+                + (f"Set {_drop} to {alt} in the game's settings and install "
                    f"again." if _drop else
                    f"This route does not offer the proxy name on the page; "
                    f"if the {app} starts with nothing else in the folder, "
@@ -306,6 +314,15 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
     crashed is indistinguishable from one that never happened by looking at
     the folder, and the traceback is the only thing that tells them apart.
     """
+    # A second DLSS hook in the session is said in the verdict, whichever
+    # of the dozen returns below produced it (#250) - so it is applied here,
+    # once, rather than beside each of them.
+    foreign: list[str] = []
+    return _name_foreign_hooks(_analyse(install_dir, last_error, foreign),
+                               foreign)
+
+
+def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
     rep = Report()
     since = _installed_at(install_dir)
     man = _manifest(install_dir)
@@ -331,8 +348,8 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                     "install writes. Either nothing has been installed for "
                     "this game yet, or it went to a different folder - the "
                     "one the executable that actually runs sits in. Pick the "
-                    "game and press INSTALL, then play once and press this "
-                    "again.")
+                    "game and press install, then play once and press did it "
+                    "work? again.")
             rep.verdict = "Nothing is installed in this folder - install first."
             rep.ran = False
             rep.never_ran = True
@@ -364,7 +381,7 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                     "Whatever had not been written yet is missing, which is "
                     "why files are listed as gone. Free up a few hundred MB "
                     "on the game's drive and on the one %LOCALAPPDATA% is on, "
-                    "then press INSTALL again.")
+                    "then install again.")
             rep.verdict = "The drive was full - free up space and install again."
             return rep
         stopped = next((n[len(_net.STOP_NOTE):] for n in (man.get("notes") or [])
@@ -393,11 +410,11 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                    if isinstance(f, str) and not (install_dir / f).is_file()]
         rep.add(BAD, "The install did not finish.",
                 "This folder was set up part of the way and the install "
-                "stopped - the install log on this page says why, and it is "
+                "stopped - the log says why, and it is "
                 "usually a download that was cut off. "
                 + (f"Written and now gone: {', '.join(missing[:4])}"
                    f"{', ...' if len(missing) > 4 else ''}. " if missing else "")
-                + "Press INSTALL again (whatever downloaded is kept, so it "
+                + "Install again (whatever downloaded is kept, so it "
                   "carries on), or 'uninstall' first if you would rather "
                   "start from a clean folder.")
         rep.verdict = "The install never finished - install again."
@@ -558,6 +575,10 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
             ours = [want]
         others = [n for n in loaded if n not in ours and "Feed" not in n
                   and "Bridge" not in n]
+        # "Beside ours" only when ours is in the session: with it missing,
+        # "did not load" below is the answer and this would bury it.
+        if ours or any("Feed" in n for n in loaded):
+            foreign[:] = _foreign_hooks(loaded, rep.route)
         # With the feed loaded, the feed's own log is the judge of the add-on
         # (it names it, or says it is missing); this check is for the routes
         # where nothing else would notice.
@@ -601,10 +622,24 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                     "the standalone route. Install this route again - it moves "
                     "them aside - or switch to the standalone route.")
         elif others:
-            rep.add(WARN, "Other ReShade add-ons are loaded: " + ", ".join(others),
-                    "They share the swap chain with the DLSS 5 add-on. If the "
-                    "picture flickers or nothing happens, move their .addon64 "
-                    "files out of the folder and test with ours alone.")
+            files = [h for h in hooks if h.lower().endswith((".addon64", ".addon32"))]
+            if foreign:
+                rep.add(BAD, "Another DLSS hook was loaded beside ours: "
+                             + ", ".join(foreign),
+                        "ReShade loads every add-on in the game folder, and "
+                        "this one is another DLSS tool's: it works on the same "
+                        "frame and the same NGX calls as this route's add-on, "
+                        "and two at once end in nothing happening, flicker or "
+                        "a crash. Move it out of the folder (or uninstall the "
+                        "tool that put it there) and test with ours alone."
+                        + (f" In this folder: {', '.join(files[:3])}."
+                           if files else ""))
+            plain = [n for n in others if n not in foreign]
+            if plain:
+                rep.add(WARN, "Other ReShade add-ons are loaded: " + ", ".join(plain),
+                        "They share the swap chain with the DLSS 5 add-on. If the "
+                        "picture flickers or nothing happens, move their .addon64 "
+                        "files out of the folder and test with ours alone.")
         # Two builds of one add-on in the same launch. ReShade loads every
         # .addon64 in the folder, so a copy left behind under another name -
         # renamed by hand to keep it, or dropped in by another mod - is
@@ -645,7 +680,7 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                     "renderer, or a game that links D3D11 but draws with "
                     "D3D9); the feed needs D3D11/12. Either switch the game "
                     "or player to D3D11/12, or set 'graphics api' to DirectX 9 "
-                    "on the install page and install again - the game then "
+                    "in the game's settings and install again - the game then "
                     "goes through DXVK like any DirectX 9 title.")
 
         # The game exiting before a swapchain exists means it never got to
@@ -723,7 +758,7 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                         "starts on its own, then install again"
                         + ("." if rep.route in ("feeder", "remix", "optiscaler")
                            else " and try another name in the 'reshade loads "
-                                "as' dropdown on the install page."))
+                                "as' dropdown in the game's settings."))
             else:
                 rep.add(BAD, "ReShade loaded no add-ons.",
                         "Add-on support requires the ReShade build WITH "
@@ -735,8 +770,8 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                         "loads when the game draws with OpenGL; Unity and "
                         "other engines name OpenGL among their backends yet "
                         "draw with Direct3D on Windows. Pick DirectX 11 or "
-                        "DirectX 12 in the 'graphics api' dropdown on the "
-                        "install page and install again.")
+                        "DirectX 12 in the 'graphics api' dropdown in the "
+                        "game's settings and install again.")
         _shader_failures(rtext, provider_tech, rep)
         if "untested build" in rtext:
             rep.add(WARN, "The add-on flagged your nvngx_dlssnr as an untested build.",
@@ -1033,7 +1068,7 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                     "The stack is " + " <- ".join(chain[:5]) + ". The feed "
                     "asked the runtime for a neural frame and the runtime "
                     "faulted, so no feeder build changes it. Try another "
-                    "'dlss5 add-on' build from the install page, and if the "
+                    "'dlss5 add-on' build in the game's settings, and if the "
                     "driver is 616.64 or newer, "
                     + ("try the standalone route (it does not load "
                        "renodx-dlss5), or " if _sa else "")
@@ -1045,13 +1080,20 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
             rep.add(BAD, f"The feed recorded a crash ({rec.group(1)}) while "
                          f"{rec.group(2).strip()}.",
                     "That is the feeder itself going down, not the install."
-                    + named + pacer_note + " Two things to try from the "
-                    "install page: another 'feeder build' from the list (the "
+                    + named + pacer_note + " Two things to try in the "
+                    "game's settings: another 'feeder build' from the list (the "
                     "stable release is the long-tested 32-bit path), and a "
                     "lower work resolution. Then report it to the "
                     "DLSS5-Feeder project with this log" + where + ".")
             rep.verdict = ("The feed crashed after starting - a feeder bug; "
                            "try another feeder build.")
+        return rep
+    # The helper's own fault outranks everything the game's side says after
+    # it: #252's helper logged "feature ready" and the picture was frozen,
+    # and one delivered frame in the feed log would have read "Working.".
+    # Only its log from the same launch speaks.
+    if htext and _same_launch(feed, host) and (not since or _fresh(host, since)) \
+            and _helper_verdict(rep, htext):
         return rep
     crash = re.search(r"CreateFeature raised exception (0x[0-9A-Fa-f]+)", joined)
     ready = re.search(r"feature ready[:\s]", joined)
@@ -1248,8 +1290,8 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                 first = cfgp.read_text(encoding="utf8",
                                        errors="replace").split("\n", 1)[0].strip()
                 vals = _fc.read(cfgp)
-                on = (int(_fc.number(vals.get("synth", 0))) != 0
-                      or int(_fc.number(vals.get("synth_after", 0))) > 0)
+                # synth is the switch; synth_after is only its delay
+                on = int(_fc.number(vals.get("synth", 0))) != 0
             except (OSError, ValueError, OverflowError):
                 first, on = _fc.BRIDGE_STAMP, True
             if first != _fc.BRIDGE_STAMP and not on:
@@ -1276,7 +1318,11 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
         # that can only be written once a runtime exists: a technique state, a
         # build, a frame. With any of those present this is a different answer
         # and the findings above have already given it.
-        if _attached(text) \
+        # Frames shipped to the 64-bit helper prove a runtime existed, so
+        # that answer is read first (#252).
+        if _fed_the_helper(rep, text):
+            pass
+        elif _attached(text) \
                 and not _FEED_GOT_RUNTIME.search(text or "") \
                 and not _FEED_GOT_RUNTIME.search(htext or ""):
             rep.add(WARN, "The add-on loaded, and ReShade never handed it an "

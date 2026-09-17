@@ -1,0 +1,56 @@
+**Did the game start?** it started and ran
+
+**What happened**
+After DLSS5 host initiates, visuals in-game immediately freeze. Toggling the feed effect off allows visuals to play again, indicating the host itself is what's frozen.
+
+Disabling Neural Rendering allows host to operate, and does appear to be provide some form of frame generation, but as there's no way to configure it, static objects (such as UI) tend to blur while the scene moves.
+
+Game is set to Borderless Window.
+
+dxgi.dll is redirected to system32 instead of the provided version, which may(?) be part of the problem. My driver is also 616.92, which has known issues, so I'm rolling back to try another test.
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 616.92
+- game: world of warcraft 3.3.5a
+- exe: wow.exe
+- arch/api: 32-bit / DX9 (set by hand (detected OpenGL))
+- route: feeder
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: registered
+- DLSS 5 add-on switch: NeuralUplift=1
+
+**What ran, and what it loaded** (seen at 16 Sep 04:42)
+- process: wow.exe
+- DLLs in the process: 141
+- ours, loaded: d3d9.dll, dlss5-feed.addon32
+- same name, loaded from elsewhere: C:\WINDOWS\system32\dxgi.dll
+- ours, not loaded: nvngx_dlss.dll, nvngx_dlssnr.dll, renodx-dlss5.addon64
+
+**ReShade.log**
+```
+04:42:23:259 [42144] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 1.16.0-beta.2" v0.0.0.0 using ReShade API version 20.
+```
+
+**dlss5-feed.log**
+```
+...
+04:42:30.430  [feed] present probe: 0 presents / 116 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:31.316  [feed] present probe: 0 presents / 236 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:32.198  [feed] present probe: 0 presents / 356 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:33.081  [feed] present probe: 0 presents / 476 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:33.968  [feed] present probe: 0 presents / 596 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:34.556  [feed32] 600 frames: feed CPU 0.06 ms/frame | frame interval 7.37 ms (135.7 fps) | feed is 1% of the frame | pipe write 0.01 ms mean, 0.04 ms worst
+04:42:39.941  [feed] present probe rebased: the feed was paused for 5296 ms and the game kept presenting; those presents are not surplus
+04:42:40.781  [feed] present probe: 0 presents / 27 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:44.791  [feed] present probe: 0 presents / 147 frames fed since the last rebase (0.00x), last swapchain image index 0
+04:42:48.809  [feed] present probe: 0 presents / 267 frames fed since the last rebase (0.00x), last swapchain image index 0
+```

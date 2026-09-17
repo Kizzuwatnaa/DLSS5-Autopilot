@@ -365,8 +365,8 @@ def ensure_processor(folder: Path, on_prog=None, on_log=None) -> Path:
         ensure_ffmpeg(folder, on_prog=on_prog, on_log=on_log)
     for dll in ("nvngx_dlssnr.dll", "nvngx_dlss.dll"):
         if not (folder / dll).is_file():
-            raise RuntimeError(f"{dll} is not beside the player - press INSTALL "
-                               f"first, the processor uses the same runtimes")
+            raise RuntimeError(f"{dll} is not beside the player - press install on "
+                               f"the player first, the processor uses the same runtimes")
     return d / PROCESSOR_EXE
 
 

@@ -251,8 +251,8 @@ def main() -> int:
         _console()
         print(update.VERSION)
         return 0
-    from core import gui
-    return gui.run()
+    from core.ui import app
+    return app.run()
 
 
 if __name__ == "__main__":

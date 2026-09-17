@@ -417,6 +417,49 @@
   "route": "upstream",
   "verdict": "Not started since the install - run the game once, then check again."
  },
+ "225": {
+  "findings": [
+   "ok: Neural rendering is running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Working."
+ },
+ "231": {
+  "findings": [
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.92: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "OptiScaler loaded; neural rendering not switched on."
+ },
+ "232": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "ok: The add-on hooked the game's DLSS call (5 entry points).",
+   "info: The add-on loaded and set itself up, but never ran."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Loaded and set up; no neural frame yet."
+ },
+ "238": {
+  "findings": [
+   "warn: At 15 Sep 20:12 our files WERE loaded in F.E.A.R. 3.exe, and ReShade's Vulkan layer wrote no log."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Loaded into F.E.A.R. 3.exe at 15 Sep 20:12, and no log was written - ReShade's Vulkan layer is not reaching the game."
+ },
  "24": {
   "findings": [
    "bad: ReShade failed to compile: DLSS5_Feed.fx",
@@ -435,6 +478,31 @@
   "ran": false,
   "route": "",
   "verdict": "Nothing is installed in this folder - install first."
+ },
+ "250": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Swapper Overlay 0.0.0.0",
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "bad: Another DLSS hook was loaded beside ours: DLSS 5 Swapper Overlay",
+   "info: This route leaves no frame log of its own.",
+   "info: If the picture only gets darker, switch the route to native.",
+   "ok: When it last ran (16 Sep 14:16), the process had dxgi.dll, nvngx.dll.addon64 loaded.",
+   "info: nvngx_dlssnr.dll was not loaded yet when the game was seen."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "Another DLSS hook was loaded beside ours (DLSS 5 Swapper Overlay) - move it out of the game folder and test with ours alone."
+ },
+ "252": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.16.0-beta.2 0.0.0.0",
+   "warn: The game is handing its frames to the 64-bit helper (600 frames at 135.7 fps)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Frames reach the 64-bit helper, and only its own log says what came back - look in host64\\dlss5-feed-host.log."
  },
  "26": {
   "findings": [

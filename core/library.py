@@ -101,7 +101,7 @@ def _from_json(d: dict):
     if g.exe_warning:
         g.bitness = games.bitness_override(g.folder)
         g.api = g.api_detected or "?"
-    # A graphics API set by hand on the install page lives in the settings,
+    # A graphics API set by hand lives in the settings,
     # not in the library, and it has to win here exactly as it wins in
     # games.enrich(): a cached game that came back with its DETECTED renderer
     # would be installed for the wrong one, which is the fault that dropdown

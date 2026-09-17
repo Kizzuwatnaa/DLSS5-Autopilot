@@ -9,7 +9,12 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core import dlss, games, gui, installer, library, log, pe, prefs
+from core import dlss, games, installer, library, log, net, pe, prefs, watch
+from core.lookout import Lookout
+from core.ui import app as uiapp
+from core.ui import ctl_library, kit
+from core.ui.ctl_game import GameControl
+from core.ui.ctl_library import LibraryControl
 
 
 class ScanTests(unittest.TestCase):
@@ -173,39 +178,28 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(resolved.call_count, 2)
 
     def make_app(self):
-        # Exercise the real worker, queue pump and row rendering without a
-        # display, hardware probes, downloads or the user's settings.
-        app = gui.App.__new__(gui.App)
+        # The real library controller, worker and queue pump of the 2.0
+        # window, without a display, hardware probes, downloads or the
+        # user's settings: only the drawing (shell) is a double.
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.object(prefs, "FILE", self.root / "settings.json"))
+        # The real worker saves the library; this machine's saved library is
+        # not the test's to overwrite.
+        stack.enter_context(patch.object(library, "FILE", self.root / "library.json"))
+        stack.enter_context(patch.object(ctl_library.video, "known", return_value=None))
+        stack.enter_context(patch.object(log, "crashed", return_value=False))
+        app = uiapp.App.__new__(uiapp.App)
         app.q = queue.Queue()
         app.root = Mock()
         app.busy = False
-        app._rows = {}
-        app._recheck = set()   # games a worker is re-reading; _fill skips those
-        app._fill_job = None
         app._crash_shown = False
-        app.all_games = []
-        app.stale = {}
-        app.step = 2
-        app.arch = Mock(get=Mock(return_value="all"))
-        app.search = Mock(get=Mock(return_value=""))
-        app.only_installed = None
-        app.tree = Mock(get_children=Mock(return_value=()))
-        app.scanlbl = Mock()
-        app.btn_next = Mock()
-        app.status = Mock()
-        app.detail = Mock()
-        app.protected_details = Mock()
-        app._sm = Mock(return_value=120)
-        app._check_stale = Mock()
-        app.rail_rows = []
-        stack = ExitStack()
-        self.addCleanup(stack.close)
-        stack.enter_context(patch.object(gui.video, "known", return_value=None))
-        stack.enter_context(patch.object(log, "crashed", return_value=False))
-        # The real worker saves the library; this machine's saved library is
-        # not the test's to overwrite.
-        stack.enter_context(patch.object(gui.library, "FILE",
-                                         self.root / "library.json"))
+        app._library_init()
+        app.sm = 120
+        app.shell = Mock()
+        app.refresh = Mock()
+        app.check_stale = Mock()
+        app.watch_refresh = Mock()
         return app
 
     def test_scan_checks_compatibility_off_ui_thread_and_renders_cached_rows(self):
@@ -223,9 +217,9 @@ class ScanTests(unittest.TestCase):
             workers.append(thread)
             return thread
 
-        # **_kw: the window passes the driver in by keyword now, and a
-        # double that only took positionals turned 'runs off the UI
-        # thread' into a dead worker and a two-second timeout.
+        # **_kw: the window passes the driver in by keyword, and a double
+        # that only took positionals turned 'runs off the UI thread' into a
+        # dead worker and a two-second timeout.
         def slow_detect(*_args, **_kw):
             worker_ids.append(threading.get_ident())
             entered.set()
@@ -233,36 +227,45 @@ class ScanTests(unittest.TestCase):
                 raise AssertionError("test did not release the detector")
             return dlss.Support(recommended=dlss.FEEDER)
 
-        with patch.object(games, "scan_all", return_value=[game]), \
-                patch.object(gui.threading, "Thread", side_effect=thread_factory), \
-                patch.object(dlss, "detect", side_effect=slow_detect) as detect:
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(games, "scan_all", return_value=[game]))
+            stack.enter_context(patch.object(ctl_library.threading, "Thread", side_effect=thread_factory))
+            detect = stack.enter_context(patch.object(dlss, "detect", side_effect=slow_detect))
             try:
-                app._scan()
+                app.scan(full=True)
                 self.assertTrue(entered.wait(2))
                 # Tk can still pump progress while detection is blocked.
                 app._pump()
-                self.assertTrue(app.busy)
-                app.scanlbl.config.assert_called_with(text="checking compatibility... 1/1: game")
+                self.assertTrue(app.scanning)
+                app.shell.busy.assert_called_with("checking compatibility 1/1: game")
+                self.assertEqual(app.card(game)["status"], "reading...")
             finally:
                 release.set()
                 for worker in workers:
                     worker.join(5)
             self.assertTrue(all(not worker.is_alive() for worker in workers))
             app._pump()
-            app._fill()  # Filtering/refilling must use the same prepared rows.
+            # Filtering, counting and redrawing the cards use the rows the
+            # scan prepared; none of them reads the game folder again.
+            for _ in range(2):
+                self.assertEqual(app.visible(), [game])
+                app.counts()
+                card = app.card(game)
             self.assertEqual(detect.call_count, 1)
         self.assertEqual(len(worker_ids), 1)
         self.assertNotEqual(worker_ids[0], ui_thread)
+        self.assertFalse(app.scanning)
         self.assertFalse(app.busy)
-        self.assertEqual(app.shown, [game])
-        self.assertEqual(app.tree.insert.call_args.kwargs["values"][-1], "ready")
-        app.status.config.assert_called_with(text="scan complete")
+        self.assertEqual(card["kind"], "ready")
+        self.assertNotIn(card["status"], ("reading...", "unreadable", "unsupported"))
+        app.shell.status.assert_called_with("scan complete: 1 games")
+        app.shell.busy.assert_called_with("")
 
     def test_unreadable_games_do_not_trigger_another_folder_search(self):
         g = games.Game("Locked game", self.root, exe=self.root / "Game.exe",
                        error=games.XBOX_HINT)
         with patch.object(dlss, "detect") as detect:
-            row = gui.App._inspect_row(g, 120)
+            row = LibraryControl.inspect_row(g, 120)
         detect.assert_not_called()
         self.assertFalse(row[0])
         self.assertEqual(installer.check_supported(g), (False, games.XBOX_HINT))
@@ -274,12 +277,17 @@ class ScanTests(unittest.TestCase):
         app.all_games = [manual]
         with patch.object(dlss, "detect", side_effect=OSError("drive removed")), \
                 patch.object(log, "exception"):
-            failed_row = gui.App._inspect_row(bad, 120)
+            failed_row = LibraryControl.inspect_row(bad, 120)
+        self.assertIs(failed_row, False)
         app.q.put(("scanned", ([bad], {(str(bad.folder), str(bad.exe)): failed_row})))
         app._pump()
         self.assertEqual(app.all_games, [manual, bad])
-        self.assertEqual(app.tree.insert.call_count, 2)
-        self.assertEqual(app.tree.insert.call_args.kwargs["values"][-1], "unreadable")
+        app._read_rows = Mock()      # the manual game's row would be read on a worker
+        self.assertEqual(app.visible(), [manual, bad])
+        self.assertEqual(app.card(bad)["status"], "unreadable")
+        self.assertEqual(app.card(manual)["status"], "reading...")
+        app.shell.status.assert_called_with("scan complete: 2 games")
+        self.assertFalse(app.scanning)
         self.assertFalse(app.busy)
 
 
@@ -401,7 +409,7 @@ class ProtectedXboxTests(unittest.TestCase):
         games.set_api_override(self.folder, "DX12")
         g = games.manual(self.folder)
         key = (str(g.folder), str(g.exe))
-        library.save([g], {key: gui.App._inspect_row(g, 89)}, "test", 89)
+        library.save([g], {key: LibraryControl.inspect_row(g, 89)}, "test", 89)
         cached, rows, changed = library.load("test", 89)
         self.assertEqual((cached[0].bitness, cached[0].api), (64, "DX12"))
         self.assertEqual(cached[0].exe_warning, games.XBOX_EXE_HINT)
@@ -436,47 +444,157 @@ class ProtectedXboxTests(unittest.TestCase):
         self.assertFalse(g.exe_warning)
         self.assertFalse(installer.check_supported(g)[0])
 
-    def test_gui_metadata_choices_refresh_status_and_navigation(self):
+    def test_window_asks_both_choices_before_install_and_relocks_when_cleared(self):
+        """The 2.0 window, driven with real clicks: a protected Xbox exe shows
+        'architecture' and 'graphics api' in its settings, the install button
+        stays disabled (entry["ok"]) until both are chosen, no click or key
+        gets past it, and clearing a choice locks it again (#157)."""
+        import time
+        import tkinter as tk
         self.protect()
-        with patch.object(gui.App, "_check_update"):
-            root = gui.tk.Tk()
-            self.addCleanup(root.destroy)
-            root.withdraw()
-            app = gui.App(root)
+        self.stack.enter_context(patch.object(watch, "RECORD", self.root / "sightings.json"))
+        self.stack.enter_context(patch.object(log, "FILE", self.root / "autopilot.log"))
+        self.stack.enter_context(patch.object(log, "exception"))
+        self.stack.enter_context(patch.object(net, "CACHE", self.root / "cache"))
+        self.stack.enter_context(patch("urllib.request.urlopen", side_effect=OSError("offline test")))
+        self.stack.enter_context(patch("webbrowser.open"))
+        for owner, name in ((uiapp.App, "check_update"), (LibraryControl, "load_board"),
+                            (LibraryControl, "load_shared"), (GameControl, "load_catalog"),
+                            (Lookout, "start")):
+            self.stack.enter_context(patch.object(owner, name, lambda *_a, **_k: None))
+        made = []
+        real_button = kit.Kit.button
+
+        def record_button(k, *a, **kw):
+            b = real_button(k, *a, **kw)
+            made.append(b)
+            return b
+        self.stack.enter_context(patch.object(kit.Kit, "button", record_button))
+        install = self.stack.enter_context(patch.object(
+            installer, "install", side_effect=installer.InstallError("the test stops here")))
+
+        root = tk.Tk()
+        self.addCleanup(root.destroy)
         failures = []
         root.report_callback_exception = lambda *args: failures.append(args)
+        try:
+            root.attributes("-alpha", 0.0)      # mapped, so events land, but not shown
+        except tk.TclError:
+            pass
+        app = uiapp.App(root)
+        root.state("normal")
+        root.geometry("1400x900+10+10")
+        shell, c, k = app.shell, app.shell.content, app.shell.kit
+
+        def pump(seconds=0.25):
+            end = time.monotonic() + seconds
+            while True:
+                root.update()
+                if time.monotonic() >= end:
+                    return
+                time.sleep(0.01)
+
+        def until(cond, seconds=15.0):
+            end = time.monotonic() + seconds
+            while time.monotonic() < end and not cond():
+                pump(0.02)
+            return cond()
+
+        def click(tag, canvas=c):
+            box = canvas.bbox(tag)
+            self.assertTrue(box, f"{tag} is not drawn")
+            top, bottom = canvas.canvasy(0), canvas.canvasy(canvas.winfo_height())
+            if box[1] < top or box[3] > bottom:
+                shell.scroll_to(max(0, box[1] - 120))
+                pump(0.05)
+                box = canvas.bbox(tag)
+            x = int((box[0] + box[2]) / 2 - canvas.canvasx(0))
+            y = int((box[1] + box[3]) / 2 - canvas.canvasy(0))
+            for seq in ("<Motion>", "<Button-1>", "<ButtonRelease-1>"):
+                canvas.event_generate(seq, x=x, y=y, when="now")
+            pump()
+
+        def button(label):
+            tag = k.find(label, "button")
+            return tag, next((b for b in reversed(made) if b.tag == tag), None)
+
+        def choose(label, index):
+            tag = k.find(label, "dropdown")
+            self.assertIsNotNone(tag, f"no '{label}' dropdown on the page")
+            click(tag)
+            menu = k.top()
+            self.assertTrue(menu is not None and menu.tag.startswith("menu"), f"'{label}' opened no menu")
+            click(f"{menu.tag}r{index}")
+            self.assertTrue(until(lambda: not app.entering and app.support is not None),
+                            "the game was not read again after the choice")
+            pump(0.2)
+
+        def locked():
+            tag, b = button("install")
+            return b is not None and not b.enabled and not app.entry["ok"][0]
+
+        pump(0.5)
         g = games.manual(self.folder)
         app.all_games = [g]
-        app._show(2)
-        app._fill()
-        app.tree.selection_set("0")
-        app._on_pick()
-        self.assertEqual(app.protected_details.winfo_manager(), "pack")
-        self.assertEqual(app.tree.item("0", "values")[-1], "choose architecture / api")
-        app._next()   # double-click cannot bypass the disabled button
-        self.assertEqual(app.step, 2)
-        app.cb_bitness.current(1)
-        app.cb_bitness.event_generate("<<ComboboxSelected>>")
+        shell.redraw()
+        self.assertTrue(until(lambda: app.card(g)["kind"] != "reading"))
+        self.assertEqual(app.card(g)["status"], "choose architecture / api")
+        shell.redraw()
+        pump()
+        click("card0")
+        self.assertEqual(shell.page.name, "game")
+        self.assertTrue(until(lambda: not app.entering and app.support is not None))
+        pump(0.3)
+        self.assertTrue(app.game_page.settings_open, "the settings did not open for the choices")
+        self.assertIsNotNone(k.find("architecture", "dropdown"))
+        self.assertIsNotNone(k.find("graphics api", "dropdown"))
+        self.assertTrue(locked(), "install is possible before anything was chosen")
+
+        # no click, double-click or key gets past the disabled button
+        tag, _b = button("install")
+        click(tag)
+        box = c.bbox(tag)
+        x, y = int((box[0] + box[2]) / 2 - c.canvasx(0)), int((box[1] + box[3]) / 2 - c.canvasy(0))
+        for _ in range(2):          # a double click is two presses in a row
+            c.event_generate("<Button-1>", x=x, y=y, when="now")
+            c.event_generate("<ButtonRelease-1>", x=x, y=y, when="now")
+        for keysym in ("Return", "space", "KP_Enter"):
+            c.focus_force()
+            root.event_generate(f"<{keysym}>", when="now")
+        pump()
+        install.assert_not_called()
+        self.assertFalse(app.busy)
+        self.assertEqual(app.action, "")
+
+        choose("architecture", 1)                       # 64-bit
         self.assertEqual(g.bitness, 64)
-        self.assertEqual(str(app.btn_next["state"]), "disabled")
-        app.cb_protected_api.current(games.APIS.index("DX12") + 1)
-        app.cb_protected_api.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(locked(), "one choice of two unlocked the install")
+        choose("graphics api", games.APIS.index("DX12") + 1)
         self.assertEqual(g.api, "DX12")
-        self.assertEqual(app.tree.item("0", "values")[-1], "ready")
-        self.assertEqual(str(app.btn_next["state"]), "normal")
-        with patch.object(app, "_enter_install") as enter:
-            app._next()
-            enter.assert_called_once()
-        self.assertEqual(app.step, 3)
-        app._show(2)
-        app.cb_bitness.current(0)
-        app.cb_bitness.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(installer.check_supported(g)[0])
+        tag, b = button("install")
+        self.assertTrue(b is not None and b.enabled and app.entry["ok"][0],
+                        "both chosen and install is still disabled")
+        self.assertTrue(until(lambda: app.card(g)["kind"] != "reading"))
+        self.assertEqual(app.card(g)["kind"], "ready")
+        self.assertNotEqual(app.card(g)["status"], "choose architecture / api")
+        click(tag)
+        self.assertTrue(until(lambda: install.call_count == 1 and not app.busy))
+        pump(0.2)
+
+        choose("architecture", 0)                       # not set
         self.assertIsNone(g.bitness)
-        self.assertFalse(app._can_install_page())
+        self.assertTrue(locked(), "clearing a choice left install enabled")
+        tag, _b = button("install")
+        click(tag)
+        self.assertEqual(install.call_count, 1)
+
+        # a readable executable has nothing to choose
         g.exe_warning = ""
         g.bitness = 64
-        app._on_pick()
-        self.assertEqual(app.protected_details.winfo_manager(), "")
+        shell.redraw()
+        pump()
+        self.assertIsNone(k.find("architecture", "dropdown"))
         self.assertEqual(failures, [])
 
 

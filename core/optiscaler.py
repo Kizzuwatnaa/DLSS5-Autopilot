@@ -44,12 +44,13 @@ release page and never bundled here, like every other component.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import zipfile
 from pathlib import Path
 
-from . import net, sources
+from . import log, net, sources
 
 API = "https://api.github.com/repos/Dagherbou/OptiScaler_DLSSNR/releases/latest"
 
@@ -82,7 +83,12 @@ FORKS = {
     # "_with_DLSS" carries DLSS 310 and Streamline as well; the game's own
     # copies (or this tool's) stay.
     FORK: (FORK_API, ("with_dlss",)),
-    PRESR: (PRESR_API, ()),
+    # From v0.8.3 every release carries two zips, and the optional RTX 40
+    # MFG unlock sorts first. With no skip list that one went to every card
+    # - an RTX 50 included - and frame generation broke on it (#196, #231).
+    # The fork's own notes: "Choose the standard ZIP unless you need the
+    # optional RTX 40 MFG unlock."
+    PRESR: (PRESR_API, ("rtx40-mfg",)),
 }
 
 # Key -> dropdown label. "" is the build the route installs by default.
@@ -131,6 +137,50 @@ SKIP_SUFFIXES = {".pdb", ".exp", ".lib"}
 SKIP = {"setup_windows.bat", "setup_linux.sh"}
 
 
+def _pick_archive(assets, skip) -> dict | None:
+    """The one package to install out of a release's assets.
+
+    A release that carries a single archive is not a choice. When it
+    carries several, the skip list names the variants - but a variant
+    renamed upstream walks straight past a name match, and that is exactly
+    how every card ended up with the RTX 40 MFG package (#196, #231). So
+    the shape decides as well: a variant is the standard package's name
+    with something added to it, which makes the shortest name the standard
+    one. What the release carried and what was chosen go into the log, so a
+    rename upstream reads as a line there instead of as a broken install.
+    """
+    arcs = [a for a in (assets or [])
+            if str(a.get("name", "")).lower().endswith((".7z", ".zip"))]
+    if not arcs:
+        return None
+    kept = [a for a in arcs
+            if not any(x in a.get("name", "").lower() for x in skip or ())]
+    if not kept:
+        # Every archive matched the skip list - the names moved under us.
+        # The shape rule still has an answer; refusing to install has none.
+        log.write("OptiScaler: every archive in this release looks like a "
+                  "variant (" + ", ".join(a.get("name", "") for a in arcs)
+                  + ") - the names upstream have changed", "warn")
+        kept = list(arcs)
+    if len(kept) > 1:
+        # The shape rule holds only between names that are the same package
+        # with something added: OptiScaler-NR-v0.8.4.zip and
+        # OptiScaler-NR-v0.8.4-rtx40-mfg.zip. Against an unrelated archive -
+        # a symbols zip, a Linux build - "shortest" picks the wrong one, so
+        # the release's own order wins unless the shortest name really is
+        # the stem of every other.
+        order = sorted(kept, key=lambda a: (len(a.get("name", "")),
+                                            a.get("name", "")))
+        stem = order[0].get("name", "").rsplit(".", 1)[0].lower()
+        if stem and all(a.get("name", "").lower().startswith(stem)
+                        for a in order[1:]):
+            kept = order
+        log.write("OptiScaler: this release carries "
+                  + ", ".join(a.get("name", "") for a in arcs)
+                  + " - installing " + kept[0].get("name", ""))
+    return kept[0]
+
+
 def resolve(build: str = "") -> tuple[str, str]:
     """(tag, archive url) of the newest OptiScaler + DLSS-NR build.
 
@@ -148,19 +198,19 @@ def resolve(build: str = "") -> tuple[str, str]:
         # under that name and never refreshed.
         rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
         for rel in rels:
-            for a in rel.get("assets", []):
-                low = a["name"].lower()
-                if low.endswith((".7z", ".zip")) \
-                        and not any(x in low for x in skip_names):
-                    return rel.get("tag_name", "?"), a["browser_download_url"]
+            a = _pick_archive(rel.get("assets", []), skip_names)
+            if a:
+                return rel.get("tag_name", "?"), a["browser_download_url"]
         raise RuntimeError(f"{build}'s OptiScaler fork has no release with "
                            f"a .7z or .zip archive.")
     if build:
         raise ValueError(f"unknown OptiScaler build {build!r}")
     rel = sources.json_or_html(API)
-    for a in rel.get("assets", []):
-        if a["name"].lower().endswith((".zip", ".7z")):
-            return rel.get("tag_name", "?"), a["browser_download_url"]
+    # The same rule the forks go through, so resolve() and archive_name()
+    # cannot pick different packages out of one release.
+    a = _pick_archive(rel.get("assets", []), ())
+    if a:
+        return rel.get("tag_name", "?"), a["browser_download_url"]
     raise RuntimeError("The OptiScaler DLSS-NR release has no .zip asset.")
 
 
@@ -179,13 +229,14 @@ def archive_name(build: str = "") -> str:
     rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
     skip = FORKS[build][1] if build in FORKS else ()
     for rel in rels:
-        for a in rel.get("assets", []):
-            low = a.get("name", "").lower()
-            if low.endswith((".7z", ".zip")) and not any(x in low for x in skip):
-                # The name it is cached under, which is built from the tag -
-                # not the asset's own name, which can be anything.
-                return _archive_name(rel.get("tag_name", "?"),
-                                     a["browser_download_url"])
+        # The same choice resolve() makes, so the preview names the package
+        # the install will actually fetch.
+        a = _pick_archive(rel.get("assets", []), skip)
+        if a:
+            # The name it is cached under: the tag and the asset's own
+            # name together, as the download saves it.
+            return _archive_name(rel.get("tag_name", "?"),
+                                 a["browser_download_url"])
     return ""
 
 
@@ -333,8 +384,18 @@ def _top(root: Path) -> Path:
 
 
 def _archive_name(tag: str, url: str) -> str:
+    """The cache name of one release archive.
+
+    The asset's own name is part of it. Named by the tag alone, two archives
+    of one release shared a cache entry (and an unpacked folder), so the
+    RTX 40 MFG zip already downloaded for v0.8.4 would have been served again
+    after the pick moved to the standard one (#196).
+    """
     ext = ".7z" if url.lower().endswith(".7z") else ".zip"
-    return f"OptiScaler-DLSSNR-{tag}{ext}"
+    stem = url.rsplit("/", 1)[-1]
+    stem = stem[:-len(ext)] if stem.lower().endswith(ext) else stem
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem)[:80] or "archive"
+    return f"OptiScaler-DLSSNR-{tag}-{stem}{ext}"
 
 
 def is_optiscaler(path: Path) -> bool:

@@ -5,7 +5,7 @@ title: "bug: "
 labels: bug
 ---
 
-**Easiest way:** in the tool press **report a bug** (left rail) - it opens this form with everything below already filled in.
+**Easiest way:** in the tool press **report a bug** (the **help** menu at the bottom left, or under a game's result) - it opens this form with everything below already filled in.
 
 **What happened**
 

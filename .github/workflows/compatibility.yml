@@ -70,7 +70,7 @@ jobs:
             2>/dev/null || true
           gh issue edit "$NUMBER" --repo "$REPO" --add-label result || true
           gh issue close "$NUMBER" --repo "$REPO" --reason completed --comment \
-          "Thank you - this result goes into [the compatibility list](https://github.com/$REPO/blob/main/docs/compatibility.json). Once a game has five results, the tool tells anyone who picks that game in it which route worked most often and whether the one they picked did worse, before they install. Three results on the same route that worked and carried a measurement also tell them what those sessions ran at - the work area, what the model cost a frame, the frame rate.
+          "Thank you - this result goes into [the compatibility list](https://github.com/$REPO/blob/main/docs/compatibility.json). Once a game has five results, the tool tells anyone who picks that game in it which route worked most often and whether the one they picked did worse, before they install. Three results on the same route that worked and carried a measurement also tell them what those sessions ran at - the work area, the frame rate, and the milliseconds a frame spent on what grows with that area - the model on its own, or the model and the feed together on the feeder.
 
           Closed because it is a record rather than a bug report, so the issue list keeps showing the things that still need someone. It still counts. If you want to add what you saw - a setting that changed it, a driver that fixed it - reply here."
 

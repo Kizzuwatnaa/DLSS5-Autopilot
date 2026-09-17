@@ -1,0 +1,40 @@
+**Did the game start?** it started and ran
+
+**What happened**
+autopilot says it loaded c:\windows\system32\dxgi.dll, not ours. There were no reshade in the game
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 4070 (sm_89), driver 616.92
+- game: F.E.A.R. 3
+- exe: F.E.A.R. 3.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: feeder
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: registered
+- DLSS 5 add-on switch: NeuralUplift=1
+
+**What ran, and what it loaded** (seen at 15 Sep 20:12)
+- process: F.E.A.R. 3.exe
+- DLLs in the process: 119
+- ours, loaded: d3d9.dll
+- same name, loaded from elsewhere: C:\WINDOWS\SYSTEM32\dxgi.dll
+- ours, not loaded: dlss5-feed.addon32, nvngx_dlss.dll, nvngx_dlssnr.dll, renodx-dlss5.addon64
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

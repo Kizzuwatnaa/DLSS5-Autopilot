@@ -385,8 +385,14 @@ def cost_lines(rows: list[dict], latest: Measured | None) -> list[str]:
     # The log prints "=== what the work area costs here ===" above this,
     # so saying it again here is the same sentence twice, one line apart.
     out = ["in this game, on this card:"]
+    # Where the route logs the model's own cost there is no frame rate, and
+    # the number is the model. Where it is solved from two frame rates - the
+    # feeder - it is everything that grows with the work area: the model and
+    # the feed together. The shared result says so; this is the screen, where
+    # the number is largest and read most often, so it says so too.
+    what = "of model" if table[0].fps is None else "of model and feed"
     for c in table:
-        line = f"  {c.resolution:>3}%   {c.model_ms:>5.1f} ms of model"
+        line = f"  {c.resolution:>3}%   {c.model_ms:>5.1f} ms {what}"
         if c.fps:
             line += f"   ->  {c.fps:>3.0f} fps"
         if c.played:
@@ -408,6 +414,11 @@ def cost_lines(rows: list[dict], latest: Measured | None) -> list[str]:
 
 def shared(rows: list[dict], latest: Measured | None) -> dict:
     """The measured part of a shared result: {"res": 75, "ms": 7.2, ...}.
+
+    "ms" is the model's own cost where the route logs it (OptiScaler). On
+    the feeder it is solved from frame rates at two work areas, so it is
+    all of what grows with the area - model, feed and shaders - an upper
+    bound on the model, and every sentence that prints it says so.
 
     Only what was measured, or solved from measurements. An empty dict
     when the session did not say enough: a published number that was
@@ -462,16 +473,18 @@ def suggest(rows: list[dict], target_fps: float, current: int,
                     f"{now_fps:.0f} fps at {latest.resolution}%. Even at the "
                     f"smallest work area this game does not reach "
                     f"{target_fps:.0f} fps here - about "
-                    f"{1000.0 / base:.0f} fps with the model's cost taken "
-                    f"out - so the work area is not what is holding it back.",
+                    f"{1000.0 / base:.0f} fps with everything the work area "
+                    f"drives taken out - so the work area is not what is "
+                    f"holding it back.",
                 ])
             want = _clamp(100.0 * (head / k) ** 0.5)
             return Suggestion(want, [
                 f"{now_fps:.0f} fps at {latest.resolution}% "
                 f"({latest.frames} frames, from {latest.source}).",
                 f"Two sessions at different work areas are enough to split "
-                f"the frame: {base:.1f} ms the model does not touch, "
-                f"{k:.1f} ms of model at full size.",
+                f"the frame: {base:.1f} ms the work area does not touch, "
+                f"{k:.1f} ms that grows with it - the model and the feed "
+                f"together - at full size.",
                 (f"{want}% should land on {target_fps:.0f} fps."
                  if want != current else
                  f"{current}% is already the right setting for "

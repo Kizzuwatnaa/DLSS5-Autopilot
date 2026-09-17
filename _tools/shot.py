@@ -51,7 +51,23 @@ def _windows(title_part: str):
 
 
 def capture(hwnd: int, path: Path) -> tuple[int, int]:
-    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    # Own handles with full prototypes: a 64-bit handle through the default
+    # int conversion overflows, and another module setting restypes on the
+    # shared ctypes.windll objects must not decide how these calls behave.
+    user32, gdi32 = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32")
+    vp = ctypes.c_void_p
+    user32.GetWindowDC.restype = gdi32.CreateCompatibleDC.restype = vp
+    gdi32.CreateCompatibleBitmap.restype = gdi32.SelectObject.restype = vp
+    user32.GetWindowRect.argtypes = [vp, ctypes.POINTER(wintypes.RECT)]
+    user32.GetWindowDC.argtypes = [vp]
+    gdi32.CreateCompatibleDC.argtypes = [vp]
+    gdi32.CreateCompatibleBitmap.argtypes = [vp, ctypes.c_int, ctypes.c_int]
+    gdi32.SelectObject.argtypes = [vp, vp]
+    user32.PrintWindow.argtypes = [vp, vp, ctypes.c_uint]
+    gdi32.GetDIBits.argtypes = [vp, vp, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                                ctypes.c_void_p, ctypes.c_uint]
+    gdi32.DeleteObject.argtypes = gdi32.DeleteDC.argtypes = [vp]
+    user32.ReleaseDC.argtypes = [vp, vp]
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     w, h = rect.right - rect.left, rect.bottom - rect.top

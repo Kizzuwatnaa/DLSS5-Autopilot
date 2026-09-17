@@ -1,555 +1,741 @@
-r"""Drive the real window the way a person does, and see that it still works.
+r"""Drive the real 2.0 window the way a person does, and see that it still works.
 
-    python _tools\walkthrough.py
+    python _tools\walkthrough.py                  the walk
+    python _tools\walkthrough.py --break NAME     the walk with one thing broken
+    python _tools\walkthrough.py --list-breaks    what can be broken on purpose
+    python _tools\walkthrough.py --show           the window on screen while it walks
+                                                  (off screen by default: the real
+                                                  pointer over it moves things)
 
-Four green suites do not prove the application opens. This builds the
-actual window, puts a real install in front of it, walks the install page
-through every route, runs the diagnosis, the auto-tuner and the report
-dialog, and pushes the background queue messages the newer features send.
-Everything it touches is a temporary folder: nothing is downloaded, no
-browser is opened, and no setting on this machine is changed.
+Four green suites do not prove the application opens, or that a menu closes
+when you click beside it. This builds the actual window (core.ui.app.App) on
+a temporary library and walks it with real events - clicks, keys, the wheel,
+a drag - never by calling a handler: Tk runs its class and tag bindings in
+front of the handler, and that is where the 1.8.1 wheel bug lived.
 
-It is the last check before a release, after the suites and the scaling
-check - those say the parts are right, this says the thing still runs.
+What it walks:
+  library   opens on the saved games; search as you type, Esc clears it,
+            typing anywhere on the page searches; filter tabs; the view menu
+            (sort, hidden games) and its closing; hide and show again by
+            right-click; a card click opens the game
+  game      settings open and close by click, second click, Esc and 'close';
+            every route draws its settings with no two controls on top of
+            each other and none past the edge; the proxy control the
+            diagnosis names ('loads as' on optiscaler, 'reshade loads as' on
+            the ReShade routes, none on remix) is on that route; 'swap the
+            Remix runtime' reaches the install options and another route
+            drops it; dropdown menus close on an outside click, Esc and a
+            second click; the wheel over an open menu scrolls the menu, never
+            the page, and never changes a value; Esc goes back
+  shell     the log drawer opens, drags taller, remembers the size, closes;
+            the help menu; the update and crash banners each have their own
+            button (the 1.9 crash banner rebound the update one); 'report a
+            bug' with no game picked; toasts close on Esc; the watcher menu
+  pages     the video page with and without a player, the remix page, and
+            that their buttons are there and do not overlap
+
+Everything it touches is a temporary folder: no download, no browser, no
+process started, no setting on this machine changed (see ui_sandbox.py).
+
+Each check prints PASS or FAIL; the exit code is 1 on any FAIL. `--break`
+applies one deliberate fault first - every check in this file was made to
+fail once that way, and the list says which fault proves which check.
 """
-import json
+from __future__ import annotations
+
 import sys
-import tempfile
-import time
-import tkinter as tk
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ui_sandbox import Sandbox, overlaps   # noqa: E402
 
-from core import diagnose, dlss, games, gui, prefs, reportui   # noqa: E402
-
-# Point the settings file at a temporary one before the window is built:
-# this drives the real application, and it must not leave a target frame
-# rate or a tuning history behind on the machine that ran it.
-prefs.FILE = Path(tempfile.mkdtemp(prefix="walk_prefs_")) / "settings.json"
-prefs._CACHE = None if hasattr(prefs, "_CACHE") else None
-# A window that finds a saved library from another version rescans the
-# disks at start; the one on the machine running this is not the test's.
-from core import library as _library_iso  # noqa: E402
-_library_iso.FILE = Path(tempfile.mkdtemp(prefix="lib_iso_")) / "library.json"
-
-FAILS = []
+FAILS: list[str] = []
 
 
 def ok(what, cond, extra=""):
-    print(("  PASS  " if cond else "  FAIL  ") + what + (f"   {extra}" if extra else ""))
+    print(("  PASS  " if cond else "  FAIL  ") + what + (f"   {extra}" if extra and not cond else ""))
     if not cond:
         FAILS.append(what)
+    return bool(cond)
 
 
-def settle(r, app, until, seconds: float = 20.0) -> bool:
-    """Pump the window until `until()` is true - the way a person waits.
+# ---------------------------------------------------------------- faults on purpose
+def _breaks():
+    from core.ui import app as A, ctl_game, kit, setpanel, shell
+    from core.ui import theme as T
 
-    The long jobs in this window answer through the queue, so a click and
-    one update() is not the whole of pressing a button any more.
-    """
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        r.update()
-        if until():
-            return True
-        time.sleep(0.05)
-    return until()
+    def menu_wheel():
+        kit.Menu._wheel_if_inside = lambda self, e: False
+
+    def second_click():
+        real = kit.Kit.on_click
+
+        def on_click(self, tag, cmd, nav=False):
+            real(self, tag, cmd, nav)
+
+            def click(_e, self=self, cmd=cmd, tag=tag):
+                self._handled = True
+                top = self.top()
+                if top is not None and self._layer_of(tag) is not top:
+                    self.pop()
+                    if not nav and top.opener != tag:
+                        return
+                    if top.opener == tag:
+                        pass          # the bug: the opener opens it again
+                cmd()
+            self.c.tag_bind(tag, "<Button-1>", click)
+        kit.Kit.on_click = on_click
+
+    def remix_swap():
+        real = ctl_game.GameControl.opts
+
+        def opts(self, route=None):
+            o = real(self, route)
+            o.remix_swap = False
+            return o
+        ctl_game.GameControl.opts = opts
+
+    def crash_banner():
+        def offer(self):
+            if self._crash_shown:
+                return
+            self._crash_shown = True
+            self.shell.banner("update", "something went wrong - the details are in the log file",
+                              actions=[("report it", lambda: self.report_bug("crash"), True)], colour=T.WARN)
+        A.App.offer_crash_report = offer
+
+    def proxy_hidden():
+        real = ctl_game.GameControl.shown_setting
+        ctl_game.GameControl.shown_setting = lambda self, key: False if key == "reshade_proxy" else real(self, key)
+
+    def overlap():
+        real = setpanel.SettingsSection._control
+        setpanel.SettingsSection._control = lambda self, *a: (real(self, *a), T.px(12))[1]
+
+    def report_unguarded():
+        real = A.App.report_bug
+
+        def report_bug(self, kind="bug"):
+            _ = self.game.install_dir if self.shell.page.name == "game" else self.game.name
+            return real(self, kind)
+        A.App.report_bug = report_bug
+
+    def escape():
+        shell.Shell._escape = lambda self, e: None
+
+    def log_share():
+        shell.Shell._set_share = lambda self, v, save: setattr(self, "log_share", v)
+
+    def search():
+        from core.ui import libpage
+        libpage.LibraryPage._typed = lambda self, text: None
+
+    return {
+        "menu-wheel": (menu_wheel, "the wheel over an open menu scrolls the page"),
+        "second-click": (second_click, "a second click on a dropdown opens its menu again"),
+        "remix-swap": (remix_swap, "the Remix swap toggle never reaches the install options"),
+        "crash-banner": (crash_banner, "the crash banner replaces the update banner's button"),
+        "proxy-hidden": (proxy_hidden, "'reshade loads as' is not drawn on the ReShade routes"),
+        "overlap": (overlap, "settings rows drawn 12 px apart"),
+        "report-unguarded": (report_unguarded, "report a bug reads the picked game outside a guard"),
+        "escape": (escape, "Esc does nothing"),
+        "log-share": (log_share, "the dragged log height is not saved"),
+        "search": (search, "typing in the search box filters nothing"),
+    }
 
 
-def close(r):
-    """Destroy a window without its pending timers firing into nothing."""
+# ---------------------------------------------------------------- the walk
+def main() -> int:
+    args = sys.argv[1:]
+    sb = Sandbox("walk_")
+    breaks = _breaks()
+    if "--list-breaks" in args:
+        for name, (_fn, what) in breaks.items():
+            print(f"  {name:<18} {what}")
+        return 0
+    if "--break" in args:
+        name = args[args.index("--break") + 1]
+        breaks[name][0]()
+        print(f"!! walking with a deliberate fault: {breaks[name][1]}\n")
+
+    root = None
     try:
-        for job in r.tk.call("after", "info"):
-            r.after_cancel(job)
-    except tk.TclError:
-        pass
-    r.destroy()
+        from core import dlss, library, prefs, reportui, update, video
+        from core.ui.ctl_library import LibraryControl
 
-
-root = tk.Tk()
-root.geometry("1400x900+40+40")
-app = gui.App(root)
-root.update()
-ok("the window opens", bool(root.winfo_exists()))
-ok("the logo is in the rail, not only on the taskbar",
-   getattr(app, "_logo", None) is not None)
-
-# A real-looking install: feeder route, everything present, a session logged.
-d = Path(tempfile.mkdtemp(prefix="walk_"))
-(d / "Game.exe").write_bytes(b"MZ" + b"\0" * 200)
-(d / "dxgi.dll").write_bytes(b"MZ")
-for n in ("dlss5-feed.addon64", "renodx-dlss5.addon64", "nvngx_dlssnr.dll"):
-    (d / n).write_bytes(b"MZ")
-sh = d / "reshade-shaders" / "Shaders"
-sh.mkdir(parents=True)
-(sh / "DLSS5_Feed.fx").write_text("// t", encoding="utf8")
-(d / "ReShade.ini").write_text("[GENERAL]\n", encoding="utf8")
-# The game ships ray reconstruction, so the swap row is on the page. Without
-# it that row never appeared here, and a collision that painted it over the
-# nvngx_dlss controls survived three review passes.
-(d / "nvngx_dlssd.dll").write_bytes(b"MZ")
-(d / "dlss5-autopilot.json").write_text(json.dumps(
-    {"version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
-     "api": "DX11", "proxy": "dxgi.dll", "path": "feeder",
-     "files": ["dxgi.dll", "dlss5-feed.addon64", "renodx-dlss5.addon64",
-               "nvngx_dlssnr.dll", "ReShade.ini",
-               "reshade-shaders/Shaders/DLSS5_Feed.fx"]}), encoding="utf8")
-(d / "ReShade.log").write_text(
-    'INFO | Initializing crosire\'s ReShade\nRegistered add-on "DLSS 5 Feed" v0.1\n',
-    encoding="utf8")
-(d / "dlss5-feed.log").write_text(
-    "[feed] effects: DLSS5_Feed.fx technique found, ColorInput found\n"
-    "[feed] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)\n"
-    "[feed] feature ready: 1920x1080 DLAA\n"
-    "[feed] frame 1 delivered (1920x1080 at 100%)\n"
-    "[feed] 3600 frames: feed CPU 2.10 ms/frame, GPU 4.80 ms/frame, 47.0 fps\n",
-    encoding="utf8")
-
-g = games.Game(name="Walkthrough Game", folder=d, exe=d / "Game.exe",
-               bitness=64, api="DX11", source="Manual")
-app.all_games = [g]
-app._fill()
-root.update()
-ok("the game list draws", len(app.tree.get_children()) == 1)
-
-app.game = g
-app._show(3)          # the step rail does this when a game is chosen
-app._enter_install()
-root.update()
-ok("the install page opens with a real game", app.step == 3)
-ok("...the overlay-key control is there", app.cb_overlaykey.winfo_exists())
-ok("...and the target-fps box is there", app.sp_target.winfo_exists())
-
-def overlaps(app_):
-    """Controls sharing a grid cell on the settings page.
-
-    Tk raises nothing when two widgets are gridded into one cell: the one
-    created later simply paints over the other. The scaling check measures
-    sizes and never sees it, which is how the ray-reconstruction row spent
-    three review passes sitting on top of the nvngx_dlss row.
-    """
-    seen, clashes = {}, []
-    for w in app_.cb_dlss.master.grid_slaves():
+        # A library of four, saved the way a scan saves it, so the window opens
+        # on it like it does for somebody who has scanned before.
+        main_game = sb.game("Walkthrough Game", "DX11", 64, installed=True,
+                            extra=("nvngx_dlss.dll", "nvngx_dlssd.dll"))
+        gta = sb.game("Grand Theft Auto IV", "DX9", 32, source="Steam")
+        other = sb.game("Another Game", "DX12", 64)
+        zeta = sb.game("Zeta Racer", "DX11", 64)
+        gs = [main_game, gta, other, zeta]
+        rows = {(str(g.folder), str(g.exe)): LibraryControl.inspect_row(g, None) for g in gs}
+        sm = None
         try:
-            info = w.grid_info()
-            if not w.winfo_ismapped():
-                continue
-            r, c = int(info.get("row", -1)), int(info.get("column", -1))
-            span = int(info.get("columnspan", 1))
+            from core import gpu
+            sm = gpu.detect()[1]
         except Exception:
-            continue
-        for col in range(c, c + span):
-            if (r, col) in seen:
-                clashes.append(f"row {r} col {col}: {seen[(r, col)]} + "
-                               f"{w.winfo_class()}")
-            seen[(r, col)] = w.winfo_class()
-    return clashes
+            pass
+        library.save(gs, rows, update.VERSION, sm)
 
+        ask = Mock(return_value={"started": "it closed itself", "happened": "walkthrough"})
+        sb._start(patch.object(reportui, "ask", ask))
 
-for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
-              dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
-    try:
-        app._apply_route(route)
-        root.update()
-        ok(f"the {route} route renders its page", True)
-        bad = overlaps(app)
-        ok(f"...no two controls share a cell on {route}", not bad, bad[:3])
-    except Exception as e:
-        ok(f"the {route} route renders its page", False, f"{type(e).__name__}: {e}")
+        app = sb.app(scale=1.0, size=(1400, 900), visible="--show" in args)
+        root, shell = app.root, app.shell
+        c, k = shell.content, shell.kit
+        page = shell.pages["library"]
+        sb.pump(root, 0.8)
 
-# The control our own answers name, on the route they name it to. Twice
-# now a verdict has told somebody to change a dropdown their route does not
-# show (#148, and the feeder route until the 1.8.2 gate); once the reverse,
-# with the dropdown on the page and the text saying it was not. The mapping
-# below is the one gui._crash_overrides and diagnose._explain_no_log use.
-for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
-              dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
-    app._apply_route(route)
-    root.update()
-    named = (app.cb_proxy if route == dlss.OPTI
-             else None if route == dlss.REMIX
-             else app.cb_rproxy)
-    if named is None:
-        ok(f"...{route} names no proxy dropdown, and shows none",
-           not app.cb_rproxy.winfo_ismapped()
-           and not app.cb_proxy.winfo_ismapped())
-    else:
-        ok(f"...the dropdown our answers name on {route} is on its page",
-           named.winfo_ismapped(),
-           f"{named.winfo_class()} not mapped")
+        def cards():
+            return len([t for t in ("card%d" % i for i in range(20)) if c.find_withtag(t)])
 
-# The Remix route's one control. Every message about a runtime without the
-# neural pass said "tick 'swap the Remix runtime'", and the page never had
-# it - REMIX was not even in the route loop above (#148).
-app._apply_route(dlss.REMIX)
-root.update()
-ok("the Remix route shows 'swap the Remix runtime'",
-   app.ck_remixswap.winfo_ismapped())
-app.ck_remixswap.invoke()             # a click, through Tk's own handler
-root.update()
-ok("...a click reaches the install options", app._opts().remix_swap is True)
-app._apply_route(dlss.FEEDER)
-root.update()
-ok("...another route hides it and drops the choice",
-   not app.ck_remixswap.winfo_ismapped() and app._opts().remix_swap is False)
+        def names_shown():
+            return [cd["g"].name for cd in page.cards]
 
-app._apply_route(dlss.FEEDER)
-app.target_fps.set("60")
-app._on_target()
-try:
-    app._diagnose()
-    settle(root, app, lambda: app._last_diag is not None)
-    ok("the diagnosis runs from the button", app._last_diag is not None,
-       app._last_diag.verdict if app._last_diag else "")
-    ok("...and it says Working for a healthy session",
-       app._last_diag.verdict == "Working.", app._last_diag.verdict)
-    ok("...the share button is enabled after it", str(app.btn_share["state"]) == "normal")
-    ok("...and the auto-tuner suggested something",
-       app._tune is not None and app._tune.resolution != 100,
-       app._tune.resolution if app._tune else None)
-except Exception as e:
-    ok("the diagnosis runs from the button", False, f"{type(e).__name__}: {e}")
+        def settle_cards():
+            sb.until(root, lambda: all(app.card(g)["kind"] != "reading" for g in app.all_games if g.exe), 20)
+            sb.pump(root, 0.4)
 
-# Applying the tuner writes the config in place.
-if app._tune is not None:
-    want = app._tune.resolution
-    try:
-        app._apply_tune()
-        root.update()
-        cfg = (d / "dlss5-feed.cfg").read_text(encoding="utf8")
-        ok("applying the suggestion writes dlss5-feed.cfg",
-           f"work_resolution={want}" in cfg, cfg.splitlines()[:3])
-    except Exception as e:
-        ok("applying the suggestion writes dlss5-feed.cfg", False,
-           f"{type(e).__name__}: {e}")
+        def menu_open():
+            top = k.top()
+            return top is not None and top.tag.startswith("menu")
 
-# The report dialog, without opening a browser.
-_wait = tk.Toplevel.wait_window
-tk.Toplevel.wait_window = lambda self, *a: None
-try:
-    dlg = reportui.ReportDialog(root, "Walkthrough Game")
-    ok("the report dialog opens", dlg.win.winfo_exists())
-    ok("...and refuses to send with nothing answered",
-       str(dlg.go["state"]) == "disabled")
-    dlg.started.set("it closed itself")
-    dlg.text.insert("1.0", "it closed at the splash screen")
-    dlg._check()
-    ok("...and opens up once both are answered", str(dlg.go["state"]) == "normal")
-    dlg._ok()
-    ok("...returning both answers", dlg.answers["started"] == "it closed itself")
-except Exception as e:
-    ok("the report dialog opens", False, f"{type(e).__name__}: {e}")
-finally:
-    tk.Toplevel.wait_window = _wait
+        def pick(i):
+            """Click row i of the open menu; nothing when no menu is open."""
+            top = k.top()
+            if top is None or not top.tag.startswith("menu"):
+                return False
+            sb.reveal(shell, f"{top.tag}r{i}")
+            return sb.click(c, f"{top.tag}r{i}")
 
-# The queue handlers the new features push through.
-try:
-    app.q.put(("community", (d, ["12 people have reported this game."])))
-    app.q.put(("wincrash", (d, None, ("Windows recorded Game.exe faulting in "
-                                      "dxgi.dll (0xC0000005).", "detail"))))
-    app._pump()
-    root.update()
-    ok("the community and crash notes reach the log", True)
-except Exception as e:
-    ok("the community and crash notes reach the log", False,
-       f"{type(e).__name__}: {e}")
+        def the_menu():
+            from core.ui import kit as _kit
+            return next(_menu_objects(_kit, k), None)
 
-# The report body itself, end to end.
-try:
-    body = diagnose.issue_body("1.8.0", "RTX 4060 Ti", 89, "616.64", g,
-                               "feeder", app._last_diag, "", Path("x"), d,
-                               answers={"started": "it closed itself",
-                                        "happened": "closed at the splash"})
-    ok("the report body is built with the answers in it",
-       "closed at the splash" in body and "Files in the folder" in body)
-except Exception as e:
-    ok("the report body is built with the answers in it", False,
-       f"{type(e).__name__}: {e}")
-
-# The wheel, over the controls rather than the bare strip beside them.
-# It used to be bound on the canvas's own Enter/Leave - but the content is
-# a child window laid over that canvas, so Tk handed the canvas a Leave the
-# moment the pointer touched any control, and the page stopped scrolling
-# nearly everywhere. And a wheel turn that reaches a ttk.Combobox changes
-# its selection, so scrolling past "route" used to pick a different one.
-try:
-    sc = app.installscroll
-    sc.set_height(200)
-    root.update()
-    ok("the settings page offers a scrollbar when it does not fit",
-       sc._bar.winfo_ismapped())
-
-    class _Wheel:
-        delta = -120
-        x_root = y_root = 0
-
-    def wheel_over(widget):
-        # A real event, through every binding Tk would run for it - widget,
-        # class, toplevel, all. Calling the handler directly skipped the
-        # class binding, and that is exactly where ttk.Combobox changed its
-        # own value: the check passed while the bug was live.
-        was = sc._canvas.yview()[0]
-        widget.event_generate("<MouseWheel>", delta=-120, x=5, y=5,
-                              rootx=widget.winfo_rootx() + 5,
-                              rooty=widget.winfo_rooty() + 5, when="now")
-        root.update()
-        return was, sc._canvas.yview()[0]
-
-    a, b = wheel_over(app.routelbl)
-    ok("...and the wheel scrolls it from over the page text", b > a, (a, b))
-
-    before = app.cb_route.get()
-    sc._canvas.yview_moveto(0.0)
-    root.update()
-    a, b = wheel_over(app.cb_route)
-    ok("...and from over a dropdown", b > a, (a, b))
-    ok("...without the dropdown quietly picking something else",
-       app.cb_route.get() == before, app.cb_route.get()[:40])
-
-    a2, b2 = wheel_over(app.log)
-    ok("...while the log keeps its own wheel", b2 == a2, (a2, b2))
-except Exception as e:
-    ok("the wheel scrolls the settings page", False,
-       f"{type(e).__name__}: {e}")
-
-# Another window that scrolls must not take the main window's wheel with it.
-# The remix list used bind_all/unbind_all, which are process-wide: closing
-# it removed the main window's one wheel binding, and the settings page
-# never scrolled again that session.
-try:
-    from core import remixui as _rx
-    # An empty library: the list is built from what ships with the tool,
-    # and nothing here reaches the network.
-    win = _rx.show(root, [])
-    root.update()
-    # The app drops the RemixWindow object at once; the logo has to be held
-    # by the window itself, or Tk deletes it and the title goes blank.
-    _top = win.win
-    del win
-    import gc
-    gc.collect()
-    root.update()
-    ok("the remix window keeps its logo once the app lets go of it",
-       str(getattr(_top, "_logo", "")) in root.tk.call("image", "names"))
-
-    class _W:                      # what the rest of this check expects
-        pass
-    win = _W()
-    win.win = _top
-    win.win.destroy()
-    root.update()
-    ok("closing another window leaves the main window's wheel bound",
-       bool(root.bind_all("<MouseWheel>")), repr(root.bind_all("<MouseWheel>")))
-    sc._canvas.yview_moveto(0.0)
-    root.update()
-    a, b = wheel_over(app.routelbl)
-    ok("...and the settings page still scrolls after it", b > a, (a, b))
-except Exception as e:
-    ok("closing another window leaves the main window's wheel bound", False,
-       f"{type(e).__name__}: {e}")
-
-# The rail holds places: every row is a real click, and the pages it
-# leads to are the ones it names.
-try:
-    def rail_click(n):
-        row = next(e for e in app.rail_rows if e["n"] == n)
-        row["t1"].event_generate("<Button-1>", x=2, y=2, when="now")
-        root.update()
-        return app.step
-
-    ok("the rail's video row opens the video page", rail_click(4) == 4
-       and app.p4.winfo_ismapped(), app.step)
-    ok("...without a 'continue' that leads nowhere",
-       not app.btn_next.winfo_ismapped())
-    ok("the rail's remix row opens the remix page", rail_click(5) == 5
-       and app.p5.winfo_ismapped(), app.step)
-    ok("...and says which games in the library have a mod",
-       "none of the games" in app.remixmine.cget("text"),
-       app.remixmine.cget("text"))
-    _gta = games.Game(name="Grand Theft Auto IV", folder=d, exe=d / "Game.exe",
-                      bitness=32, api="DX9", source="Steam")
-    app.all_games.append(_gta)
-    app._remix_mine()
-    ok("...naming the one that can be fetched for you",
-       "Grand Theft Auto IV (download & install)" in app.remixmine.cget("text"),
-       app.remixmine.cget("text"))
-    app.all_games.remove(_gta)
-    ok("'back' from there goes to the games", (app._back(), app.step)[1] == 2)
-    ok("...and 'continue' is back under the list",
-       app.btn_next.winfo_manager() == "pack")
-    _held = app.game
-    app.game = None
-    app._paint_rail()
-    ok("with no game picked, the install row does nothing", rail_click(3) == 2,
-       app.step)
-    app.game = _held
-    app._paint_rail()
-    ok("the architecture filter is on the games page, and filters",
-       app.archbox.winfo_exists()
-       and (app.archbox.set(gui.ARCH_CHOICES[2][1]),
-            app.archbox.event_generate("<<ComboboxSelected>>", when="now"),
-            app.arch.get())[2] == "32", app.arch.get())
-    app.archbox.set(gui.ARCH_CHOICES[0][1])
-    app.archbox.event_generate("<<ComboboxSelected>>", when="now")
-    ok("...and back to every architecture", app.arch.get() == "all")
-    ok("no page is called a step any more",
-       not any("step " in str(w.cget("text")).lower()
-               for p in app.pages for w in p.winfo_children()
-               if isinstance(w, tk.Label)))
-    # The filter refills the list, which lets go of the picked game.
-    app.game = _held
-    app._paint_rail()
-    ok("with a game picked, the install row opens the install page",
-       rail_click(3) == 3, app.step)
-except Exception as e:
-    ok("the rail's video row opens the video page", False,
-       f"{type(e).__name__}: {e}")
-
-# The name in the corner goes home: the library when there is one, the
-# first page when there is not. A real click, so the binding is what runs.
-try:
-    home = 2 if app.all_games else 1
-    was = app.step
-    app.brandname.event_generate("<Enter>", when="now")
-    hover = app.brandname.cget("fg")
-    app.brandname.event_generate("<Button-1>", x=2, y=2, when="now")
-    root.update()
-    ok("clicking the name in the corner goes home", was != home
-       and app.step == home, (was, app.step, home))
-    ok("...and the name says it can be clicked", hover != gui.TXT
-       and str(app.brandname.cget("cursor")) == "hand2", hover)
-    app.brandname.event_generate("<Leave>", when="now")
-except Exception as e:
-    ok("clicking the name in the corner goes home", False,
-       f"{type(e).__name__}: {e}")
-
-app._enter_step2() if hasattr(app, "_enter_step2") else None
-root.update()
-close(root)
-
-# After an update the saved library is from another version and cannot be
-# used - and the app opened on the architecture page as if it had never been
-# run. Someone who has scanned before opens on the library, rescanning.
-try:
-    from core import library as _lib
-    _lib.FILE.write_text(json.dumps({"schema": _lib.SCHEMA,
-                                     "app_version": "0.0.0", "sm": None,
-                                     "games": [], "rows": {}}), encoding="utf8")
-    _scan_all = games.scan_all
-    _scans = []
-    # No disk walk in a check: record that the scan ran, find nothing.
-    games.scan_all = lambda progress=None: _scans.append(1) or []
-    root = tk.Tk()
-    app = gui.App(root)
-    root.update()
-    ok("after an update it opens on the library, not the first page",
-       app.step == 2, app.step)
-    for _ in range(100):
-        root.after(20)
-        root.update()
-        if not app.busy:
-            break
-    ok("...and reads the library again by itself", _scans == [1], _scans)
-    ok("...and the rescan finishes", not app.busy)
-    close(root)
-    _lib.FILE.unlink()
-    root = tk.Tk()
-    app = gui.App(root)
-    root.update()
-    ok("never scanned: it still opens on the first page", app.step == 1,
-       app.step)
-    # First run -> video -> back: the games page used to come up empty,
-    # with nothing scanning.
-    _scans.clear()
-    app._show(4)
-    app._back()
-    for _ in range(100):
-        root.after(20)
-        root.update()
-        if not app.busy:
-            break
-    ok("first run, video, back: the games page scans", app.step == 2
-       and _scans == [1], (app.step, _scans))
-    # The video player alone is not a library: home still means "find games".
-    from core import video as _video
-    _player = games.Game(name="Video player", folder=d, exe=d / "Game.exe",
-                         bitness=64, api="DX11", source="Manual")
-    _player.kind = "video"
-    app.all_games = [_player]
-    app._show(4)
-    app._go_home()
-    ok("with only the video player set up, home is the first page",
-       app.step == 1, app.step)
-    _lib.FILE.unlink(missing_ok=True)       # the stubbed scan above saved one
-    ok("...and it is never saved as the library",
-       (app._remember_library(), _lib.FILE.is_file())[1] is False)
-    close(root)
-    games.scan_all = _scan_all
-except Exception as e:
-    ok("after an update it opens on the library, not the first page", False,
-       f"{type(e).__name__}: {e}")
-
-# #144: "rescan" reads what the stores list and inspects only the game it has
-# not seen; "full rescan" is the walk over every drive. Both through the
-# buttons themselves.
-try:
-    from core import library as _lib, update as _upd
-    _new = Path(tempfile.mkdtemp(prefix="walk_new_"))
-    (_new / "New.exe").write_bytes(b"MZ" + b"\0" * 200)
-    _saved = (games.scan_all, games.list_games, games.enrich)
-    _full, _inspected = [], []
-    games.scan_all = lambda progress=None: _full.append(1) or []
-    games.list_games = lambda progress=None, emulators=True: [
-        games.Game(name="Walkthrough Game", folder=d, source="Manual"),
-        games.Game(name="A New Game", folder=_new, source="Steam")]
-    games.enrich = lambda g, chosen=False: (_inspected.append(g.name),
-                                            _saved[2](g, chosen))[1]
-    root = tk.Tk()
-    app = gui.App(root)
-    root.update()
-    _lib.save([g], {}, _upd.VERSION, app._sm())
-
-    def _press(text):
-        def find(w):
-            try:
-                if str(w.cget("text")) == text:
-                    return w
-            except tk.TclError:
-                pass
-            for c in w.winfo_children():
-                r = find(c)
-                if r is not None:
-                    return r
-        find(app.pages[1]).invoke()
-        for _ in range(200):
-            root.after(20)
+        def type_into(widget, text):
+            widget.focus_force()
             root.update()
-            if not app.busy:
-                break
+            for ch in text:
+                widget.event_generate("<KeyPress>", keysym=ch, when="now")
+                widget.event_generate("<KeyRelease>", keysym=ch, when="now")
+            sb.pump(root, 0.4)
 
-    app._show(2)
-    root.update()
-    _press("rescan")
-    names = sorted(x.name for x in app.all_games)
-    ok("'rescan' adds the new game without the full walk",
-       "A New Game" in names and "Walkthrough Game" in names and not _full,
-       (names, _full))
-    ok("...and inspects only the game it had not seen",
-       _inspected == ["A New Game"], _inspected)
-    _press("full rescan")
-    ok("'full rescan' walks everything", _full == [1], _full)
-    close(root)
-    games.scan_all, games.list_games, games.enrich = _saved
-    _lib.FILE.unlink(missing_ok=True)
-except Exception as e:
-    ok("'rescan' adds the new game without the full walk", False,
-       f"{type(e).__name__}: {e}")
+        def tab(label):
+            """A filter tab by its words - on an item tagged as a tab, since a
+            card's status can say 'installed' too."""
+            for i in c.find_withtag("grid"):
+                if c.type(i) == "text" and c.itemcget(i, "text") == label and any(
+                        x.startswith("flt") for x in c.gettags(i)):
+                    return i
+            return None
 
-print()
-if FAILS:
-    print(f"{len(FAILS)} FAILED:")
-    for f in FAILS:
-        print("   -", f)
-    raise SystemExit(1)
-print("THE APPLICATION STILL WORKS")
+        def outside_click():
+            sb.click_xy(c, 6, c.winfo_height() - 6)
+
+        # ============================================================ library
+        print("library")
+        ok("the window opens on the library", shell.page is not None and shell.page.name == "library")
+        settle_cards()
+        ok("...with the saved games on it", cards() == 4, cards())
+        ok("...read from the last scan, not scanning again", not app.scanning and "last scan" in app.scan_note,
+           app.scan_note)
+        ok("...and the rail shows the logo", c.winfo_toplevel() is root and bool(shell.rail_c.find_withtag("logo")))
+
+        type_into(page.field.entry, "zeta")
+        ok("typing in search filters the cards as you type", names_shown() == ["Zeta Racer"], names_shown())
+        sb.key(page.field.entry, "Escape", settle=0.4)
+        ok("...Esc in the box clears it and every game is back", cards() == 4 and app.query == "", (cards(), app.query))
+        c.focus_force()
+        root.update()
+        for ch in "gran":
+            # the first key moves the focus into the box; Tk hands the rest to it
+            c.event_generate("<KeyPress>", keysym=ch, when="now")
+            c.event_generate("<KeyRelease>", keysym=ch, when="now")
+            root.update()
+        sb.pump(root, 0.4)
+        ok("typing anywhere on the page goes into the search box", names_shown() == ["Grand Theft Auto IV"],
+           (app.query, names_shown()))
+        page.field.reset()
+        app.query = ""
+        app.refresh("library")
+        sb.pump(root, 0.3)
+
+        installed_tab = tab("installed")
+        ok("the 'installed' filter tab is drawn", installed_tab is not None)
+        if installed_tab is not None:
+            sb.click(c, installed_tab)
+            ok("...a click shows the installed games only", names_shown() == ["Walkthrough Game"], names_shown())
+            sb.click(c, tab("all"))
+            ok("...and 'all' brings the rest back", cards() == 4, cards())
+
+        view = k.find("view", "link")
+        ok("the view menu is there", view is not None)
+        if view:
+            sb.click(c, view)
+            ok("...a click opens it", menu_open())
+            sb.click(c, view)
+            ok("...a second click closes it", not menu_open())
+            sb.click(c, view)
+            sb.key(c, "Escape")
+            ok("...Esc closes it", not menu_open())
+            sb.click(c, view)
+            outside_click()
+            ok("...a click beside it closes it", not menu_open())
+            # a click on the canvas does not take the focus out of the search box,
+            # so this is the Esc somebody presses right after searching
+            page.field.entry.focus_force()
+            root.update()
+            sb.click(c, view)
+            page.field.entry.event_generate("<Escape>", when="now")
+            sb.pump(root, 0.25)
+            ok("...Esc closes it even while the (empty) search box has the focus", not menu_open())
+            if menu_open():
+                sb.key(c, "Escape")
+            sb.click(c, view)
+            pick(1)                                           # sort: name
+            want = sorted(g.name for g in gs)
+            ok("sort by name from the view menu orders the cards", names_shown() == want, names_shown())
+            ok("...and is remembered", prefs.get("games_sort") == ["name", False], prefs.get("games_sort"))
+
+        idx = names_shown().index("Zeta Racer")
+        sb.click(c, f"card{idx}", button=3)
+        ok("right-click on a card opens its menu", menu_open())
+        if menu_open():
+            pick(1)                                           # hide from the list
+            ok("...'hide from the list' takes the card away", "Zeta Racer" not in names_shown() and cards() == 3,
+               names_shown())
+            ok("...and is remembered", str(zeta.folder) in (prefs.get("hidden_games") or []))
+            sb.click(c, k.find("view", "link"))
+            top = the_menu()
+            hid_row = next((i for i, it in enumerate(top.items) if it and it[0].startswith("show hidden")), None)
+            ok("the view menu offers the hidden games", hid_row is not None)
+            if hid_row is not None:
+                pick(hid_row)
+                ok("...and shows them again", "Zeta Racer" in names_shown(), names_shown())
+                idx = names_shown().index("Zeta Racer")
+                sb.click(c, f"card{idx}", button=3)
+                pick(1)                                       # show in the list again
+                ok("...'show in the list again' un-hides it", str(zeta.folder) not in (prefs.get("hidden_games") or []))
+                app.show_hidden = False
+                app.refresh("library")
+                sb.pump(root, 0.2)
+
+        # nothing has been opened yet: this is 'report a bug' with no game picked
+        sb.click(shell.rail_c, "nav_help")
+        ok("help opens a menu", menu_open())
+        labels = [it[0] for it in (the_menu().items if menu_open() else []) if it]
+        ok("...with 'report a bug' and 'open the log file' in it",
+           "report a bug" in labels and "open the log file" in labels, labels)
+        sb.click(shell.rail_c, "nav_help")
+        ok("...a second click closes it", not menu_open())
+        errs = len(sb.errors)
+        sb.click(shell.rail_c, "nav_help")
+        row = labels.index("report a bug") if "report a bug" in labels else 1
+        pick(row)
+        ok("'report a bug' with no game picked raises nothing", len(sb.errors) == errs, sb.errors[errs:][:1])
+        ok("...asks its questions and opens a new issue",
+           ask.call_count == 1 and bool(sb.opened) and "/issues/new" in sb.opened[-1], sb.opened[-1:])
+
+        idx = names_shown().index("Walkthrough Game")
+        sb.click(c, f"card{idx}")
+        ok("a click on a card opens the game", shell.page.name == "game" and getattr(app.game, "name", "") == main_game.name,
+           getattr(shell.page, "name", None))
+        sb.until(root, lambda: not app.entering and app.support is not None, 20)
+        sb.pump(root, 0.4)
+
+        # ============================================================ game page
+        print("game page")
+        gp = app.game_page
+        settings = k.find("settings", "button")
+        ok("the settings button is there once the game is read", settings is not None)
+        sb.click(c, settings)
+        ok("...a click opens the settings", gp.settings_open and k.find("route", "dropdown") is not None)
+        sb.click(c, k.find("settings", "button"))
+        ok("...a second click closes them", not gp.settings_open)
+        sb.click(c, k.find("settings", "button"))
+        sb.key(c, "Escape")
+        ok("...Esc closes them", not gp.settings_open and shell.page.name == "game")
+        sb.click(c, k.find("settings", "button"))
+        sb.reveal(shell, k.find("close", "link"))
+        sb.click(c, k.find("close", "link"))
+        ok("...and so does their 'close'", not gp.settings_open)
+        sb.click(c, k.find("settings", "button"))
+
+        # the route dropdown, with real clicks
+        rd = k.find("route", "dropdown")
+        sb.reveal(shell, rd)
+        sb.click(c, rd)
+        ok("the route dropdown opens its menu", menu_open())
+        sb.click(c, rd)
+        ok("...a second click closes it", not menu_open())
+        sb.click(c, rd)
+        sb.key(c, "Escape")
+        ok("...Esc closes it and leaves the settings open", not menu_open() and gp.settings_open)
+        sb.click(c, rd)
+        outside_click()
+        ok("...a click beside it closes it", not menu_open())
+        offered = list(app.support.options if app.support else [])
+        was = app.route
+        target = next((i for i, o in enumerate(offered) if o != was), None)
+        if target is not None:
+            sb.click(c, rd)
+            pick(target)
+            ok("...picking another route in it switches the route", app.route == offered[target], (was, app.route))
+            sb.click(c, k.find("route", "dropdown"))
+            inst = k.find(app.game.installed and "install again" or "install", "button")
+            before = app.busy
+            if inst:
+                sb.click(c, inst)
+            ok("...with the menu open, a click on a button only closes the menu",
+               not menu_open() and app.busy == before and app.action == "")
+
+        # every route, drawn
+        for route in (dlss.FEEDER, dlss.OPTI, dlss.NATIVE, dlss.BRIDGE, dlss.RENODX,
+                      dlss.UPSTREAM, dlss.STANDALONE, dlss.REMIX):
+            errs = len(sb.errors)
+            try:
+                app.set_setting("route", route)
+                shell.redraw()
+                sb.pump(root, 0.15)
+                drawn = gp.settings_open and bool(k.controls("dropdown"))
+                ok(f"the {route} route draws its settings", drawn and len(sb.errors) == errs,
+                   sb.errors[errs:][:1])
+            except Exception as e:
+                ok(f"the {route} route draws its settings", False, f"{type(e).__name__}: {e}")
+                continue
+            items = [x for x in k.controls() if not x[0].startswith("menu")]
+            bad = overlaps(c, items)
+            ok(f"...no two controls on top of each other on {route}", not bad, bad[:3])
+            width = c.winfo_width()
+            past = [lab for tag, kind, lab in items if (c.bbox(tag) or (0, 0, 0, 0))[2] > width + 1]
+            ok(f"...none past the right edge on {route}", not past, past[:3])
+            labels = {lab for _t, kind, lab in k.controls("dropdown")}
+            if route == dlss.OPTI:
+                ok("...'loads as' is on the optiscaler route, as the diagnosis says",
+                   "loads as" in labels and "reshade loads as" not in labels, sorted(labels))
+            elif route == dlss.REMIX:
+                ok("...remix shows no proxy control, and the diagnosis names none",
+                   "loads as" not in labels and "reshade loads as" not in labels, sorted(labels))
+            else:
+                ok(f"...'reshade loads as' is on {route}, as the diagnosis says",
+                   "reshade loads as" in labels and "loads as" not in labels, sorted(labels))
+
+        app.set_setting("route", dlss.REMIX)
+        shell.redraw()
+        sb.pump(root, 0.15)
+        swap = k.find("swap the Remix runtime", "toggle")
+        ok("the remix route shows 'swap the Remix runtime'", swap is not None)
+        if swap:
+            sb.reveal(shell, swap)
+            sb.click(c, swap)
+            ok("...a click reaches the install options", app.opts().remix_swap is True)
+        app.set_setting("route", dlss.FEEDER)
+        shell.redraw()
+        sb.pump(root, 0.15)
+        ok("...another route hides it and drops the choice",
+           k.find("swap the Remix runtime", "toggle") is None and app.opts().remix_swap is False)
+
+        # the wheel over an open menu that is longer than it shows
+        key_dd = k.find("overlay key", "dropdown")
+        ok("the overlay key dropdown is there on feeder", key_dd is not None)
+        if key_dd:
+            sb.reveal(shell, key_dd)
+            value = app.overlay_key()
+            sb.click(c, key_dd)
+            menu = the_menu()
+            long_menu = menu is not None and len(menu.items) > menu.rows
+            ok("...its menu is longer than it shows", long_menu)
+            if long_menu:
+                page_y = c.canvasy(0)
+                mx, my = int(menu.x + menu.w / 2 - c.canvasx(0)), int(menu.y + menu.h / 2 - c.canvasy(0))
+                off = menu.offset
+                sb.wheel(c, mx, my, -120)
+                sb.wheel(c, mx, my, -120)
+                ok("the wheel over an open menu scrolls the menu", menu.offset > off, (off, menu.offset))
+                ok("...not the page", c.canvasy(0) == page_y, (page_y, c.canvasy(0)))
+                ok("...and changes no value", app.overlay_key() == value and menu_open(), (value, app.overlay_key()))
+                sb.key(c, "Escape")
+            shell.scroll_to(0)
+            sb.pump(root, 0.1)
+            y0 = c.canvasy(0)
+            sb.wheel(c, 300, 300, -120)
+            ok("with nothing open, the wheel scrolls the page", c.canvasy(0) > y0, (y0, c.canvasy(0)))
+            ok("...and still changes no value", app.overlay_key() == value)
+
+        # ---------------------------------------------------- what the buttons do
+        print("game page: did it work?")
+        d = Path(app.game.install_dir)
+        (d / "renodx-dlss5.addon64").write_bytes(b"MZ")
+        (d / "nvngx_dlssnr.dll").write_bytes(b"MZ")
+        shaders = d / "reshade-shaders" / "Shaders"
+        shaders.mkdir(parents=True, exist_ok=True)
+        (shaders / "DLSS5_Feed.fx").write_text("// t", encoding="utf8")
+        (d / "ReShade.log").write_text(
+            'INFO | Initializing crosire\'s ReShade\nRegistered add-on "DLSS 5 Feed" v0.1\n', encoding="utf8")
+        (d / "dlss5-feed.log").write_text(
+            "[feed] effects: DLSS5_Feed.fx technique found, ColorInput found\n"
+            "[feed] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)\n"
+            "[feed] feature ready: 1920x1080 DLAA\n"
+            "[feed] frame 1 delivered (1920x1080 at 100%)\n"
+            "[feed] 3600 frames: feed CPU 2.10 ms/frame, GPU 4.80 ms/frame, 47.0 fps\n", encoding="utf8")
+        app.set_setting("route", dlss.FEEDER)
+        app.game_page.settings_open = True
+        shell.redraw()
+        sb.pump(root, 0.2)
+        aim = k.find("aim for", "dropdown")
+        ok("'aim for' is in the feeder settings", aim is not None)
+        if aim:
+            sb.reveal(shell, aim)
+            sb.click(c, aim)
+            menu = the_menu()
+            row = next((i for i, it in enumerate(menu.items if menu else []) if it and it[0] == "60 fps"), None)
+            if row is not None:
+                pick(row)
+            ok("...picking '60 fps' in it sets the target", app.target() == 60, app.target_fps)
+        shell.scroll_to(0)
+        sb.pump(root, 0.1)
+        sb.click(c, k.find("did it work?", "button"))
+        sb.until(root, lambda: not app.busy and app.result is not None, 30)
+        sb.pump(root, 0.5)
+        verdict = (app.result or {}).get("title", "")
+        ok("'did it work?' reads the logs and says Working for a healthy session", verdict == "Working.", verdict)
+        ok("...the result offers 'share the result'", k.find("share the result", "button") is not None)
+        tune = next((lab for _t, _k, lab in k.controls("button") if lab.startswith("set the work area to")), None)
+        ok("...and, aiming for 60 fps, a work area to set", tune is not None and app._tune is not None,
+           [lab for _t, _k, lab in k.controls("button")])
+        if tune:
+            want = app._tune.resolution
+            tag = k.find(tune, "button")
+            sb.reveal(shell, tag)
+            sb.click(c, tag)
+            cfg = d / "dlss5-feed.cfg"
+            text = cfg.read_text(encoding="utf8") if cfg.is_file() else ""
+            ok("...a click writes it into dlss5-feed.cfg", f"work_resolution={want}" in text, text[:80])
+        errs = len(sb.errors)
+        app.q.put(("community", (app.game.install_dir, None, ["12 people have reported this game."],
+                                 [("feeder", 9, 12), ("optiscaler", 2, 5)])))
+        app.q.put(("wincrash", (app.game.install_dir, None,
+                                ("Windows recorded Game.exe faulting in dxgi.dll (0xC0000005).", "detail"))))
+        sb.pump(root, 0.5)
+        ok("the community and Windows-crash answers are handled", len(sb.errors) == errs, sb.errors[errs:][:1])
+        ok("...and what worked for others is drawn on the page",
+           sb.text_tag(c, "what worked for others") is not None)
+
+        shell.scroll_to(0)
+        sb.pump(root, 0.1)
+        app.game_page.settings_open = False
+        shell.redraw()
+        sb.key(c, "Escape")
+        ok("Esc on a game page goes back to the library", shell.page.name == "library")
+
+        # ============================================================ shell
+        print("shell")
+        bk = shell.bottom_kit
+        loglink = bk.find("log", "link")
+        ok("the log link is on the bottom line", loglink is not None)
+        if loglink:
+            sb.click(shell.bottom_c, loglink, settle=0.5)
+            ok("...a click opens the log drawer", shell.log_open and shell.drawer.winfo_height() > 50,
+               shell.drawer.winfo_height())
+            head = shell.log_head
+            h0 = shell.drawer.winfo_height()
+            ry = head.winfo_rooty() + 5
+            head.event_generate("<ButtonPress-1>", x=40, y=5, rootx=head.winfo_rootx() + 40, rooty=ry, when="now")
+            head.event_generate("<Motion>", x=40, y=-115, rootx=head.winfo_rootx() + 40, rooty=ry - 120,
+                                state=0x100, when="now")
+            sb.pump(root, 0.1)          # a hand takes longer than one event batch
+            head.event_generate("<ButtonRelease-1>", x=40, y=-115, rootx=head.winfo_rootx() + 40, rooty=ry - 120,
+                                when="now")
+            sb.pump(root, 0.3)
+            h1 = shell.drawer.winfo_height()
+            ok("...dragging its top edge makes it taller", h1 > h0 + 60, (h0, h1))
+            share = prefs.get("log_share")
+            ok("...and the size is remembered", isinstance(share, (int, float)) and 0.1 <= share <= 0.9
+               and abs(share - h1 / root.winfo_height()) < 0.05, share)
+            sb.key(c, "Escape", settle=0.5)
+            ok("...Esc closes it", not shell.log_open and not shell.drawer.winfo_ismapped())
+            sb.click(shell.bottom_c, bk.find("log", "link"), settle=0.5)
+            sb.click(shell.bottom_c, bk.find("log", "link"), settle=0.5)
+            ok("...and the link closes it on a second click", not shell.log_open)
+
+        app.q.put(("update", ("9.9.9", "https://example.invalid/release")))
+        sb.pump(root, 0.3)
+        app.offer_crash_report()
+        sb.pump(root, 0.3)
+        bn = shell.banner_kit
+        upd, rep = bn.find("update now", "button"), bn.find("report it", "button")
+        ok("the update and crash banners are both up, each with its own button",
+           upd is not None and rep is not None and upd != rep and len(shell.banners) == 2, bn.controls("button"))
+        if upd and rep:
+            asked, opened = ask.call_count, len(sb.opened)
+            sb.click(shell.banner_c, upd)
+            ok("...'update now' opens the release, not the bug report",
+               len(sb.opened) == opened + 1 and sb.opened[-1] == "https://example.invalid/release"
+               and ask.call_count == asked, sb.opened[-1:])
+            sb.click(shell.banner_c, bn.find("report it", "button"))
+            ok("...'report it' opens the bug report, not the release",
+               ask.call_count == asked + 1 and "/issues/new" in sb.opened[-1], sb.opened[-1:])
+
+        shell.toast("Walkthrough Game closed", "working", actions=[("open", lambda: None, True)])
+        sb.pump(root, 0.5)
+        ok("a toast comes up", bool(c.find_withtag("toast")))
+        sb.key(c, "Escape", settle=0.6)
+        ok("...and Esc sends it away", not c.find_withtag("toast"))
+
+        ok("the rail says the installed game is watched", (shell.watching or (0, ""))[1] == "watching 1",
+           shell.watching)
+        sb.click(shell.rail_c, "nav_watch")
+        ok("the watcher opens its menu", menu_open())
+        sb.click(shell.rail_c, "nav_watch")
+        ok("...a second click on it closes the menu", not menu_open())
+        if not menu_open():
+            sb.click(shell.rail_c, "nav_watch")
+        pick(0)
+        ok("...its first row switches watching off", prefs.get("watch_games") is False
+           and (shell.watching or (1, ""))[1] == "watch off", shell.watching)
+
+        # ============================================================ video and remix
+        print("video and remix")
+        sb.click(shell.rail_c, "nav_video")
+        ok("the rail opens the video page", shell.page.name == "video")
+        ok("...with no player: 'set up the player'", k.find("set up the player", "button") is not None)
+        player = sb.game("Video player", "DX11", 64, installed=True)
+        player.kind = "video"
+        with patch.object(video, "known", return_value=player), \
+                patch.object(video, "list_cameras", return_value=["Walk Cam"]), \
+                patch.object(video, "list_screens", return_value=["Screen 1"]):
+            app.cameras = None
+            shell.show("video", remember=False)
+            sb.until(root, lambda: app.cameras is not None, 10)
+            sb.pump(root, 0.3)
+            want = ("open the player", "neural rendering on/off (F6)", "settings", "play", "download, then play",
+                    "pick a video and render it", "start", "stop")
+            have = {lab for _t, _k, lab in k.controls("button")}
+            ok("...with a player: every button is there", all(w in have for w in want),
+               sorted(set(want) - have))
+            ok("...and the size, style, webcam and screen dropdowns",
+               {"size", "style", "webcam", "screen"} <= {lab for _t, _k, lab in k.controls("dropdown")})
+            bad = overlaps(c, k.controls())
+            ok("...none of them on top of another", not bad, bad[:3])
+        sb.click(shell.rail_c, "nav_remix")
+        sb.pump(root, 0.5)
+        ok("the rail opens the remix page", shell.page.name == "remix")
+        ok("...it offers to fetch the mod for the game in the library",
+           k.find("download & install", "button") is not None)
+        # every other project is a tile that opens its page; a click on one really opens it
+        from core import remixlist as _rl
+        tiles = [t for t, _k, lab in k.controls("link") if lab in {m.game for m in _rl.MODS + _rl.BUILT_IN}]
+        ok("...and every mod has a tile that opens its page", len(tiles) > 3, len(tiles))
+        if tiles:
+            opened = len(sb.opened)
+            sb.reveal(shell, tiles[0])
+            sb.click(c, tiles[0])
+            ok("...and clicking a tile opens that page", len(sb.opened) == opened + 1, sb.opened[-1:])
+        bad = overlaps(c, k.controls())
+        ok("...nothing on top of anything", not bad, bad[:3])
+        sb.click(shell.rail_c, "nav_library")
+        ok("the rail's games goes home", shell.page.name == "library")
+
+        # ============================================================ rescans
+        print("rescan and full rescan")
+        from core import games as _games
+        new = sb.game("A New Game", "DX12", 64, source="Steam")
+        full, quick, inspected = [], [], []
+        real_inspect = LibraryControl.inspect_row
+
+        def inspect(g, sm_):
+            inspected.append(g.name)
+            return real_inspect(g, sm_)
+
+        def quick_scan(known, progress=None):
+            quick.append(1)
+            return list(known) + [new], [new]
+
+        with patch.object(_games, "quick_scan", quick_scan), \
+                patch.object(_games, "scan_all", lambda progress=None: full.append(1) or list(gs)), \
+                patch.object(LibraryControl, "inspect_row", staticmethod(inspect)):
+            scan_btn = k.find("scan", "button")
+            sb.click(c, scan_btn)
+            menu = the_menu()
+            labels = [it[0] for it in (menu.items if menu else []) if it]
+            ok("the scan button opens rescan, full rescan and choose a folder",
+               any(x.startswith("rescan") for x in labels) and any(x.startswith("full rescan") for x in labels)
+               and any(x.startswith("choose a folder") for x in labels), labels)
+            pick(next((i for i, x in enumerate(labels) if x.startswith("rescan")), 0))
+            sb.until(root, lambda: quick and not app.scanning, 20)
+            sb.pump(root, 0.3)
+            names = [g.name for g in app.all_games]
+            ok("'rescan' adds the new game without the full walk", "A New Game" in names and not full, (names, full))
+            ok("...and inspects the new game, not the ones it already knew",
+               "A New Game" in inspected and "Another Game" not in inspected, inspected)
+            sb.click(c, k.find("scan", "button"))
+            pick(next((i for i, x in enumerate(labels) if x.startswith("full rescan")), 1))
+            sb.until(root, lambda: full and not app.scanning, 20)
+            ok("'full rescan' walks everything", full == [1], full)
+
+        # the video player alone is not a library, and is never saved as one
+        player_only = sb.game("Video player", "DX11", 64, installed=True)
+        player_only.kind = "video"
+        held = app.all_games
+        library.FILE.unlink(missing_ok=True)
+        app.all_games = [player_only]
+        app.remember_library()
+        ok("the video player alone is never saved as the library", not library.FILE.is_file())
+        app.all_games = held
+
+
+    except Exception as e:
+        # a walk that stops half way is a failure with a name, not a traceback
+        import traceback
+        where = traceback.extract_tb(e.__traceback__)[-1]
+        ok("the walk reached its end", False, f"{type(e).__name__}: {e} (line {where.lineno})")
+    if root is not None:
+        sb.destroy(root)
+    # ============================================================ after an update
+    # The saved library is from another version and cannot be used: the window
+    # still opens on the library, and reads it again by itself.
+    try:
+        import json as _json
+        from core import games as _games, library as _library
+        _library.FILE.write_text(_json.dumps({"schema": _library.SCHEMA, "app_version": "0.0.0", "sm": None,
+                                              "games": [], "rows": {}}), encoding="utf8")
+        scans = []
+        with patch.object(_games, "scan_all", lambda progress=None: scans.append(1) or []), \
+                patch.object(_games, "quick_scan", lambda known, progress=None: (scans.append(1) or [], [])):
+            app2 = sb.app(scale=1.0, size=(1400, 900), visible="--show" in args)
+            sb.until(app2.root, lambda: scans and not app2.scanning, 20)
+            ok("after an update it opens on the library", app2.shell.page is not None
+               and app2.shell.page.name == "library")
+            ok("...and reads the library again by itself", scans == [1] and not app2.scanning, scans)
+            sb.destroy(app2.root)
+    except Exception as e:
+        ok("after an update it opens on the library", False, f"{type(e).__name__}: {e}")
+
+    ok("no Tk callback raised during the walk", not sb.errors, [e.strip().splitlines()[-1] for e in sb.errors][:3])
+    sb.close()
+    print()
+    if FAILS:
+        print(f"{len(FAILS)} FAILED:")
+        for f in FAILS:
+            print("   -", f)
+        return 1
+    print("THE WINDOW STILL WORKS")
+    return 0
+
+
+def _menu_objects(_kit, k):
+    """The Menu objects behind the kit's open layers (a layer holds the menu's
+    bound wheel method, which leads back to it)."""
+    for layer in reversed(k.layers):
+        wheel = getattr(layer, "wheel", None)
+        owner = getattr(wheel, "__self__", None)
+        if isinstance(owner, _kit.Menu):
+            yield owner
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

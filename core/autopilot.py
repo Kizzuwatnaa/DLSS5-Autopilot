@@ -120,24 +120,70 @@ def plan(first: str, offer: list[str], data: dict | None = None,
     return out[:max(1, limit)]
 
 
-def may_start(game) -> tuple[bool, str]:
+def may_start(game, check_running: bool = False) -> tuple[bool, str]:
     """Whether this tool may start the game itself, and why not when it may not.
 
     Never a guess dressed as a yes: when the answer is no the person is told
     what to press, which is what they would have done anyway.
+
+    `check_running` asks the process table as well, which costs a snapshot of
+    every process on the machine and a PE read per candidate. start() asks
+    for it; the callers that only want the question answered to word a
+    dialog do not, because they ask on the Tk thread (#8, #18, #32).
     """
     exe = getattr(game, "exe", None)
     if exe is None:
         return False, "this game has no executable picked"
+    # A folder that cannot be read is a refusal, not a pass. The cost of
+    # being wrong here is not symmetric: one button press against a ban.
     try:
         found = anticheat.detect(Path(game.install_dir), Path(game.folder))
-    except Exception:
-        found = None
-    if found is not None and found.present:
+    except Exception as e:
+        log.write(f"autopilot: could not read {game.folder} for anti-cheat:"
+                  f" {e}", "warn")
+        return False, ("this folder could not be read to check for "
+                       "anti-cheat, so start the game yourself")
+    if found.present:
         return False, (f"{found.summary} is in this folder ("
                        f"{', '.join(found.evidence[:2])}) - an anti-cheat can "
                        f"read a game started by another program as tampering, "
                        f"so start it yourself the way you always do")
+    # Starting a second copy of a running game is never what was meant, and
+    # the button's own 10-second lock only covers a double press. THE GAME,
+    # though: from_folder returns everything running out of the folder, and
+    # this tool writes one of those itself - the 32-bit feeder's
+    # host64\dlss5-feed-host64.exe, which outlives the game by a few
+    # seconds. Refusing on our own helper, or on a launcher that lives in
+    # the folder, is a dead button with a nonsense reason (gate 1.9.1, and
+    # the standing rule that our own files are never evidence about a game).
+    if check_running:
+        want = Path(exe).name.lower()
+        host = str(Path(game.install_dir) / installer.HOST_DIR).lower()
+
+        def _is_the_game(p) -> bool:
+            path = str(p.path or "").lower()
+            if not path or path.startswith(host):
+                return False     # our own 64-bit helper, never the game
+            if os.path.basename(path) == want:
+                return True
+            # The picked exe is not always the process: a launcher in the
+            # folder starts the real one (#191), and an Unreal game picked
+            # as Game.exe runs as Game-Win64-Shipping.exe. Those are still
+            # this game running.
+            try:
+                return pe.looks_like_game(Path(p.path))
+            except Exception:
+                return False
+
+        try:
+            running = [p for p in watch.from_folder(Path(game.install_dir),
+                                                    exe=str(exe))
+                       if _is_the_game(p)]
+        except Exception:
+            running = []
+        if running:
+            return False, (f"{running[0].name} is already running - "
+                           f"switch to it rather than starting a second copy")
     try:
         if pe.launcher_like(Path(exe)):
             return False, (f"{Path(exe).name} is a launcher, not the game - "
@@ -154,7 +200,7 @@ def may_start(game) -> tuple[bool, str]:
 
 def start(game) -> tuple[bool, str]:
     """Start the game. (started, what to say about it.)"""
-    ok, why = may_start(game)
+    ok, why = may_start(game, check_running=True)
     if not ok:
         return False, why
     exe = Path(game.exe)
@@ -164,8 +210,8 @@ def start(game) -> tuple[bool, str]:
         return True, why
     except Exception as e:                      # a store stub, a permission
         log.write(f"autopilot: could not start {exe.name}: {e}", "warn")
-        return False, (f"{exe.name} would not start from here ({e}) - start "
-                       f"it the way you normally do and this carries on.")
+        return False, (f"{exe.name} would not start ({e}) - start it the "
+                       f"way you normally do")
 
 
 class Hooks:
@@ -226,7 +272,11 @@ def attempt(game, opt, route: str, hooks: Hooks) -> Attempt:
     if started:
         hooks.log(f"  started {Path(game.exe).name} - watching", "")
     else:
-        hooks.log(f"  start the game now - {note or 'watching for it'}", "warn")
+        # A note here is always the reason the tool did not start it, so
+        # it stands on its own - prefixing it produced "start the game now
+        # - it is already running" (gate 1.9.1).
+        hooks.log(f"  {note}" if note else
+                  "  start the game now - watching for it", "warn")
 
     seen = hooks.wait(root, ours, exe, seconds=hooks.seconds,
                       tick=lambda _s, _p: not hooks.stop())
@@ -413,6 +463,6 @@ def summary(out: Outcome) -> str:
                 f"folder, so the copy beside it is never reached")
     else:
         what = "nothing of ours ended up running in the game"
-    return (f"Tried {', '.join(out.tried)} - {what}. Press "
-            f"[ report a bug ]: what the game had loaded is recorded and "
+    return (f"Tried {', '.join(out.tried)} - {what}. Use "
+            f"'report a bug' in the help menu: what the game had loaded is recorded and "
             f"goes into the report.{where}")

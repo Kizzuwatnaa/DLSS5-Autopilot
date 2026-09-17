@@ -17,19 +17,30 @@ NVIDIA RTX 20 or newer
   resolution (`nvngx_dlss.dll`), frame generation (`nvngx_dlssg.dll`) and,
   for a game that ships one, ray reconstruction (`nvngx_dlssd.dll`) for
   builds from NVIDIA's own repository; the game's file is backed up and
-  comes back on uninstall. **check versions** later says which of your games
-  has a part with a newer build.
+  comes back on uninstall. The library marks a game whose parts
+  need installing again, and **check versions** says which parts, for the
+  game you picked.
   [How a swap works](#keeping-a-games-dlss-up-to-date).
-- **It can try it for you.** **AUTOPILOT** installs the route, starts the
-  game, reads which DLLs the game loaded and - when ours are not in it, or
-  the game loaded another copy of the same name instead - waits for you to
-  close the game, installs the next route and goes round again, up to
+- **It can try it for you.** **autopilot** installs the route, starts
+  the game, reads which DLLs the game loaded and - when ours are not in it,
+  or the game loaded another copy of the same name instead - waits for you
+  to close the game, installs the next route and goes round again, up to
   three. A game with anti-cheat it never starts itself: it asks you to.
   Experimental.
 - **It tells you what happened.** Play, then press **did it work?**: it
   reads ReShade's log, the add-on's, OptiScaler's and Windows' own crash
   record, and says whether the model ran - and when it did not, which
   part stopped and what to do next.
+- **It notices when you play.** While the tool is open it watches the games
+  it installed into. When one closes, its logs are read and the answer
+  comes up on its own; when that answer is one another route could change
+  (nothing loaded, the game refused the hook, the feed never started, the
+  add-on crashed, the model refused) and routes this game is offered are
+  still untried,
+  it offers **try _route_**. With **keep watching in the tray** on, closing
+  the window leaves an icon in the notification area and the answer
+  arrives as a Windows notification. Both switches are behind the eye at
+  the bottom of the left bar (**watching** / **watch off**).
 - **Everything else the chain needs.** The right `nvngx_dlssnr.dll` for
   your architecture, ReShade with add-on support, motion-vector shaders,
   DXVK for DirectX 9, a 64-bit helper for 32-bit games, frame generation
@@ -42,7 +53,7 @@ NVIDIA RTX 20 or newer
   browser, an emulator or a game nothing may be injected into.
   [Video, YouTube, webcam](#video-youtube-webcam).
 - **You can read it before it is written.** **What will happen?** lists
-  every file INSTALL would write, back up and remove, and writes none of
+  every file an install would write, back up and remove, and writes none of
   them; **aim for _ fps** works the settings out from what your own last
   runs measured, says how sure it is, and applies nothing on its own.
 - **It tells you what it costs.** On optiscaler and the feeder's 64-bit
@@ -54,9 +65,11 @@ NVIDIA RTX 20 or newer
   share are pooled into one list the tool reads before an install: once a
   game has five, you are told which route worked most often on it, and
   whether the one you picked did worse. A shared result carries the work
-  area it ran at, what the model cost a frame there and the frame rate, so
-  once three results that worked on a route carry a measurement, you are
-  told what those sessions ran at before you install.
+  area it ran at, the milliseconds a frame spent on what grows with that
+  area, and the frame rate. (On OptiScaler that is the model's own cost;
+  on the feeder it is the model and the feed together.) Once three results
+  that worked on a route carry a measurement, you are told what those
+  sessions ran at before you install.
 - **It takes itself back out.** Uninstall restores every file it replaced
   and removes only what it wrote.
 
@@ -75,21 +88,34 @@ current version of every part each time it runs.
 
 ## Using it
 
-1. Run `dlss5-autopilot.exe` and press **scan games**. It reads Steam, Epic, GOG, EA, Ubisoft,
+1. Run `dlss5-autopilot.exe` and press **find my games**. It reads Steam, Epic, GOG, EA, Ubisoft,
    Battle.net, Rockstar, Amazon, itch, Heroic, Xbox/Game Pass, `D:\Games\*`
-   folders and 19 emulators. Anything else: **choose folder**. With **scan
-   library at start** on - the default - later runs open straight on that
-   library; **rescan** picks up games installed or removed since the last scan, and
+   folders and 19 emulators. Anything else: **choose a folder**. With **read the
+   library when the tool opens** on (the **view** menu) - the default - later runs open straight on that
+   library; **scan** → **rescan** picks up games installed or removed since the last scan, and
    **full rescan** reads every launcher, game folder and emulator location
    again, as the first scan does.
-2. Pick the game. The card shows what was read - executable, 32/64-bit,
-   graphics API, whether it ships DLSS - and the route it will take.
-3. Press **INSTALL**. The log says what went where. Then start the game and
-   press the key the tool named; **did it work?** reads the game's logs
-   afterwards and reports what happened.
-   Or press **AUTOPILOT** instead: it installs, starts the game itself,
+2. Pick the game. Each one shows its cover (Steam's own library art; for
+   other stores, Epic's catalog art or Steam's store art found by the game's
+   name; the executable's icon when there is none) and one line: installed, working, needs a
+   look, update, anti-cheat - and, once other people have shared results
+   for it, how many of them it worked for. Type anywhere to search; the
+   arrow keys and Enter work too. Right-click a game to hide it or to pick
+   your own cover, background or logo; **view**
+   shows hidden games again and sorts the library.
+3. The game's page says what was read - 32/64-bit, graphics API, where it
+   came from - and the route it will take. Press **install**. Then
+   **play**, press the key the tool named, and afterwards **did it work?**
+   reads the game's logs and reports what happened. **settings** opens every
+   choice that applies to that route, in place; a setting that does nothing
+   on the route is not shown.
+   Or press **autopilot** instead: it installs, starts the game itself,
    reads which DLLs the running game loaded, and tries the next route when
    ours are not in it. Experimental.
+
+The log is in a drawer at the bottom: drag its edge to give it more room,
+or **pop out** to read it in a window of its own. Esc closes whatever is
+open, then goes back; Backspace goes back; Ctrl+H goes to games.
 
 Uninstall removes exactly what was written, restores anything it replaced,
 and nothing else.
@@ -98,9 +124,11 @@ and nothing else.
 
 <p align="center"><img src="docs/routes.svg" alt="Which route a game gets: an RTX Remix mod means remix; 32-bit means feeder; 64-bit DirectX 9 means renodx-dlss; Vulkan means bridge with DLSS and feeder without; OpenGL and DirectX 10 mean feeder; DirectX 11/12 with DLSS means optiscaler on D3D12 (native and neural-upstream offered too) or bridge on D3D11, and feeder without DLSS - standalone instead on driver 616.64 and newer for a game with no DLSS of its own, where the renodx-dlss5 add-on faults in many games" width="900"></p>
 
-The dropdown lists every route the game allows, marks the recommended one
-and greys out what your card cannot run. The card under it says, per
-route, what it does and what must not sit in the same folder.
+The **route** dropdown in the game's settings lists every route the game
+allows, marks the recommended one and marks what your card cannot run
+*(not for this pc)*.
+Once other people have shared results for the game, its page shows how
+each route did for them.
 
 The graphics API comes from the executable's import table, with one
 exception: a d3d9.dll import is checked against the delay-load table, a
@@ -114,8 +142,8 @@ outranks OpenGL or Vulkan, because an engine that can drive several
 backends names all of them and draws with Direct3D on Windows. A Unity game
 (UnityPlayer.dll beside the exe) is Direct3D 11 unless started with
 -force-d3d12, -force-vulkan or -force-glcore. An import table can also lie
-- R.U.S.E. links D3D11 and renders with Direct3D 9 - so the install page
-has a **graphics api** dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan /
+- R.U.S.E. links D3D11 and renders with Direct3D 9 - so the game's settings
+have a **graphics api** dropdown (auto / DirectX 9 / 10 / 11 / 12 / Vulkan /
 OpenGL); the choice is remembered for that folder.
 
 | Route | What it is | For | FPS dial |
@@ -148,7 +176,7 @@ pin and no report either way on these drivers. Rolling the driver back to
 
 And an online game with anti-cheat (BattlEye, EAC, Vanguard, EA Javelin, HoYoverse, GameGuard,
 XIGNCODE3, Denuvo Anti-Cheat, PunkBuster, FACEIT, Ricochet, ACE) is marked
-in the list and asks for confirmation before INSTALL: ReShade add-ons and
+in the library and asks for confirmation before an install: ReShade add-ons and
 anti-cheat do not coexist, and a ban is on the person who chooses to
 install anyway.
 
@@ -185,29 +213,68 @@ and the tool can put a newer one in:
 
 | | what it is | how it is chosen |
 |---|---|---|
-| `nvngx_dlss.dll` | super resolution - the upscaler itself | the **nvngx_dlss** dropdown on the install page, and the **keep the game's own** tick beside it |
+| `nvngx_dlss.dll` | super resolution - the upscaler itself | the **nvngx_dlss** dropdown in the game's settings, and the **keep the game's own nvngx_dlss** switch |
 | `nvngx_dlssd.dll` | ray reconstruction - the denoiser a path-traced game uses | its own dropdown, shown only for a game that already ships one; not on the optiscaler or remix routes, whose install cannot act on it |
-| `nvngx_dlssg.dll` | frame generation | fetched when the route needs one, unless the game has its own and **keep the game's own** is ticked |
+| `nvngx_dlssg.dll` | frame generation | fetched when the route needs one, unless the game has its own and **keep the game's own nvngx_dlss** is on |
 
 All three come from NVIDIA's own repository, read at its release tag, and
 the download is checked for being a 64-bit Windows DLL before anything is
 overwritten. The game's own file is backed up and comes back on uninstall.
 The ray-reconstruction dropdown starts on **keep the game's own**. The
-**nvngx_dlss** dropdown starts on NVIDIA's own latest build, and the
-**keep the game's own** tick beside it - on by default - is what decides
+**nvngx_dlss** dropdown starts on **auto** - NVIDIA's own newest build - and the
+**keep the game's own nvngx_dlss** switch - on by default - is what decides
 whether a game that has its own DLSS keeps it.
 
 The parts a game was set up with are recorded, and **check versions** reads
 that record against what the publishers offer now: a game whose DLSS - or
 ReShade, or the neural-rendering runtime, or OptiScaler - has moved on is
-marked **update**, with how many of its parts have a newer build. Pressing
-INSTALL again fetches the newest of everything and keeps your settings and
-backups.
+marked **update**, with how many of its parts need installing again - a
+newer build, or the same version in a package that changed. Pressing
+**update** on the game's page fetches the newest of everything and keeps your
+settings and backups.
 
 A swap is worth knowing two things about: a launcher that verifies its files
 puts its own copy back, and in an online game an anti-cheat can treat a
 changed file as tampering. For anything you play online, leave these on
 "keep the game's own".
+
+### The dlss page
+
+The **dlss** page on the left keeps the same three files current for every
+game in the library, including games DLSS 5 was never installed into. It
+lists each 64-bit game that ships one of them, with the version it has and
+NVIDIA's newest (`3.7.20 -> 310.9.1`), and marks the games that are behind.
+The tool reads the games a few seconds after it starts, and again when the
+page is opened if the last read is a day old or the library has games it has
+not read; **check again** reads them
+now. **update** on a row replaces that game's files; **update all** does
+every game that is behind, except games with an anti-cheat and games that
+are running. The game's own file stays beside the new one as
+`<name>.dlss5-dlss-original`, the swaps are recorded in
+`dlss5-dlss-update.json` in the game folder, and **restore original** puts
+the game's own files back. Once the page has read a game, that game's own
+page shows a line such as `dlss 3.7.20 -> 310.9.1  update` while it is
+behind, and pressing it runs the same update.
+
+The page and a DLSS 5 install share these files:
+
+- a file the DLSS 5 install swapped reads **set by the dlss 5 install** and
+  is changed from the game's settings, not from this page;
+- a DLSS 5 install over a file updated on the page keeps the update as the
+  file it restores, so uninstalling DLSS 5 leaves the update in place;
+- **restore original** while DLSS 5 is installed on top hands the game's own
+  file to the DLSS 5 install, and uninstalling DLSS 5 then puts it back; if
+  the file changed since the update, the page asks you to uninstall DLSS 5
+  first.
+
+Not offered: 32-bit games. A game that is running is refused until it is
+closed - Windows does not let a file a program has open be replaced. A game
+with an anti-cheat is updated only after a question that names the
+anti-cheat; for a game you play online, do not update it. When a launcher
+puts its own file back, the page leaves that file alone and lists it as the
+game's again. When restore or an update finds a file in the way that is
+neither the game's own nor a build the page wrote, it keeps it beside the
+runtime as `<name>.dlss5-dlss-displaced-<time>` instead of deleting it.
 
 ## Where the files come from
 
@@ -246,9 +313,10 @@ add-on or OptiScaler makes.
 ## In the game
 
 The keys below are the defaults. A keyboard without an Insert or a Home key
-has no way into the overlay at all, so the **overlay key** setting on the
-install page rebinds both ReShade's and OptiScaler's, and every instruction
-the tool prints then names the key that was chosen.
+has no way into the overlay at all, so the **overlay key** setting in a
+game's settings rebinds both ReShade's and OptiScaler's, and every instruction
+the tool prints then names the key that was chosen. Pause and Scroll Lock
+are there for a board with no navigation cluster at all.
 
 | Route | Keys |
 |---|---|
@@ -273,16 +341,16 @@ matters.
   the same dial model resolution): 75 % is about half the cost of 100 %,
   50 % a quarter. The frame keeps full detail; only the model's
   contribution is computed small.
-- **Feeder build**: stable, newest pre-release, or any exact release when
+- **feeder build**: newest release, newest pre-release, or any exact release when
   the newest breaks a game. Builds before 0.8 pair with add-on 4.55 and the
   tool pins it. OpenGL games are pinned to 4.60 (4.70 stalls on GL).
-- **Motion vectors** (feeder): LumeniteFX Kernel by default; **VORT
+- **motion vectors** (feeder): LumeniteFX Kernel by default; **VORT
   Motion** (optical flow) on OpenGL, where LumeniteFX reads nothing - the
   tool installs whichever is chosen and puts it above the feed.
-- **Profiles**: save the dials under a name; Quality / Balanced /
+- **profile**: save the dials under a name; Quality / Balanced /
   Performance are built in.
-- **scan library at start** (games page): off means no scan at all -
-  *rescan* and *choose folder* still work. The scan never walks a whole
+- **read the library when the tool opens** (the library's **view** menu): off means no scan at all -
+  *rescan* and *choose a folder* still work. The scan never walks a whole
   disk (launcher registries, `XboxGames`, folders named Games and the
   like, emulator locations) and skips removable drives. What it finds is
   kept in `%LOCALAPPDATA%\dlss5-autopilot\library.json`, so later launches
@@ -311,32 +379,38 @@ matters.
   grows with the area. On the OptiScaler route the model's own cost is in
   its log, so one session is enough - with no fps column. On the feeder
   route it takes two sessions at work areas at least five points apart,
-  and each row then gains the frame rate it implies.
-- **Overlay key**: ReShade opens its panel on Home and OptiScaler on
+  and each row then gains the frame rate it implies. On the feeder the
+  milliseconds are everything that grows with the work area - the model
+  and the feed together - because that route logs no model cost of its
+  own.
+- **overlay key**: ReShade opens its panel on Home and OptiScaler on
   Insert. A keyboard with neither can bind another key here, once, for
-  every game.
+  every game - Home, Insert, End, Delete, Page Up, Page Down, Backspace,
+  F9 to F12, Pause or Scroll Lock. On the standalone route, F10 is the
+  add-on's own before/after key, so picking F10 there gives one key two
+  jobs and the tool says so.
 - **nvngx_dlss** and **ray reconstruction**: the game's own DLSS runtimes,
   replaceable with newer builds - see [Keeping a game's DLSS up to
   date](#keeping-a-games-dlss-up-to-date).
-- **What will happen?** lists what INSTALL would write, back up and remove,
+- **what will happen?** lists what an install would write, back up and remove,
   without writing anything.
-- **Before / after** puts the last two ReShade screenshots side by side.
-- **Check versions**: games you set up earlier are checked against what
+- **before / after** puts the last two ReShade screenshots side by side.
+- **check versions**: games you set up earlier are checked against what
   their publishers offer now - DLSS, ReShade, the neural-rendering runtime,
   OptiScaler - and the game is marked **update** with how many of its parts
-  have a newer build.
+  need installing again.
 - The tool updates itself: a new release downloads in the background, its
   SHA-256 is checked against the `SHA256SUMS.txt` GitHub published, and the
-  top bar offers a one-click restart. `"auto_update": false` in
+  window offers a one-click restart. `"auto_update": false` in
   `%LOCALAPPDATA%\dlss5-autopilot\settings.json` keeps it manual.
 
 ## Video, YouTube, webcam
 
-The feed does not care what draws the frame. The **video and youtube** page
-(on the left) fetches a portable MPC-HC into a folder of your choice, sets its renderer
+The feed does not care what draws the frame. The **video** page
+(on the left bar) fetches a portable MPC-HC into a folder of your choice, sets its renderer
 to D3D11 and installs DLSS 5 into it like a game. Open a file, paste a
 YouTube link (played live via yt-dlp, or downloaded first), render a clip
-through DLSS 5 offline with **process a file**, or point a webcam at it.
+through DLSS 5 offline with **pick a video and render it**, or point a webcam at it.
 **F6** toggles the effect while playing. Neural rendering redraws the whole
 window, menus included; expect text to look hand-drawn.
 
@@ -355,14 +429,14 @@ into the source; the delay makes this for watching, not for playing.
 
 A Remix mod rebuilds an old DirectX 8/9 game with path tracing. Once one is
 installed its runtime sits in a `.trex` folder beside the game; press
-**rescan**, the game appears with *remix* chosen, and INSTALL does three
+**rescan**, the game appears with *remix* chosen, and **install** does three
 things: the matching `nvngx_dlssnr.dll` into `.trex`, one line in
-`rtx.conf`, and - only if you tick **swap the Remix runtime** - a
+`rtx.conf`, and - only if you turn on **swap the Remix runtime** - a
 DLSS 5-capable community runtime in place of one that has no neural pass
 (original backed up; experimental, it can undo a mod's own fixes).
 
-The **rtx remix** page on the left names the games in your library that
-have a mod. Its button opens a list of every project the tool knows about;
+The **remix** page on the left bar names the games in your library that
+have a mod, and lists every project the tool knows about;
 for the two that publish a complete install as a plain zip on their own
 releases page - **GTA IV** and **NFS Underground 2** - the list offers
 **download & install** when the game is in your library. Nothing is
@@ -395,9 +469,10 @@ as it running well.
 ## When it does not work
 
 **did it work?** reads `ReShade.log`, `dlss5-feed.log`, `OptiScaler.log`,
-the DXVK and Remix logs, what the game had loaded while the window watched
-it run, and - when the game left no log at all - Windows' own Application
-Error record, and names the cause.
+the DXVK and Remix logs, what the game had loaded while the tool watched it
+run, and - when the game left no log at all - Windows' own Application Error
+record, and names the cause. The watcher reads the same logs when a game
+closes; for Windows' crash record, press **did it work?**.
 
 <details>
 <summary>The game closes a second after starting, no message</summary>
@@ -405,7 +480,7 @@ Error record, and names the cause.
 Some games quit the moment ReShade hooks Direct3D (Metal Gear Solid V is
 the known one). The tool runs those through **DXVK**: the game renders on
 Vulkan and ReShade loads as a Vulkan layer outside it. Any D3D11 game can
-take that path with the checkbox on the install page or `--dxvk`; DirectX 9
+take that path with **run through DXVK (Vulkan)** in its settings or `--dxvk`; DirectX 9
 always does. Use borderless there - alt-tab in exclusive fullscreen
 re-creates the swap chain, and the second feature creation crashes.
 </details>
@@ -415,8 +490,8 @@ re-creates the swap chain, and the second feature creation crashes.
 
 A VR game that runs on OpenXR draws the headset's image through it; the
 desktop window is a mirror of it, and that is where a proxy DLL or the
-Vulkan layer puts ReShade. The **VR headset (OpenXR)** checkbox on the
-install page (or `--vr`) registers ReShade's OpenXR layer as well, which
+Vulkan layer puts ReShade. **VR headset (OpenXR layer)** in the game's
+settings (or `--vr`) registers ReShade's OpenXR layer as well, which
 hooks the image the headset shows. Games on OpenVR/SteamVR are not
 reached by it. It is global for the user, like the Vulkan layer, and the
 last VR uninstall removes it. It is unverified with a headset and offered
@@ -495,10 +570,10 @@ antivirus or VPN inside the HTTPS connection; turn that off for the tool.
 
 Not every launcher is in the registry, and an executable locked at scan
 time (antivirus, an updater, OneDrive placeholders) cannot be read.
-**open log file** shows what each store returned; **choose folder** always
-works. Xbox/Game Pass: some games protect only the executable and let files
+**open the log file** (the **help** menu) shows what each store returned;
+**choose a folder** always works. Xbox/Game Pass: some games protect only the executable and let files
 beside it be written. For those, choose **architecture** in the game's
-details and check **graphics api** there (both are remembered for that
+settings and check **graphics api** there (both are remembered for that
 folder). Where Windows refuses writes into the folder itself, only games
 whose publisher allows modding have *Enable mods* (or *Manage > Files >
 Browse*) in the Xbox app - turn it on and press **rescan**. Without it the
@@ -516,7 +591,7 @@ folder cannot be changed, and the Steam version of the game can be set up.
 | `CreateFeature raised exception 0xC0000005` | add-on / feeder version mismatch, or a runtime that does not match the card |
 </details>
 
-Bugs: **report a bug** in the tool asks two questions - did the game start,
+Bugs: **report a bug** (on a game's result, or in the **help** menu) asks two questions - did the game start,
 and what happened - and then opens a GitHub issue already filled in with
 version, card, driver, game, route, the last diagnosis, the log tails and,
 when Windows recorded one, the faulting module of the crash. Nothing is sent
@@ -526,8 +601,10 @@ by itself - you see it in the browser and decide.
 name and executable, the route and build, the graphics API, the card and
 driver, this tool's version, whether it worked, the one-line verdict the
 diagnosis reached, and - where the session was measured - the work area it
-ran at, what the model cost a frame and the frame rate. No paths, no user
-name, nothing else. Those results
+ran at, the milliseconds a frame spent on what grows with that area, and
+the frame rate. On OptiScaler that is the model's own cost; on the feeder
+it is the model and the feed together. No paths, no user name, nothing
+else. Those results
 are added up into one file the tool reads before an install; once a game has
 five results, the next person with it is told which route worked most often,
 and whether the one they picked did worse. The issue is closed as soon as it
@@ -558,18 +635,31 @@ dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
   `gh attestation verify dlss5-autopilot.exe --repo Kizzuwatnaa/DLSS5-Autopilot`.
 - **Or skip the exe**: plain Python, standard library and tkinter only, no
   PyPI packages. `git clone` and `python dlss5_autopilot.py`.
-- It writes only into the game folder you pick (plus, for Vulkan games, one
-  per-user registry value it announces first and removes with the last
-  Vulkan game), keeps its cache, its log, its settings, the scanned library
+- It writes only into the game folders you install into or update DLSS in
+  (plus, for Vulkan games, one per-user registry value it announces first
+  and removes with the last Vulkan game), keeps its cache, its log, its
+  settings, the scanned library, cover pictures, the dlss page's last read
   and `sightings.json` - the path of the executable that ran and the DLLs it
   had loaded, for a game it installed into - in
-  `%LOCALAPPDATA%\dlss5-autopilot`, never
-  asks for administrator rights, and sends nothing anywhere: no telemetry,
-  no account.
+  `%LOCALAPPDATA%\dlss5-autopilot`, never asks for administrator rights,
+  and has no telemetry and no account. The one thing it can send is a
+  game's name to Steam's store search to find a cover, and only after you
+  said yes to that (see Network access).
 - **Network access**, and nothing else: `reshade.me`,
   `raw.githubusercontent.com`, `api.github.com`, `github.com`,
-  `objects.githubusercontent.com`, `codeload.github.com`. Every URL lives in
-  [`core/sources.py`](core/sources.py).
+  `objects.githubusercontent.com`, `codeload.github.com`. Download URLs and
+  version pins are in [`core/sources.py`](core/sources.py); the video
+  player's, the update check's and the shared-results list's are in
+  `core/video.py`, `core/update.py` and `core/community.py`. Covers for games
+  outside Steam come from Epic's image servers (the https address Epic's own
+  catalog cache names for the game, usually `cdn1.epicgames.com`) and from `store.steampowered.com`,
+  `api.steampowered.com`, `shared.fastly.steamstatic.com` and
+  `cdn.cloudflare.steamstatic.com` (every other store): the store search
+  sends the game's name, the other requests an app number or an image
+  address. The URLs are in [`core/covers.py`](core/covers.py). None of it
+  happens until you answer yes to the question the library asks the first
+  time a game has no cover; **view** → *look up covers online* switches it
+  off again, and the icon is shown instead.
 - **Antivirus warnings.** Defender's cloud heuristics (`Wacatac.B!ml`,
   `Ulthar.A!ml` - the `!ml` is a confidence score, not a match) can delete
   a new release in its first hours, before enough PCs have run it;
@@ -594,8 +684,11 @@ that a build came out of that workflow before it signs it, so a signed
 - **Privacy policy.** This program will not transfer any information to
   other networked systems unless specifically requested by the user. It
   downloads the components it installs from the publishers listed under
-  [Network access](#is-it-safe) and sends nothing anywhere: no telemetry,
-  no account. The components it installs are third-party software with
+  [Network access](#is-it-safe). No telemetry, no account. Covers are
+  looked up online only after the person answers yes to the library's
+  question (and while *look up covers online* in its **view** menu stays
+  on); then the name of a game with no Steam, Epic or Xbox art is sent to
+  Steam's store search. The components it installs are third-party software with
   their own terms, linked below.
 
 ## Credits and licensing
@@ -619,6 +712,7 @@ component stays under its own licence, fetched from its own publisher.
 | Remix runtime with DLSS 5 (swap option only) | [lunks/dxvk-remix-plus-dlssnr](https://github.com/lunks/dxvk-remix-plus-dlssnr) | see repository |
 | RTX40MFG-Unlock, Ultimate ASI Loader (multi-frame generation option only) | [dashdogy/RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock) · [ThirteenAG/Ultimate-ASI-Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) | MIT · MIT |
 | MPC-HC, yt-dlp, ffmpeg (video only) | their own releases | GPL / Unlicense / GPL |
+| video2dlssnr (rendering a video file, video only) | [DaniilSokolyuk/video2dlssnr](https://github.com/DaniilSokolyuk/video2dlssnr) | MIT |
 | RenoDX DLSS 5 add-ons (Krish, ShortFuse) | community mirror [RankFTW/rhi-repo](https://github.com/RankFTW/rhi-repo) | **proprietary, no public licence** |
 | NVIDIA DLSS runtimes (super resolution, ray reconstruction, frame generation) | [NVIDIA/DLSS](https://github.com/NVIDIA/DLSS) | NVIDIA DLSS SDK licence |
 | NVIDIA NGX neural-rendering runtime | community mirror [RankFTW/rhi-repo](https://github.com/RankFTW/rhi-repo) | **proprietary, no public licence** |
@@ -659,22 +753,27 @@ core/gpu.py           card, driver, CUDA architecture, build tiers
 core/dlss.py          which route fits the game and the card
 core/sources.py       every download URL and version pin
 core/net.py           download, cache, extract
+core/covers.py        covers for games outside Steam: Epic, Xbox, Steam's store
 core/installer.py     install engine, route switching, uninstall
 core/optiscaler.py    the OptiScaler route      core/remix*.py    the Remix route
 core/vulkan.py        ReShade as a Vulkan layer  core/dxvk.py      D3D9/D3D11 -> Vulkan
 core/refw.py          REFramework               core/anticheat.py anti-cheat markers
 core/reshade_ini.py   ReShade.ini and presets    core/feedcfg.py   feeder / bridge cfg
-core/diagnose.py      logs -> verdict, bug-report body
+core/diagnose/        logs -> verdict, bug-report body
 core/wincrash.py      Windows' own Application Error record
 core/autotune.py      the work area to reach a frame rate, from what it cost
 core/community.py     what other people found in this game
 core/autopilot.py     install, start the game, read what loaded, try the next
 core/watch.py         which processes are up, and which DLLs are in them
+core/lookout.py       the watcher: installed games starting and closing
+core/verdicts.py      which answers another route could change
 core/reportui.py      the two questions a bug report needs answered
 core/components.py    are the installed parts still current?
 core/update.py / selfupdate.py    update check, verified swap-in
 core/video.py         MPC-HC, YouTube, offline processing, webcam
-core/gui.py           interface
+core/ui/              interface: shell (window, log drawer, dialogs), kit
+                      (controls), library, game page and settings, video,
+                      remix, the tray icon, game art and colours
 
 _tools/upstream_watch.py     what moved upstream, and what they say they fixed
 _tools/replay_report.py      a bug report's own logs, through the diagnosis

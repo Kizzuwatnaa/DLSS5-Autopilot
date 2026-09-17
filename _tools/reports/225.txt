@@ -1,0 +1,53 @@
+**Did the game start?** it started and ran
+
+**What happened**
+When configuring *Ready or Not*, I unchecked the `keep the game's own` option and explicitly selected `310.9.1 (NVIDIA SDK)` for `nvngx_dlss`. 
+
+However, after launching the game in DirectX 12 and opening the OptiScaler overlay via `Insert`, the upscaler status still reports **`DLSS 3.7.20`** instead of the selected 310.9.1. The DLL replacement did not take effect.
+
+---
+- version: 1.9.0
+- gpu: NVIDIA GeForce RTX 5060 (sm_120), driver 616.92
+- game: Ready or Not
+- exe: ReadyOrNotSteam-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: optiscaler
+- work area: 75%
+
+**Diagnosis**: Working.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [ok] Neural rendering is running.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: Dagherbou
+
+**What ran, and what it loaded** (seen at 15 Sep 10:45)
+- process: ReadyOrNotSteam-Win64-Shipping.exe
+- DLLs in the process: 192
+- ours, loaded: amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx_dlssnr.dll
+- same name, loaded from elsewhere: C:\WINDOWS\SYSTEM32\D3D12Core.dll, C:\WINDOWS\system32\dxgi.dll
+- ours, not loaded: amd_fidelityfx_vk.dll, nvngx.dll_dlssnr.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+...
+[10:52:54.114672] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.79 ms total = 5.49 ms model + 0.30 ms ours (5% ours)
+[10:53:04.131552] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.79 ms total = 5.50 ms model + 0.30 ms ours (5% ours)
+[10:53:14.147570] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.98 ms total = 5.68 ms model + 0.30 ms ours (5% ours)
+[10:53:24.163294] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.79 ms total = 5.49 ms model + 0.30 ms ours (5% ours)
+[10:53:34.179747] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.84 ms total = 5.54 ms model + 0.30 ms ours (5% ours)
+[10:53:44.195825] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 5.79 ms total = 5.49 ms model + 0.30 ms ours (5% ours)
+[10:53:54.213194] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 6.04 ms total = 5.74 ms model + 0.30 ms ours (5% ours)
+```

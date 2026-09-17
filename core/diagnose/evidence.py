@@ -17,20 +17,23 @@ from pathlib import Path
 
 from . import model
 from .model import *  # noqa: F401,F403
+from .layer import (_addon_in, _dxvk_files, _layer_clash,  # noqa: F401
+                    _layer_detail, _through_layer)
 
 
 __all__ = [
     "_addon_switch", "_addons", "_anything_of_ours", "_area",
     "_attached", "_biggest", "_crash_verdict", "_dlss_mod",
-    "_dxvk_files", "_dxvk_gone", "_family", "_fault_chain",
+    "_dxvk_gone", "_family", "_fault_chain",
     "_feed_shaders", "_fresh", "_game_ran", "_in",
     "_install_crash", "_installed_at", "_last_feed_session", "_last_session",
     "_launcher_installed", "_layer_gone", "_live_evidence", "_loaded_block",
-    "_loaded_note", "_manifest", "_manifest_file", "_missing_addons",
-    "_missing_core", "_near", "_opti_log", "_remembered_evidence",
+    "_manifest", "_manifest_file", "_missing_addons",
+    "_missing_core", "_near", "_nrpre_picks", "_opti_log", "_remembered_evidence",
+    "_reshade_died_early",
     "_route", "_route_from_files", "_same_launch", "_shader_failures",
     "_stale_install", "_standalone_named", "_tail", "_upstream_named",
-    "_user_data_names"
+    "_user_data_names", "windows_crash"
 ]
 
 def _upstream_named(name: str) -> bool:
@@ -100,6 +103,50 @@ def _attached(text: str) -> bool:
     """Did the feed add-on say it was loaded? Its own session marker, so a
     build named something new is still recognised - and "detached" is not it."""
     return bool(_FEED_SESSION.search(text or ""))
+
+
+def _reshade_died_early(rtext: str) -> bool:
+    """Did ReShade's last session end before it did anything at all?
+
+    Only when the session is whole - it begins where ReShade began - and
+    holds none of the lines that say it got somewhere.
+    """
+    low = (rtext or "").lower()
+    if _RESHADE_STARTED not in low:
+        return False
+    return not any(k in low for k in _RESHADE_GOT_GOING)
+
+
+# neural-upstream writes its whole run into ReShade.log under [NRPRE], and
+# _analyse_upstream reads it from there - none of those lines carry WARN or
+# ERROR, so the excerpt dropped every one and a posted report replayed as a
+# route that said nothing. The newest line of each kind the diagnosis reads.
+# Here, not in routes.py: the report's excerpt (body.py) picks with it, and
+# body sits below routes.
+_NRPRE_KINDS = ("settings loaded", "hook ", "CreateFeature", "2b:", "HB #", "DIAG",
+                "eval feat")
+
+
+def _nrpre_picks(lines: list[str]) -> set[int]:
+    picks: set[int] = set()
+    newest: dict[str, list[int]] = {}
+    last = None
+    for i, ln in enumerate(lines):
+        at = ln.find("[NRPRE] ")
+        if at < 0:
+            continue
+        last = i
+        body = ln[at + 8:]
+        for kind in _NRPRE_KINDS:
+            if body.startswith(kind):
+                newest.setdefault(kind, []).append(i)
+                break
+    for kind, idx in newest.items():
+        # every hook line counts (the verdict says how many entry points)
+        picks.update(idx[-4:] if kind == "hook " else idx[-1:])
+    if last is not None:
+        picks.add(last)
+    return picks
 
 
 def _same_launch(feed: Path, reshade: Path, tol: float = 300.0) -> bool:
@@ -256,6 +303,33 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
         rep.never_ran = False
         return True
 
+    if s.ours and _through_layer(man) and not _addon_in(s.ours):
+        # DXVK (or the game itself) is in, and ReShade reaches this game as
+        # a Vulkan layer: there is no proxy DLL to be "reached" (#238).
+        if _layer_clash(man) is not None:
+            rep.add(BAD, "The 32-bit ReShade layer carries the layer name "
+                         "the 64-bit one uses, so the Vulkan loader throws "
+                         "it away.",
+                    "Loaded right now: " + ", ".join(sorted(
+                        {Path(p).name for p in s.ours}))
+                    + ". Both of ReShade's layer manifests are called "
+                      "VK_LAYER_reshade, and an implicit layer name may "
+                      "only appear once: the loader keeps the 64-bit one, "
+                      "then refuses it because a 32-bit game cannot load "
+                      "it. Install again with this version - it gives the "
+                      "32-bit layer its own name.")
+            rep.verdict = ("The 32-bit Vulkan layer is being discarded as a "
+                           "duplicate name - install again to rewrite it.")
+            rep.never_ran = False
+            return True
+        rep.add(WARN, f"Our files are loaded in {running}, and ReShade's "
+                      f"Vulkan layer has written no log.",
+                _layer_detail(s.ours, s.missing, man, "right now"))
+        rep.verdict = (f"Loaded into {running}, and no log was written - "
+                       f"ReShade's Vulkan layer is not reaching the game.")
+        rep.never_ran = False
+        return True
+
     if s.ours:
         rep.add(WARN, f"Our files are loaded in {running}, and nothing has "
                       f"written a log.",
@@ -293,45 +367,11 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
             f"install's is in {running}. The {app} has been started, so it is "
             f"not that - it does not load this folder's "
             f"{man.get('proxy') or 'proxy DLL'} at all. Try another name in "
-            f"the 'reshade loads as' dropdown on the install page.")
+            f"the 'reshade loads as' dropdown in the game's settings.")
     rep.verdict = (f"{running} is running and has loaded nothing from this "
                    f"folder - try another proxy name.")
     rep.never_ran = False
     return True
-
-
-def _loaded_note(install_dir: Path, man: dict, rep: Report) -> None:
-    """Say what the process really had in it, where the log cannot.
-
-    Three routes write no frame log at all and OptiScaler's log stops short
-    of saying whether the model ran, so 14 reports were answered "open the
-    overlay and read it yourself". Half of that question - is the add-on
-    even in the process, is the runtime beside it - the module list answers
-    outright, and it does not need the person to go and look.
-    """
-    try:
-        from .. import watch
-        seen = watch.last_sighting(install_dir, _installed_at(install_dir))
-    except Exception:
-        return
-    if not seen or seen.get("refused"):
-        return
-    loaded = [n for n in (seen.get("ours") or [])]
-    if not loaded and not seen.get("missing"):
-        return
-    when = datetime.fromtimestamp(seen.get("at", 0)).strftime("%d %b %H:%M")
-    if loaded:
-        rep.add(OK, f"When it last ran ({when}), the process had "
-                    f"{', '.join(loaded)} loaded.",
-                "Read out of the running game, not out of a log: those are "
-                "in it. What the overlay still answers is whether the model "
-                "is switched on and drawing.")
-    if seen.get("missing"):
-        rep.add(WARN, (f"...and not {', '.join(seen['missing'])}."
-                       if loaded else
-                       f"When it last ran ({when}), the process did not have "
-                       f"{', '.join(seen['missing'])} loaded."),
-                "Written here, and not in the process when it last ran.")
 
 
 def _loaded_block(install_dir: Path | None) -> str:
@@ -347,7 +387,17 @@ def _loaded_block(install_dir: Path | None) -> str:
         return ""
     try:
         from .. import watch
-        seen = watch.last_sighting(install_dir, _installed_at(install_dir))
+        man = _manifest(install_dir)
+        seen = watch.settle(
+            watch.last_sighting(install_dir, _installed_at(install_dir)),
+            man.get("files"))
+        proxy = str(man.get("proxy") or "")
+        also = ()
+        if man.get("dxvk"):
+            from .. import dxvk as _dx
+            also = _dx.ALL_FILES
+        need = [n for n in seen.get("missing") or []
+                if watch.essential(n, proxy, also)]
     except Exception:
         return ""
     if not seen:
@@ -364,8 +414,19 @@ def _loaded_block(install_dir: Path | None) -> str:
         if seen.get("elsewhere"):
             out.append("- same name, loaded from elsewhere: "
                        + ", ".join(seen["elsewhere"]))
-        if seen.get("missing"):
-            out.append("- ours, not loaded: " + ", ".join(seen["missing"]))
+        if need:
+            out.append("- ours, not loaded: " + ", ".join(need))
+        rest = [n for n in seen.get("missing") or [] if n not in need]
+        if rest:
+            # Printed apart, because both #225 and #238 read the one list
+            # as the fault. Which of the two lists a name belongs in is
+            # decided against the install's file list; with no file list
+            # there is nothing to decide it against, and calling everything
+            # "loaded only if the game asks" would be a claim the record
+            # cannot support (gate 1.9.1).
+            out.append(("- also written, loaded only if the game asks: "
+                        if man.get("files") else "- not loaded: ")
+                       + ", ".join(rest))
     return "\n".join(out) + "\n"
 
 
@@ -377,6 +438,11 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
     than "is running". A record from before this install is refused by
     watch.last_sighting, so anything that arrives here describes this one.
     """
+    try:
+        from .. import watch
+        seen = watch.settle(seen, man.get("files"))
+    except Exception:
+        pass
     if not seen:
         return False
     when = datetime.fromtimestamp(seen.get("at", 0)).strftime("%d %b %H:%M")
@@ -424,6 +490,32 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
         rep.never_ran = False
         return True
 
+    if seen.get("ours") and _through_layer(man) \
+            and not _addon_in(seen["ours"]):
+        if _layer_clash(man) is not None:
+            rep.add(BAD, "The 32-bit ReShade layer carries the layer name "
+                         "the 64-bit one uses, so the Vulkan loader throws "
+                         "it away.",
+                    "Loaded then: " + ", ".join(seen["ours"])
+                    + ". Both of ReShade's layer manifests are called "
+                      "VK_LAYER_reshade, and an implicit layer name may "
+                      "only appear once: the loader keeps the 64-bit one, "
+                      "then refuses it because a 32-bit game cannot load "
+                      "it. Install again with this version - it gives the "
+                      "32-bit layer its own name.")
+            rep.verdict = ("The 32-bit Vulkan layer is being discarded as a "
+                           "duplicate name - install again to rewrite it.")
+            rep.never_ran = False
+            return True
+        rep.add(WARN, f"At {when} our files WERE loaded in {running}, and "
+                      f"ReShade's Vulkan layer wrote no log.",
+                _layer_detail(seen["ours"], seen.get("missing"), man, "then"))
+        rep.verdict = (f"Loaded into {running} at {when}, and no log was "
+                       f"written - ReShade's Vulkan layer is not reaching the "
+                       f"game.")
+        rep.never_ran = False
+        return True
+
     if seen.get("ours"):
         rep.add(WARN, f"At {when} our files WERE loaded in {running}, and "
                       f"nothing wrote a log.",
@@ -442,8 +534,8 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
             f"Windows lists every DLL in a process and not one of this "
             f"install's was in it, so the {app} HAS been started - it does "
             f"not load this folder's {man.get('proxy') or 'proxy DLL'} at "
-            f"all. Try another name in the 'reshade loads as' dropdown on "
-            f"the install page.")
+            f"all. Try another name in the 'reshade loads as' dropdown in "
+            f"the game's settings.")
     rep.verdict = (f"{running} ran at {when} and loaded nothing from this "
                    f"folder - try another proxy name.")
     rep.never_ran = False
@@ -477,17 +569,31 @@ def _route_from_files(install_dir: Path) -> str:
     def there(*names: str) -> bool:
         return any((install_dir / n).is_file() for n in names)
 
+    # The installer's own names, so a renamed add-on is renamed here too.
+    from .. import installer as _i
     if there("OptiScaler.ini", "OptiScaler.log"):
         return "optiscaler"
     if any(install_dir.glob("*.trex/NvRemixBridge.exe")) \
             or (install_dir / ".trex").is_dir():
         return "remix"
-    if there("dlss5-bridge.addon64"):
+    if there(_i.BRIDGE_ADDON):
         return "bridge"
-    if there("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-feed.log"):
+    # Before the feeder and standalone: nvngx.dll.addon64 is only ever the
+    # upstream add-on, and without this line an upstream folder read as
+    # the feeder's and was answered about add-ons it never had.
+    if there(_i.UPSTREAM_ADDON):
+        return "upstream"
+    if there(_i.FEEDER_ADDON64, _i.FEEDER_ADDON32, "dlss5-feed.log"):
         return "feeder"
-    if there("nvngx.dll", "standalone-dlssnr.addon64"):
+    if there(_i.STANDALONE_ADDON, _i.STANDALONE_BRIDGE):
         return "standalone"
+    # Last: the feeder and the bridge put renodx-dlss5.addon64 down too. The
+    # RenoDX route's own build has a different name; the native route is
+    # the one left with the plain add-on and nothing else.
+    if there(_i.RENODX_SF):
+        return "renodx"
+    if there(_i.RENODX):
+        return "native"
     return ""
 
 
@@ -528,7 +634,17 @@ def _install_crash(last_error: str) -> tuple[str, str]:
     explains an empty folder.
     """
     text = last_error or ""
-    if not any(f in text for f in _INSTALL_FRAMES):
+    # The frames, not the text: "installer.py" could be in a message, and
+    # the report keeps only the last 900 characters, so the installer's own
+    # frame is often cut off above net.py's (#197). Any frame of a module
+    # the install reaches counts; one only in the window, the scan or the
+    # library does not (#148's library.py).
+    # A frame inside the window's package (core/ui) is the window's, whatever
+    # its file is called: a stem shared with an install module must not make
+    # a traceback of window frames read as an install crash.
+    frames = [f for d, f in re.findall(r'(?:[\\/](\w+)[\\/])?(\w+)\.py", line \d+, in ', text)
+              if d.lower() not in ("ui", "gui")]
+    if not any(f in _install_modules() for f in frames):
         return "", ""
     line = ""
     for ln in reversed(text.strip().splitlines()):
@@ -559,7 +675,7 @@ def _crash_verdict(rep: "Report", last_error: str) -> bool:
     rep.add(BAD, "The install stopped with an error before it wrote anything.",
             f"Nothing was installed into this folder: {why}. It said: "
             f"{line} - so there is nothing here for the game to load, and "
-            f"nothing to clean up. Press INSTALL again.")
+            f"nothing to clean up. Install again.")
     rep.verdict = "The install crashed before it finished - install again."
     rep.ran = False
     return True
@@ -643,7 +759,7 @@ def _stale_install(rep: "Report", man: dict) -> None:
         return
     rep.add(INFO, f"This folder was set up by version {was}; "
                   f"you are running {_update.VERSION}.",
-            "Press INSTALL again so it gets this build's files and fixes - "
+            "Install again so it gets this build's files and fixes - "
             "your settings and backups are kept. Everything below is read "
             "from what that older install wrote.")
 
@@ -743,19 +859,6 @@ def _layer_gone(man: dict) -> tuple[str, str, str] | None:
             "ReShade's Vulkan layer is not registered - install again.")
 
 
-def _dxvk_files(man: dict) -> list[str]:
-    """The DXVK DLLs this install wrote. Taken from the recorded file list,
-    not from the manifest's api: by the time the manifest is written the
-    game has been re-labelled Vulkan, which says nothing about whether DXVK
-    came in as d3d9.dll or as dxgi.dll + d3d11.dll."""
-    if not man.get("dxvk"):
-        return []
-    from .. import dxvk as _dxvk
-    written = {str(f).replace("\\", "/").lower()
-               for f in man.get("files") or [] if isinstance(f, str)}
-    return [n for n in _dxvk.ALL_FILES if n in written]
-
-
 def _dxvk_gone(install_dir: Path, man: dict) -> list[str]:
     """DXVK files the install recorded that are no longer in the folder."""
     return [n for n in _dxvk_files(man) if not (install_dir / n).is_file()]
@@ -852,6 +955,7 @@ def _game_ran(install_dir: Path, exe: str, since: float,
             low = e.name.lower()
             if low in _RAN_SKIP or low in ours \
                     or low.endswith(_RAN_SKIP_SUFFIX) \
+                    or any(part in low for part in _RAN_SKIP_PART) \
                     or low.endswith(_RAN_NOT_EVIDENCE):
                 continue
             try:
@@ -898,3 +1002,25 @@ def _shader_failures(rtext: str, provider_tech: str, rep: Report) -> None:
         rep.add(INFO, f"{len(others)} other shader{'s' if len(others) != 1 else ''} "
                       f"failed to compile - not used by the feed, ignore.",
                 ", ".join(others))
+
+
+def windows_crash(install_dir: Path, exe_name: str):
+    """(crash, (title, detail)) Windows recorded for this game since the
+    install, or (None, None). Worker only: it asks PowerShell (about 1 s).
+
+    The game page reads this after every session and its "did it work?"
+    counts a crash as not working; a caller that reads only analyse() can
+    say "Working" about a session Windows saw fault. Whether the crash
+    belongs to THIS session is the caller's (the game page's
+    crash_is_this_session): it needs the log times the window keeps.
+    """
+    try:
+        from .. import wincrash
+        where = Path(install_dir)
+        man = _manifest(where) or {}
+        written = tuple(str(f) for f in (man.get("files") or []) if isinstance(f, str))
+        c = wincrash.last_crash(exe_name or "", since=_installed_at(where) or 0.0)
+        said = wincrash.describe(c, str(man.get("proxy") or ""), written)
+    except Exception:
+        return None, None
+    return (c, said) if said else (None, None)

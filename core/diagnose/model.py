@@ -28,13 +28,15 @@ __all__ = [
     "NATIVE_ADDON_NAME", "OK", "OPTI_LOG", "PROVIDER_FX",
     "RESHADE_LOG", "RR_RUNTIME", "Report", "STANDALONE_ADDON_NAME",
     "STANDALONE_LOG", "STANDALONE_PANEL", "UPSTREAM_ADDON_NAME", "UPSTREAM_PANEL",
+    "NEVER_RAN_SAID", "drop_never_ran",
     "VULKAN_LAYER", "WARN", "_BACKUP_SUFFIX", "_COMPILER_FIX",
     "_CORE_NAMES", "_CRASH_CAUSES", "_DEPTH_HINT", "_DISPATCH_MS",
     "_FEED_GOT_RUNTIME", "_FEED_SESSION", "_HOOK_ADDRESSES", "_INPUT_NEVER",
     "_INPUT_SEEN", "_INSTALL_FRAMES", "_NGX_IN_STACK", "_OURS_IN_STACK",
+    "_SHARED_MODULES", "_install_modules",
     "_OUR_MARKS", "_RAN_CONTAINERS", "_RAN_ENTRIES", "_RAN_LOOK",
     "_RAN_MARGIN", "_RAN_NOT_A_NAME", "_RAN_NOT_EVIDENCE", "_RAN_PARENTS",
-    "_RAN_PER_DIR", "_RAN_SECONDS", "_RAN_SKIP", "_RAN_SKIP_SUFFIX",
+    "_RAN_PER_DIR", "_RAN_SECONDS", "_RAN_SKIP", "_RAN_SKIP_PART", "_RAN_SKIP_SUFFIX",
     "_RESHADE_ALSO", "_RESHADE_FIRM", "_RESHADE_GOT_GOING", "_RESHADE_KEEP",
     "_RESHADE_SESSION", "_RESHADE_STARTED", "_SCAN_NOISE", "_STANDALONE_NO_RUNTIME",
     "_STANDALONE_SESSION", "_layer_state", "_user_data_roots"
@@ -111,6 +113,30 @@ class Finding:
     detail: str = ""
 
 
+# Everything the diagnosis says when it believes the game has NOT run since
+# the install. Proof that it DID run - a sighting, a Windows fault record -
+# makes every one of them false, and a correction that reaches the verdict
+# and leaves these on the screen is #171's shape. Two places pruned this
+# list, with different fragments and different strength; it lives here so
+# they cannot drift apart again (gate 1.9.1). "Own files changed after the
+# install" is not on it: that finding is evidence the game DID run.
+NEVER_RAN_SAID = (
+    "has not been started since the install",
+    "is older than the install",
+    "predates this install",
+    "has not been run since installing",
+    "play once and check again",
+)
+
+
+def drop_never_ran(findings) -> list:
+    """The findings that survive proof that the game ran."""
+    return [f for f in findings
+            if not any(s in f"{getattr(f, 'title', '')} "
+                         f"{getattr(f, 'detail', '')}"
+                       for s in NEVER_RAN_SAID)]
+
+
 @dataclass
 class Report:
     ran: bool = False
@@ -160,9 +186,60 @@ _OUR_MARKS = ("dlss5-feed.addon64", "dlss5-feed.addon32",
               "dlss5-feed.log", "OptiScaler.ini", "nvngx_dlssnr.dll")
 
 
-_INSTALL_FRAMES = ("installer.py", "optiscaler.py", "remix.py", "remixdl.py",
-                   "dxvk.py", "vulkan.py", "openxr.py", "feedcfg.py",
-                   "reshade_ini.py", "emulators.py", "refw.py", "reengine.py")
+# A fallback only. As the answer this hand list rotted: net.py and mfg.py
+# were never in it, so a download dying below the installer's frames was
+# no crash (the report keeps only a 900-character tail).
+_INSTALL_FRAMES = ("installer.py", "optiscaler.py", "remix.py", "dxvk.py",
+                   "vulkan.py", "openxr.py", "feedcfg.py", "reshade_ini.py",
+                   "emulators.py", "refw.py", "reengine.py", "net.py",
+                   "sources.py", "mfg.py")
+# Reached by the install, and by the window and the scan as well.
+_SHARED_MODULES = frozenset({"games", "gpu", "pe", "update", "log", "prefs",
+                             "autotune", "dlss", "anticheat"})
+_install_graph: list = []
+
+
+def _install_modules() -> frozenset:
+    """Every core module the installer reaches, read from its bytecode (the
+    frozen build has no .py files), imports inside functions included; minus
+    the shared modules, the window and the diagnosis."""
+    if _install_graph:
+        return _install_graph[0]
+    import dis, importlib, types  # noqa: E401
+    pkg = __name__.split(".")[0]
+    seen: set = set()
+    stack = ["installer"]
+    while stack:
+        n = stack.pop()
+        # "ui" is the 2.0 window's package (core/ui); "gui" the old module
+        if n in seen or n in ("diagnose", "gui", "ui", "log", "prefs"):
+            continue
+        try:
+            mod = importlib.import_module(f"{pkg}.{n}")
+            codes = [mod.__loader__.get_code(mod.__name__)]
+        except Exception:
+            continue
+        seen.add(n)
+        found = {v.__name__.split(".")[1] for v in list(vars(mod).values())
+                 if isinstance(v, types.ModuleType)
+                 and v.__name__.startswith(pkg + ".")}
+        while codes:
+            co, consts = codes.pop(), []
+            for ins in dis.get_instructions(co):
+                if ins.opname == "LOAD_CONST":
+                    consts.append(ins.argval)
+                elif ins.opname == "IMPORT_NAME" and len(consts) >= 2 \
+                        and consts[-2] == 1:      # a "from ." import
+                    if ins.argval:
+                        found.add(str(ins.argval).split(".")[0])
+                    elif isinstance(consts[-1], tuple):
+                        found.update(str(x) for x in consts[-1])
+            codes += [c for c in co.co_consts if isinstance(c, types.CodeType)]
+        stack.extend(found - seen)
+    if "installer" not in seen or len(seen) < 3:
+        seen = {f[:-3] for f in _INSTALL_FRAMES}
+    _install_graph.append(frozenset(seen - _SHARED_MODULES))
+    return _install_graph[0]
 
 
 _CRASH_CAUSES = (
@@ -242,10 +319,20 @@ _RAN_SECONDS = 1.0
 _RAN_SKIP = {"reshade.log", "dlss5-feed.log", "optiscaler.log",
              "standalone-dlssnr.log", "dlss5-autopilot.json",
              "dlss5-feed-host64.log", "reshade.ini", "reshadepreset.ini",
-             "dlss5-feed.cfg", "dlss5-feed-crash.dmp"}
+             "dlss5-feed.cfg", "dlss5-feed-crash.dmp",
+             # the dlss page's record: written by the tool, not the game
+             "dlss5-dlss-update.json"}
 
 
 _RAN_SKIP_SUFFIX = (".dlss5-autopilot-backup", ".tmp")
+
+
+# Anywhere in the name, not only at its end: the dlss page keeps the game's
+# own runtime as `.dlss5-dlss-original`, sets one aside as
+# `.dlss5-dlss-displaced-<time>` and copies through `.dlss5-dlss-part`. A
+# fresh one of those read as "the game ran and loaded nothing" when the game
+# had not been started since the install.
+_RAN_SKIP_PART = (".dlss5-dlss-",)
 
 
 _RAN_NOT_EVIDENCE = (".dll", ".addon64", ".addon32", ".fx", ".fxh", ".asi",
