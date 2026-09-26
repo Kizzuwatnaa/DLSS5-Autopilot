@@ -158,7 +158,7 @@
    },
    "upstream": {
     "failed": 1,
-    "worked": 12
+    "worked": 13
    }
   },
   "617.14": {
@@ -1994,6 +1994,21 @@
     }
    }
   },
+  "horizonzerodawn.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Horizon Zero Dawn\u2122 Complete Edition",
+   "routes": {
+    "upstream": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "horizonzerodawnremastered.exe": {
    "drivers": {
     "616.56": {
@@ -3401,6 +3416,6 @@
    }
   }
  },
- "generated": "2026-09-26T16:56:57Z",
- "reports": 276
+ "generated": "2026-09-26T17:04:14Z",
+ "reports": 277
 }
