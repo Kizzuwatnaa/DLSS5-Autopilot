@@ -52,7 +52,7 @@
     "worked": 0
    },
    "feeder": {
-    "failed": 2,
+    "failed": 1,
     "worked": 1
    },
    "renodx": {
@@ -72,7 +72,7 @@
   },
   "OPENGL/none": {
    "feeder": {
-    "failed": 1,
+    "failed": 0,
     "worked": 2
    }
   },
@@ -140,12 +140,6 @@
     "worked": 1
    }
   },
-  "596.21": {
-   "feeder": {
-    "failed": 1,
-    "worked": 0
-   }
-  },
   "610.47": {
    "feeder": {
     "failed": 1,
@@ -154,12 +148,6 @@
    "optiscaler": {
     "failed": 0,
     "worked": 1
-   }
-  },
-  "610.62": {
-   "feeder": {
-    "failed": 1,
-    "worked": 0
    }
   },
   "610.74": {
@@ -188,7 +176,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 14,
+    "failed": 10,
     "worked": 33
    },
    "native": {
@@ -218,12 +206,8 @@
   },
   "616.64": {
    "feeder": {
-    "failed": 17,
+    "failed": 14,
     "worked": 4
-   },
-   "native": {
-    "failed": 1,
-    "worked": 0
    },
    "optiscaler": {
     "failed": 0,
@@ -250,7 +234,7 @@
     "worked": 3
    },
    "feeder": {
-    "failed": 31,
+    "failed": 25,
     "worked": 11
    },
    "native": {
@@ -390,10 +374,6 @@
   },
   "acodyssey.exe": {
    "drivers": {
-    "616.56": {
-     "failed": 1,
-     "worked": 0
-    },
     "616.92": {
      "failed": 0,
      "worked": 1
@@ -401,10 +381,6 @@
    },
    "name": "Assassin's Creed Odyssey",
    "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    },
     "standalone": {
      "failed": 0,
      "worked": 1
@@ -512,21 +488,6 @@
     }
    }
   },
-  "aion.bin.exe": {
-   "drivers": {
-    "616.56": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "Aion H4K",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    }
-   }
-  },
   "alanwake2.exe": {
    "drivers": {
     "616.56": {
@@ -594,21 +555,6 @@
     }
    },
    "name": "A Plague Tale Requiem-InsaneRamZes",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    }
-   }
-  },
-  "astronautsgame-win64-shipping.exe": {
-   "drivers": {
-    "616.64": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "The Vanishing of Ethan Carter.SteamGG.NET",
    "routes": {
     "feeder": {
      "failed": 1,
@@ -893,25 +839,6 @@
     }
    }
   },
-  "cities.exe": {
-   "drivers": {
-    "610.62": {
-     "failed": 1,
-     "worked": 0
-    },
-    "616.92": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "Cities: Skylines",
-   "routes": {
-    "feeder": {
-     "failed": 2,
-     "worked": 0
-    }
-   }
-  },
   "cities2.exe": {
    "drivers": {
     "617.14": {
@@ -1100,7 +1027,7 @@
      "worked": 1
     },
     "616.92": {
-     "failed": 1,
+     "failed": 0,
      "worked": 6
     },
     "617.14": {
@@ -1117,10 +1044,6 @@
    },
    "name": "Cyberpunk 2077",
    "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    },
     "optiscaler": {
      "failed": 3,
      "worked": 8
@@ -1737,10 +1660,6 @@
   },
   "fallout4.exe": {
    "drivers": {
-    "616.64": {
-     "failed": 1,
-     "worked": 0
-    },
     "616.92": {
      "failed": 0,
      "worked": 1
@@ -1752,10 +1671,6 @@
    },
    "name": "Fallout 4",
    "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    },
     "standalone": {
      "failed": 1,
      "worked": 1
@@ -1999,16 +1914,12 @@
     "616.56": {
      "failed": 1,
      "worked": 0
-    },
-    "616.64": {
-     "failed": 1,
-     "worked": 0
     }
    },
    "name": "FlatOut",
    "routes": {
     "feeder": {
-     "failed": 2,
+     "failed": 1,
      "worked": 0
     }
    }
@@ -2201,21 +2112,6 @@
     }
    }
   },
-  "grimrock2.exe": {
-   "drivers": {
-    "596.21": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "Legend of Grimrock 2",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    }
-   }
-  },
   "grw.exe": {
    "drivers": {
     "617.14": {
@@ -2283,21 +2179,6 @@
    "name": "Grand Theft Auto V",
    "routes": {
     "feeder": {
-     "failed": 1,
-     "worked": 0
-    }
-   }
-  },
-  "halfswordue5-win64-shipping.exe": {
-   "drivers": {
-    "616.64": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "Half Sword Demo",
-   "routes": {
-    "native": {
      "failed": 1,
      "worked": 0
     }
@@ -2485,21 +2366,6 @@
     "upstream": {
      "failed": 0,
      "worked": 1
-    }
-   }
-  },
-  "kikoplay.exe": {
-   "drivers": {
-    "616.92": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "kikoplay",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
     }
    }
   },
@@ -2912,21 +2778,6 @@
     }
    }
   },
-  "omsi.exe": {
-   "drivers": {
-    "616.92": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "OMSI 2",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
-    }
-   }
-  },
   "onimushawots.exe": {
    "drivers": {
     "616.92": {
@@ -3151,14 +3002,14 @@
   "re2.exe": {
    "drivers": {
     "616.56": {
-     "failed": 1,
+     "failed": 0,
      "worked": 1
     }
    },
-   "name": "Resident Evil 2 2019",
+   "name": "RESIDENT EVIL 2",
    "routes": {
     "feeder": {
-     "failed": 1,
+     "failed": 0,
      "worked": 1
     }
    }
@@ -3291,21 +3142,6 @@
     },
     "optiscaler": {
      "failed": 1,
-     "worked": 0
-    }
-   }
-  },
-  "rrre64.exe": {
-   "drivers": {
-    "616.92": {
-     "failed": 2,
-     "worked": 0
-    }
-   },
-   "name": "RaceRoom Racing Experience",
-   "routes": {
-    "feeder": {
-     "failed": 2,
      "worked": 0
     }
    }
@@ -3483,21 +3319,6 @@
     "feeder": {
      "failed": 1,
      "worked": 3
-    }
-   }
-  },
-  "slaythespire2.exe": {
-   "drivers": {
-    "616.56": {
-     "failed": 1,
-     "worked": 0
-    }
-   },
-   "name": "Slay the Spire 2",
-   "routes": {
-    "feeder": {
-     "failed": 1,
-     "worked": 0
     }
    }
   },
@@ -4148,6 +3969,6 @@
    }
   }
  },
- "generated": "2026-09-30T18:44:54Z",
- "reports": 360
+ "generated": "2026-09-30T18:52:35Z",
+ "reports": 344
 }
