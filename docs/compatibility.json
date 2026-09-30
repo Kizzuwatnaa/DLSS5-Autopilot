@@ -72,7 +72,7 @@
   },
   "OPENGL/none": {
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 2
    }
   },
@@ -268,7 +268,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 6,
+    "failed": 7,
     "worked": 6
    },
    "optiscaler": {
@@ -2808,6 +2808,21 @@
     }
    }
   },
+  "openmw.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "OpenMW 0.51.0",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "outlaws.exe": {
    "drivers": {
     "616.92": {
@@ -3969,6 +3984,6 @@
    }
   }
  },
- "generated": "2026-09-30T18:56:12Z",
- "reports": 344
+ "generated": "2026-09-30T20:42:10Z",
+ "reports": 345
 }
