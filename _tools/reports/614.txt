@@ -1,0 +1,64 @@
+**Did the game start?** it never started
+
+**What happened**
+dcs not started
+
+---
+- version: 2.0.7
+- gpu: NVIDIA GeForce RTX 4090 Laptop GPU (sm_89), driver 616.56
+- game: bin-mt
+- exe: DCS.exe
+- arch/api: 64-bit / DX11 (loads d3d11.dll at run time (dx11backend.dll beside the exe imports it); no static graphics import)
+- route: optiscaler
+- work area: 75%
+- windows event: DCS.exe faulted in sl.dlss_g.dll 0xC0000005 at 2026-09-30 18:42:45 UTC
+- this tool: running as administrator
+
+**Diagnosis**: Windows recorded the game faulting - see below for what to take out first.
+- [bad] You said the game never started.
+- [bad] Neural rendering was switched on, but the model never drew a frame.
+- [info] OptiScaler runs the model around the game's own upscaler. Turn DLSS (or FSR 2 or later, or XeSS) on in the game's graphics menu - FSR 1.0 does not count, it makes no call OptiScaler can take over. With no upscaler running there is nothing for neural rendering to attach to, which is what the overlay means by 'waiting for the upscaler to run'. If the game has no upscaler at all, use the feeder route.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- nvngx_dlss.dll: present (swapped to 310.9.1 (NVIDIA SDK); the game's own is backed up)
+- optiscaler build: y4my4my4m (v10.0.0-dev-fork-y4my4my4m-v4)
+
+**What ran, and what it loaded** (seen at 30 Sep 21:41)
+- process: DCS.exe
+- DLLs in the process: 154
+- ours, loaded: dxgi.dll
+- ours, not loaded: nvngx_dlssnr.dll
+- also written, loaded only if the game asks: nvngx.dll_dlssnr.dll, nvngx_dlss.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+[21:42:32.946606] [I] Util::CheckForRealObject DxgiFactoryHooks::HookToDLSSGFactory Streamline proxy found!
+[21:42:32.946660] [I] SL Log: [21-42-32][streamline][info][tid:23952][4s:717ms:769us]sl.cpp:674[operator ()] Upgrading IDXGIFactory to use SL proxy ...
+[21:42:32.946939] [I] SL Log: [21-42-32][streamline][info][tid:23952][4s:718ms:048us]dxgiFactory.cpp:172[checkAndUpgradeInterface] Upgraded IDXGIFactory v0 to v7
+[21:42:32.947021] [W] SL Log: [21-42-32][streamline][warn][tid:23952][4s:718ms:140us]pluginManager.cpp:489[setFeatureEnabled] Feature 'kFeatureDLSS_G' not loaded
+[21:42:32.959103] [I] WrappedIDXGISwapChain4::WrappedIDXGISwapChain4 1 created, real: 17B8D2D2B50, refCount: 1
+[21:42:32.959229] [I] Util::CheckForRealObject DxgiFactoryHooks::DLSSGCreateSwapChain Streamline proxy found!
+```
+
+**autopilot.log (`C:\Users\Mazen\AppData\Local\dlss5-autopilot\autopilot.log`)**
+```
+======================================================================
+2026-09-30 18:42:02 info  DLSS 5 Autopilot 2.0.7 starting
+2026-09-30 18:42:03 info    windows : Windows-11-10.0.26200-SP0
+2026-09-30 18:42:03 info    python  : 3.12.10  frozen=True
+2026-09-30 18:42:03 info    exe     : C:\Users\Mazen\Downloads\Compressed\DLSS5-Autopilot-v2.0.7-win64\dlss5-autopilot.exe
+2026-09-30 18:42:03 info    gpu     : NVIDIA GeForce RTX 4090 Laptop GPU  sm_89
+2026-09-30 18:49:27 info  OptiScaler: this release carries OptiScaler-NR-v0.8.91-rtx40-mfg.zip, OptiScaler-NR-v0.8.91.zip - installing OptiScaler-NR-v0.8.91-rtx40-mfg.zip
+```

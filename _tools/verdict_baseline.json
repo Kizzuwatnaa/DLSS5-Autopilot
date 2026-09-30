@@ -1272,6 +1272,21 @@
   "route": "feeder",
   "verdict": "The install crashed before it finished - install again."
  },
+ "614": {
+  "findings": [
+   "bad: You said the game never started.",
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 616.56: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Windows recorded the game faulting - see below for what to take out first."
+ },
  "63": {
   "findings": [
    "warn: Something else is pacing the frames this game presents."
