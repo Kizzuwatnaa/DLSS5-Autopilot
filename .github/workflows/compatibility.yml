@@ -103,17 +103,37 @@ jobs:
         with:
           path: _site
 
+      # main moves under a running build - a release push, or the bot's own
+      # commit from the run before - and a plain push was rejected ("fetch
+      # first"), failing the run (2026-09-30). On a rejection: take the new
+      # main, rebuild the file on top of it (it is generated, so never
+      # merged), and push again.
       - name: Commit the file if it changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PAGE_DIR: _site
         run: |
-          if git diff --quiet -- docs/compatibility.json; then
-            echo "nothing changed"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/compatibility.json
-          git commit -m "compatibility: rebuild from the shared results"
-          git push
+          for attempt in 1 2 3 4 5; do
+            if git diff --quiet -- docs/compatibility.json; then
+              echo "nothing changed"
+              exit 0
+            fi
+            git add docs/compatibility.json
+            git commit -q -m "compatibility: rebuild from the shared results"
+            if git push; then
+              exit 0
+            fi
+            echo "main moved - rebuilding on top of it (attempt $attempt)"
+            git fetch -q origin main
+            git reset -q --hard origin/main
+            python .github/scripts/compatibility.py
+            sleep $((attempt * 3))
+          done
+          echo "could not push after 5 attempts"
+          exit 1
 
   pages:
     needs: build
