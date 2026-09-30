@@ -127,11 +127,18 @@ _FEED_KINDS = (("attached", "attached."), ("provider", "DLSS5_MV_PROVIDER="),
                ("notloaded", "is not loaded"), ("mv", "MV probe"),
                ("depth", "Depth probe"), ("spawned", "host spawned"),
                ("connected", "host connected"), ("building", "building: "),
-               ("fault", " stack, by module (innermost first):"))
+               ("fault", " stack, by module (innermost first):"),
+               # feeder 1.18.0-beta: NGX's own result and the helper mode
+               ("ngxresult", "FeatureInitResult"),
+               ("inprocess", "would not set DLSS up inside this game's process"),
+               ("standsdown", "stands down"))
 
 
 def _feed_kind(ln: str) -> str:
     """The dlss5-feed.log lines the feeder chain decides on (chain.py)."""
+    # the session start, in every build's form ("attached." / "attached;")
+    if _FEED_SESSION.search(ln):
+        return "attached"
     for k, word in _FEED_KINDS:
         if word in ln:
             return k
@@ -725,11 +732,13 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     reshade = feed = opti = ""
     if d is not None and d.is_dir():
         files = "\n**Files in the folder**\n" + "\n".join(presence) + "\n"
-        reshade = _tail(d / RESHADE_LOG, 250_000)
-        feed = _tail(d / FEED_LOG, 100_000)
+        reshade = _tail(d / RESHADE_LOG, TAIL_RESHADE)
+        feed = _tail(d / FEED_LOG, TAIL_FEED)
         if route == "optiscaler":
             p = _opti_log(d)
-            opti = _tail(p, 100_000) if p else ""
+            # the last run, as _analyse_optiscaler reads it
+            from .routes import _last_run
+            opti = _last_run(_tail(p, TAIL_OPTI)) if p else ""
 
     parts = [head, files, _loaded_block(d)]
     # The last session only, as analyse() reads it: ReShade.log is never
@@ -744,23 +753,23 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
                             _bridge_excerpt(_bridge_text(d / BRIDGE_LOG)), 900))
     # The last session, as chain.py reads it, and its deciding lines kept.
     parts.append(_block("dlss5-feed.log",
-                        _keyed_lines(_last_feed_session(feed), _feed_kind, 20, 1400), 1400))
+                        _keyed_lines(_strip_ngx(_last_feed_session(feed)), _feed_kind, 20, 1400), 1400))
     # A 32-bit game's DLSS runs in the helper, and #252's report carried
     # every log except the one that named the fault.
     if route == "feeder" and d is not None and (d / HOST_LOG).is_file():
         parts.append(_block("dlss5-feed-host.log",
-                            _helper_excerpt(_tail(d / HOST_LOG, 150_000)), 900))
+                            _helper_excerpt(_tail(d / HOST_LOG, TAIL_HOST)), 900))
     if route == "optiscaler":
         parts.append(_block("OptiScaler.log", _keyed_lines(opti, _opti_kind), 900))
     if route == "standalone":
         parts.append(_block("standalone-dlssnr.log",
-                            _keyed_lines(_tail(model.STANDALONE_LOG, 100_000),
+                            _keyed_lines(_tail(model.STANDALONE_LOG, TAIL_STANDALONE),
                                          _standalone_kind), 900))
     if route == "remix" and d is not None:
         # Only the lines that say anything about the neural pass: the Remix
         # log is enormous and the rest of it is path-tracing chatter.
         from .. import remix as _remix
-        rtx_log = _tail(_remix.log_path(d), 300_000)
+        rtx_log = _tail(_remix.log_path(d), TAIL_REMIX)
         nr_lines = _last_lines(
             rtx_log, 20, lambda ln: "DLSS-NR" in ln or "dlssnr" in ln.lower()
             or "Neural" in ln)

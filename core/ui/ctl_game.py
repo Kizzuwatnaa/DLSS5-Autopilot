@@ -17,6 +17,7 @@ when the page opens; the 1.9 window did it on the Tk thread on every pick.
 """
 from __future__ import annotations
 
+import os
 import threading
 import traceback
 import webbrowser
@@ -1873,9 +1874,9 @@ class GameControl:
     def _measure_session(where, route: str, fallback: int):
         try:
             d = Path(where)
-            feed_txt = diagnose._last_run(diagnose._tail(d / diagnose.FEED_LOG, 100_000))
+            feed_txt = diagnose._last_feed_session(diagnose._tail(d / diagnose.FEED_LOG, diagnose.TAIL_FEED))
             opti_p = diagnose._opti_log(d)
-            opti_txt = diagnose._last_run(diagnose._tail(opti_p, 100_000)) if opti_p else ""
+            opti_txt = diagnose._last_run(diagnose._tail(opti_p, diagnose.TAIL_OPTI)) if opti_p else ""
             exact = autotune.ran_at_exact(d, route)
             log_path = opti_p if route == "optiscaler" else d / diagnose.FEED_LOG
             if exact is not None and log_path is not None and autotune.written_after(d, route, log_path):
@@ -2225,8 +2226,17 @@ class GameControl:
             return None
         if not seen or not other.name or not recorded:
             return None
-        if other.name.lower() == Path(recorded).name.lower():
-            return None
+        # The same name in another folder counts too (a game root and its
+        # bin\x64, gate 2.0.8): the whole path decides, not the name.
+        rec_path = Path(recorded)
+        if not rec_path.is_absolute():
+            rec_path = Path(g.install_dir) / rec_path.name
+        try:
+            if other.resolve() == rec_path.resolve():
+                return None
+        except OSError:
+            if os.path.normcase(str(other)) == os.path.normcase(str(rec_path)):
+                return None
         try:
             if not other.is_file() or g.folder not in other.parents:
                 return None

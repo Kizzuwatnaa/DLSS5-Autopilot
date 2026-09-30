@@ -82,6 +82,14 @@ PHRASES = {
         ("ReShade.log could not be opened", "could not be opened"),
         ("[host] DLSS 5 add-on file: %s", "DLSS 5 add-on file: "),
         ("[host] frame %llu evaluated", "evaluated"),
+        # 1.18.0-beta: NGX's own result, the helper mode, NGX's log copy
+        ("NGX SuperSampling.FeatureInitResult: 0x%08X (%s)",
+         "FeatureInitResult:? "),
+        ("would not set DLSS up inside this game's process",
+         "would not set DLSS up inside this game's process"),
+        ("dlss5-feed.addon64 stands down", "addon64 stands down"),
+        ("===== NGX's own log", "===== NGX's own log"),
+        ("end of NGX's own log", "end of NGX's own log"),
     ],
     "OptiScaler (DLSS-NR fork)": [
         ("DlssNr_Dx12::Dispatch", "DlssNr_Dx12::Dispatch"),
@@ -94,6 +102,25 @@ PHRASES = {
     "OptiScaler (wilsjo2's pre-SR fork)": [
         ("DLSS-NR elapsed:", "DLSS-NR elapsed:"),
         ("DLSS-NR finished picture:", "DLSS-NR finished picture:"),
+    ],
+    # 2.0.8: the runtime the remix swap installs. Its patterns live in
+    # core/remix.py and routes._analyse_remix reads them; none of its lines
+    # carry Kim2091's "[DLSS-NR]" prefix, which is how every session of it
+    # read "never even attempted" before (the 0-of-4 remix record).
+    "dxvk-remix-plus-dlssnr (lunks)": [
+        ("NVIDIA DLSS-NR snippet loaded from ", "NVIDIA DLSS-NR snippet loaded from "),
+        ("NVIDIA DLSS-NR evaluated (count=", "NVIDIA DLSS-NR evaluated"),
+        ("NVIDIA DLSS-NR inactive:", "NVIDIA DLSS-NR inactive:"),
+        ("NVIDIA DLSS-NR skipped: ", "NVIDIA DLSS-NR skipped: "),
+        ("NVIDIA DLSS-NR not available: ", "NVIDIA DLSS-NR not available:"),
+        ("NVSDK_NGX_VULKAN_Init_Ext failed for DLSS-NR: ",
+         "NVSDK_NGX_VULKAN_Init_Ext failed for DLSS-NR:"),
+        ("AllocateParameters failed for DLSS-NR: ", "AllocateParameters failed for DLSS-NR:"),
+        ("Failed to create DLSS-NR feature: ", "Failed to create DLSS-NR feature:"),
+        ("NVSDK_NGX_VULKAN_EvaluateFeature failed for DLSS-NR: ",
+         "NVSDK_NGX_VULKAN_EvaluateFeature failed for DLSS-NR:"),
+        ("does not export the full NVSDK_NGX_VULKAN_",
+         "does not export the full NVSDK_NGX_VULKAN_* surface"),
     ],
     "renodx-dlss5": [
         # The 616.64+ verdict hangs on this pair: the add-on's own hook
@@ -205,6 +232,14 @@ def _archives() -> dict:
                 tag, net.download(u, f"phrasecheck-presr-{tag}.zip"))
     except Exception as e:
         print(f"   !! optiscaler, wilsjo2: {e}")
+    try:
+        tag, urls = sources.resolve_remix_runtime()
+        u = urls.get(sources.REMIX_RUNTIME_ASSETS[0])
+        if u:
+            got["dxvk-remix-plus-dlssnr (lunks)"] = (
+                tag, net.download(u, f"phrasecheck-remix-{tag}-d3d9.dll"))
+    except Exception as e:
+        print(f"   !! remix runtime: {e}")
     return got
 
 
@@ -217,6 +252,10 @@ def main() -> int:
                        for f in sorted(dsrc.glob("*.py")))
              if dsrc.is_dir()
              else dsrc.read_text(encoding="utf8", errors="replace"))
+    # the Remix runtime's phrases are kept beside the rest of its handling
+    _rx = _dpkg.parent / "remix.py"
+    if _rx.is_file():
+        dtext += "\n" + _rx.read_text(encoding="utf8", errors="replace")
     bad = 0
     print("=" * 78)
     print("PHRASES THE DIAGNOSIS READS, IN THE BUILDS THAT WRITE THEM")

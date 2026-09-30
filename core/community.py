@@ -157,6 +157,11 @@ def counts(rec: dict, body: str) -> bool:
     if rec.get("by") in ("person", "crash"):
         return True
     said = said_verdict(body)
+    # A setup mistake - another executable or folder ran, a proxy name the
+    # game does not load - says nothing about the route, and counting it
+    # "failed" steers the next person away from one that works (gate 2.0.8).
+    if said and verdicts.not_a_route(said):
+        return False
     # Only the stages that cannot see. A verdict nobody mapped, or a body a
     # reporter rewrote, is not evidence of an unseen outcome: 16 real
     # results (#193 a "worked" among them) were left out on it (gate 2.0.5).

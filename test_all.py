@@ -1272,7 +1272,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 2.0.7", update.VERSION == "2.0.7", update.VERSION)
+check("version is 2.0.8", update.VERSION == "2.0.8", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -1773,6 +1773,148 @@ check("shaders the feed does not use are one INFO line, not failures",
       str(_bad) + " " + str([f_.title for f_ in _info]))
 check("the verdict stays Working.", _r.verdict == "Working.", _r.verdict)
 shutil.rmtree(_d, ignore_errors=True)
+
+# Feeder 1.18.0-beta.1, lines built from the binary's format strings (no
+# report carries them yet): NGX's own result, and NGX's log copied after it.
+_NGX_FAIL = (
+    "[feed] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)\n"
+    "[feed] NGX SuperSampling.FeatureInitResult: 0xBAD00005 (PlatformError)\n"
+    "[feed] NGX would not set DLSS up inside this game's process (SuperSampling."
+    "FeatureInitResult 0xBAD00005 PlatformError). If host64\\dlss5-feed-host64.exe "
+    "--test passes on this PC, it is not your GPU or driver: try the 64-bit helper mode\n"
+    "[feed] ===== NGX's own log of the failure above: one more init, with NGX "
+    "logging into this file =====\n"
+    "[NGX] feature ready: 1920x1080\n"
+    "[NGX] frame 1 delivered\n"
+    "[feed] ===== end of NGX's own log (2 lines) =====\n")
+_d = _diag_dir("diag_ngxplat_", feed=_NGX_FAIL)
+_r = diagnose.analyse(_d)
+check("1.18 beta: NGX PlatformError names the game's process, not the GPU",
+      _r.verdict.startswith("DLSS could not start inside this game's process")
+      and any("PlatformError" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_ngxother_", feed=_NGX_FAIL.replace(
+    "PlatformError", "FeatureNotSupported").replace(
+    "[feed] NGX would not set DLSS up inside this game's process", "[feed] x"))
+_r = diagnose.analyse(_d)
+check("1.18 beta: another NGX result is read as NGX's own answer",
+      _r.verdict.startswith("NGX refused to create DLSS")
+      and any("FeatureNotSupported" in t for t in _levels(_r, "bad")), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_ngxok_", feed=_FEED_OK.replace(
+    "feature ready", "NGX SuperSampling.FeatureInitResult: 0x00000001 (Success)\n"
+    "[feed] feature ready"))
+_r = diagnose.analyse(_d)
+check("1.18 beta: a successful NGX result changes nothing",
+      _r.verdict == "Working.", _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+_d = _diag_dir("diag_standsdown_", feed=(
+    "[feed] dlss5-feed-helper.addon64 is next to this add-on, so the 64-bit helper "
+    "mode is installed ... dlss5-feed.addon64 stands down and does nothing in this "
+    "process. Remove one of the two\n"))
+_r = diagnose.analyse(_d)
+check("1.18 beta: both feeder add-ons in one folder is named",
+      _r.verdict.startswith("Two feeder add-ons in one folder"), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+# gate 2.0.8: PlatformError alone is NGX's word, not the feeder's reading
+_d = _diag_dir("diag_ngxplatonly_", feed=_NGX_FAIL.replace(
+    "[feed] NGX would not set DLSS up inside this game's process", "[feed] x"))
+_r = diagnose.analyse(_d)
+check("1.18 beta: PlatformError without the feeder's own line claims nothing about the GPU",
+      _r.verdict.startswith("NGX refused to create DLSS")
+      and not any("not the GPU" in f_.detail for f_ in _r.findings), _r.verdict)
+shutil.rmtree(_d, ignore_errors=True)
+# gate 2.0.8: an NGX block with no end line must not eat the frames after it
+_d = _diag_dir("diag_ngxnoend_", feed=_FEED_OK.replace(
+    "[feed] frame 1 delivered",
+    "[feed] ===== NGX's own log of the failure above =====\n[NGX] junk\n"
+    "[feed] frame 1 delivered"))
+_r = diagnose.analyse(_d)
+check("1.18 beta: an NGX block with no end line stops at the feed's next line",
+      _r.verdict == "Working.", _r.verdict)
+from core.diagnose import body as _b208  # noqa: E402
+_ex208 = "\n".join(_b208._keyed_lines(_b208._strip_ngx(_NGX_FAIL.replace(
+    "[NGX] frame 1 delivered\n", "[NGX] frame 1 delivered\n" + "[NGX] x\n" * 40)),
+                                      _b208._feed_kind, 20, 1400))
+check("1.18 beta: the report keeps NGX's result and the feeder's reading, not NGX's block",
+      "FeatureInitResult" in _ex208 and "inside this game's process" in _ex208
+      and "[NGX]" not in _ex208, _ex208[-300:])
+shutil.rmtree(_d, ignore_errors=True)
+# #577 / gate 2.0.8: the OptiScaler route with no log asks what the game loaded
+from core import watch as _w577  # noqa: E402
+
+
+def _opti577(seen: dict, ini: str = "[Log]\nLogToFile=true\n"):
+    d = Path(tempfile.mkdtemp(prefix="diag_opti577_"))
+    (d / "dlss5-autopilot.json").write_text(json.dumps({
+        "version": 1, "complete": True, "exe": "Game.exe", "bitness": 64,
+        "api": "DX12", "proxy": "d3d12.dll", "path": "optiscaler",
+        "files": ["d3d12.dll", "nvngx_dlssnr.dll", "OptiScaler.ini"]}), encoding="utf8")
+    for n in ("d3d12.dll", "nvngx_dlssnr.dll"):
+        (d / n).write_bytes(b"MZ")
+    (d / "OptiScaler.ini").write_text(ini, encoding="utf8")
+    rec = dict(seen, at=_time.time())
+    if str(rec.get("exe")).startswith("HERE"):
+        rec["exe"] = str(d / (str(rec["exe"])[5:] or "Game.exe"))
+    with patch.object(_w577, "inspect", lambda *a, **k: []), \
+            patch.object(_w577, "last_sighting", lambda *a, **k: rec):
+        r = diagnose.analyse(d)
+    shutil.rmtree(d, ignore_errors=True)
+    return r
+
+
+_r = _opti577({"name": "Game.exe", "exe": "HERE", "ours": [], "elsewhere": []})
+check("#577: a proxy the game had not loaded is said as what was seen, with the fix",
+      "was not loaded in it" in _r.verdict and "loads as" in _r.verdict, _r.verdict)
+_r = _opti577({"name": "Game.exe", "exe": "HERE", "ours": ["d3d12.dll"], "elsewhere": []})
+check("#577: loaded, log asked for, none written - said as that",
+      _r.verdict.startswith("OptiScaler was loaded into Game.exe"), _r.verdict)
+_r = _opti577({"name": "Game.exe", "exe": "HERE", "ours": ["d3d12.dll"], "elsewhere": []},
+              ini="[Log]\nLogToFile=false\n")
+check("#577: loaded with the log off keeps the log-off answer",
+      _r.verdict.startswith("OptiScaler's log is off"), _r.verdict)
+_r = _opti577({"name": "Game.exe", "exe": "C:\\Games\\X\\bin\\x64\\Game.exe",
+               "ours": [], "elsewhere": []})
+from core import verdicts as _v577  # noqa: E402
+check("#577: the same exe name in another folder names both folders",
+      "runs from another folder" in _r.verdict and not _v577.route_failed(_r.verdict),
+      _r.verdict)
+_r = _opti577({"name": "Launcher.exe", "exe": "C:\\Games\\X\\Launcher.exe",
+               "ours": [], "elsewhere": []})
+check("#577: another executable is named as that, not as a proxy name",
+      _r.verdict.startswith("The game runs from Launcher.exe")
+      and not _v577.route_failed(_r.verdict), _r.verdict)
+_r = _opti577({"name": "Launcher.exe", "exe": "HERE:Launcher.exe", "ours": [],
+               "elsewhere": []}, ini="[Log]\nLogToFile=false\n")
+check("gate 2.0.8: a launcher in the same folder is not the game - no 'target exe' advice",
+      "target exe" not in " ".join(f_.detail for f_ in _r.findings)
+      and _r.verdict.startswith("OptiScaler's log is off"), _r.verdict)
+_r = _opti577({"name": "Other.exe", "exe": "C:\\Games\\Y\\Other.exe",
+               "ours": ["d3d12.dll"], "elsewhere": []})
+check("gate 2.0.8: a loaded proxy outranks the names and folders",
+      _r.verdict.startswith("OptiScaler was loaded into Other.exe"), _r.verdict)
+from core import community as _c577  # noqa: E402
+check("gate 2.0.8: a setup mistake is not counted as the route failing",
+      not _c577.counts({"by": "watcher"}, "result\n\nThe game runs from Launcher.exe, and the "
+                       "install went beside Game.exe - install again there.\n\n- api: DX12\n")
+      and _c577.counts({"by": "watcher"}, "result\n\nWorking.\n\n- api: DX12\n"))
+check("#577: neither verdict sends the watcher to another route",
+      not _v577.route_failed("Game.exe runs from another folder, and the install went "
+                             "beside a copy that does not start - install again there.")
+      and not _v577.route_failed("Game.exe ran, and OptiScaler's d3d12.dll was not "
+                                 "loaded in it - try another 'loads as' name."))
+# #580: the report and every reader take one limit per log from evidence.TAIL_*
+import re as _re580  # noqa: E402
+_own580 = [f"{p.name}: {m}" for p in (SRC_DIR / "core" / "diagnose").glob("*.py")
+           for m in _re580.findall(r"_tail\([^)\n]*\d_\d{3}\)|\[-\d+_\d{3}:\]",
+                                   p.read_text(encoding="utf8"))]
+_own580 += [f"ctl_game: {m}" for m in _re580.findall(
+    r"_tail\([^)\n]*\d_\d{3}\)", (SRC_DIR / "core" / "ui" / "ctl_game.py").read_text(encoding="utf8"))]
+check("#580: no log reader keeps a size of its own beside the TAIL_* limits", not _own580, _own580)
+check("1.18 beta: a session marker with a suffix still starts a session",
+      bool(diagnose.model._FEED_SESSION.search(
+          "12:00:00.000 dlss5-feed32 1.18.0 attached; loader notifications "
+          "unavailable, a ReShade reload will not be followed.\n")))
 
 _d = _diag_dir("diag_shaders2_", feed=_FEED_OK, reshade=(
     'Registered add-on "DLSS 5 Feed" v0.11\n'
@@ -3604,6 +3746,65 @@ try:
           str(_left))
 except Exception as e:
     check("remix: installs", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
+# lunks/dxvk-remix-plus-dlssnr - the runtime the swap installs. Its lines
+# have no "[DLSS-NR]" prefix, and until 2.0.8 every session of it read
+# "never even attempted" and was shared as failed (the 0-of-4 remix
+# record). Strings read out of its dlssnr-v1 d3d9.dll.
+from core import verdicts  # noqa: E402
+_d = _fake_remix("remixlunks_", marker=b"rtx.neuralRendering")
+_g = games.manual(_d)
+try:
+    installer.install(_g, installer.Options(path=dlss.REMIX), on_log=lambda t: None)
+    _rl = _remix.log_path(_d)
+    _rl.parent.mkdir(parents=True, exist_ok=True)
+    _rl.write_text(
+        "[20:01:02.100] info:  NVIDIA DLSS-NR snippet loaded from "
+        "C:\\g\\.trex\\nvngx_dlssnr.dll\n"
+        "[20:01:09.400] info:  NVIDIA DLSS-NR evaluated (count=600)\n",
+        encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("lunks runtime: evaluated frames read as working",
+          _r.verdict == "Working.", _r.verdict)
+    _rl.write_text(
+        "[20:01:02.100] info:  NVIDIA DLSS-NR not available: "
+        "nvngx_dlssnr.dll could not be opened (126)\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("lunks runtime: 'not available' is a failure with its reason",
+          _r.verdict.startswith("Remix ran, but the DLSS 5 snippet never started")
+          and any("could not be opened (126)" in b for b in _levels(_r, "bad")),
+          _r.verdict + " / " + str(_levels(_r, "bad")))
+    _rl.write_text("[20:01:02.100] info:  NVIDIA DLSS-NR inactive: the pass is "
+                   "not enabled for this frame.\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("lunks runtime: 'inactive' is set up, not switched on",
+          _r.verdict.startswith("Remix ran with the neural pass switched off")
+          and verdicts.outcome(_r.verdict) is None, _r.verdict)
+    _rl.write_text("[20:01:02.100] info:  Remix started\n", encoding="utf8")
+    _r = diagnose.analyse(_d)
+    check("lunks runtime: a silent log is inconclusive, never shared as failed",
+          _r.verdict.startswith("Inconclusive - the Remix log shows no neural frame")
+          and verdicts.outcome(_r.verdict) is None, _r.verdict)
+    # #211: the swapped runtime never wrote a line; the only log was the
+    # mod's own runtime from before the install. It is no log.
+    _mf = _d / installer.MANIFEST
+    _man = json.loads(_mf.read_text(encoding="utf8"))
+    _man.setdefault("components", {})["remix_runtime"] = "dlssnr-v1"
+    _mf.write_text(json.dumps(_man), encoding="utf8")
+    _rl.write_text(
+        "[17:39:24.298] info:  [RTX Neural Radiance Cache] NRC SDK: Loading the "
+        "default network config data.\n"
+        "[17:39:24.327] info:  [RTX Neural Radiance Cache] NRC v0.13 (22 January "
+        "2025) Context successfully initialized.\n", encoding="utf8")
+    _old = time.time() - 3600
+    os.utime(_rl, (_old, _old))
+    _r = diagnose.analyse(_d)
+    check("#211: a log from before a runtime swap is no log - the swap is suspect",
+          _r.verdict.startswith("The swapped Remix runtime is the first suspect")
+          and _r.never_ran and not _r.ran, _r.verdict)
+except Exception as e:
+    check("remix (lunks runtime): diagnosis", False, f"{type(e).__name__}: {e}")
 shutil.rmtree(_d, ignore_errors=True)
 
 # Read-only, against the owner's real GTA IV RTX install. Skipped anywhere
@@ -9890,7 +10091,7 @@ _spec = _ilu.spec_from_file_location("phrase_check",
                                      SRC_DIR / "_tools" / "phrase_check.py")
 _pcmod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_pcmod)
-_dg = _diag_src()          # a package since 1.9.0, not one file
+_dg = _diag_src() + src_of(__import__("core.remix", fromlist=["x"]))  # the Remix words live in core/remix.py (2.0.8)
 _pairs = [pair for group in _pcmod.PHRASES.values() for pair in group]
 _missing = [c for _b, c in _pairs if c not in _dg]
 check("every phrase the rot check watches is one the diagnosis really reads",
@@ -11228,8 +11429,17 @@ from core import diagnose as _dpkg  # noqa: E402
 # own stops, the crash handler said as a game crash, DLSS called with no
 # frame), model +15 (their patterns), helper +6 (the last run only), process
 # +2, body +1, chain +14 (the bridge's missing log said as that, #127 kept).
-_parts = {"model": 488, "layer": 104, "evidence": 1137, "process": 232,  # evidence +3: its own words for a renderer no route reaches
-          "helper": 251, "live": 372, "routes": 978, "body": 787, "chain": 1583}  # routes +5: a dump the session went on after (gate 2.0.5)
+# 2.0.8: evidence +94 (one TAIL_* per log for report and analyser, #580;
+# _opti_sighting, #577), chain +50 (feeder 1.18 beta: NGX's own result,
+# both add-ons, NGX's log block cut out), routes +51 (the lunks Remix
+# runtime's words, a stale Remix log, the sighting call), model +2, body +2.
+# Gate 2.0.8 passes 1-2: evidence +70 (_strip_ngx, _same_dir, the loaded
+# proxy before names and folders, "ran from" in the report), routes +4 (the
+# lunks menu and log level), body +7 (the 1.18 lines keyed, NGX cut out).
+# Pass 3: evidence +15 (only the game's own live process, a launcher is not
+# a proxy fault, no user path in "ran from"), chain +1.
+_parts = {"model": 490, "layer": 104, "evidence": 1316, "process": 232,  # evidence +3: its own words for a renderer no route reaches
+          "helper": 251, "live": 372, "routes": 1033, "body": 796, "chain": 1634}  # routes +5: a dump the session went on after (gate 2.0.5)
 _sizes = {n: sum(1 for _ in open(SRC_DIR / "core" / "diagnose" / f"{n}.py",
                                  encoding="utf8"))
           for n in _parts}

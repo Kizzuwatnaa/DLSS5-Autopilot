@@ -224,7 +224,9 @@ class Report:
 _RESHADE_SESSION = "Initializing crosire's ReShade"
 
 
-_FEED_SESSION = re.compile(r"^[\d:.]+\s+dlss5-feed\S*\s[^\n]*attached\.", re.M)
+# 1.18.0-beta prints "attached%s." - a suffix such as "; loader notifications
+# unavailable, ..." can sit between the word and the full stop.
+_FEED_SESSION = re.compile(r"^[\d:.]+\s+dlss5-feed\S*\s[^\n]*attached[.;]", re.M)
 
 
 _FEED_GOT_RUNTIME = re.compile(

@@ -345,8 +345,12 @@ def reliability(g: games.Game, path: str = FEEDER,
                 "so it is being replaced with a community build that does. "
                 "That build is not the mod author's: a mod's runtime is often "
                 "a fork carrying fixes for this exact game, and swapping it "
-                "can break them. The old one is backed up and 'uninstall' "
-                "puts it back.")
+                "can break them. Its author reports it running in Portal "
+                "with RTX (RTX 4090, Linux); it has not been run on this "
+                "tool's test machine. Reports say the game did not start "
+                "after the swap, or stopped at the Remix console. The old "
+                "one is backed up and "
+                "'uninstall' puts it back.")
         return BETA, (
             "The Remix runtime already installed here has the DLSS 5 neural "
             "pass built in; all this does is put nvngx_dlssnr.dll beside it "

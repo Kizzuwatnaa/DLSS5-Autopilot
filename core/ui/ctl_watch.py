@@ -236,11 +236,11 @@ class WatchControl:
             text = "working" if working else (why or first_words(rep.verdict))
         actions = [("open", lambda g=g: self.open_game(g), not nxt)]
         if nxt:
-            actions.insert(0, (f"try {nxt}", lambda g=g, nxt=nxt: self.try_next(g, nxt), True))
+            actions.insert(0, (f"try {community.route_name(nxt)}", lambda g=g, nxt=nxt: self.try_next(g, nxt), True))
         toast = dict(title=title, text=text, actions=actions, accent=T.OK if working else T.WARN,
                      glyph="check" if working else "warn", timeout=15000)
         if self.hidden_to_tray and self.tray is not None:
-            self.tray.notify(title, text + (f" - open the tool to try {nxt}" if nxt else ""), warn=not working)
+            self.tray.notify(title, text + (f" - open the tool to try {community.route_name(nxt)}" if nxt else ""), warn=not working)
             # opening the window from the tray lands on this game with the same answer and offer
             self._pending_open = (g, toast)
         else:
@@ -272,7 +272,7 @@ class WatchControl:
         left = [r for r in plan.get("routes") or [] if r not in tried]
         if not left:
             return "", ""
-        return left[0], verdicts.why_next(rep.verdict, route)
+        return left[0], verdicts.why_next(rep.verdict, community.route_name(route))
 
     TRY_WAIT = 10.0          # seconds "try <route>" waits for the game's page to be read
 
@@ -283,7 +283,7 @@ class WatchControl:
         installed with no question asked."""
         if self.busy:
             self.shell.status(f"busy with {getattr(self, 'action', '') or 'another job'} - "
-                              f"try {route} when it ends")
+                              f"try {community.route_name(route)} when it ends")
             return
         plan = self.plans.get(str(g.install_dir))
         plan = plan if isinstance(plan, dict) else {}
@@ -307,12 +307,12 @@ class WatchControl:
                     return
                 self._try_token = None
                 self.shell.status(f"{g.name} could not be read in time - press autopilot on its page "
-                                  f"to try {route}")
+                                  f"to try {community.route_name(route)}")
                 return
             self._try_token = None
             if self.busy:
                 self.shell.status(f"busy with {getattr(self, 'action', '') or 'another job'} - "
-                                  f"try {route} when it ends")
+                                  f"try {community.route_name(route)} when it ends")
                 return
             self.autopilot(routes=routes, ask=False)
         self.root.after(200, go)

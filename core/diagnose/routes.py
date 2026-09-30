@@ -124,7 +124,7 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     upscaler recorded in the manifest the input hook has to show up too.
     """
     p = _opti_log(install_dir)
-    text = _last_run(_tail(p)) if p else ""
+    text = _last_run(_tail(p, TAIL_OPTI)) if p else ""
     if not text:
         # An absent log is not proof of an absent OptiScaler. Whether one is
         # written is a setting, and one of the builds this tool installs
@@ -141,6 +141,11 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
                                         _ini, re.M | re.I))
         except OSError:
             pass
+        # What the game had loaded answers what the absent log only guesses
+        # at (#577: a d3d12.dll proxy never loaded read as "log is off").
+        if proxy_there \
+                and _opti_sighting(install_dir, man or {}, rep, logging_on):
+            return rep
         if proxy_there and not ini_there:
             rep.add(BAD, "OptiScaler.ini is missing.",
                     f"The proxy this install wrote ({proxy}) is in the folder "
@@ -540,7 +545,8 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
                 "It was installed into the Remix runtime folder and is no "
                 "longer there - almost always antivirus quarantine. Restore "
                 "it, exclude the folder, and install again.")
-    if not _remix.runtime_flavour(trex):
+    flavour = _remix.runtime_flavour(trex)
+    if not flavour:
         rep.add(BAD, "This Remix runtime has no DLSS 5 neural pass.",
                 "NVIDIA's own runtime has none, and neither does this one, so "
                 "there is nothing to switch on. Turn on 'swap the Remix "
@@ -557,22 +563,33 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
                 f"install again.")
 
     p = _remix.log_path(install_dir)
-    text = _tail(p, 300_000)
-    if not text:
+    text = _tail(p, TAIL_REMIX)
+    # A log from before the install is the runtime that was here THEN - the
+    # mod's own, before a swap (#211: only the mod's NRC lines, and the
+    # swapped runtime never wrote a line). It is the same evidence as no
+    # log, and was read as "Remix ran" until 2.0.8.
+    stale = bool(text) and bool(since) and not _fresh(p, since)
+    if not text or stale:
         # A runtime we swapped in is the first thing to suspect when the
         # game stopped starting: it is a different d3d9.dll from the one
         # the mod was built and tested with, and a game that reaches Remix
         # through a translator of its own (d3d8to9, dgVoodoo) is the case
         # nobody upstream runs (#218, Max Payne).
         swapped = bool((man.get("components") or {}).get("remix_runtime"))
-        rep.add(WARN, "The Remix runtime has not written a log yet.",
-                f"It writes {Path(_remix.LOG)} the moment it starts, and "
-                f"there is none."
-                + ("" if swapped else
-                   " Either the game has not been run since installing, or "
-                   "Remix is not loading at all - check the game's own "
-                   "d3d9.dll (the Remix bridge) is still beside the "
-                   "executable."))
+        if stale:
+            rep.add(WARN, "The Remix log predates the current install.",
+                    f"{Path(_remix.LOG).name} is older than this install, "
+                    f"so nothing in it is about this install."
+                    + ("" if swapped else " Play once and check again."))
+        else:
+            rep.add(WARN, "The Remix runtime has not written a log yet.",
+                    f"It writes {Path(_remix.LOG)} the moment it starts, and "
+                    f"there is none."
+                    + ("" if swapped else
+                       " Either the game has not been run since installing, or "
+                       "Remix is not loading at all - check the game's own "
+                       "d3d9.dll (the Remix bridge) is still beside the "
+                       "executable."))
         if swapped:
             rep.add(BAD, "This install swapped the mod's own Remix runtime.",
                     "If the game stopped starting after the install, that is "
@@ -598,16 +615,17 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
             .strftime("%d %b %H:%M")
     except OSError:
         pass
-    if since and not _fresh(p, since):
-        rep.add(WARN, "The Remix log predates the current install.",
-                "Play once and check again.")
 
     if _remix.LOADED in text and "nvngx_dlssnr.dll" in text:
         rep.add(OK, "The runtime loaded nvngx_dlssnr.dll from the .trex folder.")
+    if _remix.NR_LOADED in text:
+        rep.add(OK, "The runtime loaded the DLSS-NR snippet.")
     if _remix.INITIALISED in text:
         rep.add(OK, "The DLSS-NR snippet initialised.")
     bad = [(k, fix) for k, fix in _remix.FAILURES if k in text]
     created = _remix.CREATED_RE.findall(text)
+    evaluated = max((int(n) for n in _remix.NR_EVALUATED_RE.findall(text)),
+                    default=0)
     if created:
         name, fid, preset, extent = created[-1]
         rep.add(OK, f"DLSS 5 is running inside Remix (feature {fid}).",
@@ -615,10 +633,47 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
                 + (f", at {extent}" if extent else "") + ".")
         rep.verdict = "Working."
         return rep
+    if evaluated:
+        rep.add(OK, "DLSS 5 is running inside Remix.",
+                f"The runtime logged {evaluated} evaluated frame(s).")
+        rep.verdict = "Working."
+        return rep
     if bad:
-        k, fix = bad[-1]
-        rep.add(BAD, f"The neural pass did not start: {k}", fix)
+        # The last failure, with the rest of its line: lunks' runtime puts
+        # NGX's own reason after the colon.
+        k, fix = max(bad, key=lambda b: text.rfind(b[0]))
+        at = text.rfind(k)
+        line = text[at:].splitlines()[0].strip() if at >= 0 else k
+        rep.add(BAD, f"The neural pass did not start: {line[:200]}", fix)
         rep.verdict = "Remix ran, but the DLSS 5 snippet never started."
+        return rep
+    skipped = _remix.NR_SKIPPED_RE.findall(text)
+    if skipped:
+        rep.add(BAD, "The neural pass skipped its frames.",
+                f"The runtime said: {skipped[-1].strip()[:200]}")
+        rep.verdict = "Remix ran; the neural pass skipped its frames - see why below."
+        return rep
+    if _remix.NR_INACTIVE in text:
+        rep.add(WARN, "The neural pass is switched off.",
+                "The runtime logged that the pass is not enabled. Turn it on "
+                "in the Remix menu: Alt+X -> Neural Rendering (beside Bloom).")
+        rep.verdict = ("Remix ran with the neural pass switched off - turn it on "
+                       "in Alt+X -> Neural Rendering.")
+        return rep
+    if flavour == _remix.NEURAL:
+        # This runtime's lines are informational, and a log level set above
+        # info in rtx.conf keeps every one of them out: silence is not a
+        # failure here (the 0-of-4 remix record was built from exactly this).
+        rep.add(INFO, "The Remix log has no evaluated frame.",
+                ("The DLSS-NR snippet loaded; " if _remix.NR_LOADED in text
+                 else "")
+                + "this runtime logs every evaluated frame at info level, and "
+                  "the picture can look right while the pass does nothing, so "
+                  "the log is the check. If rtx.conf sets the log level above "
+                  "info, set it back to info, play once and press 'did it "
+                  "work?' again.")
+        rep.verdict = ("Inconclusive - the Remix log shows no neural frame; "
+                       "set the log level in rtx.conf to info and check again.")
         return rep
     if "[DLSS-NR]" in text:
         rep.add(WARN, "Remix mentions DLSS-NR but never created the feature.",
@@ -840,7 +895,7 @@ def _analyse_standalone(rep: Report, since: float, reshade_ran: bool,
     "standalone pipeline FAILED at <stage>" names the stage that died.
     """
     p = model.STANDALONE_LOG
-    text = _tail(p, 200_000) if p.is_file() else ""
+    text = _tail(p, TAIL_STANDALONE) if p.is_file() else ""
     if not text:
         rep.add(WARN if reshade_ran else INFO,
                 "The add-on has not written its own log yet.",

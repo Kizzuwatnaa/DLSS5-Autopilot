@@ -350,12 +350,12 @@
  },
  "211": {
   "findings": [
-   "warn: The Remix runtime ran but says nothing about DLSS-NR."
+   "warn: The Remix log predates the current install."
   ],
-  "never_ran": false,
-  "ran": true,
+  "never_ran": true,
+  "ran": false,
   "route": "remix",
-  "verdict": "Remix ran; the neural pass was never even attempted."
+  "verdict": "Not run yet, or the Remix runtime never loaded."
  },
  "212": {
   "findings": [
@@ -1219,6 +1219,17 @@
   "route": "optiscaler",
   "verdict": "The install never finished - install again."
  },
+ "579": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: OptiScaler loaded and found the neural-rendering forwarder.",
+   "ok: Neural rendering is running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+ },
  "58": {
   "findings": [
    "bad: The game refused the swapchain OptiScaler wrapped (0x80004002)."
@@ -1227,6 +1238,21 @@
   "ran": true,
   "route": "optiscaler",
   "verdict": "The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route."
+ },
+ "580": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "warn: OptiScaler ran, but neural rendering was never asked for.",
+   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: nvngx_dlssnr.dll: present.",
+   "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
+   "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
+   "info: driver 617.14: new enough"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Windows recorded the game faulting - see below for what to take out first."
  },
  "59": {
   "findings": [

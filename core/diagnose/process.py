@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .model import *  # noqa: F401,F403
-from .evidence import _installed_at, _standalone_named, _upstream_named
+from .evidence import _installed_at, _standalone_named, _upstream_named, TAIL_RESHADE
 
 
 __all__ = ["_loaded_note", "_foreign_hooks", "_name_foreign_hooks"]
@@ -68,7 +68,7 @@ def _sighting_is_older_than_the_last_launch(install_dir: Path, at) -> bool:
         # and today's list is then the only evidence there is.
         if log.stat().st_mtime <= float(at):
             return False
-        text = log.read_text(encoding="utf8", errors="replace")[-250_000:]
+        text = log.read_text(encoding="utf8", errors="replace")[-TAIL_RESHADE:]
         marks = _LOG_CLOCK.findall(text)
         if not marks:
             return False

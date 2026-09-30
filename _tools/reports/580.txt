@@ -1,0 +1,50 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+Crashes after I changed graphics settings
+
+---
+- version: 2.0.7
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 617.14
+- game: Avatar Frontiers of Pandora
+- exe: afop.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: optiscaler
+- work area: 75%
+- windows event: afop.exe faulted in afop.exe 0xC0000005 at 2026-09-28 20:43:13 UTC
+- this tool: running as administrator
+
+**Diagnosis**: It ran, and then the game crashed - Windows recorded the fault in afop.exe.
+- [ok] OptiScaler loaded and found the neural-rendering forwarder.
+- [ok] Neural rendering is running.
+- [bad] Windows recorded afop.exe faulting in afop.exe.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- optiscaler build: janblade (v0.1.22-tune-for-this-scene-and-eye-adaptation)
+- d3dcompiler_47.dll: present (the game's own)
+
+**What ran, and what it loaded** (seen at 28 Sep 23:42)
+- process: afop.exe
+- DLLs in the process: 180
+- ours, loaded: amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx.dll_dlssnr.dll, nvngx_dlssnr.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+[23:43:13.645562] [E] StreamlineHooks::streamlineLogCallback [23-43-13][streamline][error][tid:16208][42s:109ms:734us]fenceHolder.cpp:52[updateCompletedValue] We've lost the Device
+[23:43:13.645709] [E] StreamlineHooks::streamlineLogCallback [23-43-13][streamline][error][tid:14272][42s:109ms:881us]d3d12.cpp:2627[mapResource] Failed to map buffer
+[23:43:13.645717] [E] StreamlineHooks::streamlineLogCallback [23-43-13][streamline][error][tid:16208][42s:109ms:888us]fenceHolder.cpp:52[updateCompletedValue] We've lost the Device
+[23:43:13.645862] [E] StreamlineHooks::streamlineLogCallback [23-43-13][streamline][error][tid:14272][42s:110ms:033us]d3d12.cpp:2627[mapResource] Failed to map buffer
+[23:43:13.645869] [E] StreamlineHooks::streamlineLogCallback [23-43-13][streamline][error][tid:16208][42s:110ms:041us]fenceHolder.cpp:52[updateCompletedValue] We've lost the Device
+```

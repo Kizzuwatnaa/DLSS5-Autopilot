@@ -292,4 +292,32 @@ FAILURES = (
     ("[DLSS-NR] Failed to create the Neural Uplift feature",
      "NGX refused the feature. Almost always the nvngx_dlssnr build does not "
      "match the card; install again and let the tool choose."),
+    # lunks/dxvk-remix-plus-dlssnr (the runtime the swap installs), read out
+    # of its dlssnr-v1 d3d9.dll. Each is followed by NGX's reason.
+    ("NVIDIA DLSS-NR not available:",
+     "The runtime could not use nvngx_dlssnr.dll - the reason is on the same "
+     "line. It can be a file missing from the .trex folder or a build for "
+     "another card; install again, and if it repeats, press 'report a bug'."),
+    ("NVSDK_NGX_VULKAN_Init_Ext failed for DLSS-NR:",
+     "NGX would not start on Vulkan - the reason is on the same line. "
+     "Install again; if it repeats, press 'report a bug'."),
+    ("AllocateParameters failed for DLSS-NR:",
+     "NGX would not hand out its parameter block. Install again; if it "
+     "repeats, the nvngx_dlssnr build does not fit this runtime."),
+    ("Failed to create DLSS-NR feature:",
+     "NGX refused the feature. Almost always the nvngx_dlssnr build does not "
+     "match the card; install again and let the tool choose."),
+    ("NVSDK_NGX_VULKAN_EvaluateFeature failed for DLSS-NR:",
+     "The feature was created and failed on its first frames. The reason is "
+     "on the same line; if it repeats, press 'report a bug'."),
+    ("does not export the full NVSDK_NGX_VULKAN_* surface",
+     "That nvngx_dlssnr build has no Vulkan entry points, and Remix renders "
+     "on Vulkan. Install again and let the tool pick the build."),
 )
+
+# lunks' runtime: its own words for loaded / working / off / skipped. It has
+# no "[DLSS-NR]" prefix, so none of the lines above it catch these.
+NR_LOADED = "NVIDIA DLSS-NR snippet loaded from "
+NR_EVALUATED_RE = re.compile(r"NVIDIA DLSS-NR evaluated \(count=(\d+)")
+NR_INACTIVE = "NVIDIA DLSS-NR inactive:"
+NR_SKIPPED_RE = re.compile(r"NVIDIA DLSS-NR skipped: ([^\r\n]*)")

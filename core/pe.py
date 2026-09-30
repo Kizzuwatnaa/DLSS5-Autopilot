@@ -283,6 +283,8 @@ def _has_d3d12_agility_sdk(folder: Path, bits: int | None = None) -> bool:
 _OUR_ADDONS = ("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-bridge.addon64",
                "renodx-dlss5.addon64", "renodx-dlss.addon64", "nvngx.dll.addon64",
                "standalone-dlssnr.addon64", "rtx40mfg-ui.addon64",
+               # the feeder's own 64-bit helper mode (1.18.0-beta)
+               "dlss5-feed-helper.addon64",
                # the old bridge's name, which an install of ours may still hold
                "dlss5-dx11-bridge.addon64")
 # "dlss" covers dlssg/dlssd, "ngx" covers nvngx

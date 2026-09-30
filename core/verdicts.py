@@ -71,6 +71,10 @@ CHAIN = (
         # #479: the game drew with D3D9 on an install set up for D3D11/12
         "ReShade found a Direct3D 9 device, not the D3D11/12",
         "on a renderer this tool cannot reach",
+        # the watcher saw another executable run (was unmapped until 2.0.8)
+        ", and the install went beside",
+        # 2.0.8, #577: the OptiScaler route's proxy was never loaded
+        "was not loaded in it - try another 'loads as' name",
     )),
     ("4 the game refused the hook", "upstream", (
         "The game refused OptiScaler's swapchain",
@@ -85,6 +89,8 @@ CHAIN = (
         "It started and closed during start-up",
         "Remix ran; the neural pass was never even attempted",
         "Remix ran, but the DLSS 5 snippet never started",
+        # 2.0.8: lunks' runtime says it skipped the pass, and why
+        "Remix ran; the neural pass skipped its frames",
         "No Remix runtime",
         "The Remix runtime here has no neural pass",
         "The add-on runs but never produces a frame",
@@ -102,8 +108,12 @@ CHAIN = (
         "OptiScaler loaded; neural rendering not switched on",
         "The add-ons are loaded and the neural pass is switched off",
         "ReShade never gave it an effect runtime",
+        # 2.0.8: lunks' runtime logged "NVIDIA DLSS-NR inactive:"
+        "Remix ran with the neural pass switched off",
     )),
     ("7 loaded, and we cannot see", "us", (
+        # 2.0.8: the watcher saw OptiScaler's proxy loaded and no log came
+        "and no log was written.",
         "Inconclusive - open the overlay",
         "Add-ons loaded. Confirm in",
         "Add-ons loaded and the switch is on",
@@ -115,6 +125,10 @@ CHAIN = (
         "The bridge's log has nothing from this launch",
         # upstream: a CreateFeature/eval line and no heartbeat after it
         "DLSS was called, and no neural frame followed",
+        # 2.0.8: lunks' runtime logs at info level, and rtx.conf can raise
+        # the level above it - a silent log is not a failed pass. Two of the
+        # four "failed" remix records (#268 #281) were this, shared as failed.
+        "Inconclusive - the Remix log shows no neural frame",
         # The report's own correction when the person said the game closed
         # itself or never started (diagnose.answered, #412): the logs could
         # not see why, and what to take out first is the answer.
@@ -145,6 +159,9 @@ CHAIN = (
         "OptiScaler loaded, but the model refused or failed",
         "Neural rendering stopped after it started",
         "The neural feature was refused by NGX",
+        # 2.0.8: NGX's own result, from feeder 1.18.0-beta
+        "DLSS could not start inside this game's process",
+        "NGX refused to create DLSS",
     )),
     ("10 the driver's runtime", "NVIDIA", (
         "Driver 616.64+ faults",
@@ -160,6 +177,8 @@ CHAIN = (
         "An older bridge add-on was loaded beside ours",
         # #348: a ReShade d3d9.dll found before DXVK's
         "ReShade loaded as the game's d3d9.dll in front of DXVK",
+        # 2.0.8: the feeder's helper-mode add-on beside the in-process one
+        "Two feeder add-ons in one folder",
     )),
 )
 
@@ -186,6 +205,12 @@ NOT_A_ROUTE = (
     # #479: a D3D9 device on an install set up for D3D11/12 - the next route
     # goes in with the same wrong API (gate 2.0.6)
     "ReShade found a Direct3D 9 device, not the D3D11/12",
+    # The game ran from another executable or folder: the next route would
+    # go in beside the same one that does not start (gate 2.0.8)
+    ", and the install went beside",
+    # A proxy name the game does not load: the fix is another name on the
+    # same route (gate 2.0.8)
+    "try another 'loads as' name",
 )
 
 _SECOND_HOOK = "another dlss hook was loaded beside ours"
@@ -219,6 +244,13 @@ def stage(verdict: str) -> tuple[str, str]:
         if s.lower() in low:
             return name, next(w for n, w, _s in CHAIN if n == name)
     return "unmapped: " + str(verdict)[:40], "?"
+
+
+def not_a_route(verdict: str) -> bool:
+    """A verdict about how the game was set up or started, not about the
+    route: another route goes in the same way and meets the same thing."""
+    low = str(verdict or "").lower()
+    return any(s.lower() in low for s in NOT_A_ROUTE)
 
 
 def route_failed(verdict: str) -> bool:

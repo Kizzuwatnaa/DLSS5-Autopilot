@@ -30,12 +30,44 @@ __all__ = [
     "_NET_VERDICTS", "_exc_line", "_net_cause", "_net_stop",
     "_launcher_installed", "_layer_gone", "_live_evidence", "_loaded_block",
     "_manifest", "_manifest_file", "_missing_addons",
-    "_missing_core", "_near", "_nrpre_picks", "_opti_log", "_remembered_evidence",
+    "_missing_core", "_near", "_nrpre_picks", "_opti_log", "_opti_sighting",
+    "_remembered_evidence",
     "_reshade_died_early",
     "_route", "_route_from_files", "_same_launch", "_shader_failures",
     "_stale_install", "_standalone_named", "_tail", "_upstream_named",
-    "_user_data_names", "windows_crash"
+    "_user_data_names", "windows_crash",
+    "TAIL_RESHADE", "TAIL_FEED", "TAIL_HOST", "TAIL_OPTI", "TAIL_STANDALONE",
+    "TAIL_REMIX", "_strip_ngx",
 ]
+
+# How much of each log is read - by the analyser AND by the report body. The
+# report carried the last 100K of OptiScaler.log while the analyser read
+# 400K; once Streamline flooded the log after a device loss (#580), the
+# forwarder and dispatch lines fell out of the report and the replay said
+# "never asked for". One number per log, used by both.
+TAIL_RESHADE = 250_000
+TAIL_FEED = 400_000
+TAIL_HOST = 150_000
+TAIL_OPTI = 400_000
+TAIL_STANDALONE = 200_000
+TAIL_REMIX = 300_000
+
+# The block feeder 1.18.0-beta copies from NGX's own log into the feed log
+# after a failure, between "===== NGX's own log of the failure above ..."
+# and "end of NGX's own log". Those are NGX's lines, not the feed's, and
+# they carry words ("-> 0x00000001", "feature", "frame") the rules read as
+# ours. Without an end line the block stops at the feed's next own line
+# (one carrying "[feed", after a clock or not), never at the end of the
+# text: a session that went on after the copy must keep its frames.
+_NGX_BLOCK = re.compile(r"^[^\n]*===== NGX's own log[^\n]*\n"
+                        r"(?:(?![^\n]*\[feed)[^\n]*\n)*?"
+                        r"(?:[^\n]*(?i:end of NGX's own log)[^\n]*(?:\n|$)"
+                        r"|(?=[^\n]*\[feed)|(?![^\n]*\[feed)[^\n]*\Z)",
+                        re.M)
+
+
+def _strip_ngx(text: str) -> str:
+    return _NGX_BLOCK.sub("", text or "")
 
 def _upstream_named(name: str) -> bool:
     low = name.strip().lower()
@@ -74,7 +106,7 @@ def _near(a: str, b: str, tol: float = 0.10) -> bool:
     return (1.0 - tol) <= (ab / bb) < 1.0
 
 
-def _tail(path: Path, limit: int = 400_000) -> str:
+def _tail(path: Path, limit: int = TAIL_FEED) -> str:
     try:
         size = path.stat().st_size
         with open(path, "rb") as f:
@@ -377,6 +409,137 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
     return True
 
 
+def _same_dir(a, b) -> bool:
+    """One folder, whatever the spelling: a junction or a symlinked library
+    folder is the same place (watch._under resolves both sides too)."""
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return os.path.normcase(os.path.normpath(str(a))) == \
+            os.path.normcase(os.path.normpath(str(b)))
+
+
+def _opti_sighting(install_dir: Path, man: dict, rep: Report,
+                   logging_on: bool) -> bool:
+    """The OptiScaler route with no log: ask what the game had loaded.
+
+    The watcher was only asked on the ReShade chain, so a d3d12.dll proxy
+    the game never loaded was answered "the log is off, install again"
+    (#577). Only the proxy decides here: OptiScaler also writes libxess,
+    libxell and the FidelityFX DLLs, and a game that ships its own copies
+    loads those from its own folder whatever we do.
+    True when it settled the question and wrote a verdict.
+    """
+    proxy = str(man.get("proxy") or "")
+    if not proxy:
+        return False
+    want = [f for f in (man.get("files") or [])
+            if isinstance(f, str) and f.lower().endswith(".dll")]
+    # The watcher only looks for what the record names; a proxy missing from
+    # it would read as "never loaded" on every run.
+    if not any(os.path.basename(f).lower() == proxy.lower() for f in want):
+        return False
+    try:
+        from .. import watch
+        live = watch.inspect(install_dir, want, exe=str(man.get("exe") or ""))
+        # Only the game's own process answers: a crash reporter or service
+        # still up after the game closed is not it, and the remembered
+        # sighting of the game is the better evidence (gate 2.0.8 pass 3).
+        rec_name = Path(str(man.get("exe") or "")).name.lower()
+        live = [x for x in live or [] if x.proc.name.lower() == rec_name]
+        if live:
+            s = live[0]
+            if not s.loaded.known:
+                return False
+            seen = {"name": s.proc.name, "exe": s.proc.path, "now": True,
+                    "ours": [os.path.basename(p) for p in s.ours],
+                    "elsewhere": list(s.elsewhere)}
+        else:
+            seen = watch.settle(watch.last_sighting(
+                install_dir, _installed_at(install_dir)), man.get("files"))
+    except Exception:
+        return False
+    if not seen or seen.get("refused"):
+        return False
+    # A clock, never "just now": the verdict is shared and read later.
+    when = "at " + datetime.fromtimestamp(
+        time.time() if seen.get("now") else seen.get("at", 0)).strftime("%d %b %H:%M")
+    running = str(seen.get("name") or "the game")
+    recorded = Path(str(man.get("exe") or "")).name
+    low = proxy.lower()
+    loaded = any(os.path.basename(n).lower() == low for n in seen.get("ours") or [])
+    ran_in = os.path.dirname(str(seen.get("exe") or ""))
+    here = not os.path.isabs(ran_in) or _same_dir(ran_in, install_dir)
+    # The proxy in the process answers "was it reached" before any guess
+    # from names and folders (gate 2.0.8 pass 2).
+    if recorded and running.lower() != recorded.lower() and not loaded:
+        if here:
+            # Another program in the same folder - a launcher still up when
+            # the watcher looked, or the second exe of a shared install. It
+            # is not the game, and it says nothing about ours.
+            return False
+        rep.add(BAD, f"The game ran from {running} ({when}), not {recorded}.",
+                f"{seen.get('exe') or running} is what started. The install "
+                f"went beside {recorded}, and a process only loads what is "
+                f"beside the executable it started from. Set 'target exe' to "
+                f"{running} in the game's settings and install again.")
+        rep.verdict = (f"The game runs from {running}, and the install went "
+                       f"beside {recorded} - install again there.")
+        rep.never_ran = False
+        return True
+    # The same exe name in another folder (a game root and its bin\x64, gate
+    # 2.0.8): OptiScaler's proxy has to sit beside the executable that ran.
+    if not here and not loaded:
+        rep.add(BAD, f"{running} ran from {ran_in} ({when}), and this install "
+                     f"is in {install_dir}.",
+                f"A process only loads a proxy from the folder its executable "
+                f"started from, so OptiScaler's {proxy} here is never "
+                f"reached. Set 'target exe' to {seen.get('exe')} in the "
+                f"game's settings and install again.")
+        rep.verdict = (f"{running} runs from another folder, and the install "
+                       f"went beside a copy that does not start - install "
+                       f"again there.")
+        rep.never_ran = False
+        return True
+    if loaded:
+        if logging_on:
+            rep.add(WARN, f"OptiScaler ({proxy}) was loaded in {running} "
+                          f"{when}, and wrote no log.",
+                    "The proxy and the executable are both right, and "
+                    "OptiScaler.ini asks for a log. Close the game and press "
+                    "'did it work?' again; if there is still no log, say so "
+                    "in an issue with this report.")
+            rep.verdict = (f"OptiScaler was loaded into {running} {when}, and "
+                           f"no log was written.")
+            rep.never_ran = False
+            return True
+        return False        # loaded, log off: the log-off answer is right
+    # A launcher recorded as the game starts the real one as another process:
+    # not loading the proxy is what it does, and the proxy name is not the
+    # fault. The launcher answer is the diagnosis's own (#191).
+    if _launcher_installed(install_dir, recorded):
+        return False
+    # The watcher looks a few seconds after the start, and a game can load a
+    # proxy later than that: said as what was seen, not as a rule of the game.
+    other = [p for p in seen.get("elsewhere") or []
+             if os.path.basename(p).lower() == low]
+    rep.add(BAD, f"When the tool looked ({when}), {running} had not loaded "
+                 f"this folder's {proxy}.",
+            (f"It had {proxy} from somewhere else: {other[0]}. A DLL already "
+             f"loaded under that name is never loaded a second time. "
+             if other else
+             f"Windows lists every DLL in a process, and {proxy} was not one "
+             f"of them. No OptiScaler log was written either. ")
+            + "Set 'loads as' to another name in the game's settings"
+            + ("" if low == "dxgi.dll" else
+               " (dxgi.dll is the first one auto picks)")
+            + " and install again.")
+    rep.verdict = (f"{running} ran, and OptiScaler's {proxy} was not loaded "
+                   f"in it - try another 'loads as' name.")
+    rep.never_ran = False
+    return True
+
+
 def _loaded_block(install_dir: Path | None) -> str:
     """What the game had loaded when it last ran, for the report.
 
@@ -408,6 +571,22 @@ def _loaded_block(install_dir: Path | None) -> str:
     when = datetime.fromtimestamp(seen.get("at", 0)).strftime("%d %b %H:%M")
     out = [f"\n**What ran, and what it loaded** (seen at {when})",
            f"- process: {seen.get('name') or '?'}"]
+    # Where it ran from, relative to the install folder (no user paths in a
+    # report): the replay needs it for "ran from another folder" (gate 2.0.8).
+    ran = str(seen.get("exe") or "")
+    if ran:
+        # Only inside the game's own tree: a path that climbs to the drive
+        # or the user profile would carry a user name into a public issue.
+        try:
+            rel = os.path.relpath(ran, str(install_dir))
+            base = os.path.commonpath([os.path.abspath(ran),
+                                       os.path.abspath(str(install_dir))])
+            deep = len(Path(base).parts) >= 3        # e.g. C:\ Games Foo
+            inside = rel.split(os.sep)[0] != ".."
+            out.append("- ran from: " + (rel if inside or deep else
+                                         "outside the game folder"))
+        except ValueError:          # another drive
+            out.append("- ran from: outside the game folder")
     if seen.get("refused"):
         out.append(f"- DLL list: refused - {seen['refused']}")
     else:

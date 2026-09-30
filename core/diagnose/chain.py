@@ -354,7 +354,7 @@ def _foreign_reshade(install_dir: Path, since: float, rep: Report,
     reshade = install_dir / RESHADE_LOG
     if not reshade.is_file() or (since and not _fresh(reshade, since)):
         return
-    rtext = _last_session(_tail(reshade, 250_000))
+    rtext = _last_session(_tail(reshade, TAIL_RESHADE))
     loaded = list(dict.fromkeys(
         re.findall(r'Registered add-on "([^"]+)" v\S+', rtext)))
     hooks = _foreign_hooks(loaded, rep.route)
@@ -585,8 +585,11 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
     feeder_route = rep.route not in ("native", "bridge", "renodx", "upstream",
                                      "standalone")
     if feeder_route:
-        text = _last_feed_session(_tail(feed))
-        htext = _last_feed_session(_tail(host, 150_000))
+        # 1.18.0-beta copies NGX's own log into the feed log after a
+        # failure. Those are NGX's lines, not the feed's, and they carry
+        # words ("-> 0x00000001", "feature") the rules below read as ours.
+        text = _strip_ngx(_last_feed_session(_tail(feed, TAIL_FEED)))
+        htext = _strip_ngx(_last_feed_session(_tail(host, TAIL_HOST)))
     else:
         text = htext = ""
         if feed.is_file():
@@ -595,7 +598,7 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                     "about this one, so it is ignored.")
     # Only the last launch describes what the person just saw. Everything
     # before it belongs to an install that may not even be this route.
-    rtext = _last_session(_tail(reshade, 250_000))
+    rtext = _last_session(_tail(reshade, TAIL_RESHADE))
     # A file with nothing in it is not a log. ReShade creates ReShade.log
     # when it attaches and a game that dies on the next breath leaves it
     # empty - which used to read as "ReShade ran and loaded no add-ons",
@@ -936,7 +939,7 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
         # Without this the same cut tail says "no add-ons" to that route.
         if not attached and rep.route == "standalone":
             try:
-                stext = _tail(model.STANDALONE_LOG, 150_000)
+                stext = _tail(model.STANDALONE_LOG, TAIL_STANDALONE)
             except OSError:
                 stext = ""
             attached = _STANDALONE_SESSION in stext
@@ -1386,6 +1389,54 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                 f"other EvaluateFeature call shows as hooked either, so this "
                 f"session may have had nothing to run the model on - the "
                 f"add-on's panel in the game says for certain.")
+
+    # 1.18.0-beta: both feeder add-ons beside the game. The in-process one
+    # stands down and logs it; without this the session reads as "loaded,
+    # no frames" with no cause.
+    if re.search(r"dlss5-feed\.addon64 stands down", joined) \
+            and not delivered and not ready and not crash:
+        rep.add(BAD, "Two feeder add-ons are in the folder: dlss5-feed.addon64 "
+                     "and dlss5-feed-helper.addon64.",
+                "The feed logged that dlss5-feed-helper.addon64 is beside "
+                "it, so dlss5-feed.addon64 stood down and did nothing in the "
+                "game's process. This tool "
+                "does not install the helper mode. If you added it on "
+                "purpose, take dlss5-feed.addon64 out; if not, delete "
+                "dlss5-feed-helper.addon64. Then start the game again.")
+        rep.verdict = "Two feeder add-ons in one folder - keep one of the two."
+        return rep
+    # 1.18.0-beta prints NGX's own result when DLSS cannot be created. Read
+    # from the binary's format strings; no report has carried it yet. The
+    # last one counts: a retry may log another.
+    ngx_res = None
+    for ngx_res in re.finditer(r"SuperSampling\.FeatureInitResult:? "
+                               r"(0x[0-9A-Fa-f]{8}) \(([^)\n]*)\)", joined):
+        pass
+    in_process = "would not set DLSS up inside this game's process" in joined
+    if (in_process or (ngx_res and ngx_res.group(1).upper().startswith("0XBAD"))) \
+            and not delivered and not ready and not crash:
+        code = (f" ({ngx_res.group(2) or 'no name'}, {ngx_res.group(1)})"
+                if ngx_res else "")
+        if in_process:
+            # The feeder's own reading, with its own condition for it.
+            rep.add(BAD, f"The feeder logged that NGX would not set DLSS up "
+                         f"inside this game's process{code}.",
+                    "That is the feeder's own reading: this game's process "
+                    "is the problem, not necessarily the GPU or driver. Try "
+                    "the standalone-dlssnr or optiscaler route for this game. "
+                    "Feeder "
+                    "1.18.0-beta also has a 64-bit helper mode "
+                    "(dlss5-feed-helper.addon64) that this tool does not "
+                    "install; its release page explains it.")
+            rep.verdict = ("DLSS could not start inside this game's process - "
+                           "try another route.")
+        else:
+            rep.add(BAD, f"NGX refused to set DLSS up{code}.",
+                    "Try another route for this game. If you press 'report a "
+                    "bug', this report goes with it: the name above is the "
+                    "reason NGX gave.")
+            rep.verdict = "NGX refused to create DLSS - see its reason below."
+        return rep
 
     bridged = False                 # the bridge's own log gave the verdict
     sub_off = False                 # #127: the bridge replaced our settings

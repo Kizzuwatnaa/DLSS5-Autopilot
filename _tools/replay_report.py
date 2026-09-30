@@ -198,7 +198,11 @@ def folder_state(text: str) -> dict | None:
     opti_tag = ""
     opti_build = ""
     remix: dict = {"trex": False, "files": {}, "flavour": "", "key": "",
-                   "key_set": False, "swapped": False}
+                   "key_set": False, "swapped": False,
+                   # The report's own finding that its Remix log was older
+                   # than the install (#211). The rebuilt log is written
+                   # now, so without this it replays as a fresh run.
+                   "stale": "The Remix log predates the current install" in text}
     for line in m.group(1).splitlines():
         line = line.strip()
         if not line.startswith("- ") or ":" not in line:
@@ -398,6 +402,8 @@ def build(route: str, api: str, exe: str, logs: dict, bitness: int = 64,
         p = d / remix.LOG
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(logs["remix"], encoding="utf8")
+        if rx and rx.get("stale"):
+            os.utime(p, (978307200, 978307200))      # 2001: before any install
     if work_area:
         digits = re.search(r"(\d+)", work_area)
         if digits:
@@ -491,6 +497,13 @@ def machine(text: str, d: Path):
     # read it, so #238's "another dxgi.dll" answer could not be reproduced.
     rec_file = d / "_sightings.json"
     seen = sighting(text)
+    rel = seen.pop("ran_from", "") if seen else ""
+    if rel == "outside the game folder":
+        # somewhere that is surely not the rebuilt folder, as it was live
+        seen["exe"] = os.path.join(os.path.splitdrive(str(d))[0] + os.sep,
+                                   "_outside_", seen.get("name") or "game.exe")
+    elif rel:
+        seen["exe"] = os.path.normpath(str(d / rel))
     man_file = d / "dlss5-autopilot.json"
     if seen and man_file.is_file():
         # Installed two minutes before it was seen, so the record is read as
@@ -552,6 +565,9 @@ def sighting(text: str) -> dict:
         key, val = key.strip().lower(), val.strip()
         if key == "process":
             rec["name"] = val
+        elif key == "ran from":
+            # relative to the install folder; build() makes it absolute
+            rec["ran_from"] = val
         elif key == "dll list":
             rec["refused"] = val.split(" - ", 1)[-1] or "refused"
         elif key == "dlls in the process":
