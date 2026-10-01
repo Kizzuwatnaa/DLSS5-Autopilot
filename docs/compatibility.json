@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 34
+    "worked": 35
    },
    "renodx": {
     "failed": 1,
@@ -279,7 +279,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 32
+    "worked": 33
    },
    "renodx": {
     "failed": 1,
@@ -1612,6 +1612,28 @@
     "remix": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "endlessalice-win64-shipping.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 5.51,
+     "n": 1,
+     "res": 43
+    }
+   },
+   "name": "Endless Alice",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -4073,6 +4095,6 @@
    }
   }
  },
- "generated": "2026-10-01T13:47:27Z",
- "reports": 354
+ "generated": "2026-10-01T13:47:48Z",
+ "reports": 355
 }
