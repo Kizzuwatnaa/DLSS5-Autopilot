@@ -53,7 +53,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 1
+    "worked": 2
    },
    "renodx": {
     "failed": 0,
@@ -269,7 +269,7 @@
    },
    "feeder": {
     "failed": 7,
-    "worked": 6
+    "worked": 7
    },
    "optiscaler": {
     "failed": 7,
@@ -1449,10 +1449,18 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "psx",
+   "name": "DuckStation",
    "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 1
@@ -4014,6 +4022,6 @@
    }
   }
  },
- "generated": "2026-10-01T05:04:34Z",
- "reports": 349
+ "generated": "2026-10-01T06:08:35Z",
+ "reports": 350
 }
