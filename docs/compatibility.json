@@ -30,7 +30,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 5,
+    "failed": 6,
     "worked": 36
    },
    "renodx": {
@@ -190,7 +190,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 5,
+    "failed": 6,
     "worked": 19
    },
    "remix": {
@@ -3980,7 +3980,7 @@
      "worked": 1
     },
     "616.56": {
-     "failed": 1,
+     "failed": 2,
      "worked": 1
     },
     "616.92": {
@@ -3999,10 +3999,10 @@
      "res": 75
     }
    },
-   "name": "The Witcher 3: Wild Hunt",
+   "name": "The Witcher 3: Wild Hunt \u2014 Remastered",
    "routes": {
     "optiscaler": {
-     "failed": 4,
+     "failed": 5,
      "worked": 9
     },
     "upstream": {
@@ -4117,6 +4117,6 @@
    }
   }
  },
- "generated": "2026-10-01T13:48:12Z",
- "reports": 356
+ "generated": "2026-10-01T14:31:11Z",
+ "reports": 357
 }
