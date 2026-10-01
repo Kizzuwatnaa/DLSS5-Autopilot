@@ -30,7 +30,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 6,
+    "failed": 7,
     "worked": 36
    },
    "renodx": {
@@ -248,7 +248,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 12,
+    "failed": 13,
     "worked": 47
    },
    "remix": {
@@ -2080,7 +2080,7 @@
      "worked": 4
     },
     "616.92": {
-     "failed": 1,
+     "failed": 2,
      "worked": 3
     },
     "617.14": {
@@ -2095,10 +2095,10 @@
      "res": 75
     }
    },
-   "name": "Forza.Horizon.6.Premium.Edition-InsaneRamZes",
+   "name": "Forza Horizon 6",
    "routes": {
     "optiscaler": {
-     "failed": 1,
+     "failed": 2,
      "worked": 7
     },
     "renodx": {
@@ -4121,6 +4121,6 @@
    }
   }
  },
- "generated": "2026-10-01T17:55:39Z",
- "reports": 358
+ "generated": "2026-10-01T18:41:36Z",
+ "reports": 359
 }
