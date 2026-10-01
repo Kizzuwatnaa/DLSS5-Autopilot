@@ -67,7 +67,7 @@
   "DX9/none": {
    "feeder": {
     "failed": 2,
-    "worked": 1
+    "worked": 2
    }
   },
   "OPENGL/none": {
@@ -275,7 +275,7 @@
    },
    "feeder": {
     "failed": 7,
-    "worked": 7
+    "worked": 8
    },
    "optiscaler": {
     "failed": 7,
@@ -1800,13 +1800,17 @@
     "616.64": {
      "failed": 1,
      "worked": 0
+    },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "Fallout: New Vegas PCR",
+   "name": "Fallout: New Vegas",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -4117,6 +4121,6 @@
    }
   }
  },
- "generated": "2026-10-01T14:31:11Z",
- "reports": 357
+ "generated": "2026-10-01T17:55:39Z",
+ "reports": 358
 }
