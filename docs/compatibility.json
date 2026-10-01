@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 35
+    "worked": 36
    },
    "renodx": {
     "failed": 1,
@@ -279,7 +279,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 33
+    "worked": 34
    },
    "renodx": {
     "failed": 1,
@@ -797,6 +797,28 @@
     "feeder": {
      "failed": 0,
      "worked": 3
+    }
+   }
+  },
+  "bodycam-win64-shipping.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 6.13,
+     "n": 1,
+     "res": 43
+    }
+   },
+   "name": "Bodycam",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -4095,6 +4117,6 @@
    }
   }
  },
- "generated": "2026-10-01T13:47:48Z",
- "reports": 355
+ "generated": "2026-10-01T13:48:12Z",
+ "reports": 356
 }
