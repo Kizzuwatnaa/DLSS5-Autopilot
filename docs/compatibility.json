@@ -9,7 +9,7 @@
   "DX11/none": {
    "feeder": {
     "failed": 1,
-    "worked": 4
+    "worked": 5
    },
    "renodx": {
     "failed": 0,
@@ -275,7 +275,7 @@
    },
    "feeder": {
     "failed": 7,
-    "worked": 8
+    "worked": 9
    },
    "optiscaler": {
     "failed": 7,
@@ -3722,6 +3722,28 @@
     }
    }
   },
+  "systemshock2remastered.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "feeder": {
+     "fps": 59.8,
+     "n": 1,
+     "res": 100
+    }
+   },
+   "name": "SystemShock225thAnniT5DFq",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "talos2-win64-shipping.exe": {
    "drivers": {
     "616.92": {
@@ -4125,6 +4147,6 @@
    }
   }
  },
- "generated": "2026-10-01T19:02:04Z",
- "reports": 360
+ "generated": "2026-10-01T20:33:07Z",
+ "reports": 361
 }
