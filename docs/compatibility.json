@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 10,
-    "worked": 37
+    "worked": 38
    },
    "renodx": {
     "failed": 1,
@@ -195,7 +195,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 19
+    "worked": 20
    },
    "remix": {
     "failed": 2,
@@ -3106,6 +3106,28 @@
     }
    }
   },
+  "pragmata.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 9.1,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "PRAGMATA.Deluxe.Edition-InsaneRamZes",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "prehistoric kingdom.exe": {
    "drivers": {
     "616.56": {
@@ -4212,6 +4234,6 @@
    }
   }
  },
- "generated": "2026-10-02T20:48:33Z",
- "reports": 370
+ "generated": "2026-10-02T23:20:02Z",
+ "reports": 371
 }
