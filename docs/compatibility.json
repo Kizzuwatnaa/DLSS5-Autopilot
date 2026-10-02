@@ -9,7 +9,7 @@
   "DX11/none": {
    "feeder": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    },
    "renodx": {
     "failed": 0,
@@ -143,7 +143,7 @@
   "595.79": {
    "feeder": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "610.47": {
@@ -311,6 +311,21 @@
    "routes": {
     "optiscaler": {
      "failed": 1,
+     "worked": 1
+    }
+   }
+  },
+  "ac4bfsp.exe": {
+   "drivers": {
+    "595.79": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Assassins's Creed 4 - Black Flag",
+   "routes": {
+    "feeder": {
+     "failed": 0,
      "worked": 1
     }
    }
@@ -4181,6 +4196,6 @@
    }
   }
  },
- "generated": "2026-10-02T04:28:37Z",
- "reports": 365
+ "generated": "2026-10-02T05:28:16Z",
+ "reports": 366
 }
