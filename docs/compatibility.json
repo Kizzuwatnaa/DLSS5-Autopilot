@@ -30,7 +30,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 9,
+    "failed": 10,
     "worked": 37
    },
    "renodx": {
@@ -278,7 +278,7 @@
     "worked": 9
    },
    "optiscaler": {
-    "failed": 8,
+    "failed": 9,
     "worked": 34
    },
    "renodx": {
@@ -1013,7 +1013,7 @@
      "worked": 0
     },
     "617.14": {
-     "failed": 2,
+     "failed": 3,
      "worked": 9
     }
    },
@@ -1024,10 +1024,10 @@
      "res": 75
     }
    },
-   "name": "CONTROL Resonant",
+   "name": "Control Resonant",
    "routes": {
     "optiscaler": {
-     "failed": 3,
+     "failed": 4,
      "worked": 7
     },
     "upstream": {
@@ -4196,6 +4196,6 @@
    }
   }
  },
- "generated": "2026-10-02T11:53:15Z",
- "reports": 367
+ "generated": "2026-10-02T11:55:14Z",
+ "reports": 368
 }
