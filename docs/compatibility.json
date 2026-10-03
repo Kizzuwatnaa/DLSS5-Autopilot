@@ -43,7 +43,7 @@
    },
    "upstream": {
     "failed": 3,
-    "worked": 4
+    "worked": 5
    }
   },
   "DX12/none": {
@@ -211,7 +211,7 @@
    },
    "upstream": {
     "failed": 4,
-    "worked": 1
+    "worked": 2
    }
   },
   "616.64": {
@@ -4120,7 +4120,7 @@
     },
     "616.56": {
      "failed": 2,
-     "worked": 1
+     "worked": 2
     },
     "616.92": {
      "failed": 0,
@@ -4138,7 +4138,7 @@
      "res": 75
     }
    },
-   "name": "The Witcher 3: Wild Hunt \u2014 Remastered",
+   "name": "The Witcher 3 - Remastered",
    "routes": {
     "native": {
      "failed": 0,
@@ -4154,7 +4154,7 @@
     },
     "upstream": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4301,6 +4301,6 @@
    }
   }
  },
- "generated": "2026-10-03T21:37:35Z",
- "reports": 378
+ "generated": "2026-10-03T22:09:41Z",
+ "reports": 379
 }
