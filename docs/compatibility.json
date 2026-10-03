@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 10,
-    "worked": 38
+    "worked": 39
    },
    "renodx": {
     "failed": 1,
@@ -287,7 +287,7 @@
    },
    "optiscaler": {
     "failed": 9,
-    "worked": 34
+    "worked": 35
    },
    "renodx": {
     "failed": 1,
@@ -3672,6 +3672,17 @@
     "616.56": {
      "failed": 2,
      "worked": 0
+    },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 2.7,
+     "n": 1,
+     "res": 75
     }
    },
    "name": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
@@ -3679,6 +3690,10 @@
     "native": {
      "failed": 1,
      "worked": 0
+    },
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     },
     "upstream": {
      "failed": 1,
@@ -4234,6 +4249,6 @@
    }
   }
  },
- "generated": "2026-10-02T23:20:02Z",
- "reports": 371
+ "generated": "2026-10-03T06:51:50Z",
+ "reports": 372
 }
