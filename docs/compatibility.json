@@ -78,7 +78,7 @@
   },
   "UNKNOWN/dlss": {
    "optiscaler": {
-    "failed": 1,
+    "failed": 2,
     "worked": 0
    }
   },
@@ -286,7 +286,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 10,
+    "failed": 11,
     "worked": 38
    },
    "renodx": {
@@ -2511,6 +2511,21 @@
     }
    }
   },
+  "integritychecker.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Test Drive Unlimited Solar Crown",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "inzoi-win64-shipping.exe": {
    "drivers": {
     "616.56": {
@@ -4286,6 +4301,6 @@
    }
   }
  },
- "generated": "2026-10-03T20:56:23Z",
- "reports": 377
+ "generated": "2026-10-03T21:37:35Z",
+ "reports": 378
 }
