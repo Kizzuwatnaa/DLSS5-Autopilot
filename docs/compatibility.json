@@ -57,7 +57,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    },
    "standalone": {
     "failed": 3,
@@ -261,7 +261,7 @@
    },
    "renodx": {
     "failed": 2,
-    "worked": 2
+    "worked": 3
    },
    "standalone": {
     "failed": 5,
@@ -2451,14 +2451,14 @@
    "drivers": {
     "616.92": {
      "failed": 1,
-     "worked": 2
+     "worked": 3
     }
    },
    "name": "Horizon Zero Dawn\u2122 Complete Edition",
    "routes": {
     "renodx": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     },
     "upstream": {
      "failed": 0,
@@ -4271,6 +4271,6 @@
    }
   }
  },
- "generated": "2026-10-03T17:26:24Z",
- "reports": 374
+ "generated": "2026-10-03T18:33:39Z",
+ "reports": 375
 }
