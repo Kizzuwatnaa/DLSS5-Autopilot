@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 10,
-    "worked": 39
+    "worked": 40
    },
    "renodx": {
     "failed": 1,
@@ -287,7 +287,7 @@
    },
    "optiscaler": {
     "failed": 9,
-    "worked": 35
+    "worked": 36
    },
    "renodx": {
     "failed": 1,
@@ -4247,8 +4247,30 @@
      "worked": 1
     }
    }
+  },
+  "yakuzakiwami3.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 8.02,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Yakuza Kiwami 3 & Dark Ties",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
   }
  },
- "generated": "2026-10-03T10:58:05Z",
- "reports": 372
+ "generated": "2026-10-03T16:46:49Z",
+ "reports": 373
 }
