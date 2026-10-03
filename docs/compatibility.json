@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 10,
-    "worked": 40
+    "worked": 41
    },
    "renodx": {
     "failed": 1,
@@ -287,7 +287,7 @@
    },
    "optiscaler": {
     "failed": 9,
-    "worked": 36
+    "worked": 37
    },
    "renodx": {
     "failed": 1,
@@ -1117,21 +1117,21 @@
     },
     "617.14": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 5.56,
-     "n": 2,
-     "res": 55
+     "ms": 5.67,
+     "n": 3,
+     "res": 60
     }
    },
    "name": "Cyberpunk 2077",
    "routes": {
     "optiscaler": {
      "failed": 3,
-     "worked": 8
+     "worked": 9
     },
     "upstream": {
      "failed": 0,
@@ -4271,6 +4271,6 @@
    }
   }
  },
- "generated": "2026-10-03T16:46:49Z",
- "reports": 373
+ "generated": "2026-10-03T17:26:24Z",
+ "reports": 374
 }
