@@ -30,7 +30,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 10,
+    "failed": 11,
     "worked": 41
    },
    "renodx": {
@@ -286,7 +286,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 9,
+    "failed": 10,
     "worked": 37
    },
    "renodx": {
@@ -4269,8 +4269,23 @@
      "worked": 1
     }
    }
+  },
+  "zenlesszonezero.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "ZenlessZoneZero Game",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
   }
  },
- "generated": "2026-10-03T18:33:39Z",
- "reports": 375
+ "generated": "2026-10-03T19:22:05Z",
+ "reports": 376
 }
