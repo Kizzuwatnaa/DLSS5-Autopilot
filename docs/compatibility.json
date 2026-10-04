@@ -70,6 +70,12 @@
     "worked": 2
    }
   },
+  "OPENGL/dlss": {
+   "feeder": {
+    "failed": 0,
+    "worked": 1
+   }
+  },
   "OPENGL/none": {
    "feeder": {
     "failed": 1,
@@ -279,7 +285,7 @@
    },
    "feeder": {
     "failed": 7,
-    "worked": 9
+    "worked": 10
    },
    "native": {
     "failed": 0,
@@ -406,10 +412,18 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Assassin's Creed Odyssey",
    "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
     "standalone": {
      "failed": 0,
      "worked": 1
@@ -4305,6 +4319,6 @@
    }
   }
  },
- "generated": "2026-10-04T04:06:27Z",
- "reports": 383
+ "generated": "2026-10-04T04:10:13Z",
+ "reports": 384
 }
