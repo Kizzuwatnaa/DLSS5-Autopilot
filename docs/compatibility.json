@@ -43,7 +43,7 @@
    },
    "upstream": {
     "failed": 3,
-    "worked": 6
+    "worked": 7
    }
   },
   "DX12/none": {
@@ -275,7 +275,7 @@
    },
    "upstream": {
     "failed": 1,
-    "worked": 15
+    "worked": 16
    }
   },
   "617.14": {
@@ -2583,6 +2583,10 @@
   },
   "kingdomcome.exe": {
    "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    },
     "617.14": {
      "failed": 0,
      "worked": 1
@@ -2595,9 +2599,13 @@
      "res": 75
     }
    },
-   "name": "Kingdom Come: Deliverance II",
+   "name": "KingdomComeDeliverance2",
    "routes": {
     "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
+    "upstream": {
      "failed": 0,
      "worked": 1
     }
@@ -4334,6 +4342,6 @@
    }
   }
  },
- "generated": "2026-10-04T10:34:49Z",
- "reports": 385
+ "generated": "2026-10-04T15:31:46Z",
+ "reports": 386
 }
