@@ -66,7 +66,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 2
    }
   },
@@ -284,7 +284,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 7,
+    "failed": 8,
     "worked": 10
    },
    "native": {
@@ -2896,6 +2896,21 @@
     }
    }
   },
+  "napoleon.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Napoleon Total War",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "needforspeedheat.exe": {
    "drivers": {
     "616.56": {
@@ -4319,6 +4334,6 @@
    }
   }
  },
- "generated": "2026-10-04T08:58:15Z",
- "reports": 384
+ "generated": "2026-10-04T09:33:02Z",
+ "reports": 385
 }
