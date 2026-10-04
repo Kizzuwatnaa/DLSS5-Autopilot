@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 48
+    "worked": 49
    },
    "renodx": {
     "failed": 1,
@@ -259,7 +259,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 49
+    "worked": 50
    },
    "remix": {
     "failed": 2,
@@ -1367,14 +1367,14 @@
    "drivers": {
     "616.92": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    },
    "name": "Directive 8020",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "upstream": {
      "failed": 0,
@@ -4346,6 +4346,6 @@
    }
   }
  },
- "generated": "2026-10-04T22:11:18Z",
- "reports": 390
+ "generated": "2026-10-04T22:39:24Z",
+ "reports": 391
 }
