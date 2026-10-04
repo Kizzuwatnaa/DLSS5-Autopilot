@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 45
+    "worked": 46
    },
    "renodx": {
     "failed": 1,
@@ -293,7 +293,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 41
+    "worked": 42
    },
    "renodx": {
     "failed": 1,
@@ -4233,14 +4233,14 @@
    "drivers": {
     "617.14": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Way of the Hunter 2",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4342,6 +4342,6 @@
    }
   }
  },
- "generated": "2026-10-04T19:10:31Z",
- "reports": 387
+ "generated": "2026-10-04T19:22:02Z",
+ "reports": 388
 }
