@@ -43,7 +43,7 @@
    },
    "upstream": {
     "failed": 3,
-    "worked": 5
+    "worked": 6
    }
   },
   "DX12/none": {
@@ -299,7 +299,7 @@
    },
    "upstream": {
     "failed": 1,
-    "worked": 4
+    "worked": 5
    }
   }
  },
@@ -2096,7 +2096,7 @@
     },
     "617.14": {
      "failed": 1,
-     "worked": 2
+     "worked": 3
     }
    },
    "name": "Microsoft Flight Simulator 2024",
@@ -2111,7 +2111,7 @@
     },
     "upstream": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4301,6 +4301,6 @@
    }
   }
  },
- "generated": "2026-10-04T00:40:37Z",
- "reports": 381
+ "generated": "2026-10-04T03:01:02Z",
+ "reports": 382
 }
