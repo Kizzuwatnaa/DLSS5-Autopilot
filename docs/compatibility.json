@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 51
+    "worked": 52
    },
    "renodx": {
     "failed": 1,
@@ -259,7 +259,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 50
+    "worked": 51
    },
    "remix": {
     "failed": 2,
@@ -2315,16 +2315,27 @@
   },
   "gta5_enhanced.exe": {
    "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    },
     "617.14": {
      "failed": 0,
      "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 11.19,
+     "n": 1,
+     "res": 50
     }
    },
    "name": "Grand Theft Auto V Enhanced",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4350,6 +4361,6 @@
    }
   }
  },
- "generated": "2026-10-05T04:28:51Z",
- "reports": 393
+ "generated": "2026-10-05T05:03:00Z",
+ "reports": 394
 }
