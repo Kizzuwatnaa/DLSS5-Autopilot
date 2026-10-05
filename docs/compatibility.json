@@ -31,7 +31,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 54
+    "worked": 55
    },
    "renodx": {
     "failed": 1,
@@ -293,7 +293,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 47
+    "worked": 48
    },
    "renodx": {
     "failed": 1,
@@ -3059,14 +3059,14 @@
     },
     "617.14": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Onimusha: Way of the Sword",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4380,6 +4380,6 @@
    }
   }
  },
- "generated": "2026-10-05T11:28:46Z",
- "reports": 398
+ "generated": "2026-10-05T12:25:20Z",
+ "reports": 399
 }
