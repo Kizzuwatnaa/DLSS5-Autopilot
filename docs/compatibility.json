@@ -12,7 +12,7 @@
   },
   "DX11/none": {
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 7
    },
    "renodx": {
@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 57
+    "worked": 59
    },
    "renodx": {
     "failed": 1,
@@ -196,7 +196,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 10,
+    "failed": 11,
     "worked": 33
    },
    "native": {
@@ -205,7 +205,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 20
+    "worked": 21
    },
    "remix": {
     "failed": 2,
@@ -263,7 +263,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 51
+    "worked": 52
    },
    "remix": {
     "failed": 2,
@@ -2518,11 +2518,22 @@
    "drivers": {
     "616.92": {
      "failed": 1,
-     "worked": 3
+     "worked": 4
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 14.02,
+     "n": 1,
+     "res": 75
     }
    },
    "name": "Horizon Zero Dawn\u2122 Complete Edition",
    "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
     "renodx": {
      "failed": 1,
      "worked": 1
@@ -3655,6 +3666,21 @@
     }
    }
   },
+  "soma.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "SOMA",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "sottr.exe": {
    "drivers": {
     "616.56": {
@@ -4222,7 +4248,7 @@
     },
     "616.56": {
      "failed": 2,
-     "worked": 2
+     "worked": 3
     },
     "616.92": {
      "failed": 0,
@@ -4240,7 +4266,7 @@
      "res": 75
     }
    },
-   "name": "The Witcher 3: Wild Hunt - Game of the Year Edition",
+   "name": "The Witcher 3: Wild Hunt \u2014 Remastered",
    "routes": {
     "native": {
      "failed": 0,
@@ -4248,7 +4274,7 @@
     },
     "optiscaler": {
      "failed": 6,
-     "worked": 14
+     "worked": 15
     },
     "renodx": {
      "failed": 0,
@@ -4403,6 +4429,6 @@
    }
   }
  },
- "generated": "2026-10-05T17:58:50Z",
- "reports": 403
+ "generated": "2026-10-05T19:53:54Z",
+ "reports": 406
 }
