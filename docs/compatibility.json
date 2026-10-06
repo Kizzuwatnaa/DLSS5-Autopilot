@@ -57,7 +57,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 2
+    "worked": 3
    },
    "renodx": {
     "failed": 0,
@@ -197,7 +197,7 @@
    },
    "feeder": {
     "failed": 11,
-    "worked": 33
+    "worked": 34
    },
    "native": {
     "failed": 2,
@@ -4421,6 +4421,21 @@
     }
    }
   },
+  "xenia_canary.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Xenia (Xbox 360)",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "xrengine.exe": {
    "drivers": {
     "616.92": {
@@ -4489,6 +4504,6 @@
    }
   }
  },
- "generated": "2026-10-06T19:41:30Z",
- "reports": 414
+ "generated": "2026-10-06T20:43:00Z",
+ "reports": 415
 }
