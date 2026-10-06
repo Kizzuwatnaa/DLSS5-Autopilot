@@ -21,7 +21,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    }
   },
   "DX12/dlss": {
@@ -318,6 +318,10 @@
   },
   "617.42": {
    "optiscaler": {
+    "failed": 0,
+    "worked": 1
+   },
+   "standalone": {
     "failed": 0,
     "worked": 1
    }
@@ -1414,6 +1418,21 @@
    "name": "Dishonored",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "doe.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Dungeons of Eternity",
+   "routes": {
+    "standalone": {
      "failed": 0,
      "worked": 1
     }
@@ -4451,6 +4470,6 @@
    }
   }
  },
- "generated": "2026-10-06T17:33:07Z",
- "reports": 411
+ "generated": "2026-10-06T18:53:18Z",
+ "reports": 412
 }
