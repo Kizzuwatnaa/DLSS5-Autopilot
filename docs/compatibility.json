@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 60
+    "worked": 61
    },
    "renodx": {
     "failed": 1,
@@ -301,7 +301,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 52
+    "worked": 53
    },
    "renodx": {
     "failed": 1,
@@ -1157,21 +1157,21 @@
     },
     "617.14": {
      "failed": 0,
-     "worked": 4
+     "worked": 5
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 5.67,
-     "n": 3,
-     "res": 60
+     "ms": 5.82,
+     "n": 4,
+     "res": 68
     }
    },
-   "name": "Cyberpunk 2077",
+   "name": "Cyberpunk 2077: Phantom Liberty",
    "routes": {
     "optiscaler": {
      "failed": 3,
-     "worked": 9
+     "worked": 10
     },
     "upstream": {
      "failed": 0,
@@ -4470,6 +4470,6 @@
    }
   }
  },
- "generated": "2026-10-06T18:53:18Z",
- "reports": 412
+ "generated": "2026-10-06T19:26:55Z",
+ "reports": 413
 }
