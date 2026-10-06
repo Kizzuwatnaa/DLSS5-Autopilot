@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "DX11/none": {
@@ -314,6 +314,12 @@
    "upstream": {
     "failed": 1,
     "worked": 5
+   }
+  },
+  "617.42": {
+   "optiscaler": {
+    "failed": 0,
+    "worked": 1
    }
   }
  },
@@ -3563,6 +3569,10 @@
     "616.92": {
      "failed": 1,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Stellar Blade",
@@ -3573,7 +3583,7 @@
     },
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4441,6 +4451,6 @@
    }
   }
  },
- "generated": "2026-10-06T11:16:26Z",
- "reports": 410
+ "generated": "2026-10-06T17:33:07Z",
+ "reports": 411
 }
