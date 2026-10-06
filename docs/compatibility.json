@@ -83,7 +83,7 @@
   "OPENGL/none": {
    "feeder": {
     "failed": 1,
-    "worked": 2
+    "worked": 3
    }
   },
   "UNKNOWN/dlss": {
@@ -317,6 +317,10 @@
    }
   },
   "617.42": {
+   "feeder": {
+    "failed": 0,
+    "worked": 1
+   },
    "optiscaler": {
     "failed": 0,
     "worked": 1
@@ -3300,6 +3304,21 @@
     }
    }
   },
+  "projectzomboid64.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Project Zomboid",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "prototype2.exe": {
    "drivers": {
     "616.92": {
@@ -4470,6 +4489,6 @@
    }
   }
  },
- "generated": "2026-10-06T19:26:55Z",
- "reports": 413
+ "generated": "2026-10-06T19:41:30Z",
+ "reports": 414
 }
