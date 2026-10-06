@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 59
+    "worked": 60
    },
    "renodx": {
     "failed": 1,
@@ -301,7 +301,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 51
+    "worked": 52
    },
    "renodx": {
     "failed": 1,
@@ -4264,13 +4264,13 @@
     },
     "617.14": {
      "failed": 5,
-     "worked": 13
+     "worked": 14
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 5.49,
-     "n": 7,
+     "ms": 5.55,
+     "n": 8,
      "res": 75
     }
    },
@@ -4282,7 +4282,7 @@
     },
     "optiscaler": {
      "failed": 6,
-     "worked": 15
+     "worked": 16
     },
     "renodx": {
      "failed": 0,
@@ -4437,6 +4437,6 @@
    }
   }
  },
- "generated": "2026-10-06T06:25:10Z",
- "reports": 407
+ "generated": "2026-10-06T07:27:44Z",
+ "reports": 408
 }
