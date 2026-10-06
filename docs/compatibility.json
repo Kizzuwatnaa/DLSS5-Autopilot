@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 61
+    "worked": 62
    },
    "renodx": {
     "failed": 1,
@@ -323,7 +323,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    },
    "standalone": {
     "failed": 0,
@@ -3746,6 +3746,10 @@
     "616.92": {
      "failed": 1,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Shadow of the Tomb Raider",
@@ -3756,7 +3760,7 @@
     },
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4504,6 +4508,6 @@
    }
   }
  },
- "generated": "2026-10-06T20:43:00Z",
- "reports": 415
+ "generated": "2026-10-06T22:28:19Z",
+ "reports": 416
 }
