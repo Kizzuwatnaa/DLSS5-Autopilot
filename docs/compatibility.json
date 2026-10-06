@@ -27,7 +27,7 @@
   "DX12/dlss": {
    "feeder": {
     "failed": 1,
-    "worked": 0
+    "worked": 1
    },
    "native": {
     "failed": 1,
@@ -293,7 +293,7 @@
    },
    "feeder": {
     "failed": 8,
-    "worked": 10
+    "worked": 11
    },
    "native": {
     "failed": 0,
@@ -741,11 +741,15 @@
     },
     "617.14": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Baldur's Gate 3",
    "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
     "optiscaler": {
      "failed": 2,
      "worked": 1
@@ -4437,6 +4441,6 @@
    }
   }
  },
- "generated": "2026-10-06T07:52:04Z",
- "reports": 409
+ "generated": "2026-10-06T08:04:54Z",
+ "reports": 410
 }
