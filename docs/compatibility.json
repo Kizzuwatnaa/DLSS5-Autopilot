@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 65
+    "worked": 66
    },
    "renodx": {
     "failed": 1,
@@ -301,7 +301,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 54
+    "worked": 55
    },
    "renodx": {
     "failed": 1,
@@ -4124,10 +4124,25 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 9.27,
+     "n": 1,
+     "res": 74
     }
    },
    "name": "The Last of Us\u2122 Part II Remastered",
    "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
     "upstream": {
      "failed": 0,
      "worked": 1
@@ -4534,6 +4549,6 @@
    }
   }
  },
- "generated": "2026-10-07T08:56:47Z",
- "reports": 419
+ "generated": "2026-10-07T10:20:28Z",
+ "reports": 420
 }
