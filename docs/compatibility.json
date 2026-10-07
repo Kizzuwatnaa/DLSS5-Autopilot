@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    }
   },
   "DX11/none": {
@@ -323,7 +323,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 0,
@@ -1811,13 +1811,28 @@
     "617.14": {
      "failed": 1,
      "worked": 0
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "ESO",
+   "measured": {
+    "optiscaler": {
+     "ms": 13.38,
+     "n": 1,
+     "res": 100
+    }
+   },
+   "name": "The Elder Scrolls Online",
    "routes": {
     "bridge": {
      "failed": 1,
      "worked": 0
+    },
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -4598,6 +4613,6 @@
    }
   }
  },
- "generated": "2026-10-07T17:41:52Z",
- "reports": 426
+ "generated": "2026-10-07T20:11:56Z",
+ "reports": 427
 }
