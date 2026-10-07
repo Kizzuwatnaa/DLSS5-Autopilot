@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 64
+    "worked": 65
    },
    "renodx": {
     "failed": 1,
@@ -267,7 +267,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 53
+    "worked": 54
    },
    "remix": {
     "failed": 2,
@@ -336,18 +336,25 @@
    "drivers": {
     "616.92": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "617.14": {
      "failed": 1,
      "worked": 0
     }
    },
+   "measured": {
+    "optiscaler": {
+     "ms": 7.86,
+     "n": 1,
+     "res": 75
+    }
+   },
    "name": "007 First Light",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4527,6 +4534,6 @@
    }
   }
  },
- "generated": "2026-10-07T05:44:01Z",
- "reports": 418
+ "generated": "2026-10-07T08:56:47Z",
+ "reports": 419
 }
