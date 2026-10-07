@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 62
+    "worked": 63
    },
    "renodx": {
     "failed": 1,
@@ -267,7 +267,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 52
+    "worked": 53
    },
    "remix": {
     "failed": 2,
@@ -3982,6 +3982,21 @@
     }
    }
   },
+  "swgr-win64-shipping.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "STAR WARS: Galactic Racer\u2122",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "swzerocompany.exe": {
    "drivers": {
     "617.14": {
@@ -4508,6 +4523,6 @@
    }
   }
  },
- "generated": "2026-10-06T22:28:19Z",
- "reports": 416
+ "generated": "2026-10-07T03:11:58Z",
+ "reports": 417
 }
