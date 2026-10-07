@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 67
+    "worked": 68
    },
    "renodx": {
     "failed": 1,
@@ -267,7 +267,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 55
+    "worked": 56
    },
    "remix": {
     "failed": 2,
@@ -3847,6 +3847,28 @@
     }
    }
   },
+  "spider-man2.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 7.58,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Marvel's Spider-Man 2",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "splintercell3.exe": {
    "drivers": {
     "616.92": {
@@ -4549,6 +4571,6 @@
    }
   }
  },
- "generated": "2026-10-07T11:04:26Z",
- "reports": 421
+ "generated": "2026-10-07T11:49:59Z",
+ "reports": 422
 }
