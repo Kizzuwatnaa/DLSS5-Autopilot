@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 12,
-    "worked": 69
+    "worked": 70
    },
    "renodx": {
     "failed": 1,
@@ -323,7 +323,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    },
    "standalone": {
     "failed": 0,
@@ -3035,6 +3035,21 @@
     }
    }
   },
+  "nba2k27.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "NBA 2K27",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "needforspeedheat.exe": {
    "drivers": {
     "616.56": {
@@ -4579,6 +4594,6 @@
    }
   }
  },
- "generated": "2026-10-07T16:02:15Z",
- "reports": 424
+ "generated": "2026-10-07T16:20:30Z",
+ "reports": 425
 }
