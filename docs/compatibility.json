@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 76
+    "worked": 77
    },
    "renodx": {
     "failed": 1,
@@ -327,7 +327,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 8
+    "worked": 9
    },
    "standalone": {
     "failed": 0,
@@ -3769,10 +3769,25 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 4.41,
+     "n": 1,
+     "res": 75
     }
    },
    "name": "SILENT HILL 2",
    "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
     "upstream": {
      "failed": 0,
      "worked": 1
@@ -4666,6 +4681,6 @@
    }
   }
  },
- "generated": "2026-10-08T20:19:38Z",
- "reports": 434
+ "generated": "2026-10-08T22:12:31Z",
+ "reports": 435
 }
