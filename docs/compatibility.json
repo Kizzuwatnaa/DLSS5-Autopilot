@@ -76,7 +76,7 @@
   },
   "OPENGL/dlss": {
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    }
   },
@@ -322,7 +322,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    },
    "optiscaler": {
@@ -1471,6 +1471,21 @@
    "name": "Dolphin (GameCube / Wii)",
    "routes": {
     "standalone": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "doom3bfg.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "DOOM 3: BFG Edition",
+   "routes": {
+    "feeder": {
      "failed": 1,
      "worked": 0
     }
@@ -4681,6 +4696,6 @@
    }
   }
  },
- "generated": "2026-10-08T22:12:31Z",
- "reports": 435
+ "generated": "2026-10-08T22:15:55Z",
+ "reports": 436
 }
