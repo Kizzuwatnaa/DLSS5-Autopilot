@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 71
+    "worked": 72
    },
    "renodx": {
     "failed": 1,
@@ -301,7 +301,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 55
+    "worked": 56
    },
    "renodx": {
     "failed": 1,
@@ -4448,17 +4448,17 @@
     },
     "617.14": {
      "failed": 5,
-     "worked": 14
+     "worked": 15
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 5.55,
-     "n": 8,
+     "ms": 5.49,
+     "n": 9,
      "res": 75
     }
    },
-   "name": "The Witcher 3: Wild Hunt - Game of the Year Edition",
+   "name": "The Witcher 3: Wild Hunt",
    "routes": {
     "native": {
      "failed": 0,
@@ -4466,7 +4466,7 @@
     },
     "optiscaler": {
      "failed": 6,
-     "worked": 16
+     "worked": 17
     },
     "renodx": {
      "failed": 0,
@@ -4636,6 +4636,6 @@
    }
   }
  },
- "generated": "2026-10-08T11:22:02Z",
- "reports": 429
+ "generated": "2026-10-08T12:26:54Z",
+ "reports": 430
 }
