@@ -34,7 +34,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 12,
+    "failed": 13,
     "worked": 71
    },
    "renodx": {
@@ -300,7 +300,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 12,
+    "failed": 13,
     "worked": 55
    },
    "renodx": {
@@ -4323,6 +4323,21 @@
     }
    }
   },
+  "vanguard.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Call of Duty\u00ae: Vanguard",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "venus vacation prism - dead or alive xtreme -.exe": {
    "drivers": {
     "616.92": {
@@ -4621,6 +4636,6 @@
    }
   }
  },
- "generated": "2026-10-07T22:11:59Z",
- "reports": 428
+ "generated": "2026-10-08T09:45:41Z",
+ "reports": 429
 }
