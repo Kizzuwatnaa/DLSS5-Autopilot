@@ -35,7 +35,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 75
+    "worked": 76
    },
    "renodx": {
     "failed": 1,
@@ -205,7 +205,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 21
+    "worked": 22
    },
    "remix": {
     "failed": 2,
@@ -3524,6 +3524,28 @@
     }
    }
   },
+  "re9demo.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 9.72,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Resident Evil Requiem - Demo",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "readyornotsteam-win64-shipping.exe": {
    "drivers": {
     "616.92": {
@@ -4644,6 +4666,6 @@
    }
   }
  },
- "generated": "2026-10-08T17:57:19Z",
- "reports": 433
+ "generated": "2026-10-08T20:19:38Z",
+ "reports": 434
 }
