@@ -38,7 +38,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 14,
+    "failed": 15,
     "worked": 77
    },
    "renodx": {
@@ -304,7 +304,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 13,
+    "failed": 14,
     "worked": 57
    },
    "renodx": {
@@ -2397,6 +2397,21 @@
     "bridge": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "gowde-steam.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Gears of War Reloaded 2025",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -4734,6 +4749,6 @@
    }
   }
  },
- "generated": "2026-10-09T08:27:06Z",
- "reports": 440
+ "generated": "2026-10-09T09:26:25Z",
+ "reports": 441
 }
