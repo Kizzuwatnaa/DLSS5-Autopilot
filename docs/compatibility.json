@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 78
+    "worked": 79
    },
    "renodx": {
     "failed": 1,
@@ -331,7 +331,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 9
+    "worked": 10
    },
    "standalone": {
     "failed": 0,
@@ -3571,13 +3571,24 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 9.56,
+     "n": 1,
+     "res": 75
     }
    },
    "name": "Resident Evil Requiem",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -4753,6 +4764,6 @@
    }
   }
  },
- "generated": "2026-10-09T14:19:42Z",
- "reports": 443
+ "generated": "2026-10-09T16:28:32Z",
+ "reports": 444
 }
