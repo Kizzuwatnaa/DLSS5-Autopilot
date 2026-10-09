@@ -74,7 +74,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 3,
+    "failed": 4,
     "worked": 2
    }
   },
@@ -326,7 +326,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 1
    },
    "optiscaler": {
@@ -1368,6 +1368,21 @@
     "feeder": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "deadspace2.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Dead Space 2",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -4719,6 +4734,6 @@
    }
   }
  },
- "generated": "2026-10-09T05:46:00Z",
- "reports": 438
+ "generated": "2026-10-09T08:14:35Z",
+ "reports": 439
 }
