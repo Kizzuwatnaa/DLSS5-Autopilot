@@ -34,7 +34,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 13,
+    "failed": 14,
     "worked": 77
    },
    "renodx": {
@@ -326,7 +326,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 0,
+    "failed": 1,
     "worked": 9
    },
    "standalone": {
@@ -2707,6 +2707,10 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "measured": {
@@ -2719,7 +2723,7 @@
    "name": "inZOI",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 2
     }
    }
@@ -4696,6 +4700,6 @@
    }
   }
  },
- "generated": "2026-10-08T22:15:55Z",
- "reports": 436
+ "generated": "2026-10-09T00:29:05Z",
+ "reports": 437
 }
