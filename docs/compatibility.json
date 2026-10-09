@@ -11,6 +11,10 @@
    }
   },
   "DX11/none": {
+   "bridge": {
+    "failed": 0,
+    "worked": 1
+   },
    "feeder": {
     "failed": 2,
     "worked": 7
@@ -255,7 +259,7 @@
   "616.92": {
    "bridge": {
     "failed": 2,
-    "worked": 3
+    "worked": 4
    },
    "feeder": {
     "failed": 25,
@@ -3813,6 +3817,21 @@
     }
    }
   },
+  "skse64_loader.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "The Elder Scrolls V: Skyrim Special Edition",
+   "routes": {
+    "bridge": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "skyrimse.exe": {
    "drivers": {
     "616.56": {
@@ -4700,6 +4719,6 @@
    }
   }
  },
- "generated": "2026-10-09T00:29:05Z",
- "reports": 437
+ "generated": "2026-10-09T05:46:00Z",
+ "reports": 438
 }
