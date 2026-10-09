@@ -51,7 +51,7 @@
    },
    "upstream": {
     "failed": 3,
-    "worked": 7
+    "worked": 8
    }
   },
   "DX12/none": {
@@ -317,7 +317,7 @@
    },
    "upstream": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    }
   },
   "617.42": {
@@ -4546,7 +4546,7 @@
     },
     "617.14": {
      "failed": 5,
-     "worked": 16
+     "worked": 17
     }
    },
    "measured": {
@@ -4556,7 +4556,7 @@
      "res": 75
     }
    },
-   "name": "The Witcher 3: Wild Hunt - Game of the Year Edition",
+   "name": "The Witcher 3: Wild Hunt \u2014 Remastered",
    "routes": {
     "native": {
      "failed": 0,
@@ -4572,7 +4572,7 @@
     },
     "upstream": {
      "failed": 1,
-     "worked": 2
+     "worked": 3
     }
    }
   },
@@ -4734,6 +4734,6 @@
    }
   }
  },
- "generated": "2026-10-09T08:14:35Z",
- "reports": 439
+ "generated": "2026-10-09T08:27:06Z",
+ "reports": 440
 }
