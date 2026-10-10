@@ -19,12 +19,15 @@
 # steps below read the repository variables SIGNPATH_ORGANIZATION_ID and
 # SIGNPATH_PROJECT_SLUG, the SIGNPATH_API_TOKEN secret, and one policy slug
 # per kind of run:
-#   SIGNPATH_SIGNING_POLICY_SLUG  the release certificate - tagged builds
-#   SIGNPATH_TEST_POLICY_SLUG     the self-signed test certificate - builds
-#                                 started by hand, which publish nothing
-# A run whose policy variable is empty is built unsigned, so a tag is never
-# signed with the test certificate: an untrusted signature on a download is
-# worse than none. SignPath itself verifies that the file came out of this
+#   SIGNPATH_SIGNING_POLICY_SLUG  the release certificate - every run on a
+#                                 tag, however it was started
+#   SIGNPATH_TEST_POLICY_SLUG     the self-signed test certificate - a run
+#                                 started by hand on a branch, which
+#                                 publishes nothing
+# The ref decides, not the way the run was started: a run on a tag can
+# publish, so it only ever gets the release policy, and with that variable
+# empty it is built unsigned. An untrusted signature on a download is worse
+# than none. SignPath itself verifies that the file came out of this
 # workflow on a GitHub-hosted runner before signing.
 #
 # Layout: --onefile today. A one-folder build (exe + _internal) is what the
@@ -46,10 +49,29 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      SIGNPATH_POLICY: ${{ github.event_name == 'workflow_dispatch' && vars.SIGNPATH_TEST_POLICY_SLUG || vars.SIGNPATH_SIGNING_POLICY_SLUG }}
     steps:
       - uses: actions/checkout@v4
+
+      # Written out as an if/else rather than as one expression: `a && b ||
+      # c` falls through to c when b is empty, which sent a hand-started run
+      # with no test policy to the release certificate, and gave a
+      # hand-started run on a tag the test certificate and a release page to
+      # publish it on.
+      - name: Which signing policy this run gets
+        shell: bash
+        env:
+          RELEASE_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          TEST_SLUG: ${{ vars.SIGNPATH_TEST_POLICY_SLUG }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            POLICY="$RELEASE_SLUG"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            POLICY="$TEST_SLUG"
+          else
+            POLICY=""
+          fi
+          echo "SIGNPATH_POLICY=$POLICY" >> "$GITHUB_ENV"
+          echo "signing policy: ${POLICY:-none - this run is built unsigned}"
 
       - uses: actions/setup-python@v5
         with:
@@ -180,8 +202,8 @@ jobs:
           if (-not $sig.SignerCertificate -or $sig.Status -in 'NotSigned', 'HashMismatch') {
             Write-Output "::error::the returned executable carries no usable signature ($($sig.Status))"; exit 1
           }
-          if ($env:SIGNPATH_POLICY -eq '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}' -and $sig.Status -ne 'Valid') {
-            Write-Output "::error::release policy, but Windows does not trust the signature ($($sig.Status))"; exit 1
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $sig.Status -ne 'Valid') {
+            Write-Output "::error::a run on a tag publishes, and Windows does not trust this signature ($($sig.Status))"; exit 1
           }
           Copy-Item $signed.FullName dist/dlss5-autopilot.exe -Force
           "SIGNED=$($sig.SignerCertificate.Subject) [policy $env:SIGNPATH_POLICY, $($sig.Status)]" >> $env:GITHUB_ENV
@@ -211,7 +233,7 @@ jobs:
             cat SHA256SUMS.txt
             echo '```'
             echo "bootloader: $BOOTLOADER"
-            echo "signature: ${SIGNED:-none (no signing policy set for this kind of run)}"
+            echo "signature: ${SIGNED:-none (unsigned build)}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Ties the binary to this commit and this workflow run, verifiable with
