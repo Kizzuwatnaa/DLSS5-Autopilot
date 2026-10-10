@@ -110,6 +110,24 @@ jobs:
       # so the exe goes up as it is (archive: false) and comes back as it is
       # (skip-decompress). With archive: false the artifact is named after
       # the file, whatever `name` says.
+      # SignPath's artifact configuration refuses a file whose product name
+      # is not "DLSS 5 Autopilot" or whose product version is not the one
+      # named here (the Foundation's terms: both set and enforced in every
+      # build). On a tag that is the tag itself, so an exe still carrying
+      # the previous release's version_info.txt is not signed; a build
+      # started by hand has no tag and names what the source says.
+      - name: The version SignPath is told to expect
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}.0"
+          else
+            V="$(python -c "import re;print('.'.join(re.search(r'prodvers=\((\d+), (\d+), (\d+), (\d+)\)', open('version_info.txt').read()).groups()))")"
+          fi
+          echo "SIGN_VERSION=$V" >> "$GITHUB_ENV"
+          echo "product version to enforce: $V"
+
       - name: Upload the unsigned executable for signing
         if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
         id: unsigned
@@ -130,6 +148,8 @@ jobs:
         uses: signpath/github-action-submit-signing-request@v3
         with:
           wait-for-completion-timeout-in-seconds: 7200
+          parameters: |
+            version: "${{ env.SIGN_VERSION }}"
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
