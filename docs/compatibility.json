@@ -75,7 +75,7 @@
   "DX9/none": {
    "feeder": {
     "failed": 4,
-    "worked": 2
+    "worked": 3
    }
   },
   "OPENGL/dlss": {
@@ -263,7 +263,7 @@
    },
    "feeder": {
     "failed": 25,
-    "worked": 12
+    "worked": 13
    },
    "native": {
     "failed": 0,
@@ -3441,14 +3441,14 @@
    "drivers": {
     "616.92": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    },
-   "name": "PROTOTYPE 2",
+   "name": "Prototype 2",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -4790,6 +4790,6 @@
    }
   }
  },
- "generated": "2026-10-10T10:36:30Z",
- "reports": 446
+ "generated": "2026-10-10T10:49:33Z",
+ "reports": 447
 }
