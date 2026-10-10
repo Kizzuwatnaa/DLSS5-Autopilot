@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 82
+    "worked": 83
    },
    "renodx": {
     "failed": 1,
@@ -209,7 +209,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 23
+    "worked": 24
    },
    "remix": {
     "failed": 2,
@@ -3652,6 +3652,21 @@
     }
    }
   },
+  "rehaunted-win64-shipping.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Rehaunted",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "rememberme.exe": {
    "drivers": {
     "616.56": {
@@ -4805,6 +4820,6 @@
    }
   }
  },
- "generated": "2026-10-10T16:05:41Z",
- "reports": 449
+ "generated": "2026-10-10T16:23:05Z",
+ "reports": 450
 }
