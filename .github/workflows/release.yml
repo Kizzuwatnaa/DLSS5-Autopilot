@@ -118,11 +118,18 @@ jobs:
           path: dist/dlss5-autopilot.exe
           archive: false
           if-no-files-found: error
+          # Only SignPath needs it, and it is the unsigned build: not kept.
+          retention-days: 1
 
+      # The release policy has an approval step: the owner gets a mail from
+      # SignPath and approves the request there, and this step waits for
+      # that - two hours, not the action's ten minutes. The test policy
+      # signs without asking.
       - name: Sign the executable
         if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
         uses: signpath/github-action-submit-signing-request@v3
         with:
+          wait-for-completion-timeout-in-seconds: 7200
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
