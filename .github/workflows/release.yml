@@ -15,12 +15,17 @@
 # stop Defender's cloud heuristics from deleting a brand-new, never-seen
 # file in its first hours (issue #5): only a code-signing certificate does
 # that, because reputation then follows the certificate across releases.
-# The SignPath Foundation signs open-source builds for free; the signing
-# step below runs as soon as the repository carries the SignPath variables
-# (SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
-# SIGNPATH_SIGNING_POLICY_SLUG) and the SIGNPATH_API_TOKEN secret, and is
-# skipped - build unchanged - until then. SignPath itself verifies that the
-# file came out of this workflow on a GitHub-hosted runner before signing.
+# The SignPath Foundation signs open-source builds for free. The signing
+# steps below read the repository variables SIGNPATH_ORGANIZATION_ID and
+# SIGNPATH_PROJECT_SLUG, the SIGNPATH_API_TOKEN secret, and one policy slug
+# per kind of run:
+#   SIGNPATH_SIGNING_POLICY_SLUG  the release certificate - tagged builds
+#   SIGNPATH_TEST_POLICY_SLUG     the self-signed test certificate - builds
+#                                 started by hand, which publish nothing
+# A run whose policy variable is empty is built unsigned, so a tag is never
+# signed with the test certificate: an untrusted signature on a download is
+# worse than none. SignPath itself verifies that the file came out of this
+# workflow on a GitHub-hosted runner before signing.
 #
 # Layout: --onefile today. A one-folder build (exe + _internal) is what the
 # heuristics react to least, and the updater understands it since 1.7.0 -
@@ -41,6 +46,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SIGNPATH_POLICY: ${{ github.event_name == 'workflow_dispatch' && vars.SIGNPATH_TEST_POLICY_SLUG || vars.SIGNPATH_SIGNING_POLICY_SLUG }}
     steps:
       - uses: actions/checkout@v4
 
@@ -99,36 +106,58 @@ jobs:
             dlss5_autopilot.py
 
       # ---- code signing (SignPath Foundation), when the repository is set up
+      # The project's artifact configuration in SignPath is a single PE file,
+      # so the exe goes up as it is (archive: false) and comes back as it is
+      # (skip-decompress). With archive: false the artifact is named after
+      # the file, whatever `name` says.
       - name: Upload the unsigned executable for signing
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
         id: unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: unsigned-executable
           path: dist/dlss5-autopilot.exe
+          archive: false
           if-no-files-found: error
 
       - name: Sign the executable
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        uses: signpath/github-action-submit-signing-request@v2
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed
+          skip-decompress: true
 
+      # What came back must be the same program with a signature on it, or
+      # the run stops here: nothing unsigned is published under a policy
+      # that says signed. The test certificate is self-signed, so its status
+      # is not "Valid" on a runner - a signer and an intact hash are the test.
       - name: Use the signed executable
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        shell: bash
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        shell: pwsh
         run: |
-          SIGNED="$(find signed -name 'dlss5-autopilot.exe' | head -1)"
-          test -n "$SIGNED" || { echo "::error::signed executable not returned"; exit 1; }
-          cp "$SIGNED" dist/dlss5-autopilot.exe
-          echo "SIGNED=SignPath Foundation certificate" >> "$GITHUB_ENV"
-          echo "signed: $SIGNED"
+          $signed = Get-ChildItem -Recurse -File signed | Where-Object Name -eq 'dlss5-autopilot.exe' | Select-Object -First 1
+          if (-not $signed) {
+            Get-ChildItem -Recurse signed | Format-Table FullName, Length
+            Write-Output "::error::signed executable not returned"; exit 1
+          }
+          $sig = Get-AuthenticodeSignature $signed.FullName
+          "status:  $($sig.Status) - $($sig.StatusMessage)"
+          "signer:  $($sig.SignerCertificate.Subject)"
+          "issuer:  $($sig.SignerCertificate.Issuer)"
+          "stamped: $($sig.TimeStamperCertificate.Subject)"
+          if (-not $sig.SignerCertificate -or $sig.Status -in 'NotSigned', 'HashMismatch') {
+            Write-Output "::error::the returned executable carries no usable signature ($($sig.Status))"; exit 1
+          }
+          if ($env:SIGNPATH_POLICY -eq '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}' -and $sig.Status -ne 'Valid') {
+            Write-Output "::error::release policy, but Windows does not trust the signature ($($sig.Status))"; exit 1
+          }
+          Copy-Item $signed.FullName dist/dlss5-autopilot.exe -Force
+          "SIGNED=$($sig.SignerCertificate.Subject) [policy $env:SIGNPATH_POLICY, $($sig.Status)]" >> $env:GITHUB_ENV
 
       - name: Package
         shell: bash
@@ -155,7 +184,7 @@ jobs:
             cat SHA256SUMS.txt
             echo '```'
             echo "bootloader: $BOOTLOADER"
-            echo "signature: ${SIGNED:-none (SignPath not configured)}"
+            echo "signature: ${SIGNED:-none (no signing policy set for this kind of run)}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Ties the binary to this commit and this workflow run, verifiable with
