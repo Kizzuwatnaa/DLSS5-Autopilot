@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 80
+    "worked": 81
    },
    "renodx": {
     "failed": 1,
@@ -331,7 +331,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 10
+    "worked": 11
    },
    "standalone": {
     "failed": 0,
@@ -3701,6 +3701,28 @@
     }
    }
   },
+  "runningtrain-win64-shipping.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 10.25,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "RUNNING TRAIN",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "s2_sp64_ship.exe": {
    "drivers": {
     "616.56": {
@@ -4768,6 +4790,6 @@
    }
   }
  },
- "generated": "2026-10-10T00:32:02Z",
- "reports": 445
+ "generated": "2026-10-10T03:04:15Z",
+ "reports": 446
 }
