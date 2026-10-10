@@ -222,6 +222,13 @@ jobs:
           # SHA256SUMS.txt beside the build (the self-updater reads it) and the
           # provenance attestation is on the commit - no essay on the page.
           if [ -f "$NOTES" ]; then cp "$NOTES" FULL-NOTES.md; else echo "See the commit history for what changed." > FULL-NOTES.md; fi
+          # One line that is not in the notes file: the SignPath Foundation's
+          # terms want the code signing policy linked from the download page
+          # as well as the home page. Added here so no release can go out
+          # without it, and only once if the notes already carry it.
+          if ! grep -qi "code signing policy" FULL-NOTES.md; then
+            printf '\n---\n[Code signing policy](https://github.com/%s#code-signing-policy)\n' "$GITHUB_REPOSITORY" >> FULL-NOTES.md
+          fi
           # A release whose tag was re-pushed comes back as a DRAFT and is
           # invisible to everyone; publish it explicitly and mark it latest.
           if gh release view "$TAG" >/dev/null 2>&1; then
