@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 83
+    "worked": 84
    },
    "renodx": {
     "failed": 1,
@@ -331,7 +331,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 12
+    "worked": 13
    },
    "standalone": {
     "failed": 0,
@@ -4482,20 +4482,24 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 4.35,
-     "n": 1,
-     "res": 67
+     "ms": 3.83,
+     "n": 2,
+     "res": 71
     }
    },
-   "name": "SILENT HILL: Townfall",
+   "name": "SILENT HILL Townfall",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    }
   },
@@ -4854,6 +4858,6 @@
    }
   }
  },
- "generated": "2026-10-11T10:49:18Z",
- "reports": 455
+ "generated": "2026-10-11T11:45:29Z",
+ "reports": 456
 }
