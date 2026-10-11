@@ -101,6 +101,10 @@
     "failed": 1,
     "worked": 0
    },
+   "feeder": {
+    "failed": 1,
+    "worked": 0
+   },
    "standalone": {
     "failed": 1,
     "worked": 0
@@ -172,7 +176,7 @@
   },
   "610.74": {
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 2
    },
    "optiscaler": {
@@ -3855,6 +3859,21 @@
     }
    }
   },
+  "setup.exe": {
+   "drivers": {
+    "610.74": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Need for Speed Heat by Igruha",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "sfse_loader.exe": {
    "drivers": {
     "616.92": {
@@ -4873,6 +4892,6 @@
    }
   }
  },
- "generated": "2026-10-11T14:18:22Z",
- "reports": 457
+ "generated": "2026-10-11T15:42:46Z",
+ "reports": 458
 }
