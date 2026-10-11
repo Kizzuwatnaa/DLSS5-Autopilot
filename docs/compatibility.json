@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 84
+    "worked": 85
    },
    "renodx": {
     "failed": 1,
@@ -209,7 +209,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 24
+    "worked": 25
    },
    "remix": {
     "failed": 2,
@@ -2601,6 +2601,21 @@
     }
    }
   },
+  "hellraiser-win64-shipping.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Clive Barker's Hellraiser: Revival",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "hl2.exe": {
    "drivers": {
     "616.92": {
@@ -4858,6 +4873,6 @@
    }
   }
  },
- "generated": "2026-10-11T11:45:29Z",
- "reports": 456
+ "generated": "2026-10-11T14:18:22Z",
+ "reports": 457
 }
