@@ -39,7 +39,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 85
+    "worked": 86
    },
    "renodx": {
     "failed": 1,
@@ -335,7 +335,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 13
+    "worked": 14
    },
    "standalone": {
     "failed": 0,
@@ -1097,7 +1097,7 @@
     },
     "617.42": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "measured": {
@@ -1107,7 +1107,7 @@
      "res": 75
     }
    },
-   "name": "CONTROL Resonant",
+   "name": "Hydra Games",
    "routes": {
     "native": {
      "failed": 0,
@@ -1115,7 +1115,7 @@
     },
     "optiscaler": {
      "failed": 4,
-     "worked": 9
+     "worked": 10
     },
     "upstream": {
      "failed": 0,
@@ -4892,6 +4892,6 @@
    }
   }
  },
- "generated": "2026-10-11T16:55:52Z",
- "reports": 458
+ "generated": "2026-10-11T19:20:21Z",
+ "reports": 459
 }
