@@ -74,7 +74,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 4,
+    "failed": 5,
     "worked": 3
    }
   },
@@ -326,7 +326,7 @@
     "worked": 3
    },
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 1
    },
    "optiscaler": {
@@ -3128,12 +3128,16 @@
     "617.14": {
      "failed": 1,
      "worked": 0
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Napoleon Total War",
    "routes": {
     "feeder": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    }
@@ -4850,6 +4854,6 @@
    }
   }
  },
- "generated": "2026-10-10T22:27:15Z",
- "reports": 453
+ "generated": "2026-10-11T04:05:18Z",
+ "reports": 454
 }
