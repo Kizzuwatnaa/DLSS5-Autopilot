@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 15,
+    "failed": 16,
     "worked": 87
    },
    "renodx": {
@@ -312,7 +312,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 14,
+    "failed": 15,
     "worked": 58
    },
    "renodx": {
@@ -402,6 +402,10 @@
     "616.92": {
      "failed": 0,
      "worked": 2
+    },
+    "617.14": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "measured": {
@@ -414,7 +418,7 @@
    "name": "Assassin's Creed Black Flag Resynced",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 3
     }
    }
@@ -4923,6 +4927,6 @@
    }
   }
  },
- "generated": "2026-10-12T13:27:46Z",
- "reports": 462
+ "generated": "2026-10-12T15:11:01Z",
+ "reports": 463
 }
