@@ -69,7 +69,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    },
    "standalone": {
     "failed": 3,
@@ -340,6 +340,10 @@
    "optiscaler": {
     "failed": 1,
     "worked": 15
+   },
+   "renodx": {
+    "failed": 0,
+    "worked": 1
    },
    "standalone": {
     "failed": 0,
@@ -3576,11 +3580,19 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "RESIDENT EVIL 2",
+   "name": "Resident Evil 2",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
+    "renodx": {
      "failed": 0,
      "worked": 1
     }
@@ -4927,6 +4939,6 @@
    }
   }
  },
- "generated": "2026-10-12T17:03:10Z",
- "reports": 463
+ "generated": "2026-10-12T17:24:09Z",
+ "reports": 464
 }
