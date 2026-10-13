@@ -58,6 +58,12 @@
     "worked": 8
    }
   },
+  "DX12/fsr": {
+   "optiscaler": {
+    "failed": 0,
+    "worked": 1
+   }
+  },
   "DX12/none": {
    "bridge": {
     "failed": 1,
@@ -313,7 +319,7 @@
    },
    "optiscaler": {
     "failed": 15,
-    "worked": 58
+    "worked": 59
    },
    "renodx": {
     "failed": 1,
@@ -3604,14 +3610,22 @@
      "failed": 0,
      "worked": 1
     },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    },
     "617.42": {
      "failed": 0,
      "worked": 1
     }
    },
-   "name": "Resident Evil 2",
+   "name": "resident 2 bek",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
+    "optiscaler": {
      "failed": 0,
      "worked": 1
     },
@@ -4962,6 +4976,6 @@
    }
   }
  },
- "generated": "2026-10-13T05:03:42Z",
- "reports": 467
+ "generated": "2026-10-13T09:13:00Z",
+ "reports": 468
 }
