@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 6
+    "worked": 7
    },
    "standalone": {
     "failed": 0,
@@ -349,7 +349,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    },
    "standalone": {
     "failed": 1,
@@ -1130,7 +1130,7 @@
     },
     "617.42": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    },
    "measured": {
@@ -1140,7 +1140,7 @@
      "res": 75
     }
    },
-   "name": "Hydra Games",
+   "name": "CONTROL.Resonant-InsaneRamZes",
    "routes": {
     "native": {
      "failed": 0,
@@ -1149,6 +1149,10 @@
     "optiscaler": {
      "failed": 4,
      "worked": 10
+    },
+    "renodx": {
+     "failed": 0,
+     "worked": 1
     },
     "upstream": {
      "failed": 0,
@@ -5006,6 +5010,6 @@
    }
   }
  },
- "generated": "2026-10-13T19:29:35Z",
- "reports": 472
+ "generated": "2026-10-13T19:50:21Z",
+ "reports": 473
 }
