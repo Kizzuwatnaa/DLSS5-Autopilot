@@ -78,7 +78,7 @@
     "worked": 3
    },
    "standalone": {
-    "failed": 3,
+    "failed": 4,
     "worked": 1
    }
   },
@@ -352,7 +352,7 @@
     "worked": 1
    },
    "standalone": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    }
   }
@@ -4636,6 +4636,21 @@
     }
    }
   },
+  "transportfever3.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Transport Fever 3",
+   "routes": {
+    "standalone": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "uboat launcher.exe": {
    "drivers": {
     "616.56": {
@@ -4976,6 +4991,6 @@
    }
   }
  },
- "generated": "2026-10-13T11:47:46Z",
- "reports": 468
+ "generated": "2026-10-13T12:36:27Z",
+ "reports": 469
 }
