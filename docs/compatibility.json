@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 0,
@@ -323,7 +323,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 8,
@@ -4818,7 +4818,7 @@
     },
     "617.14": {
      "failed": 6,
-     "worked": 17
+     "worked": 18
     }
    },
    "measured": {
@@ -4840,7 +4840,7 @@
     },
     "renodx": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     },
     "upstream": {
      "failed": 2,
@@ -5006,6 +5006,6 @@
    }
   }
  },
- "generated": "2026-10-13T17:57:05Z",
- "reports": 471
+ "generated": "2026-10-13T19:29:35Z",
+ "reports": 472
 }
