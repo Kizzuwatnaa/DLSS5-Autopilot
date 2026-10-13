@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 6
+    "worked": 7
    }
   },
   "DX12/dlss": {
@@ -297,7 +297,7 @@
    },
    "standalone": {
     "failed": 5,
-    "worked": 9
+    "worked": 10
    },
    "upstream": {
     "failed": 1,
@@ -2710,6 +2710,21 @@
     }
    }
   },
+  "honeyselect2.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "HoneySelect2",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "horizonzerodawn.exe": {
    "drivers": {
     "616.92": {
@@ -4991,6 +5006,6 @@
    }
   }
  },
- "generated": "2026-10-13T15:32:22Z",
- "reports": 470
+ "generated": "2026-10-13T17:57:05Z",
+ "reports": 471
 }
