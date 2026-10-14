@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 16,
-    "worked": 90
+    "worked": 91
    },
    "renodx": {
     "failed": 1,
@@ -285,7 +285,7 @@
    },
    "optiscaler": {
     "failed": 13,
-    "worked": 57
+    "worked": 58
    },
    "remix": {
     "failed": 2,
@@ -3071,6 +3071,28 @@
     }
    }
   },
+  "millenniumdream-win64-shipping.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 3.95,
+     "n": 1,
+     "res": 100
+    }
+   },
+   "name": "Millennium Dream",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "mk10.exe": {
    "drivers": {
     "617.14": {
@@ -5026,6 +5048,6 @@
    }
   }
  },
- "generated": "2026-10-14T12:51:23Z",
- "reports": 475
+ "generated": "2026-10-14T14:48:49Z",
+ "reports": 476
 }
