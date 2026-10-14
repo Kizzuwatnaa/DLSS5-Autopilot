@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 7
+    "worked": 8
    },
    "standalone": {
     "failed": 0,
@@ -349,7 +349,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    },
    "standalone": {
     "failed": 1,
@@ -2659,11 +2659,19 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Clive Barker's Hellraiser: Revival",
    "routes": {
     "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
+    "renodx": {
      "failed": 0,
      "worked": 1
     }
@@ -5010,6 +5018,6 @@
    }
   }
  },
- "generated": "2026-10-13T19:50:21Z",
- "reports": 473
+ "generated": "2026-10-14T03:30:27Z",
+ "reports": 474
 }
