@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 16,
+    "failed": 17,
     "worked": 93
    },
    "renodx": {
@@ -318,7 +318,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 15,
+    "failed": 16,
     "worked": 59
    },
    "renodx": {
@@ -1994,14 +1994,14 @@
   "fall of avalon.exe": {
    "drivers": {
     "617.14": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    },
-   "name": "Tainted Grail The Fall of Avalon",
+   "name": "Tainted.Grail.The.Fall.of.Avalon-InsaneRamZes",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -5074,6 +5074,6 @@
    }
   }
  },
- "generated": "2026-10-15T10:48:45Z",
- "reports": 478
+ "generated": "2026-10-15T14:05:16Z",
+ "reports": 479
 }
