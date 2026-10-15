@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 16,
-    "worked": 92
+    "worked": 93
    },
    "renodx": {
     "failed": 1,
@@ -345,7 +345,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 18
+    "worked": 19
    },
    "renodx": {
     "failed": 0,
@@ -2876,6 +2876,28 @@
     }
    }
   },
+  "judgment.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 12.78,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Judgment",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "kingdomcome.exe": {
    "drivers": {
     "616.92": {
@@ -5052,6 +5074,6 @@
    }
   }
  },
- "generated": "2026-10-15T09:51:59Z",
- "reports": 477
+ "generated": "2026-10-15T10:48:45Z",
+ "reports": 478
 }
