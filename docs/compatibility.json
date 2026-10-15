@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 7
+    "worked": 8
    }
   },
   "DX12/dlss": {
@@ -353,7 +353,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 1
+    "worked": 2
    }
   }
  },
@@ -4046,6 +4046,10 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -4058,6 +4062,10 @@
    "name": "Middle-earth\u2122: Shadow of War\u2122",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
+    "standalone": {
      "failed": 0,
      "worked": 1
     }
@@ -5074,6 +5082,6 @@
    }
   }
  },
- "generated": "2026-10-15T14:05:16Z",
- "reports": 479
+ "generated": "2026-10-15T16:51:03Z",
+ "reports": 480
 }
