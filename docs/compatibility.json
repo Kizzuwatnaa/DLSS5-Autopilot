@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    }
   },
   "DX11/none": {
@@ -319,7 +319,7 @@
    },
    "optiscaler": {
     "failed": 16,
-    "worked": 59
+    "worked": 60
    },
    "renodx": {
     "failed": 1,
@@ -1995,14 +1995,14 @@
    "drivers": {
     "617.14": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Tainted.Grail.The.Fall.of.Avalon-InsaneRamZes",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5112,6 +5112,6 @@
    }
   }
  },
- "generated": "2026-10-16T09:01:26Z",
- "reports": 483
+ "generated": "2026-10-16T09:27:02Z",
+ "reports": 484
 }
