@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 17,
-    "worked": 94
+    "worked": 95
    },
    "renodx": {
     "failed": 1,
@@ -223,7 +223,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 26
+    "worked": 27
    },
    "remix": {
     "failed": 2,
@@ -1221,7 +1221,7 @@
     },
     "616.56": {
      "failed": 2,
-     "worked": 1
+     "worked": 2
     },
     "616.92": {
      "failed": 0,
@@ -1247,7 +1247,7 @@
    "routes": {
     "optiscaler": {
      "failed": 3,
-     "worked": 13
+     "worked": 14
     },
     "upstream": {
      "failed": 0,
@@ -5116,6 +5116,6 @@
    }
   }
  },
- "generated": "2026-10-16T12:49:38Z",
- "reports": 485
+ "generated": "2026-10-16T13:12:05Z",
+ "reports": 486
 }
