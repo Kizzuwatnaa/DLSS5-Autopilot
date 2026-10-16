@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 4
+    "worked": 3
    }
   },
   "DX11/none": {
@@ -43,11 +43,11 @@
    },
    "optiscaler": {
     "failed": 17,
-    "worked": 93
+    "worked": 94
    },
    "renodx": {
     "failed": 1,
-    "worked": 9
+    "worked": 10
    },
    "standalone": {
     "failed": 0,
@@ -223,7 +223,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 25
+    "worked": 26
    },
    "remix": {
     "failed": 2,
@@ -319,7 +319,7 @@
    },
    "optiscaler": {
     "failed": 16,
-    "worked": 60
+    "worked": 59
    },
    "renodx": {
     "failed": 1,
@@ -349,7 +349,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 4
+    "worked": 5
    },
    "standalone": {
     "failed": 1,
@@ -1995,14 +1995,14 @@
    "drivers": {
     "617.14": {
      "failed": 1,
-     "worked": 2
+     "worked": 1
     }
    },
    "name": "Tainted.Grail.The.Fall.of.Avalon-InsaneRamZes",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 2
+     "worked": 1
     }
    }
   },
@@ -2304,6 +2304,10 @@
     "617.14": {
      "failed": 1,
      "worked": 3
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Microsoft Flight Simulator 2024",
@@ -2314,7 +2318,7 @@
     },
     "renodx": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     },
     "upstream": {
      "failed": 0,
@@ -3690,7 +3694,7 @@
    "drivers": {
     "616.56": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     },
     "616.92": {
      "failed": 1,
@@ -3705,7 +3709,7 @@
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 3
+     "worked": 4
     },
     "renodx": {
      "failed": 0,
@@ -5112,6 +5116,6 @@
    }
   }
  },
- "generated": "2026-10-16T09:27:02Z",
- "reports": 484
+ "generated": "2026-10-16T12:49:38Z",
+ "reports": 485
 }
