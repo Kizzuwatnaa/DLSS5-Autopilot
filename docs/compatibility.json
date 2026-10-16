@@ -133,7 +133,7 @@
   "VULKAN/none": {
    "feeder": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   }
  },
@@ -201,7 +201,7 @@
   "610.88": {
    "feeder": {
     "failed": 1,
-    "worked": 2
+    "worked": 3
    },
    "optiscaler": {
     "failed": 2,
@@ -1588,16 +1588,20 @@
   },
   "doomx64vk.exe": {
    "drivers": {
+    "610.88": {
+     "failed": 0,
+     "worked": 1
+    },
     "616.64": {
      "failed": 1,
      "worked": 0
     }
    },
-   "name": "DOOM",
+   "name": "DOOM.2016.REPACK-KaOs",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -5124,6 +5128,6 @@
    }
   }
  },
- "generated": "2026-10-16T18:34:10Z",
- "reports": 488
+ "generated": "2026-10-16T22:50:29Z",
+ "reports": 489
 }
