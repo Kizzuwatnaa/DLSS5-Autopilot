@@ -124,6 +124,10 @@
    "bridge": {
     "failed": 3,
     "worked": 0
+   },
+   "feeder": {
+    "failed": 1,
+    "worked": 0
    }
   },
   "VULKAN/none": {
@@ -214,7 +218,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 11,
+    "failed": 12,
     "worked": 36
    },
    "native": {
@@ -3693,7 +3697,7 @@
   "rdr2.exe": {
    "drivers": {
     "616.56": {
-     "failed": 0,
+     "failed": 1,
      "worked": 4
     },
     "616.92": {
@@ -3707,6 +3711,10 @@
    },
    "name": "Red Dead Redemption 2",
    "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    },
     "optiscaler": {
      "failed": 1,
      "worked": 5
@@ -5116,6 +5124,6 @@
    }
   }
  },
- "generated": "2026-10-16T16:03:09Z",
- "reports": 487
+ "generated": "2026-10-16T18:34:10Z",
+ "reports": 488
 }
