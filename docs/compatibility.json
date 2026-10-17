@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 8
+    "worked": 9
    }
   },
   "DX12/dlss": {
@@ -357,7 +357,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 3
+    "worked": 4
    }
   }
  },
@@ -4478,6 +4478,21 @@
     }
    }
   },
+  "subnautica.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Subnautica",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "super woden rally edge.exe": {
    "drivers": {
     "616.64": {
@@ -5143,6 +5158,6 @@
    }
   }
  },
- "generated": "2026-10-17T08:33:26Z",
- "reports": 490
+ "generated": "2026-10-17T10:37:18Z",
+ "reports": 491
 }
