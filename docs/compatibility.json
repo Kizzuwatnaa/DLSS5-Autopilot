@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 3,
-    "worked": 7
+    "worked": 8
    },
    "renodx": {
     "failed": 0,
@@ -219,7 +219,7 @@
    },
    "feeder": {
     "failed": 12,
-    "worked": 36
+    "worked": 37
    },
    "native": {
     "failed": 2,
@@ -1472,6 +1472,21 @@
    "name": "Deliver Us Mars",
    "routes": {
     "bridge": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "devilmaycry5.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Devil May Cry 5",
+   "routes": {
+    "feeder": {
      "failed": 0,
      "worked": 1
     }
@@ -5128,6 +5143,6 @@
    }
   }
  },
- "generated": "2026-10-16T22:50:29Z",
- "reports": 489
+ "generated": "2026-10-17T03:46:41Z",
+ "reports": 490
 }
