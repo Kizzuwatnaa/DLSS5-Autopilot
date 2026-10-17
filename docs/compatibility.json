@@ -75,7 +75,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    },
    "standalone": {
     "failed": 4,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 1,
@@ -5136,6 +5136,21 @@
     }
    }
   },
+  "yakuza0_dc.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Yakuza 0 Directors Cut",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "yakuzakiwami2_r.exe": {
    "drivers": {
     "616.92": {
@@ -5189,6 +5204,6 @@
    }
   }
  },
- "generated": "2026-10-17T17:54:30Z",
- "reports": 498
+ "generated": "2026-10-17T18:08:37Z",
+ "reports": 499
 }
