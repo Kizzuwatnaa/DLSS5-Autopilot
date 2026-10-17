@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 2,
-    "worked": 5
+    "worked": 6
    },
    "optiscaler": {
     "failed": 0,
@@ -341,7 +341,7 @@
   "617.42": {
    "bridge": {
     "failed": 2,
-    "worked": 4
+    "worked": 5
    },
    "feeder": {
     "failed": 4,
@@ -2314,14 +2314,14 @@
     },
     "617.42": {
      "failed": 1,
-     "worked": 2
+     "worked": 3
     }
    },
    "name": "SquareEnix",
    "routes": {
     "bridge": {
      "failed": 1,
-     "worked": 5
+     "worked": 6
     },
     "feeder": {
      "failed": 0,
@@ -5286,6 +5286,6 @@
    }
   }
  },
- "generated": "2026-10-17T22:24:40Z",
- "reports": 505
+ "generated": "2026-10-17T23:15:33Z",
+ "reports": 506
 }
