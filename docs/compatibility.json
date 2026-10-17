@@ -2,7 +2,7 @@
  "by_class": {
   "DX11/dlss": {
    "bridge": {
-    "failed": 1,
+    "failed": 2,
     "worked": 5
    },
    "optiscaler": {
@@ -340,7 +340,7 @@
   },
   "617.42": {
    "bridge": {
-    "failed": 1,
+    "failed": 2,
     "worked": 4
    },
    "feeder": {
@@ -2313,14 +2313,14 @@
      "worked": 2
     },
     "617.42": {
-     "failed": 0,
+     "failed": 1,
      "worked": 2
     }
    },
-   "name": "FINAL FANTASY XIV Online",
+   "name": "SquareEnix",
    "routes": {
     "bridge": {
-     "failed": 0,
+     "failed": 1,
      "worked": 5
     },
     "feeder": {
@@ -5286,6 +5286,6 @@
    }
   }
  },
- "generated": "2026-10-17T21:11:17Z",
- "reports": 504
+ "generated": "2026-10-17T22:24:06Z",
+ "reports": 505
 }
