@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 17,
-    "worked": 99
+    "worked": 100
    },
    "renodx": {
     "failed": 1,
@@ -349,7 +349,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 21
+    "worked": 22
    },
    "renodx": {
     "failed": 0,
@@ -2787,6 +2787,21 @@
     }
    }
   },
+  "horizonforbiddenwest.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Horizon Forbidden West\u2122 Complete Edition",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "horizonzerodawn.exe": {
    "drivers": {
     "616.92": {
@@ -5204,6 +5219,6 @@
    }
   }
  },
- "generated": "2026-10-17T18:08:37Z",
- "reports": 499
+ "generated": "2026-10-17T20:22:30Z",
+ "reports": 500
 }
