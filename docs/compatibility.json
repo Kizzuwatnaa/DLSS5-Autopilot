@@ -127,7 +127,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 0
+    "worked": 1
    }
   },
   "VULKAN/none": {
@@ -219,7 +219,7 @@
    },
    "feeder": {
     "failed": 12,
-    "worked": 40
+    "worked": 41
    },
    "native": {
     "failed": 2,
@@ -785,6 +785,21 @@
     "feeder": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "bb-probe.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Bloodborne",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5256,6 +5271,6 @@
    }
   }
  },
- "generated": "2026-10-17T21:03:36Z",
- "reports": 502
+ "generated": "2026-10-17T21:10:50Z",
+ "reports": 503
 }
