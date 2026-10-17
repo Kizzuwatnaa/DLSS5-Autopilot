@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 17,
-    "worked": 98
+    "worked": 99
    },
    "renodx": {
     "failed": 1,
@@ -323,7 +323,7 @@
    },
    "optiscaler": {
     "failed": 16,
-    "worked": 59
+    "worked": 60
    },
    "renodx": {
     "failed": 1,
@@ -1909,7 +1909,7 @@
     },
     "617.14": {
      "failed": 2,
-     "worked": 0
+     "worked": 1
     }
    },
    "name": "Enshrouded",
@@ -1921,6 +1921,10 @@
     "feeder": {
      "failed": 1,
      "worked": 0
+    },
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5185,6 +5189,6 @@
    }
   }
  },
- "generated": "2026-10-17T17:35:01Z",
- "reports": 497
+ "generated": "2026-10-17T17:54:30Z",
+ "reports": 498
 }
