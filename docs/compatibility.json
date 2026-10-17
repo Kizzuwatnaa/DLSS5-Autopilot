@@ -85,7 +85,7 @@
   "DX9/none": {
    "feeder": {
     "failed": 5,
-    "worked": 3
+    "worked": 4
    }
   },
   "OPENGL/dlss": {
@@ -345,7 +345,7 @@
    },
    "feeder": {
     "failed": 3,
-    "worked": 2
+    "worked": 3
    },
    "optiscaler": {
     "failed": 1,
@@ -3680,13 +3680,17 @@
     "616.92": {
      "failed": 1,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Prototype 2",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5173,6 +5177,6 @@
    }
   }
  },
- "generated": "2026-10-17T11:56:08Z",
- "reports": 492
+ "generated": "2026-10-17T12:54:26Z",
+ "reports": 493
 }
