@@ -133,7 +133,7 @@
   "VULKAN/none": {
    "feeder": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    }
   }
  },
@@ -219,7 +219,7 @@
    },
    "feeder": {
     "failed": 12,
-    "worked": 41
+    "worked": 42
    },
    "native": {
     "failed": 2,
@@ -2535,6 +2535,21 @@
    "name": "God of War",
    "routes": {
     "bridge": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "gow3-probe.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "God of War III Remastered",
+   "routes": {
+    "feeder": {
      "failed": 0,
      "worked": 1
     }
@@ -5271,6 +5286,6 @@
    }
   }
  },
- "generated": "2026-10-17T21:10:50Z",
- "reports": 503
+ "generated": "2026-10-17T21:11:17Z",
+ "reports": 504
 }
