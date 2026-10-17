@@ -21,7 +21,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    },
    "standalone": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 6
+    "worked": 7
    },
    "standalone": {
     "failed": 1,
@@ -3120,6 +3120,21 @@
     }
    }
   },
+  "mafia ii definitive edition.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Mafia II: Definitive Edition",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "mandelbox explorer.exe": {
    "drivers": {
     "617.14": {
@@ -5286,6 +5301,6 @@
    }
   }
  },
- "generated": "2026-10-17T23:15:33Z",
- "reports": 506
+ "generated": "2026-10-17T23:34:43Z",
+ "reports": 507
 }
