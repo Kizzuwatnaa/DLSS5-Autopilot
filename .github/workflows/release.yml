@@ -15,12 +15,20 @@
 # stop Defender's cloud heuristics from deleting a brand-new, never-seen
 # file in its first hours (issue #5): only a code-signing certificate does
 # that, because reputation then follows the certificate across releases.
-# The SignPath Foundation signs open-source builds for free; the signing
-# step below runs as soon as the repository carries the SignPath variables
-# (SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
-# SIGNPATH_SIGNING_POLICY_SLUG) and the SIGNPATH_API_TOKEN secret, and is
-# skipped - build unchanged - until then. SignPath itself verifies that the
-# file came out of this workflow on a GitHub-hosted runner before signing.
+# The SignPath Foundation signs open-source builds for free. The signing
+# steps below read the repository variables SIGNPATH_ORGANIZATION_ID and
+# SIGNPATH_PROJECT_SLUG, the SIGNPATH_API_TOKEN secret, and one policy slug
+# per kind of run:
+#   SIGNPATH_SIGNING_POLICY_SLUG  the release certificate - every run on a
+#                                 tag, however it was started
+#   SIGNPATH_TEST_POLICY_SLUG     the self-signed test certificate - a run
+#                                 started by hand on a branch, which
+#                                 publishes nothing
+# The ref decides, not the way the run was started: a run on a tag can
+# publish, so it only ever gets the release policy, and with that variable
+# empty it is built unsigned. An untrusted signature on a download is worse
+# than none. SignPath itself verifies that the file came out of this
+# workflow on a GitHub-hosted runner before signing.
 #
 # Layout: --onefile today. A one-folder build (exe + _internal) is what the
 # heuristics react to least, and the updater understands it since 1.7.0 -
@@ -43,6 +51,27 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Written out as an if/else rather than as one expression: `a && b ||
+      # c` falls through to c when b is empty, which sent a hand-started run
+      # with no test policy to the release certificate, and gave a
+      # hand-started run on a tag the test certificate and a release page to
+      # publish it on.
+      - name: Which signing policy this run gets
+        shell: bash
+        env:
+          RELEASE_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          TEST_SLUG: ${{ vars.SIGNPATH_TEST_POLICY_SLUG }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            POLICY="$RELEASE_SLUG"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            POLICY="$TEST_SLUG"
+          else
+            POLICY=""
+          fi
+          echo "SIGNPATH_POLICY=$POLICY" >> "$GITHUB_ENV"
+          echo "signing policy: ${POLICY:-none - this run is built unsigned}"
 
       - uses: actions/setup-python@v5
         with:
@@ -99,36 +128,85 @@ jobs:
             dlss5_autopilot.py
 
       # ---- code signing (SignPath Foundation), when the repository is set up
-      - name: Upload the unsigned executable for signing
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        id: unsigned
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-executable
-          path: dist/dlss5-autopilot.exe
-          if-no-files-found: error
+      # The project's artifact configuration in SignPath is a single PE file,
+      # so the exe goes up as it is (archive: false) and comes back as it is
+      # (skip-decompress). With archive: false the artifact is named after
+      # the file, whatever `name` says.
+      # SignPath's artifact configuration refuses a file whose product name
+      # is not "DLSS 5 Autopilot" or whose product version is not the one
+      # named here (the Foundation's terms: both set and enforced in every
+      # build). On a tag that is the tag itself, so an exe still carrying
+      # the previous release's version_info.txt is not signed; a build
+      # started by hand has no tag and names what the source says.
+      - name: The version SignPath is told to expect
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}.0"
+          else
+            V="$(python -c "import re;print('.'.join(re.search(r'prodvers=\((\d+), (\d+), (\d+), (\d+)\)', open('version_info.txt').read()).groups()))")"
+          fi
+          echo "SIGN_VERSION=$V" >> "$GITHUB_ENV"
+          echo "product version to enforce: $V"
 
-      - name: Sign the executable
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        uses: signpath/github-action-submit-signing-request@v2
+      - name: Upload the unsigned executable for signing
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        id: unsigned
+        uses: actions/upload-artifact@v7
         with:
+          path: dist/dlss5-autopilot.exe
+          archive: false
+          if-no-files-found: error
+          # Only SignPath needs it, and it is the unsigned build: not kept.
+          retention-days: 1
+
+      # The release policy has an approval step: the owner gets a mail from
+      # SignPath and approves the request there, and this step waits for
+      # that - two hours, not the action's ten minutes. The test policy
+      # signs without asking.
+      - name: Sign the executable
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          wait-for-completion-timeout-in-seconds: 7200
+          parameters: |
+            version: "${{ env.SIGN_VERSION }}"
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed
+          skip-decompress: true
 
+      # What came back must be the same program with a signature on it, or
+      # the run stops here: nothing unsigned is published under a policy
+      # that says signed. The test certificate is self-signed, so its status
+      # is not "Valid" on a runner - a signer and an intact hash are the test.
       - name: Use the signed executable
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        shell: bash
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && env.SIGNPATH_POLICY != '' }}
+        shell: pwsh
         run: |
-          SIGNED="$(find signed -name 'dlss5-autopilot.exe' | head -1)"
-          test -n "$SIGNED" || { echo "::error::signed executable not returned"; exit 1; }
-          cp "$SIGNED" dist/dlss5-autopilot.exe
-          echo "SIGNED=SignPath Foundation certificate" >> "$GITHUB_ENV"
-          echo "signed: $SIGNED"
+          $signed = Get-ChildItem -Recurse -File signed | Where-Object Name -eq 'dlss5-autopilot.exe' | Select-Object -First 1
+          if (-not $signed) {
+            Get-ChildItem -Recurse signed | Format-Table FullName, Length
+            Write-Output "::error::signed executable not returned"; exit 1
+          }
+          $sig = Get-AuthenticodeSignature $signed.FullName
+          "status:  $($sig.Status) - $($sig.StatusMessage)"
+          "signer:  $($sig.SignerCertificate.Subject)"
+          "issuer:  $($sig.SignerCertificate.Issuer)"
+          "stamped: $($sig.TimeStamperCertificate.Subject)"
+          if (-not $sig.SignerCertificate -or $sig.Status -in 'NotSigned', 'HashMismatch') {
+            Write-Output "::error::the returned executable carries no usable signature ($($sig.Status))"; exit 1
+          }
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $sig.Status -ne 'Valid') {
+            Write-Output "::error::a run on a tag publishes, and Windows does not trust this signature ($($sig.Status))"; exit 1
+          }
+          Copy-Item $signed.FullName dist/dlss5-autopilot.exe -Force
+          "SIGNED=$($sig.SignerCertificate.Subject) [policy $env:SIGNPATH_POLICY, $($sig.Status)]" >> $env:GITHUB_ENV
 
       - name: Package
         shell: bash
@@ -155,7 +233,7 @@ jobs:
             cat SHA256SUMS.txt
             echo '```'
             echo "bootloader: $BOOTLOADER"
-            echo "signature: ${SIGNED:-none (SignPath not configured)}"
+            echo "signature: ${SIGNED:-none (unsigned build)}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Ties the binary to this commit and this workflow run, verifiable with
@@ -186,6 +264,13 @@ jobs:
           # SHA256SUMS.txt beside the build (the self-updater reads it) and the
           # provenance attestation is on the commit - no essay on the page.
           if [ -f "$NOTES" ]; then cp "$NOTES" FULL-NOTES.md; else echo "See the commit history for what changed." > FULL-NOTES.md; fi
+          # One line that is not in the notes file: the SignPath Foundation's
+          # terms want the code signing policy linked from the download page
+          # as well as the home page. Added here so no release can go out
+          # without it, and only once if the notes already carry it.
+          if ! grep -qi "code signing policy" FULL-NOTES.md; then
+            printf '\n---\n[Code signing policy](https://github.com/%s#code-signing-policy)\n' "$GITHUB_REPOSITORY" >> FULL-NOTES.md
+          fi
           # A release whose tag was re-pushed comes back as a DRAFT and is
           # invisible to everyone; publish it explicitly and mark it latest.
           if gh release view "$TAG" >/dev/null 2>&1; then
