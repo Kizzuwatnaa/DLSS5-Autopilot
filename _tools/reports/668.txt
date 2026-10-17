@@ -1,0 +1,50 @@
+**Did the game start?** yes / no / it closed itself
+No
+**What happened**
+Error in install
+
+**What I expected**
+Install
+
+---
+- version: 1.7.1
+- gpu: NVIDIA GeForce RTX 3060 (sm_86), driver 617.14
+- game: Euro Truck Simulator 2
+- exe: eurotrucks2.exe
+- arch/api: 64-bit / DX12
+- route: feeder
+
+**Diagnosis**: ReShade's dxgi.dll is missing from the folder - reinstall.
+- [bad] ReShade's dxgi.dll is gone from the folder.
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+installing
+Traceback (most recent call last):
+  File "core\gui.py", line 2319, in work
+  File "core\installer.py", line 2109, in install
+  File "core\sources.py", line 195, in resolve_reshade
+  File "core\sources.py", line 118, in _get
+  File "urllib\request.py", line 215, in urlopen
+  File "urllib\request.py", line 521, in open
+  File "urllib\request.py", line 630, in http_response
+  File "urllib\request.py", line 559, in error
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 639, in http_error_default
+urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+```

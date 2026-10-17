@@ -320,6 +320,7 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
         rep.never_ran = False
         return True
 
+    s.elsewhere = _not_ngx_runtimes(s.elsewhere)
     if s.elsewhere:
         names = ", ".join(sorted({Path(p).name for p in s.elsewhere}))
         rep.add(BAD, f"The {app} loaded {names} from somewhere else, not from "
@@ -363,6 +364,8 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
         rep.never_ran = False
         return True
 
+    if s.ours and _addon_in(s.ours) and not (install_dir / RESHADE_LOG).exists():
+        return _no_log_written(rep, running, "right now", s.ours, app)
     if s.ours:
         rep.add(WARN, f"Our files are loaded in {running}, and nothing has "
                       f"written a log.",
@@ -394,8 +397,13 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
         rep.never_ran = False
         return True
 
-    if _wrong_api_verdict(install_dir, man, rep, running, app):
+    # Not for a video app: its 'graphics api' row is not on the page.
+    if _wrong_api_verdict(install_dir, man, rep, running, app,
+                          graphics=s.graphics if s.loaded.known
+                          and man.get("kind") != "video" else None):
         return True
+    if _layer_only(man):
+        return _layer_not_reached(rep, running, "is running", app)
     rep.add(BAD, f"{running} is running and has loaded none of the files "
                  f"here.",
             f"Windows lists every DLL in a process, and not one of this "
@@ -405,6 +413,66 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
             f"the 'reshade loads as' dropdown in the game's settings.")
     rep.verdict = (f"{running} is running and has loaded nothing from this "
                    f"folder - try another proxy name.")
+    rep.never_ran = False
+    return True
+
+
+def _not_ngx_runtimes(paths) -> list:
+    """Drop the DLSS runtimes from an "elsewhere" list. NGX and Streamline
+    load nvngx_*.dll by full path - the game's own streamline\nvngx_dlss.dll
+    (#740), an Unreal plugin's copy - so another copy is never one that "got
+    there first". Only System32's could stand in front of ours."""
+    out = []
+    for p in paths or ():
+        low = str(p).replace("/", "\\").lower()
+        if low.rsplit("\\", 1)[-1].startswith("nvngx") and "\\system32\\" not in low:
+            continue
+        out.append(p)
+    return out
+
+
+def _no_log_written(rep, running: str, when: str, ours, app: str) -> bool:
+    """An add-on in the process and no log anywhere: ReShade did initialise
+    - only it loads add-ons - and could not write its files here (#787 was
+    told "ReShade is not initialising" with the add-on in the list)."""
+    rep.add(WARN, f"ReShade ran in {running} {when} - its add-on is in the "
+                  f"process - and wrote no log here.",
+            "Loaded: " + "; ".join(sorted({Path(p).name for p in ours}))
+            + f". ReShade writes ReShade.log beside the {app} as it starts, "
+              f"so most likely it cannot write to this folder. Two known "
+              f"reasons: the {app} is a Microsoft Store / Xbox app build, "
+              f"whose folder is read-only to it; or the folder is one only an "
+              f"administrator can write to (Program Files outside a Steam "
+              f"library) and the {app} does not run as administrator. "
+              f"ReShade then cannot save its settings or shaders either.")
+    rep.verdict = (f"ReShade ran in {running} and wrote no log here - most "
+                   f"likely it cannot write to this folder.")
+    rep.never_ran = False
+    return True
+
+
+def _layer_only(man: dict) -> bool:
+    """A native Vulkan install: nothing beside the exe for the game to load
+    by name, so "try another proxy name" cannot be the answer (#740 was
+    told to pick another name in 'reshade loads as' for "(vulkan layer)").
+    Through DXVK there IS a proxy - DXVK's own - and the old answer stands."""
+    return man.get("proxy") == model.VULKAN_LAYER and not man.get("dxvk")
+
+
+def _layer_not_reached(rep, running: str, ran: str, app: str) -> bool:
+    rep.add(BAD, f"{running} {ran} and ReShade's Vulkan layer did not come "
+                 f"into it.",
+            f"Windows lists every DLL in a process, and none of this "
+            f"install's was in it - not ReShade, not the add-ons - although "
+            f"the layer is registered. One at a time: close programs that "
+            f"bring a Vulkan layer of their own (RivaTuner / MSI Afterburner, "
+            f"OBS, Discord's overlay) and start the {app} again; start its "
+            f"executable directly once, not through a launcher; and check it "
+            f"is not set to run as administrator (Properties - "
+            f"Compatibility). If it still does not come in, say so in an "
+            f"issue with this report.")
+    rep.verdict = (f"{running} {ran}, and ReShade's Vulkan layer did not "
+                   f"reach it - nothing of this install was loaded.")
     rep.never_ran = False
     return True
 
@@ -591,6 +659,10 @@ def _loaded_block(install_dir: Path | None) -> str:
         out.append(f"- DLL list: refused - {seen['refused']}")
     else:
         out.append(f"- DLLs in the process: {seen.get('modules', 0)}")
+        if isinstance(seen.get("graphics"), list):
+            out.append("- graphics DLLs in the process: "
+                       + (", ".join(g for g in seen["graphics"]
+                                    if isinstance(g, str)) or "none"))
         out.append("- ours, loaded: "
                    + (", ".join(seen.get("ours") or []) or "none"))
         if seen.get("elsewhere"):
@@ -659,6 +731,8 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
         return True
 
     if seen.get("elsewhere"):
+        seen["elsewhere"] = _not_ngx_runtimes(seen["elsewhere"])
+    if seen.get("elsewhere"):
         names = ", ".join(sorted({Path(p).name for p in seen["elsewhere"]}))
         rep.add(BAD, f"At {when} the {app} had {names} loaded from somewhere "
                      f"else, not from this folder.",
@@ -698,6 +772,10 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
         rep.never_ran = False
         return True
 
+    if seen.get("ours") and _addon_in(seen["ours"]) \
+            and not (install_dir / RESHADE_LOG).exists():
+        return _no_log_written(rep, running, f"at {when}", seen["ours"],
+                               "app" if man.get("kind") == "video" else "game")
     if seen.get("ours"):
         rep.add(WARN, f"At {when} our files WERE loaded in {running}, and "
                       f"nothing wrote a log.",
@@ -712,8 +790,13 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
         return True
 
     if _wrong_api_verdict(install_dir, man, rep, running,
-                          "app" if man.get("kind") == "video" else "game"):
+                          "app" if man.get("kind") == "video" else "game",
+                          graphics=None if man.get("kind") == "video"
+                          else seen.get("graphics"), when=when):
         return True
+    if _layer_only(man):
+        return _layer_not_reached(rep, running, f"ran at {when}",
+                                  "app" if man.get("kind") == "video" else "game")
     rep.add(BAD, f"{running} ran at {when} with none of this folder's files "
                  f"loaded.",
             f"Windows lists every DLL in a process and not one of this "
@@ -755,9 +838,97 @@ def _engine_says_not_dxgi(install_dir: Path, man: dict) -> tuple[str, str] | Non
     return hit
 
 
+# The values of the tool's 'graphics api' setting, by the runtime a process
+# holds instead of DXGI. DirectDraw is not one of them: no route reaches it,
+# and beside another renderer it is only what an old game opens its window
+# with.
+_PROCESS_API = {"d3d9.dll": "DirectX 9", "d3d8.dll": "DirectX 8",
+                "opengl32.dll": "OpenGL", "vulkan-1.dll": "Vulkan"}
+_DDRAW = "ddraw.dll"
+
+
+def _process_says_not_dxgi(man: dict, graphics) -> list[str] | None:
+    """The renderers the PROCESS held, when it held no DXGI at all.
+
+    Asked of the running game rather than of its files (#682: set up as
+    DirectX 11 from an engine file beside the exe, ran with dxgi.dll nowhere
+    in it). None unless all of this holds: the watcher looked (`graphics` is
+    a list - a record from an older build has none, and that is "not looked
+    at"), the install is a DXGI-family proxy, nothing of the DXGI family was
+    loaded from any folder, and at least one other renderer was - an empty
+    list is a process read before it had loaded any, which decides nothing.
+
+    LIMITS: this is ONE reading of the module list, a few seconds after the
+    process appeared (or the moment 'did it work?' was pressed). A game
+    still at its own settings window can hold d3d9.dll and load DXGI only
+    when it starts to draw, so the text built from this says "had loaded
+    when the tool looked", never "draws with". ["DirectDraw"] is returned
+    only when nothing else was there.
+    """
+    if not isinstance(graphics, (list, tuple)):
+        return None
+    if str(man.get("proxy") or "").lower() not in _DXGI_FAMILY:
+        return None
+    have = [g.lower() for g in graphics if isinstance(g, str)]
+    if any(g in _DXGI_FAMILY for g in have):
+        return None
+    drew = [_PROCESS_API[g] for g in have if g in _PROCESS_API]
+    if not drew and _DDRAW in have:
+        return ["DirectDraw"]
+    return drew or None
+
+
 def _wrong_api_verdict(install_dir: Path, man: dict, rep: Report,
-                       running: str, app: str) -> bool:
-    """Say the install was made for the wrong renderer, when it was."""
+                       running: str, app: str, graphics=None,
+                       when: str = "") -> bool:
+    """Say the install was made for the wrong renderer, when it was.
+
+    `when` is the clock of a remembered sighting ("05 Oct 22:50"); empty for
+    a process that is running now."""
+    drew = _process_says_not_dxgi(man, graphics)
+    if drew:
+        named = " and ".join(drew)
+        looked = f"at {when}" if when else "when the tool looked"
+        head = (f"{running} had {named} loaded and none of DirectX "
+                f"10/11/12's DLLs {looked} - this install went in for a "
+                f"DirectX 10/11/12 game.")
+        why = (f"Windows lists every DLL in a process, and {running} held "
+               f"none of dxgi.dll, d3d10.dll, d3d11.dll or d3d12.dll, from "
+               f"any folder. A game that draws with DirectX 10/11/12 has "
+               f"dxgi.dll loaded once it shows a picture, so if the {app} "
+               f"was already in its menu or in play, the "
+               f"{man.get('proxy')} written here is never loaded, whichever "
+               f"DirectX 10/11/12 name is chosen in 'reshade loads as'. If "
+               f"it was still at a launcher or a settings window of its "
+               f"own, start it again and press 'did it work?' once it is "
+               f"drawing. ")
+        if drew == ["DirectDraw"]:
+            rep.add(BAD, head, why + "No route reaches DirectDraw. If the "
+                    f"{app} offers a DirectX 9 or OpenGL renderer in its "
+                    f"own settings, switch to it, then set 'graphics api' "
+                    f"here to the same and install again.")
+            rep.verdict = (f"{running} had only DirectDraw loaded when the "
+                           f"tool looked, which no route reaches - start it "
+                           f"and check again once it is drawing.")
+        elif len(drew) == 1:
+            rep.add(BAD, head, why + f"Otherwise set 'graphics api' to "
+                    f"{named} in the {app}'s settings here and install "
+                    f"again.")
+            rep.verdict = (f"{running} had {named} loaded and no DirectX "
+                           f"10/11/12 when the tool looked - if it was already "
+                           f"drawing, set 'graphics api' to {named} and "
+                           f"install again.")
+        else:
+            rep.add(BAD, head, why + f"Otherwise set 'graphics api' in the "
+                    f"{app}'s settings here to {drew[0]} and install again; "
+                    f"if 'did it work?' still finds no log, try "
+                    f"{', then '.join(drew[1:])}.")
+            rep.verdict = (f"{running} had {named} loaded and no DirectX "
+                           f"10/11/12 when the tool looked - if it was already "
+                           f"drawing, set 'graphics api' to one of them and "
+                           f"install again.")
+        rep.never_ran = False
+        return True
     hit = _engine_says_not_dxgi(install_dir, man)
     if hit is None:
         return False

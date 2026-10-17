@@ -312,6 +312,39 @@ def _analyse_optiscaler(install_dir: Path, rep: "Report", since: float,
     pres = None
     for pres in re.finditer(r"Original present result:\s*([0-9A-Fa-f]{8})", text):
         pass
+    # The same failed result AFTER the model drew is not a refusal: the
+    # swapchain was accepted, and a later Present failed - Ready or Not on a
+    # window change, in Streamline's frame-generation present (#768). #58
+    # never drew, so it keeps the verdict below.
+    pres_line = text.count("\n", 0, pres.start()) if pres else -1
+    # Only when nothing drew after it: one failed Present in a session that
+    # kept drawing is not where the session ended (gate 2.0.9).
+    if pres and not pres.group(1).startswith("0") and running \
+            and running[-1][0] < pres_line:
+        code = pres.group(1).upper()
+        fg_present = any("dlfgPresent" in ln and "present failed" in ln.lower()
+                         for ln in lines)
+        rep.add(OK, "Neural rendering ran.", running[-1][1].strip()[-160:])
+        rep.add(BAD, f"Later a Present failed (0x{code})"
+                     + (" in the game's frame generation." if fg_present else "."),
+                # 887A0005/6/7: the device was removed, hung or reset - the
+                # driver's side, not a window change (#89's shape)
+                "The model had been drawing, and then the graphics device was "
+                "lost (removed, hung or reset). That is the driver or the card "
+                "giving up - a driver update or a lower load (a lower model "
+                "resolution, frame generation off) is where to start."
+                if code in ("887A0005", "887A0006", "887A0007") else
+                "The model had been drawing, so the swapchain was accepted; the "
+                "failure came later. A window or mode change (alt-tab, "
+                "fullscreen to windowed, a resolution change) is the usual "
+                "moment. One at a time: turn the game's DLSS Frame Generation "
+                "off, put back the game's own nvngx_dlssg.dll with 'restore "
+                "original' on the dlss page if it was swapped, and play in "
+                "borderless.")
+        rep.verdict = ("Neural rendering ran; a Present failed later"
+                       + (" in the game's frame generation" if fg_present else "")
+                       + " - see below.")
+        return rep
     if pres and not pres.group(1).startswith("0"):
         rep.add(BAD, "The game refused the swapchain OptiScaler wrapped "
                      f"(0x{pres.group(1).upper()}).",

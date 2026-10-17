@@ -1,0 +1,53 @@
+**Did the game start?** it started and ran
+
+**What happened**
+ReShade overlay can't be open by any overlay key (doesn't happen in other games)
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 617.42
+- game: Forza Horizon 3
+- exe: forza_x64_release_final.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: standalone
+- this tool: running as administrator
+
+**Diagnosis**: Loaded into forza_x64_release_final.exe at 17 Oct 11:20, and no log was written - the proxy is reached and ReShade is not initialising.
+- [warn] At 17 Oct 11:20 our files WERE loaded in forza_x64_release_final.exe, and nothing wrote a log.
+
+**Files in the folder**
+- d3d12.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+
+**What ran, and what it loaded** (seen at 17 Oct 11:20)
+- process: forza_x64_release_final.exe
+- ran from: forza_x64_release_final.exe
+- DLLs in the process: 174
+- ours, loaded: d3d12.dll, nvngx.dll, nvngx_dlssnr.dll, standalone-dlssnr.addon64
+- also written, loaded only if the game asks: nvngx_dlss.dll, nvngx_dlssg.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+01:10:02.366 same-frame optical-flow path unavailable; internal zero-motion fallback will be used
+01:10:02.461 observed D3D12 graphics queue: reshade=000002DF5E097808 native=000002DF5E840F10
+01:10:02.461 legacy interop session ready: api=D3D11 D3D11=000002DEB770B550 D3D12 queue=000002DF5E097800 shared fence=000002DF5E758C40 capture fence=000002DEB7AB0B20
+01:10:02.461 presentation contract candidate: capture=2560x1440 work=2560x1440 output=2560x1440 fmt=28; waiting for stability
+01:10:02.462 current-frame guide handles: VORT=MISSING feed=MISSING mv=MISSING depth=MISSING sr_mask=optional/missing nr_mask=optional/missing strength=optional/missing depth_reversed=1
+01:10:02.462 same-frame optical-flow path unavailable; internal zero-motion fallback will be used
+01:10:06.517 startup recovery marker cleared: clean process shutdown
+```

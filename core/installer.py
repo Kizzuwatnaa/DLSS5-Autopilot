@@ -1607,6 +1607,15 @@ def preview(g: games.Game, opt: Options) -> Preview:
     ok, why = check_supported(g)
     if not ok:
         pv.blockers.append(why)
+    # The card install() refuses before the first write (#770): the preview
+    # described a whole plan over it.
+    if not opt.ignore_gpu_mismatch:
+        try:
+            no_dlss = gpu.no_dlss_here()
+        except Exception:
+            no_dlss = None
+        if no_dlss:
+            pv.blockers.append(no_dlss)
     # Same hard rule install() enforces: a Remix game only ever takes the
     # remix route. Without this the preview would describe a plan (DXVK,
     # ReShade...) that install() actually refuses outright.
@@ -1918,16 +1927,31 @@ def preview(g: games.Game, opt: Options) -> Preview:
                           f"it; 'uninstall' restores it)")
     # 1) ReShade
     if g.api == "Vulkan":
-        found = vulkan.existing_registration()
-        if found is not None and not vulkan.is_ours(found):
+        # The questions install_layer asks, in its order, so what is shown
+        # is what is done: a layer THIS game's architecture can load, and -
+        # run as administrator - one an elevated game can reach (gate 2.0.9:
+        # "is any layer registered" previewed a reuse the install did not do).
+        found, machine_too = vulkan.will_do(x64)
+        if found is not None:
             pv.outside.append(f"reuses the existing ReShade Vulkan layer ({found})")
         else:
             pv.outside.append(
                 f"Vulkan layer: {vulkan.LAYER_NAME} registered for this user "
                 f"(files in {vulkan.layer_dir()}) - it loads into EVERY Vulkan "
                 f"application until 'uninstall' removes it")
-            pv.warnings.append("the Vulkan layer is global; 'uninstall' "
-                               "removes it again")
+            pv.warnings.append(
+                "the Vulkan layer is global, and also registered for all "
+                "users because this tool is running as administrator; "
+                "'uninstall' removes that part only while the tool runs as "
+                "administrator" if machine_too else
+                "the Vulkan layer is global; 'uninstall' removes it again")
+            if machine_too:
+                pv.outside.append(
+                    f"this tool is running as administrator, so a copy of "
+                    f"the layer also goes into {vulkan.machine_dir()} and on "
+                    f"the machine's list (all users) - the only one a game "
+                    f"started as administrator reads; taking that one off "
+                    f"again needs this tool run as administrator")
     else:
         write(proxy)
     if opt.vr and x64:
@@ -2878,6 +2902,15 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             "which crashes a Remix game before it draws a frame - and on "
             "DirectX 9 it would write over the Remix runtime itself.\n\n"
             "Choose the remix route, or uninstall the Remix mod first.")
+    # A card no route can run DLSS on, also before the first write (#770: a
+    # GTX 1650 was told "RTX 20/30 ... works, but heavy").
+    if not opt.ignore_gpu_mismatch:
+        try:
+            no_dlss = gpu.no_dlss_here()
+        except Exception:
+            no_dlss = None
+        if no_dlss:
+            raise InstallError(no_dlss)
     preflight(g)
 
     log = on_log or (lambda *_: None)
@@ -3578,8 +3611,19 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.notes.append("registered ReShade as a Vulkan layer for this "
                                  "user - it now loads into EVERY Vulkan "
                                  "application, not just this game")
-                rep.warnings.append("the Vulkan layer is global; 'uninstall' "
-                                    "removes it again")
+                rep.warnings.append(
+                    "the Vulkan layer is global, and also registered for "
+                    "all users; 'uninstall' removes that part only while "
+                    "the tool runs as administrator"
+                    if vulkan.machine_registered(x64) else
+                    "the Vulkan layer is global; 'uninstall' removes it again")
+                if vulkan.machine_registered(x64):
+                    rep.notes.append(f"a copy of the layer is in "
+                                     f"{vulkan.machine_dir()} and on the "
+                                     f"machine's list (all users), the one a "
+                                     f"game started as administrator reads; "
+                                     f"taking it off again needs this tool "
+                                     f"run as administrator")
             else:
                 rep.notes.append(f"reused the existing ReShade Vulkan layer "
                                  f"({manifest})")
@@ -4277,6 +4321,19 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
 # ---------------------------------------------------------------- uninstall
 
+def machine_leftover_text(left) -> str:
+    """What is still registered for all users, and the one thing that takes
+    it off. One sentence for the uninstall log, the window and the CLI: after
+    the last uninstall there is no game left to press a button on, so the
+    step is starting the tool, which cleans up by itself (vulkan.
+    cleanup_machine)."""
+    return (f"still registered for all users: ReShade's Vulkan layer "
+            f"({', '.join(left)} in {vulkan.machine_dir()}). It loads into "
+            f"every Vulkan program on this PC, and removing it needs "
+            f"administrator rights: start this tool once as administrator "
+            f"and it takes it off.")
+
+
 def uninstall(g: games.Game, on_log=None) -> list[str]:
     """Remove only what this tool wrote; never touch the game's own files."""
     dlss.forget_walk(g.folder)
@@ -4645,6 +4702,22 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
                 removed.append("Vulkan layer registration")
                 log("removed: our ReShade Vulkan layer registration "
                     "(no Vulkan games left)")
+    except Exception:
+        pass
+    # The machine's list: written by an install that ran as administrator,
+    # and only an administrator can take it off. Tried on every uninstall
+    # once no Vulkan install is left, so a later elevated run cleans up what
+    # an earlier one could not - and said out loud when it is still there,
+    # because it loads ReShade into every elevated Vulkan program.
+    try:
+        had = vulkan.machine_leftover()
+        if had and prefs.vulkan_games_or_none() == []:
+            vulkan.unregister_machine()
+            left = vulkan.machine_leftover()
+            if len(left) < len(had):
+                log("removed: our ReShade Vulkan layer from the machine's list")
+            if left:
+                log(machine_leftover_text(left))
     except Exception:
         pass
 

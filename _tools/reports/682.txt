@@ -1,0 +1,42 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Feeder not loaded
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 616.56
+- game: SOMA
+- exe: Soma.exe
+- arch/api: 64-bit / DX11 (Unity player beside the exe - Direct3D 11 on Windows unless the game is started with -force-d3d12, -force-vulkan or -force-glcore)
+- route: bridge
+- this tool: running as administrator
+
+**Diagnosis**: Soma.exe ran at 05 Oct 22:50 and loaded nothing from this folder - try another proxy name.
+- [bad] Soma.exe ran at 05 Oct 22:50 with none of this folder's files loaded.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-bridge.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- DLSS 5 add-on switch: NeuralUplift=1
+
+**What ran, and what it loaded** (seen at 05 Oct 22:50)
+- process: Soma.exe
+- ran from: Soma.exe
+- DLLs in the process: 102
+- ours, loaded: none
+- ours, not loaded: dlss5-bridge.addon64, dxgi.dll, nvngx_dlssnr.dll, renodx-dlss5.addon64
+- also written, loaded only if the game asks: nvngx_dlss.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

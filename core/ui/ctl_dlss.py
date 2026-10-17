@@ -499,6 +499,11 @@ class DlssControl:
             data.setdefault("games", {})[folder] = row
             du.save_cache(data)
         name = (row or {}).get("name") or Path(folder).name
+        g_ = getattr(self, "game", None)
+        if rep.done and g_ is not None and str(getattr(g_, "folder", "")) == str(folder) \
+                and hasattr(self, "forget_diagnosis"):
+            # a runtime was swapped or put back: the last answer read the old one (#761's class)
+            self.forget_diagnosis()
         if rep.ok:
             # The row's own lines already show the versions; what the row adds
             # is a note the person has to know (a launcher put its file back,

@@ -69,8 +69,11 @@ CLASSES = (
     ("the game does not draw the way the route needs",
      ("refused", "no d3d12 dlss call", "never called dlss",
       "direct3d 9 device", "never even attempted",
+      # #682: the running game held another renderer and no DXGI
+      "no directx 10/11/12 when the tool looked", "only directdraw loaded",
       # 2.0.7: the bridge attached, nothing called DLSS, no frame
-      "delivered no frame - turn dlss on")),
+      "delivered no frame - turn dlss on",
+      "delivered no frame - its log shows no dlss")),
     ("upstream: the driver's NGX runtime faults",
      ("driver 616.64", "faults inside", "no dlss 5 entry point")),
     # The person said the game closed itself or never started, and the

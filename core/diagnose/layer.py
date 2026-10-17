@@ -74,7 +74,10 @@ def _layer_detail(loaded, missing, man: dict, tense: str) -> str:
             "writes its log the moment it loads - so it is not reaching "
             "the game. Its registration is per user and per architecture: "
             "install again with this version to rewrite it, and start the "
-            "game once more. If there is still no log, another Vulkan "
+            "game once more. A game that runs as administrator does not "
+            "read the per-user registration at all: for that one, install "
+            "again with this tool run as administrator. If there is still "
+            "no log, another Vulkan "
             "layer on this PC (an overlay, a capture tool, another ReShade "
             "install) is the next thing to rule out - say so in an issue "
             "with this report.")

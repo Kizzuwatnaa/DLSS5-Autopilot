@@ -720,11 +720,18 @@ dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
   PyPI packages. `git clone` and `python dlss5_autopilot.py`.
 - It writes only into the game folders you install into or update DLSS in
   (plus, for Vulkan games, one per-user registry value it announces first
-  and removes with the last Vulkan game), keeps its cache, its log, its
+  and removes with the last Vulkan game; run as administrator it also
+  registers a copy of that layer for all users, under Program Files, and
+  only the tool run as administrator takes that one off again), keeps its
+  cache, its log, its
   settings, the scanned library, cover pictures, the dlss page's last read
   and `sightings.json` - the path of the executable that ran and the DLLs it
   had loaded, for a game it installed into - in
-  `%LOCALAPPDATA%\dlss5-autopilot`, never asks for administrator rights,
+  `%LOCALAPPDATA%\dlss5-autopilot`, never asks for administrator rights
+  (running it that way helps a Vulkan or DXVK game that itself runs as
+  administrator; it also lets the tool install into a folder only an
+  administrator can write to, but ReShade inside a game started normally
+  cannot write its log or settings there either),
   and has no telemetry and no account. The one thing it can send is a
   game's name to Steam's store search to find a cover, and only after you
   said yes to that (see Network access).

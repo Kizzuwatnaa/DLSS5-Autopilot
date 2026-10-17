@@ -17,8 +17,8 @@ from .. import autopilot, community, diagnose, dlss, gpu, installer, log, prefs,
 from ..lookout import Lookout
 from . import theme as T
 from . import win
-from .ctl_game import (CLOSING_FAULT_NOTE, crash_is_this_session, fault_in_this_folder, fault_while_closing,
-                       note_closing_fault)
+from .ctl_game import (CLOSING_FAULT_NOTE, crash_is_this_session, crashed_waiting, fault_in_this_folder,
+                       fault_while_closing, note_closing_fault, waiting_verdict)
 
 
 class WatchControl:
@@ -196,6 +196,10 @@ class WatchControl:
             elif getattr(rep, "never_ran", False) and fault_in_this_folder(crash, g.install_dir):
                 said = ("It started, and nothing here recorded the session - Windows recorded the fault"
                         + (f" in {mod}." if mod else "."))
+            elif waiting_verdict(rep) and not getattr(rep, "never_ran", False):
+                said = crashed_waiting(mod)
+                rep.findings = [f for f in rep.findings
+                                if "play once and check again" not in f"{f.title} {f.detail}"]
         working = said.startswith("Working") and crash is None
         nxt, why = self.next_route(g, rep, offered)
         if said != str(rep.verdict):
@@ -323,6 +327,11 @@ class WatchControl:
 
     # ------------------------------------------------------------ the tray
     def on_close(self) -> None:
+        # Never the reason the window does not close.
+        try:
+            self.shell.remember_window()
+        except Exception:
+            pass
         if prefs.get("watch_background", False) and self.watch_on() and self.lookout.count():
             from .tray import Tray
             if self.tray is None:

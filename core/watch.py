@@ -250,6 +250,22 @@ class Sighting:
     ours: list[str] = field(default_factory=list)      # loaded from our folder
     elsewhere: list[str] = field(default_factory=list)  # same name, other folder
     missing: list[str] = field(default_factory=list)    # ours, not loaded
+    graphics: list[str] = field(default_factory=list)   # GRAPHICS names loaded
+
+
+# The graphics runtimes a process can draw with, by the name Windows loads
+# them under. Which of these are in a running game is the one answer about
+# its renderer that is not read off a file: a game set up as DirectX 11
+# whose process holds opengl32.dll and no dxgi.dll at all was never going to
+# load a dxgi proxy under any name (#682).
+GRAPHICS = ("d3d12.dll", "d3d11.dll", "d3d10.dll", "dxgi.dll", "d3d9.dll",
+            "d3d8.dll", "ddraw.dll", "opengl32.dll", "vulkan-1.dll")
+
+
+def graphics_of(got: "Loaded") -> list[str]:
+    """Which GRAPHICS names a process has loaded, from any folder."""
+    have = {os.path.basename(p).lower() for p in got.paths}
+    return [n for n in GRAPHICS if n in have]
 
 
 def inspect(folder: Path, ours: list[str], exe: str = "") -> list[Sighting]:
@@ -281,6 +297,7 @@ def inspect(folder: Path, ours: list[str], exe: str = "") -> list[Sighting]:
         got = modules(p.pid)
         s = Sighting(proc=p, loaded=got)
         if got.known:
+            s.graphics = graphics_of(got)
             for name, mine in want.items():
                 hits = got.by_name(name)
                 mine_hits = [h for h in hits
@@ -299,6 +316,14 @@ def inspect(folder: Path, ours: list[str], exe: str = "") -> list[Sighting]:
                     # missing put "not in the process: D3D12Core.dll" under
                     # a verdict about our own files (gate 1.9.1).
                     hits = [h for h in hits if not _windows_file(h)]
+                    if not hits:
+                        continue
+                if name.startswith("nvngx") and hits:
+                    # The game's own DLSS (Streamline's streamline\nvngx_dlss
+                    # .dll, an Unreal plugin's copy outside Binaries): NGX
+                    # loads it by path, so it never "got there first" - #740
+                    # was told to remove it. Only System32's could.
+                    hits = [h for h in hits if "\\system32\\" in str(h).replace("/", "\\").lower()]
                     if not hits:
                         continue
                 if hits:
@@ -457,6 +482,10 @@ def remember(folder: Path, s: "Sighting") -> None:
         "elsewhere": sorted(set(s.elsewhere))[:8],
         "missing": sorted(set(s.missing)),
     }
+    # Only when the module list could be read: a record without the key
+    # says "not looked at", which is not "none loaded".
+    if s.loaded.known:
+        rec[os.path.normcase(str(Path(folder)))]["graphics"] = list(s.graphics)
     if len(rec) > _RECORD_KEEP:
         for k in sorted(rec, key=lambda k: rec[k].get("at", 0))[:-_RECORD_KEEP]:
             rec.pop(k, None)

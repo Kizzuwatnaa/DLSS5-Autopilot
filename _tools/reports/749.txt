@@ -1,0 +1,60 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+It crashed due to dxgi.dll
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 3070 Ti Laptop GPU (sm_86), driver 617.42
+- game: Game
+- exe: eldenring.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: standalone
+- windows event: eldenring.exe faulted in dxgi.dll 0x80000003 at 2026-10-12 07:51:55 UTC
+- starts as administrator: RUNASADMIN HIGHDPIAWARE (per user); RUNASADMIN (all users)
+
+**Diagnosis**: It ran, and then the game crashed - Windows recorded the fault in dxgi.dll.
+- [ok] ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0
+- [warn] Running on zero-motion guides - expect ghosting.
+- [ok] Frames are going through the pipeline (6 logged, last was frame 6).
+- [info] Active contract: NR=feature 18 active passes=1 requested=1 at 2560x1600, DLAA (DLAA preset L) -> 2560x1600, DLSS-G=fallback-off, model=1 style=0, profile=sRGB
+- [bad] Windows recorded eldenring.exe faulting in dxgi.dll.
+
+**Files in the folder**
+- dxgi.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- Windows graphics setting: eldenring.exe: High performance
+
+**What ran, and what it loaded** (seen at 12 Oct 13:21)
+- process: eldenring.exe
+- ran from: eldenring.exe
+- DLL list: refused - the process is protected (anti-cheat, or a store build) and will not be opened
+
+**ReShade.log**
+```
+13:21:32:579 [ 9428] | INFO  | Registered add-on "Standalone DLSS-NR + SR 2.2.4" v0.0.0.0 using ReShade API version 20.
+13:21:32:960 [ 9428] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 000002843766D6A0, pDevice = 00000284DAFDD730, pDesc = 000000ED966FEA70, ppSwapChain = 0000028432369D38) ...
+13:21:53:684 [ 9428] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = 000002852D6A16C0, pDevice = 0000028438B6A910, pDesc = 000000ED966FED48, pRestrictToOutput = 0000000000000
+13:21:53:690 [ 9428] | WARN  | Skipping swap chain because it was created without a proxy Direct3D device.
+13:21:53:741 [ 9428] | WARN  | Reference count for IDXGIFactory4 object 000002852D6A16C0 (000002858E180290) is inconsistent (3).
+13:21:53:973 [25508] | WARN  | Skipping D3D11on12 device because it was created without a proxy Direct3D 12 device.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+13:21:53.676 standalone contract ready: NR=feature 18 active passes=1 requested=1 at 2560x1600, DLAA (DLAA preset L) -> 2560x1600, DLSS-G=fallback-off, model=1 style=0, profile=sRGB
+13:21:55.518 source capture discontinuity observed without forcing an NGX history reset: previous=480 current=484 gap=3 count=7
+13:21:55.521 on-present frame 5: NR=Success passes=1 pass2_evals=0 pass3_evals=0, DLAA=Success, model=1, NR-reset=0, NR-guides=same-frame-motion, NR-control-mask=none strength=1.00, SR-history=tempora
+13:21:55.627 source capture discontinuity observed without forcing an NGX history reset: previous=484 current=496 gap=11 count=8
+13:21:55.630 on-present frame 6: NR=Success passes=1 pass2_evals=0 pass3_evals=0, DLAA=Success, model=1, NR-reset=0, NR-guides=same-frame-motion, NR-control-mask=none strength=1.00, SR-history=tempora
+```

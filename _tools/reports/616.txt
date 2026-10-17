@@ -1,0 +1,68 @@
+**Did the game start?** it started and ran
+
+**What happened**
+There was no NR in the game.
+
+---
+- version: 2.0.7
+- gpu: NVIDIA GeForce RTX 5060 Ti (sm_120), driver 617.14
+- game: OpenMW 0.51.0
+- exe: openmw.exe
+- arch/api: 64-bit / OpenGL (set by hand (detected OpenGL))
+- route: feeder
+- this tool: running as administrator
+
+**Diagnosis**: It started, then the feed stopped - see why below.
+- [ok] ReShade loaded add-on: DLSS 5 Feed 1.17.0 1.17.0.0
+- [ok] ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: VORT is enabled.
+- [ok] NGX initialised successfully.
+- [ok] The driver reports DLSS as available.
+- [ok] Frames are being processed (3 logged, last was frame 3).
+- [bad] The feed stopped after frame 3: Present is arriving on more than one thread and Direct3D 11 multithread protection could not be enabled on this device.
+
+**Files in the folder**
+- opengl32.dll: present
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- DLSS 5 add-on switch: NeuralUplift=1
+
+**What ran, and what it loaded** (seen at 30 Sep 15:35)
+- process: openmw.exe
+- DLLs in the process: 176
+- ours, loaded: OPENGL32.dll, dlss5-feed.addon64, nvngx_dlss.dll, nvngx_dlssnr.dll, renodx-dlss5.addon64
+
+**ReShade.log**
+```
+15:35:08:055 [ 5196] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+15:35:08:095 [ 5196] | INFO  | Registered add-on "DLSS 5 Feed 1.17.0" v1.17.0.0 using ReShade API version 20.
+15:35:08:105 [ 5196] | INFO  | Registered add-on "DLSS 5 Neural Rendering" v0.2026.828.517 using ReShade API version 18.
+15:35:12:218 [ 2796] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook(NVSDK_NGX_D3D12_EvaluateFeaturehooked (0x00007ff9eb8d8740 ) (0x00007ffa042bd868))
+15:35:12:219 [ 2796] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+15:35:12:219 [ 2796] | DEBUG | [DLSS 5 Neural Rendering] vtable::Hook(NVSDK_NGX_D3D12_EvaluateFeaturehooked (0x00007ff9cd01ca90 ) (0x00007ffa042bd888))
+15:35:12:219 [ 2796] | ERROR | [DLSS 5 Neural Rendering] vtable::Hook(Failed to find NVSDK_NGX_D3D12_EvaluateFeature_C)
+15:37:00:218 [ 5196] | INFO  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature unhooked successfully)
+15:37:00:218 [ 5196] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+15:37:00:218 [ 5196] | INFO  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature unhooked successfully)
+15:37:00:218 [ 5196] | WARN  | [DLSS 5 Neural Rendering] vtable::Unhook(NVSDK_NGX_D3D12_EvaluateFeature_C not hooked, skipping)
+```
+
+**dlss5-feed.log**
+```
+15:35:08.095  dlss5-feed 1.17.0 commit 03710dd (built Sep 27 2026 06:30:24) attached.
+15:35:08.101  [feed] DLSS 5 add-on: renodx-dlss5.addon64 v4.1.5 (file version 0.2026.828.517) -- v4.6+ (per-present rescan, lazy adoption, global hotkeys, upscaling latch) engine
+15:35:09.280  [feed] effects: DLSS5_Feed.fx technique found, ColorInput found, DLSS5_MV found, DLSS5_Depth found, DLSS5_Mask found, DLSS5_MV_PROVIDER=2 (VORT) -> vort_MotionEffects (enabled), depth re
+15:35:12.364  [feed] building: 3440x1440 backbuffer R8G8B8A8_UNORM (OpenGL transport, depth reversed=0)
+15:35:13.032  [feed] frame 3 delivered (3440x1440, reset=0, OpenGL transport)
+15:35:17.286  [feed] frame fed from thread 20956, not the usual 2796 -- Present is off-thread
+15:35:17.286  stopped: Present is arriving on more than one thread and Direct3D 11 multithread protection could not be enabled on this device -- continuing would race the game's own use of its immedia
+15:35:17.288  [feed] STALL frame 35: interval 3459.1 ms | feed 1.81 ms (of which NGX evaluate 1.27 ms) | outside the feed 3457.3 ms -- most of it was OUTSIDE this add-on entirely (game, driver, or ano
+15:37:00.202  [feed] effect runtime 0000017DCADF9740 destroyed -- it was the bound one (0 runtimes left)
+15:37:00.208  [feed] the game's OpenGL device is being destroyed; shutting the session down
+15:37:00.217  shut down cleanly.
+```

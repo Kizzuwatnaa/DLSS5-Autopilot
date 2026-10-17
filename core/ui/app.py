@@ -40,6 +40,24 @@ JOB_ENDS = frozenset(("installed", "fail", "autopilot", "autofail", "removed", "
                       "updfail", "swap"))
 
 
+MACHINE_CLEANED = ("removed: our ReShade Vulkan layer from the all-users "
+                   "list (no Vulkan install left)")
+
+
+def _machine_cleanup() -> bool:
+    """Run as administrator with no Vulkan install left: take off the
+    all-users Vulkan layer an earlier uninstall had no right to remove.
+    True when it did. Never a reason the window does not open."""
+    try:
+        from .. import vulkan
+        if vulkan.cleanup_machine(prefs.vulkan_games_or_none()):
+            log.write(MACHINE_CLEANED)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -49,6 +67,7 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
         self.update_url: str | None = None
         self.update_ready: Path | None = None
         self._crash_shown = False
+        cleaned = _machine_cleanup()
         self._library_init()
         self._game_init()
         self._video_init()
@@ -69,6 +88,14 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
         self.vr_page = VrPage(self.shell, self)
         self.shell.add(self.vr_page)
         self._open_start()
+        # The person was told "start this tool once as administrator and it
+        # takes it off": say that it did.
+        if cleaned:
+            try:
+                self.shell.status(MACHINE_CLEANED)
+                self.write(MACHINE_CLEANED, "ok")     # the status line moves on
+            except Exception:
+                pass
         self.watch_refresh()
         root.after(60, self._pump)
         self.check_update()
@@ -211,7 +238,6 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
 
         Works with no game picked - the 1.9 window read the picked game's
         install folder outside any guard and raised from the help menu."""
-        from urllib.parse import quote
         from .. import diagnose, installer, reportui
         try:
             name, sm = gpu.detect()
@@ -252,12 +278,10 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
             crash=self._last_crash if g is not None else None)
         App._reprint_answered(self, g, route, answers)
         try:
-            url = f"{REPO_URL}/issues/new?title={quote(title)}&body={quote(body)}"
-            if len(url) > 7800:
+            url, cut = diagnose.issue_url(REPO_URL, title, body)
+            if cut:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(body)
-                url = (f"{REPO_URL}/issues/new?title={quote(title)}&body="
-                       + quote("(the details are on your clipboard - paste them here)"))
             webbrowser.open(url)
         except Exception:
             self.root.clipboard_clear()
@@ -404,6 +428,12 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
         self._restart_into(exe)
 
     def _restart_into(self, exe) -> None:
+        # The restart ends the process without the close handler, so the
+        # window's place is written down here (#641).
+        try:
+            self.shell.remember_window()
+        except Exception:
+            pass
         try:
             selfupdate.apply_and_restart(exe)
         except (selfupdate.UpdateError, OSError) as e:

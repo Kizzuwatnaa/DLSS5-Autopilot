@@ -89,8 +89,9 @@ PRESR_MFG = "wilsjo2-mfg"
 PRESR_BEFORE_SR = {"RunBeforeSR": True}
 
 # Janblade's fork of wilsjo2's fork (#561): the same pre-SR placement and the
-# same OptiScaler.ini keys, one zip per release with only OptiScaler.dll
-# changed. Its newest release is often flagged pre-release; like every fork
+# same OptiScaler.ini keys, with only OptiScaler.dll changed (and, from
+# 0.1.28, a test zip beside the standard one - see FORKS). Its newest
+# release is often flagged pre-release; like every fork
 # here the pick ignores that flag. Offered and labelled as not run here,
 # never chosen automatically.
 JANBLADE_API = ("https://api.github.com/repos/Janblade/"
@@ -112,8 +113,12 @@ FORKS = {
     # optional RTX 40 MFG unlock."
     PRESR: (PRESR_API, ("rtx40-mfg",)),
     PRESR_MFG: (PRESR_API, ()),
-    # One zip per release, so there is nothing to skip.
-    JANBLADE: (JANBLADE_API, ()),
+    # One zip per release until 0.1.28, which carries a second one:
+    # OptiScaler-DLSSNR-F5-test-0.1.28-dxvk-reframework-<hash>.zip, a test
+    # build for DXVK and REFramework setups. The shape rule in _pick_archive
+    # already took the standard zip (the shorter name); named here so the
+    # choice does not rest on name length alone.
+    JANBLADE: (JANBLADE_API, ("-test-",)),
 }
 
 # The inverse of a skip list: a build that exists FOR one variant takes only

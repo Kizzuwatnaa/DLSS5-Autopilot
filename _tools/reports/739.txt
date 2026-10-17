@@ -1,0 +1,42 @@
+**Did the game start?** it started and ran
+
+**What happened**
+> Matrix3.exe is running and has loaded nothing from this folder - try another proxy name.
+[fail] Matrix3.exe is running and has loaded none of the files here.
+
+---
+- version: 2.0.2
+- gpu: NVIDIA GeForce RTX 5070 (sm_120), driver 617.14
+- game: The Matrix Path of Neo
+- exe: Matrix3.exe
+- arch/api: 32-bit / Unknown (graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll)
+- route: feeder
+
+**Diagnosis**: Matrix3.exe is running and has loaded nothing from this folder - try another proxy name.
+- [bad] Matrix3.exe is running and has loaded none of the files here.
+
+**Files in the folder**
+- dxgi.dll: present
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: not written by this install - your own copy is at reshade-shaders/Shaders/LumeniteFX/lumenite_Kernel.fx
+- DLSS 5 add-on switch: NeuralUplift=1
+
+**What ran, and what it loaded** (seen at 11 Oct 16:23)
+- process: Matrix3.exe
+- DLLs in the process: 25
+- ours, loaded: none
+- ours, not loaded: dlss5-feed.addon32, dxgi.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -1,0 +1,50 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+Any route results in "Protection initialization failed" error at launch
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 617.42
+- game: Dread Delusion
+- exe: Dread Delusion.exe
+- arch/api: 64-bit / DX11 (Unity player beside the exe - Direct3D 11 on Windows unless the game is started with -force-d3d12, -force-vulkan or -force-glcore)
+- route: standalone
+- this tool: running as administrator
+
+**Diagnosis**: The game closed itself and nothing here recorded why - see below for what to take out first.
+- [bad] You said the game closed itself.
+- [ok] ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0
+- [warn] Running on zero-motion guides - expect ghosting.
+- [warn] The add-on attached but never reached a contract.
+
+**Files in the folder**
+- d3d11.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+
+**ReShade.log**
+```
+01:10:01:953 [ 5708] | INFO  | Registered add-on "Standalone DLSS-NR + SR 2.2.4" v0.0.0.0 using ReShade API version 20.
+01:10:02:148 [ 5708] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = 000002DE94CA5FF0, pDevice = 000002DE94E5D790, hWnd = 0000000000081014, pDesc = 000000F382BDE700, pFullscreenDesc
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+01:10:02.366 same-frame optical-flow path unavailable; internal zero-motion fallback will be used
+01:10:02.461 observed D3D12 graphics queue: reshade=000002DF5E097808 native=000002DF5E840F10
+01:10:02.461 legacy interop session ready: api=D3D11 D3D11=000002DEB770B550 D3D12 queue=000002DF5E097800 shared fence=000002DF5E758C40 capture fence=000002DEB7AB0B20
+01:10:02.461 presentation contract candidate: capture=2560x1440 work=2560x1440 output=2560x1440 fmt=28; waiting for stability
+01:10:02.462 current-frame guide handles: VORT=MISSING feed=MISSING mv=MISSING depth=MISSING sr_mask=optional/missing nr_mask=optional/missing strength=optional/missing depth_reversed=1
+01:10:02.462 same-frame optical-flow path unavailable; internal zero-motion fallback will be used
+01:10:06.517 startup recovery marker cleared: clean process shutdown
+```

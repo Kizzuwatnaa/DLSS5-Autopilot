@@ -1,0 +1,45 @@
+**Did the game start?** it never started
+
+**What happened**
+the game never starts
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 4070 (sm_89), driver 617.42
+- game: AION 2
+- exe: AION2.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: upstream
+
+**Diagnosis**: The game's DLSS call was never hooked - nothing to run on.
+- [ok] ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0
+- [bad] The add-on never found the game's DLSS call.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- Aion2/Plugins/DLSS/Binaries/ThirdParty/Win64/nvngx_dlss.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.6.0 kept beside it)
+- Aion2/Plugins/StreamlineCore/Binaries/ThirdParty/Win64/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.6.0 kept beside it)
+- Aion2/Plugins/DLSS/Binaries/ThirdParty/Win64/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.6.0 kept beside it)
+
+**What ran, and what it loaded** (seen at 09 Oct 11:01)
+- process: AION2.exe
+- ran from: AION2.exe
+- DLLs in the process: 63
+- ours, loaded: none
+- ours, not loaded: dxgi.dll, nvngx.dll.addon64, nvngx_dlssnr.dll
+
+**ReShade.log**
+```
+11:01:31:224 [10220] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:01:32:551 [10220] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:01:33:022 [10220] | INFO  | Registered add-on "DLSS5 NR Pre-Upscale" v0.0.0.0 using ReShade API version 18.
+11:01:33:923 [10220] | INFO  | [DLSS5 NR Pre-Upscale] [NRPRE] captured ID3D12Device=00000000ec92d400
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

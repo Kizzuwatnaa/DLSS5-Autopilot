@@ -587,7 +587,7 @@
   "never_ran": false,
   "ran": true,
   "route": "optiscaler",
-  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in forzahorizon6.exe."
  },
  "295": {
   "findings": [
@@ -597,7 +597,7 @@
   "never_ran": false,
   "ran": true,
   "route": "optiscaler",
-  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in forzahorizon6.exe."
  },
  "296": {
   "findings": [
@@ -845,7 +845,7 @@
   "never_ran": false,
   "ran": false,
   "route": "feeder",
-  "verdict": "DXVK ran and ReShade did not - if anything starts the game as administrator, start it normally."
+  "verdict": "DXVK ran and ReShade did not - if anything starts the game as administrator, start it normally, or install again with this tool run as administrator."
  },
  "403": {
   "findings": [
@@ -1067,7 +1067,7 @@
   "never_ran": false,
   "ran": true,
   "route": "feeder",
-  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in GettingUp.exe."
  },
  "482": {
   "findings": [
@@ -1105,7 +1105,7 @@
   "never_ran": false,
   "ran": true,
   "route": "feeder",
-  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in ReShade32.dll."
  },
  "512": {
   "findings": [
@@ -1208,7 +1208,7 @@
   "never_ran": false,
   "ran": false,
   "route": "feeder",
-  "verdict": "DXVK ran and ReShade did not - if anything starts the game as administrator, start it normally."
+  "verdict": "DXVK ran and ReShade did not - if anything starts the game as administrator, start it normally, or install again with this tool run as administrator."
  },
  "57": {
   "findings": [
@@ -1228,7 +1228,7 @@
   "never_ran": false,
   "ran": true,
   "route": "optiscaler",
-  "verdict": "Neural rendering ran, then the game closed itself - see below for what to take out first."
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in witcher3.exe."
  },
  "58": {
   "findings": [
@@ -1287,6 +1287,20 @@
   "route": "optiscaler",
   "verdict": "Windows recorded the game faulting - see below for what to take out first."
  },
+ "616": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "ok: ReShade loaded add-on: DLSS 5 Feed 1.17.0 1.17.0.0",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: VORT is enabled.",
+   "ok: Frames are being processed (1 logged, last was frame 3).",
+   "bad: The feed stopped after frame 3: Present is arriving on more than one thread and Direct3D 11 multithread protection could not be enabled on this device."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "It started, then the feed stopped - see why below."
+ },
  "63": {
   "findings": [
    "warn: Something else is pacing the frames this game presents."
@@ -1306,6 +1320,17 @@
   "ran": true,
   "route": "upstream",
   "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "641": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "-",
+  "verdict": "Not started since the install - run the game once, then check again."
  },
  "65": {
   "findings": [
@@ -1330,6 +1355,26 @@
   "route": "optiscaler",
   "verdict": "OptiScaler loaded; neural rendering not switched on."
  },
+ "668": {
+  "findings": [
+   "bad: The install stopped with an error, and nothing of it is in this folder."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "",
+  "verdict": "The install crashed before it finished - install again."
+ },
+ "669": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than elementviewer.exe.",
+   "info: Or the game is not running on Vulkan."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
  "68": {
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
@@ -1339,6 +1384,15 @@
   "ran": true,
   "route": "feeder",
   "verdict": "Driver 616.64+ faults with renodx-dlss5 4.6/4.7 - install again (the tool pins 4.55), or try the standalone route."
+ },
+ "682": {
+  "findings": [
+   "bad: Soma.exe ran at 05 Oct 22:50 with none of this folder's files loaded."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "bridge",
+  "verdict": "Soma.exe ran at 05 Oct 22:50 and loaded nothing from this folder - try another proxy name."
  },
  "69": {
   "findings": [
@@ -1358,6 +1412,37 @@
   "route": "optiscaler",
   "verdict": "The install never finished - install again."
  },
+ "707": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0",
+   "warn: Running on zero-motion guides - expect ghosting.",
+   "warn: The add-on attached but never reached a contract."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "standalone",
+  "verdict": "The game closed itself and nothing here recorded why - see below for what to take out first."
+ },
+ "723": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS5 NR Pre-Upscale 0.0.0.0",
+   "bad: The add-on never found the game's DLSS call."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "upstream",
+  "verdict": "The game's DLSS call was never hooked - nothing to run on."
+ },
+ "739": {
+  "findings": [
+   "bad: Matrix3.exe ran at 11 Oct 16:23 with none of this folder's files loaded."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "Matrix3.exe ran at 11 Oct 16:23 and loaded nothing from this folder - try another proxy name."
+ },
  "74": {
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Feed 0.14.0-beta.5 0.14.0.0",
@@ -1367,6 +1452,48 @@
   "ran": true,
   "route": "feeder",
   "verdict": "Inconclusive - the feed did not get far enough to tell."
+ },
+ "740": {
+  "findings": [
+   "bad: TheGreatCircle.exe ran at 11 Oct 13:21 and ReShade's Vulkan layer did not come into it."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "TheGreatCircle.exe ran at 11 Oct 13:21, and ReShade's Vulkan layer did not reach it - nothing of this install was loaded."
+ },
+ "744": {
+  "findings": [
+   "warn: ReShade ran here and left no ReShade.log.",
+   "ok: Frames are going through the pipeline (1 logged, last was frame 7200).",
+   "info: Active contract: NR=feature 18 active passes=1 requested=1 at 2560x1440, DLAA (DLAA preset L) -> 2560x1440, DLSS-G=ready, model=2 style=1, profile=sRGB"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "standalone",
+  "verdict": "Working."
+ },
+ "748": {
+  "findings": [
+   "ok: ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0",
+   "warn: The add-on has not written its own log yet."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "standalone",
+  "verdict": "ReShade loaded, and the game crashed before the add-on got going - Windows recorded the fault in dxgi.dll."
+ },
+ "749": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0",
+   "ok: Frames are going through the pipeline (2 logged, last was frame 6).",
+   "info: Active contract: NR=feature 18 active passes=1 requested=1 at 2560x1600, DLAA (DLAA preset L) -> 2560x1600, DLSS-G=fallback-off, model=1 style=0, profile=sRGB"
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "standalone",
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in dxgi.dll."
  },
  "75": {
   "findings": [
@@ -1378,6 +1505,24 @@
   "ran": true,
   "route": "feeder",
   "verdict": "The driver has no DLSS 5 entry point - update the graphics driver."
+ },
+ "761": {
+  "findings": [
+   "bad: Nothing of this tool is in this folder."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "",
+  "verdict": "Nothing is installed in this folder - install first."
+ },
+ "768": {
+  "findings": [
+   "ok: Neural rendering is running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "Working."
  },
  "77": {
   "findings": [
@@ -1400,6 +1545,15 @@
   "ran": true,
   "route": "upstream",
   "verdict": "Add-ons loaded. Confirm in the 'NR Pre-Upscale' tab (neural-upstream) - this route does not log frames."
+ },
+ "787": {
+  "findings": [
+   "warn: ReShade ran in forza_x64_release_final.exe at 17 Oct 11:20 - its add-on is in the process - and wrote no log here."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "standalone",
+  "verdict": "ReShade ran in forza_x64_release_final.exe and wrote no log here - most likely it cannot write to this folder."
  },
  "80": {
   "findings": [

@@ -11,6 +11,7 @@ press; the rail and the back arrow jump over it.
 """
 from __future__ import annotations
 
+import re
 import time
 import tkinter as tk
 
@@ -50,7 +51,52 @@ class Page:
         return False
 
 
+_GEOMETRY = re.compile(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)")
+
+
+def _restore(root: tk.Tk, sw: int, sh: int) -> bool:
+    """Put the window back the way it was closed (#641: it opened maximised
+    every time, across the whole of a 32:9 display). True when it should be
+    maximised - which is also the answer when nothing was remembered.
+
+    LIMITS: the size is kept only while it fits the desktop, and the place
+    only while the title bar would still be on it - a display that was
+    unplugged since must not leave the window where nobody can reach it."""
+    was = prefs.get("window")
+    if not isinstance(was, dict):
+        return True
+    try:
+        w, h, x, y = (int(was[k]) for k in ("w", "h", "x", "y"))
+        vx, vy = root.winfo_vrootx(), root.winfo_vrooty()
+        vw, vh = max(sw, root.winfo_vrootwidth()), max(sh, root.winfo_vrootheight())
+    except (KeyError, TypeError, ValueError, OverflowError, tk.TclError):
+        return bool(was.get("zoomed", True))
+    if 200 <= w <= vw and 200 <= h <= vh:
+        reachable = vx <= x + w - 120 and x + 120 <= vx + vw and vy <= y and y + 40 <= vy + vh
+        root.geometry(f"{w}x{h}+{x}+{y}" if reachable else f"{w}x{h}")
+    return bool(was.get("zoomed", False))
+
+
 class Shell:
+    def remember_window(self) -> None:
+        """Called as the window closes. A minimised or hidden window says
+        nothing about where it belongs, and a maximised one keeps the size it
+        had before, for the day it is restored."""
+        try:
+            state = self.root.state()
+            at = _GEOMETRY.fullmatch(self.root.geometry())
+        except tk.TclError:
+            return
+        if state not in ("normal", "zoomed"):
+            return
+        was = prefs.get("window")
+        now = dict(was) if isinstance(was, dict) else {}
+        now["zoomed"] = state == "zoomed"
+        if state == "normal" and at:
+            now.update(zip(("w", "h", "x", "y"), map(int, at.groups())))
+        if now != was:
+            prefs.set_("window", now)
+
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title(TITLE)
@@ -61,7 +107,8 @@ class Shell:
         root.geometry(f"{min(T.px(1400), int(sw * 0.95))}x{min(T.px(900), int(sh * 0.9))}")
         root.minsize(min(T.px(900), int(sw * 0.6)), min(T.px(620), int(sh * 0.5)))
         try:
-            root.state("zoomed")
+            if _restore(root, sw, sh):
+                root.state("zoomed")
         except tk.TclError:
             pass
 

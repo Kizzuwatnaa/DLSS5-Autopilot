@@ -105,10 +105,55 @@ def detect() -> tuple[str | None, int | None]:
     for name in _adapters():
         sm = sm_for_name(name)
         if sm is not None:
-            # Prefer the newest architecture (laptops list iGPU + dGPU)
-            if best[1] is None or sm > best[1]:
+            # Prefer the newest architecture (laptops list iGPU + dGPU), and
+            # of two Turing cards the one with tensor cores.
+            if best[1] is None or sm > best[1] or (
+                    sm == best[1] and no_tensor_cores(best[0])
+                    and not no_tensor_cores(name)):
                 best = (name, sm)
     return best
+
+
+def no_tensor_cores(name: str | None) -> bool:
+    """A Turing card without tensor cores: GTX 16 (sm 75 like RTX 20, which
+    the fatbin check needs), the MX 450/550 and the T400-T1200 workstation
+    cards. The driver offers no DLSS on them at all. Nothing told a GTX 1650
+    that before the install (#770)."""
+    n = (name or "").upper()
+    return bool(re.search(r"\bGTX\s*16\d{2}\b", n)
+                or re.search(r"\bMX\s*[45]50\b", n)
+                or re.search(r"(?:NVIDIA|QUADRO)\s+T(?:400|500|550|600|1000|1200|2000)\b", n))
+
+
+def no_dlss_here() -> str | None:
+    """no_dlss() for this PC, or None.
+
+    Windows keeps the registry entry of a card that was taken out, so a
+    GTX 1660 swapped for a card this tool cannot name still lists the 1660.
+    While any NVIDIA adapter is one nothing can read, nothing is refused."""
+    names = [n for n in _adapters() if "NVIDIA" in n.upper()]
+    if any(sm_for_name(n) is None and not no_tensor_cores(n) for n in names):
+        return None
+    if not names:
+        return None
+    best = max(names, key=lambda n: (sm_for_name(n) or 0, not no_tensor_cores(n)))
+    return no_dlss(best, sm_for_name(best))
+
+
+def no_dlss(name: str | None, sm: int | None) -> str | None:
+    """Why no route can run DLSS 5 on this card, or None.
+
+    None for an unknown card too: the installer's own build check still
+    decides there, and refusing a card nothing can name would refuse the
+    people the detection got wrong."""
+    if no_tensor_cores(name):
+        return (f"{name} has no tensor cores - NVIDIA's driver does not offer "
+                f"DLSS on it, so DLSS 5 cannot run on it with any route. It "
+                f"needs an RTX card (RTX 20 or newer).")
+    if sm is not None and sm < 75:
+        return (f"{name or 'This card'} is older than RTX 20 and has no "
+                f"tensor cores - DLSS 5 cannot run on it with any route.")
+    return None
 
 
 def other_vendor() -> str | None:

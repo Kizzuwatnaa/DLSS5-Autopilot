@@ -1,0 +1,51 @@
+**Did the game start?** it started and ran
+
+**What happened**
+while changing the windows the problem with the crashes ocours (it starts and loads a game perfectly fine)
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 617.42
+- game: Ready or Not
+- exe: ReadyOrNotSteam-Win64-Shipping.exe
+- arch/api: 64-bit / DX12 (imports dxgi.dll (DX11/DX12; proxy is dxgi.dll either way))
+- route: optiscaler
+- work area: 75%
+
+**Diagnosis**: The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route.
+- [bad] The game refused the swapchain OptiScaler wrapped (0x887A0001).
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: ReadyOrNotSteam-Win64-Shipping.exe: High performance
+- ReadyOrNot/Plugins/Nvidia/DLSS/Binaries/ThirdParty/Win64/nvngx_dlss.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 3.7.20 kept beside it)
+- ReadyOrNot/Plugins/Nvidia/Streamline/Binaries/ThirdParty/Win64/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 3.7.10 kept beside it)
+- optiscaler build: Dagherbou (v0.2.0-dlssnr)
+
+**What ran, and what it loaded** (seen at 14 Oct 14:48)
+- process: ReadyOrNotSteam-Win64-Shipping.exe
+- ran from: ReadyOrNotSteam-Win64-Shipping.exe
+- DLLs in the process: 100
+- ours, loaded: amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll
+- ours, not loaded: nvngx_dlssnr.dll
+- also written, loaded only if the game asks: nvngx.dll_dlssnr.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+[14:49:23.588112] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 3.61 ms total = 3.48 ms model + 0.14 ms ours (4% ours)
+[14:49:31.531164] [I] DlssNr::ExposureScan::Adopt DLSS-NR exposure scan: candidate 25 -- buffer, 16 bytes
+Aktivieren Sie die D3D-Debugschicht, um Details mithilfe der Debugmeldungen anzuzeigen.).
+[14:49:37.121317] [W] StreamlineHooks::streamlineLogCallback [14-49-37][streamline][warn][tid:33008][74s:528ms:254us]dlfgPresent.cpp:2054[presentFrame] Async present failed (0x887A0001: Von der Anwend
+Aktivieren Sie die D3D-Debugschicht, um Details mithilfe der Debugmeldungen anzuzeigen., vmFrame 11755, subframe 0, host frame 2452) - the error will be reported to the host on its next Present() call
+```

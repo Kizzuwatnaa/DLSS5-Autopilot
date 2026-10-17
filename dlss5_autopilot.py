@@ -172,6 +172,10 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         # 2.0.5). The same check, the same words.
         refused = (optiscaler.card_refusal(opti_build, sm)
                    if ok and sup.recommended == installer.OPTI else "")
+        if ok and not refused:
+            # the card no route runs on (#770), refused by install() too
+            from core import gpu as _gpu
+            refused = _gpu.no_dlss_here() or ""
         if ok and not refused and own_fg:
             refused = installer._own_fg_refusal(g.install_dir, installer.Options(
                 path=sup.recommended, own_fg=own_fg))
@@ -256,6 +260,19 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
 
 def main() -> int:
     args = list(sys.argv[1:])
+    # --remove as administrator with no Vulkan install left also takes off
+    # the all-users Vulkan layer an earlier uninstall could not - the
+    # clean-up the window does at start. Only on --remove: --check looks
+    # and writes nothing.
+    if "--remove" in args:
+        try:
+            from core import prefs, vulkan
+            if vulkan.cleanup_machine(prefs.vulkan_games_or_none()):
+                _console()
+                print("removed: our ReShade Vulkan layer from the all-users "
+                      "list (no Vulkan install left)")
+        except Exception:
+            pass
     route = ""
     if "--route" in args and args.index("--route") + 1 < len(args):
         route = args[args.index("--route") + 1]

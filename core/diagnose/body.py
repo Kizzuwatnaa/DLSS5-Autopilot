@@ -26,7 +26,8 @@ from .live import _bridge_excerpt, _bridge_text
 __all__ = [
     "CLOSED_ITSELF", "NEVER_STARTED", "_block", "_dlss_record_root",
     "_last_lines", "_presence", "answered", "event_line", "said_started",
-    "_reshade_excerpt", "_their_provider", "_tool_log_lines", "issue_body"
+    "_reshade_excerpt", "_their_provider", "_tool_log_lines", "issue_body",
+    "PASTE_FIRST", "issue_url", "event_module"
 ]
 
 def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
@@ -107,6 +108,20 @@ def _opti_kind(ln: str) -> str:
     of finished pictures, #168 #311)."""
     if "forwarder loaded" in ln:
         return "forwarder"
+    # Lines _analyse_optiscaler decides on that are not DLSS-NR's own: the
+    # report has to carry them, or the replay cannot see what the window
+    # saw (#768 lost its failed Present this way).
+    if re.search(r"Original present result:\s*(?!0)[0-9A-Fa-f]{8}", ln):
+        return "present"
+    if "present failed" in ln.lower():
+        return "presentfail"
+    if "[writeMiniDump] Exception detected" in ln:
+        return "dump"
+    if "Vulkan is creating swapchain" in ln:
+        return "vulkan"
+    # whether OptiScaler saw the game's FSR / XeSS calls (_check_inputs)
+    if any(k in ln for k in model._INPUT_SEEN + model._INPUT_NEVER):
+        return "input"
     if not ("DLSS-NR" in ln or "dlssnr" in ln.lower()):
         return ""
     if re.search(r"DlssNr\.\w+:", ln):
@@ -257,8 +272,18 @@ def _presence(install_dir: Path, man: dict, route: str, game_root=None) -> list[
         # antivirus quarantine for a file that never existed.
         any_layer, mine = model._layer_state(man)
         bits = 32 if man.get("bitness") == 32 else 64
+        # Which list: a game started as administrator reads only the
+        # machine's, and the report is where the next reader finds out
+        # whether that was ever written (#562).
+        try:
+            from .. import vulkan as _vk
+            where = (" (for this user and on the machine's list)"
+                     if _vk.reaches_elevated(bits == 64)
+                     else " (for this user only)")
+        except Exception:
+            where = ""
         extra.append(f"- ReShade {bits}-bit Vulkan layer: "
-                     + ("registered" if mine else
+                     + ("registered" + where if mine else
                         "NOT REGISTERED"
                         + (" (another ReShade layer is, for the other "
                            "architecture)" if any_layer else "")))
@@ -548,6 +573,15 @@ def event_line(crash) -> str:
     return f"{crash.exe} faulted in {crash.module} {crash.code}".strip()
 
 
+def event_module(event: str) -> str:
+    """The module out of a report's "<exe> faulted in <module> <code>" line.
+
+    A module can be a whole path with spaces in it (#480), and the code can
+    be missing, so it is everything up to the code."""
+    m = re.search(r"faulted in (.+?)(?:\s+0x[0-9A-Fa-f]+)?\s*$", event or "")
+    return m.group(1).strip().replace("/", "\\").rsplit("\\", 1)[-1] if m else ""
+
+
 def answered(rep: Report, started: str, presence=(), kind: str = "game",
              event: str = "") -> Report:
     """The verdict, corrected by what the person saw.
@@ -607,7 +641,14 @@ def answered(rep: Report, started: str, presence=(), kind: str = "game",
                         f"{f.title} {f.detail}"))]
     rep.findings.insert(0, Finding(BAD, f"You said the game {what}.", detail))
     # Whole strings, so core/verdicts.py can stage them by their own words.
-    if ran and said == CLOSED_ITSELF:
+    mod = event_module(event)
+    if ran and said == CLOSED_ITSELF and event:
+        # Windows recorded the fault: it crashed, it did not close itself.
+        # The same words the window prints (ctl_game.crash_overrides), so a
+        # replay of the report says what the person saw (#749).
+        rep.verdict = ("It ran, and then the game crashed - Windows recorded "
+                       "the fault" + (f" in {mod}." if mod else "."))
+    elif ran and said == CLOSED_ITSELF:
         rep.verdict = ("Neural rendering ran, then the game closed itself - "
                        "see below for what to take out first.")
     elif ran:
@@ -647,6 +688,36 @@ def _start_lines(game) -> str:
     except Exception:
         pass
     return out
+
+
+URL_MAX = 7800
+PASTE_FIRST = ("**The whole report is on your clipboard: click in this box, "
+               "press Ctrl+A, then Ctrl+V, then submit.** Below is only its "
+               "start.\n\n")
+
+
+def issue_url(repo: str, title: str, body: str, limit: int = URL_MAX) -> tuple[str, bool]:
+    """(the new-issue link, whether the body had to be cut).
+
+    Over GitHub's URL cap the whole body goes on the clipboard, and the link
+    used to carry one line asking for the paste - two of the four reports
+    filed that way arrived with that line and nothing else (#751 #770). Now
+    the link carries the longest start of the report that fits (the header,
+    the diagnosis and the file list come first), under the instruction, so
+    an issue nobody pasted into still says what happened."""
+    from urllib.parse import quote
+    base = f"{repo}/issues/new?title={quote(title)}&body="
+    if len(base + quote(body)) <= limit:
+        return base + quote(body), False
+    lines = body.splitlines(keepends=True)
+    lo, hi = 0, len(lines)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(base + quote(PASTE_FIRST + "".join(lines[:mid]))) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return base + quote(PASTE_FIRST + "".join(lines[:lo])), True
 
 
 def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
@@ -762,7 +833,19 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
     if route == "optiscaler":
         parts.append(_block("OptiScaler.log", _keyed_lines(opti, _opti_kind), 900))
     if route == "standalone":
-        parts.append(_block("standalone-dlssnr.log",
+        # One file for every game, and its lines carry no date: one written
+        # before this install is another game's, and #787 printed Dread
+        # Delusion's session under Forza Horizon 3 with nothing to say so.
+        title = "standalone-dlssnr.log"
+        try:
+            since = _installed_at(d) if d is not None else 0.0
+            sa = model.STANDALONE_LOG
+            if since and sa.is_file() and not _fresh(sa, since):
+                title += (" (last written " + datetime.fromtimestamp(sa.stat().st_mtime)
+                          .strftime("%d %b %H:%M") + ", before this install - not this game's)")
+        except (OSError, ValueError):
+            pass
+        parts.append(_block(title,
                             _keyed_lines(_tail(model.STANDALONE_LOG, TAIL_STANDALONE),
                                          _standalone_kind), 900))
     if route == "remix" and d is not None:

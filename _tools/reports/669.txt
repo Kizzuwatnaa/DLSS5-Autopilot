@@ -1,0 +1,39 @@
+**Did the game start?** it never started
+
+**What happened**
+it never started and then when i started it through steam it didnt detect it
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 3070 (sm_86), driver 617.14
+- game: Half-Life 2: Episode Two
+- exe: elementviewer.exe
+- arch/api: 32-bit / Vulkan (loads vulkan-1.dll at run time (dxvk_d3d9.dll beside the exe imports it); no static graphics import)
+- route: feeder
+
+**Diagnosis**: Not started since the install - run the game once, then check again.
+- [warn] The game has not been started since the install.
+- [info] If you DID start it, it launches something other than elementviewer.exe.
+- [info] Or the game is not running on Vulkan.
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: registered
+- DLSS 5 add-on switch: NeuralUplift=1
+- Windows graphics setting: elementviewer.exe: High performance
+- Windows graphics setting: dlss5-feed-host64.exe: High performance
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

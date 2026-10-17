@@ -9,7 +9,12 @@ What is worth reporting, in the order it matters here:
 - **Anything that makes the tool write outside a game's own folder**, or
   restore a backup to somewhere other than where it came from. Every install
   is recorded in `dlss5-autopilot.json` beside the game and uninstall reads
-  only that.
+  only that. The Vulkan and OpenXR layer registrations are the exception by
+  design: they are shared by every install that needs them, listed
+  under **what will happen?** before an install, and found again from the
+  registry itself. When the tool runs as
+  administrator, the Vulkan layer is also registered for all users, from a
+  copy under Program Files that an unelevated program cannot replace.
 - **Anything that gets a file past the download checks.** Each component is
   fetched over HTTPS from its publisher's own release; archives are checked
   for being what their extension says before they are opened, and the

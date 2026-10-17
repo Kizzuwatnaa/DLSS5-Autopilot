@@ -209,11 +209,21 @@ def describe(c: Crash | None, proxy: str = "",
                 f"A fault in the same place with our file gone is the "
                 f"driver's or the game's.")
     if c.ours(written):
+        # Part of this install is not code this tool wrote: every file it
+        # installs is another project's (#511: dlss5-feed.addon32 was called
+        # "ours to fix", and the reply then sent the fault to the wrong one).
+        who = made_by(c.module)
         return (f"Windows recorded {c.exe} faulting in {c.module} "
                 f"({c.code or 'no code'}).",
-                f"That module is part of this install, at {where}. This is "
-                f"ours to fix: press 'report a bug' so the module, the "
-                f"exception code and the route go in together.")
+                f"That module is part of this install, at {where}"
+                + (f" - {who}'s code, which this tool installs. That is where "
+                   f"it faulted; the cause can still be another file in the "
+                   f"same process that called it. Press 'report a bug' so the "
+                   f"module, the exception code and the route go in together; "
+                   f"another build or route can be tried here."
+                   if who else
+                   ". Press 'report a bug' so the module, the exception code "
+                   "and the route go in together."))
     return (f"Windows recorded {c.exe} faulting in {c.module} "
             f"({c.code or 'no code'}).",
             f"That module is neither the game's executable nor anything this "
@@ -221,6 +231,35 @@ def describe(c: Crash | None, proxy: str = "",
             f"another mod. Close overlays (RivaTuner, Discord, GeForce "
             f"Experience) and try again; if it persists, that module is the "
             f"one to chase.")
+
+
+# Which project made a module this tool installs, by its file name. The
+# proxy names (dxgi.dll, d3d9.dll...) are not here: they are ReShade's,
+# DXVK's or OptiScaler's depending on the route, and describe() treats them
+# as ambiguous anyway.
+_MADE_BY_EXACT = {
+    # the standalone route's caller bridge, and OptiScaler's forwarder: both
+    # start with "nvngx" and neither is NVIDIA's
+    "nvngx.dll": "DLSS5-ReShade-AIO (standalone-dlssnr)",
+    "nvngx.dll_dlssnr.dll": "OptiScaler",
+}
+_MADE_BY = (("dlss5-feed", "DLSS5-Feeder"), ("vklayer_feed", "DLSS5-Feeder"),
+            ("dlss5-dx11-bridge", "dlss5-bridge"),
+            ("renodx", "renodx-dlss5"),
+            ("standalone-dlssnr", "DLSS5-ReShade-AIO (standalone-dlssnr)"),
+            ("dlss5-bridge", "dlss5-bridge"),
+            ("nvngx.dll.addon", "neural-upstream"),
+            ("reshade", "ReShade"), ("optiscaler", "OptiScaler"),
+            ("rtx40mfg", "RTX40MFG-Unlock"), ("mfgunlocker", "RTX40MFG-Unlock"),
+            ("nvngx", "NVIDIA's DLSS runtime"))
+
+
+def made_by(module: str) -> str:
+    """The project whose file `module` is, or "" when the name says nothing."""
+    low = _base(module or "")
+    if low in _MADE_BY_EXACT:
+        return _MADE_BY_EXACT[low]
+    return next((who for k, who in _MADE_BY if low.startswith(k)), "")
 
 
 # How Windows starts an executable, as opposed to how it ended. An elevated

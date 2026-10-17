@@ -244,6 +244,21 @@ def vulkan_games() -> list[str]:
     return v if isinstance(v, list) else []
 
 
+def vulkan_games_or_none() -> list[str] | None:
+    """The same list, or None when the settings cannot be read right now.
+
+    For the one caller that DELETES on "no Vulkan install left": a locked or
+    half-written settings file reads as an empty list through get(), and an
+    empty list there takes a registration away that installs still need
+    (gate 2.0.9)."""
+    with _lock:
+        data, readable = _read()
+    if not readable:
+        return None
+    v = data.get("vulkan_games", [])
+    return v if isinstance(v, list) else []
+
+
 def add_vulkan_game(install_dir) -> None:
     d = str(install_dir)
     games_ = vulkan_games()

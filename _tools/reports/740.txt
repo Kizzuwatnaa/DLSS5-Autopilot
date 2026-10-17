@@ -1,0 +1,47 @@
+**Did the game start?** it started and ran
+
+**What happened**
+dlss 5 don't work
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 5070 Ti (sm_120), driver 616.56
+- game: Indiana Jones and the Great Circle - Temple of Doomв„ў Outfit
+- exe: TheGreatCircle.exe
+- arch/api: 64-bit / Vulkan (imports vulkan-1.dll, no DXGI)
+- route: feeder
+- compatibility flags: HIGHDPIAWARE (per user); HIGHDPIAWARE (all users)
+
+**Diagnosis**: The game loads nvngx_dlss.dll from another folder - ours is never reached.
+- [bad] At 11 Oct 13:21 the game had nvngx_dlss.dll loaded from somewhere else, not from this folder.
+
+**Files in the folder**
+- dlss5-feed.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 64-bit Vulkan layer: registered
+- DLSS 5 add-on switch: NeuralUplift=1
+- streamline/nvngx_dlss.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- streamline/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- streamline/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+
+**What ran, and what it loaded** (seen at 11 Oct 13:21)
+- process: TheGreatCircle.exe
+- ran from: TheGreatCircle.exe
+- DLLs in the process: 206
+- ours, loaded: none
+- same name, loaded from elsewhere: C:\Games\The Great Circle\streamline\nvngx_dlss.dll
+- ours, not loaded: dlss5-feed.addon64, nvngx_dlssnr.dll, renodx-dlss5.addon64
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

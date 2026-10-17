@@ -18,6 +18,8 @@ PE_X86 = 0x014C
 
 # Helper programs to skip when looking for the actual game executable.
 _SKIP_PARTS = (
+    # srcds: Valve's dedicated server, in the root beside the game (2.0.9)
+    "srcds",
     "unins", "setup", "vcredist", "dxsetup", "dotnet", "prereq", "redist",
     "crashhandler", "crashreport", "crashpad", "easyanticheat", "battleye",
     "touchup", "installer", "activation", "cleanup", "helper", "webhelper",
@@ -1028,6 +1030,25 @@ def real_exe_for(exe: Path, candidates: list[Path] | None = None) -> Path | None
     return better[0] if better else None
 
 
+def _source_layout(folder: Path) -> bool:
+    """Valve's Source layout, by its two own marks: engine.dll under bin\\
+    (32- or 64-bit) and a gameinfo.txt in one of the game folders beside it.
+
+    Both, because bin\\engine.dll alone is a name other engines use too, and
+    one of those may keep its real executable in bin\\ behind a small
+    starter in the root.
+    """
+    try:
+        if not any((folder / "bin" / sub / "engine.dll").is_file()
+                   for sub in ("", "x64", "win64")):
+            return False
+        with os.scandir(folder) as it:
+            return any(e.is_dir() and os.path.isfile(
+                os.path.join(e.path, "gameinfo.txt")) for e in it)
+    except OSError:
+        return False
+
+
 def find_game_exes(folder: Path) -> list[Path]:
     """Candidate game executables, most likely first."""
     folder = Path(folder)
@@ -1056,6 +1077,19 @@ def find_game_exes(folder: Path) -> list[Path]:
         for p in cands:
             if launcher_like(p):
                 score[p] -= 600
+    # Valve's Source layout: the game's executable sits in the root and is
+    # tiny (hl2.exe is about 100 KB), and bin\ beside it holds engine.dll
+    # together with the SDK's tools - elementviewer.exe, hlmv.exe,
+    # hammer.exe - each of them megabytes. "/bin/" and size together ranked a
+    # tool first: Half-Life 2: Episode Two was set up in front of
+    # elementviewer.exe, which nobody starts (#669). A boost for the root
+    # and no penalty for bin\, so a game that really does live in bin\
+    # behind a small root launcher still wins on its name and size.
+    if _source_layout(folder):
+        for p in cands:
+            if p.parent == folder and looks_like_game(p) \
+                    and not launcher_like(p):
+                score[p] += 500
     # Both builds of one game side by side: Subnautica.exe and
     # Subnautica32.exe score the same on name, folder and size, and the
     # 32-bit one was picked - the feeder went in front of an executable

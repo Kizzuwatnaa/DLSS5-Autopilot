@@ -160,6 +160,15 @@ def analyse(d: Path, text: str):
     kind = "video" if _video.PLAYER_EXE.lower() in \
         _header(text).get("exe", "").lower() else "game"
     ev = re.search(r"^- windows event: (.+?) at [\d-]+ [\d:]+ UTC\s*$", text, re.M)
+    if ev and not getattr(rep, "never_ran", False):
+        # The window's correction of a "play once" verdict over a counted
+        # fault (ctl_game.crash_overrides, #748). The event line is printed
+        # only for a fault that counted, so this invents nothing.
+        from core.ui.ctl_game import crashed_waiting, waiting_verdict
+        if waiting_verdict(rep):
+            rep.verdict = crashed_waiting(diagnose.event_module(ev.group(1)))
+            rep.findings = [f for f in rep.findings
+                            if "play once and check again" not in f"{f.title} {f.detail}"]
     return diagnose.answered(rep, started(text), presence(text), kind,
                              ev.group(1).strip() if ev else "")
 
@@ -197,6 +206,7 @@ def folder_state(text: str) -> dict | None:
     layer: bool | None = None
     opti_tag = ""
     opti_build = ""
+    no_record = False
     remix: dict = {"trex": False, "files": {}, "flavour": "", "key": "",
                    "key_set": False, "swapped": False,
                    # The report's own finding that its Remix log was older
@@ -210,6 +220,14 @@ def folder_state(text: str) -> dict | None:
         name, _, state = line[2:].partition(":")
         name, state = name.strip(), state.strip()
         low = name.lower()
+        if low == "install record":
+            # "- install record: MISSING (no install recorded in this
+            # folder)": the report saying outright there is no record. Not a
+            # file, and it outranks a file that only names a route (#761: the
+            # standalone nvngx.dll line rebuilt a record the person had just
+            # uninstalled, and the replay blamed antivirus).
+            no_record = state.upper().startswith("MISSING")
+            continue
         # The Remix route first, and before the prefix list below: ".trex"
         # is a prefix of ".trex/d3d9.dll" too, so every runtime file was
         # swallowed by that list and the branch meant for them was dead
@@ -314,7 +332,7 @@ def folder_state(text: str) -> dict | None:
         api = head.get("arch/api", "")
         kind = "d3d9" if "DX9" in api else "d3d8" if "DX8" in api else "d3d11"
         dxvk_logs[f"{stem}_{kind}.log"] = True
-    return {"files": files, "manifest": named, "proxy": proxy, "layer": layer,
+    return {"files": files, "manifest": named and not no_record, "proxy": proxy, "layer": layer,
             "dxvk_logs": dxvk_logs,
             "remix": remix if (remix["trex"] or remix["key"]) else None,
             "opti_tag": opti_tag, "opti_build": opti_build,
@@ -486,6 +504,13 @@ def machine(text: str, d: Path):
     sa = d / "standalone-dlssnr.log"
     if logs.get("standalone"):
         sa.write_text(logs["standalone"], encoding="utf8")
+        # The report said it was older than the install (#787): rebuilt now,
+        # it would read as this launch's.
+        man_ = d / "dlss5-autopilot.json"
+        if re.search(r"\*\*standalone-dlssnr\.log \(last written [^\n]*before this install",
+                     text) and man_.is_file():
+            old = man_.stat().st_mtime - 3600
+            os.utime(sa, (old, old))
     layer = (state or {}).get("layer")
     reg = (True, True) if layer is None else (layer, layer)
     drv = re.search(r"driver\s+([\d.]+)", _header(text).get("gpu", ""))
@@ -520,12 +545,14 @@ def machine(text: str, d: Path):
     flags = head.get("starts as administrator") or head.get("compatibility flags") or ""
     tool_admin = "administrator" in head.get("this tool", "")
     with patch.object(diagnose.model, "STANDALONE_LOG", sa), \
+            patch.object(diagnose.chain, "_other_standalone", lambda _d: []), \
             patch.object(_wc, "start_flags", lambda _exe: flags), \
             patch.object(_wc, "elevated", lambda: tool_admin), \
             patch.object(diagnose.model, "_layer_state", lambda man: reg), \
             patch.object(_watch, "RECORD", rec_file), \
             patch.object(_watch, "inspect", lambda *a, **k: []), \
             patch.object(_vk, "name_clash", lambda: None), \
+            patch.object(_vk, "reaches_elevated", lambda x64: False), \
             patch.object(_gpu, "driver_version",
                          lambda: drv.group(1) if drv else None):
         yield
@@ -572,6 +599,8 @@ def sighting(text: str) -> dict:
             rec["refused"] = val.split(" - ", 1)[-1] or "refused"
         elif key == "dlls in the process":
             rec["modules"] = int(re.sub(r"\D", "", val) or 0)
+        elif key == "graphics dlls in the process":
+            rec["graphics"] = names(val)
         elif key == "ours, loaded":
             rec["ours"] = names(val)
         elif key == "same name, loaded from elsewhere":

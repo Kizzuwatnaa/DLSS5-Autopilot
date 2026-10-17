@@ -1,0 +1,22 @@
+**Did the game start?** it never started
+
+**What happened**
+the problem is with the application itself and not a game. Every time I start the application it opens in full screen and on 32:9 it is quite annoying. Can anything be done so that the window opens again like it was last time?
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 617.14
+- game: -
+- exe: -
+- arch/api: - / -
+- route: -
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

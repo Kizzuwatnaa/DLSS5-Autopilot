@@ -50,6 +50,11 @@ build.bat                        a local .exe; the release build is GitHub's
 - A component bundled into the repository or the release archive. Everything
   is fetched at run time from its own publisher - see [NOTICE](NOTICE).
 - Anything that writes outside the game's folder without recording it in
-  that install's manifest, or that uninstall cannot take back out.
+  that install's manifest, or that uninstall cannot take back out. The
+  Vulkan and OpenXR layer registrations are the exception (see
+  [SECURITY](SECURITY.md)): shared by every install that needs them, listed
+  under **what will happen?** before an install, and removed with the last
+  install that needs them (the all-users Vulkan copy only when the tool
+  runs as administrator).
 - A rule that decides something about a game from one weak signal. The API
   detection is full of scars from exactly that.

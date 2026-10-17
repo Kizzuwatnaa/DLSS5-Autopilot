@@ -31,6 +31,40 @@ __all__ = [
     "_explain_no_log", "analyse"
 ]
 
+def _other_standalone(install_dir: Path) -> list[str]:
+    """Every other folder this tool installed the standalone route into.
+
+    Its log is one file in %LOCALAPPDATA% for all of them, so it is only
+    evidence about this folder when there is no other (the replay patches
+    this: the reporter's PC is not the one replaying)."""
+    from .. import prefs as _prefs
+    here = os.path.normcase(str(install_dir))
+    out = []
+    try:
+        for d in _prefs.installs():
+            if os.path.normcase(str(d)) != here and \
+                    str((_manifest(Path(d)) or {}).get("path") or "") == "standalone":
+                out.append(str(d))
+    except Exception:
+        return ["?"]
+    return out
+
+
+def _standalone_ran_here(install_dir: Path, since: float) -> bool:
+    """The standalone add-on's own log holds a session after this install,
+    and no other folder could have written it."""
+    sa = model.STANDALONE_LOG
+    try:
+        if not (since and sa.is_file() and _fresh(sa, since)):
+            return False
+    except OSError:
+        return False
+    if _other_standalone(install_dir):
+        return False
+    return _STANDALONE_SESSION in _tail(sa, TAIL_STANDALONE) \
+        or "contract ready:" in _tail(sa, TAIL_STANDALONE)
+
+
 def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                     stale_reshade: bool) -> Report:
     """No current log: read the folder instead and name the likeliest cause.
@@ -176,6 +210,29 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
         from .. import wincrash as _wc
         exe_name = str(man.get("exe") or "")
         flags = _wc.start_flags(install_dir / exe_name) if exe_name else ""
+        # ...and none of that is the reason once a ReShade layer is on the
+        # machine's list, which an elevated process does read (2.0.9, #562):
+        # blaming the start then repeats advice that was already followed.
+        try:
+            from .. import vulkan as _vk2
+            _reaches = bool(_vk2.reaches_elevated(bits == 64))
+        except Exception:
+            _reaches = False
+        if _reaches:
+            rep.add(BAD, "DXVK ran, and ReShade did not.",
+                    f"{dxvk_logs[0]} was written since the install, so the "
+                    f"{app} was started and DXVK loaded - but ReShade writes "
+                    f"ReShade.log the moment it loads, and there is none. A "
+                    f"ReShade layer the {app} can load is registered for "
+                    f"this user and on the machine's list, the one a program "
+                    f"started as administrator reads, so how the {app} is "
+                    f"started is unlikely to be the reason. Press 'report a bug' under "
+                    f"help: a {bits}-bit layer that is registered in both "
+                    f"places and does not load is worth knowing about.")
+            rep.verdict = ("DXVK ran and ReShade did not, with ReShade's "
+                           "layer registered for elevated programs too - "
+                           "report it.")
+            return rep
         if _wc.runs_as_admin(flags):
             rep.add(BAD, f"{exe_name} is set to run as administrator "
                          f"({flags}).",
@@ -186,7 +243,11 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                     f"which is where ReShade's layer is. Right-click "
                     f"{exe_name} -> Properties -> Compatibility, untick 'Run "
                     f"this program as an administrator' (also under 'Change "
-                    f"settings for all users'), then start the {app} again.")
+                    f"settings for all users'), then start the {app} again. "
+                    f"Or leave it ticked, start this tool as administrator "
+                    f"and install again: the layer then goes on the "
+                    f"machine's list as well, which an elevated program "
+                    f"does read.")
             rep.verdict = (f"{exe_name} runs as administrator, so ReShade's "
                            f"Vulkan layer is skipped - untick 'Run as "
                            f"administrator' on the exe.")
@@ -204,11 +265,18 @@ def _explain_no_log(install_dir: Path, man: dict, rep: Report,
                 + f". An elevated process does not get the Vulkan layers "
                 f"registered per user, which is where ReShade's is. Start "
                 f"the {app} the way you normally do, not as administrator. "
+                f"When that is not on offer - the {app} asks for "
+                f"administrator rights itself, or Windows runs with UAC off "
+                f"and starts everything that way - install again with "
+                f"this tool running as administrator: it then puts the "
+                f"layer on the machine's list too, the one an elevated "
+                f"program does read. "
                 f"If there is still no ReShade.log, say so in an issue with "
                 f"this report - a {bits}-bit layer that registers and does "
                 f"not load is worth knowing about.")
         rep.verdict = (f"DXVK ran and ReShade did not - if anything starts "
-                       f"the {app} as administrator, start it normally.")
+                       f"the {app} as administrator, start it normally, or "
+                       f"install again with this tool run as administrator.")
         return rep
 
     # Did the game itself run? Its own files answer that, and the answer
@@ -647,6 +715,25 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                 "and greyed-out frame-gen multipliers are the usual result. "
                 "Try one at a time.")
 
+    if not (text or rtext or htext) and rep.route == "standalone" \
+            and _standalone_ran_here(install_dir, since):
+        # No ReShade.log, and the add-on that only ReShade loads wrote a
+        # session after this install: ReShade ran here and could not write
+        # its own log (#744 - four minutes of NR=Success read as "not
+        # started since the install").
+        rep.ran = True
+        try:
+            at = datetime.fromtimestamp(model.STANDALONE_LOG.stat().st_mtime).strftime("%d %b %H:%M")
+        except OSError:
+            at = ""
+        rep.add(WARN, "ReShade ran here and left no ReShade.log.",
+                f"The standalone add-on, which only ReShade loads, wrote its own "
+                f"log{' at ' + at if at else ''}, after this install. ReShade "
+                f"writes ReShade.log beside the game, so most likely the game "
+                f"cannot write to this folder - one known case is a folder only "
+                f"an administrator can write to (Program Files outside a Steam "
+                f"library) with the game started normally.")
+        return _analyse_standalone(rep, since, True, install_dir, man)
     if not (text or rtext or htext):
         return _explain_no_log(install_dir, man, rep, stale_reshade)
 

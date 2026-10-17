@@ -319,8 +319,14 @@ def _bridge_verdict(rep: Report, run: BridgeRun, panel: str, rtext: str,
                        f"The bridge attached and delivered no frame from the "
                        f"driver's optical flow - the {own_panel} says why."
                        if synthetic else
-                       f"The bridge attached and delivered no frame - turn DLSS "
-                       f"on in the game's menu, then check the {own_panel}.")
+                       # Not "turn DLSS on": it was on for #637, with Ray
+                       # Reconstruction - which replaces Super Resolution,
+                       # the one call the bridge takes over.
+                       f"The bridge attached and delivered no frame - its log "
+                       f"shows no DLSS Super Resolution call from the game. In "
+                       f"the game's menu turn DLSS on and, if it has Ray "
+                       f"Reconstruction, turn that off, then check the "
+                       f"{own_panel}.")
         return True
     rep.verdict = (f"The bridge delivered {frames}; whether the neural pass "
                    f"drew them is in no log - switch the pass off and on in "

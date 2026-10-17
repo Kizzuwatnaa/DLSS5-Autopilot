@@ -1272,7 +1272,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 2.0.8", update.VERSION == "2.0.8", update.VERSION)
+check("version is 2.0.9", update.VERSION == "2.0.9", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -7393,8 +7393,11 @@ try:
           "another mod" in _wc.describe(_shared, "")[1])
     _ours = _wc.Crash("2026-09-09 11:08", "Game.exe", "dlss5-feed.addon64",
                       "0xC0000005", "Application Error")
-    check("a module we installed is called ours, plainly",
-          _ours.ours() and "ours to fix" in _wc.describe(_ours)[1])
+    check("a module we installed is part of this install, and names its maker (#511)",
+          _ours.ours() and "part of this install" in _wc.describe(_ours)[1]
+          and "DLSS5-Feeder's code" in _wc.describe(_ours)[1]
+          and "ours to fix" not in _wc.describe(_ours)[1],
+          _wc.describe(_ours)[1])
     _own = _wc.Crash("2026-09-09 11:08", "Game.exe", "Game.exe",
                      "0xC0000005", "Application Error")
     check("...and the game faulting in its own code is not blamed on us",
@@ -8677,8 +8680,8 @@ check("a proxy-named fault stays ambiguous even though we wrote that file",
 _mine = _wc.Crash(when="2026-09-10 01:00:00", exe="Game.exe",
                   module="RTX40MFGCore.dll", code="0xC0000005",
                   provider="Application Error")
-check("...while a file only we write is ours, whatever it is called",
-      "ours to fix" in _wc.describe(_mine, "dxgi.dll",
+check("...while a file only we write is part of this install, whatever it is called",
+      "part of this install" in _wc.describe(_mine, "dxgi.dll",
                                     ("dxgi.dll", "RTX40MFGCore.dll"))[1])
 _theirs_c = _wc.Crash(when="2026-09-10 01:00:00", exe="Game.exe",
                       module="RTSSHooks64.dll", code="0xC0000005",
@@ -11438,8 +11441,26 @@ from core import diagnose as _dpkg  # noqa: E402
 # lunks menu and log level), body +7 (the 1.18 lines keyed, NGX cut out).
 # Pass 3: evidence +15 (only the game's own live process, a launcher is not
 # a proxy fault, no user path in "ran from"), chain +1.
-_parts = {"model": 490, "layer": 104, "evidence": 1316, "process": 232,  # evidence +3: its own words for a renderer no route reaches
-          "helper": 251, "live": 372, "routes": 1033, "body": 796, "chain": 1634}  # routes +5: a dump the session went on after (gate 2.0.5)
+# 2.0.9: evidence +62 (the renderer the running game loaded, #682:
+# _process_says_not_dxgi and its verdict, the report's graphics line), chain
+# +6 (the machine's-list way out for an elevated game, #562), live +4 (the
+# bridge's "no Super Resolution call" and why not "turn DLSS on", #637).
+# Gate 2.0.9 passes 1-2: evidence +32 (what was seen and when, several
+# renderers, DirectDraw alone, a hostile record), chain +28 (the machine's
+# list asked before the start is blamed), body +10 (which list, in the
+# report), layer +3, live +2.
+# 2.0.9 round 3 (October reports): evidence +56 (a Vulkan-layer install
+# nothing reached, #740; ReShade ran and cannot write, #787), routes +22
+# (a Present that failed after the model drew, #768), body +70 (the report
+# link that carries the report's head, #751; the module out of an event
+# line; "closed itself" with a fault is a crash, #749; a stale standalone
+# log marked, #787), chain +53 (the standalone log read when ReShade wrote
+# none, scoped to the only standalone folder, #744). Gate pass 1: evidence
+# +18 (the game's own nvngx_* never "elsewhere", also in an old record;
+# ReShade.log must be absent), routes +11 (only when nothing drew after it;
+# a lost device is not a window change), body +3 (the input-hook lines kept).
+_parts = {"model": 490, "layer": 107, "evidence": 1487, "process": 232,  # pass 3: +3, the verdicts say when and what to re-check  # evidence +3: its own words for a renderer no route reaches
+          "helper": 251, "live": 378, "routes": 1066, "body": 879, "chain": 1721}  # routes +5: a dump the session went on after (gate 2.0.5)
 _sizes = {n: sum(1 for _ in open(SRC_DIR / "core" / "diagnose" / f"{n}.py",
                                  encoding="utf8"))
           for n in _parts}
@@ -16125,7 +16146,7 @@ _v400b, _f400b = _replay205("400", "- this tool: running as administrator")
 # The tool's state NOW is not how the game was started (gate 2.0.5): it is
 # named as one possibility, never as the verdict's cause.
 check("...and with this tool elevated it is named as a possibility, not the verdict",
-      _v400b == _v400 and "if anything starts the game as administrator, start it normally" in _v400b
+      _v400b == _v400 and "if anything starts the game as administrator, start it normally, or install again with this tool run as administrator" in _v400b
       and any("this tool is running as administrator right now" in f[2] for f in _f400b)
       and not any("this tool is running as administrator right now" in f[2]
                   for f in _replay205("400")[1]), (_v400b, _f400b))
@@ -17519,9 +17540,16 @@ check("an evaluate that failed without the bridge stopping is a warning, not a s
 # has no delivered-frame line".
 _att21b = _run21b(_ATT21B)
 check("attached and no frame: the verdict says so, not 'this route logs no frames'",
-      _att21b.verdict.startswith("The bridge attached and delivered no frame - turn DLSS on")
+      _att21b.verdict.startswith("The bridge attached and delivered no frame - its log shows no DLSS Super Resolution call")
       and "logs no frames" not in _att21b.verdict and "does not log frames" not in _att21b.verdict
       and _vd21b.stage(_att21b.verdict)[0] == "6 set up, not switched on", _att21b.verdict)
+# #637: DLSS was on, with Ray Reconstruction, and the verdict said "turn DLSS
+# on". The sentence names the call the bridge takes over, and the old one
+# still maps for results shared by 2.0.7 and 2.0.8.
+check("...it names Ray Reconstruction, and the retired sentence keeps its stage",
+      "if it has Ray Reconstruction, turn that off" in _att21b.verdict and "In the game's menu" in _att21b.verdict
+      and _vd21b.stage("The bridge attached and delivered no frame - turn DLSS on in the game's menu, then check x.")[0]
+      == "6 set up, not switched on", _att21b.verdict)
 # Three failed evaluates are BridgeFail's "stopped: evaluate": said in words,
 # with the last NGX code, and the module a fault named is carried.
 _three21b = _run21b(_ATT21B + _FRAMES21B + "".join(
@@ -18089,8 +18117,13 @@ try:
     check("...and has no card, so an RTX 50 or an unknown card is not refused",
           _op6.card_refusal(_jn, 120) == "" and _op6.card_refusal(_jn, 89) == ""
           and _op6.card_refusal(_jn, None) == "")
-    check("it is not a variant: no skip list, no wanted word",
-          _op6.FORKS[_jn][1] == () and _jn not in _op6.WANT)
+    # 0.1.28 added a test zip beside the standard one; the real names.
+    _jn28 = [{"name": n} for n in ("Optional-Vendor-Neutral-DLSS5-Forwarder.zip",
+                                   "OptiScaler-DLSSNR-F5-test-0.1.28-dxvk-reframework-e0ed6c1f.zip",
+                                   "OptiScaler-DLSSNR-F5-0.1.28.zip")]
+    check("it is not a variant (no wanted word), and its test zip is passed over",
+          _jn not in _op6.WANT and _op6.FORKS[_jn][1] == ("-test-",)
+          and _op6._pick_archive(_jn28, _op6.FORKS[_jn][1])["name"] == "OptiScaler-DLSSNR-F5-0.1.28.zip")
 
     _d6 = _P6(_tf6.mkdtemp(prefix="janblade_"))
     _exe6 = _d6 / "game.exe"
@@ -18126,6 +18159,604 @@ try:
 except Exception as _e6:
     import traceback as _tb6
     check("the 2.1 Janblade section ran to its end", False, "".join(_tb6.format_exception(_e6))[-400:])
+
+
+section("2.0.9: the window opens the way it was closed (#641)")
+try:
+    import tempfile as _tf9
+    import tkinter as _tk9
+    from pathlib import Path as _P9
+    from core import prefs as _pf9
+    from core.ui import shell as _sh9
+
+    def _open9():
+        _r = _tk9.Tk()
+        _s = _sh9.Shell(_r)
+        _r.update()
+        return _r, _s
+
+    def _shut9(_r):
+        for _j in _r.tk.call("after", "info"):          # the shell's own timers
+            _r.after_cancel(_j)
+        _r.destroy()
+
+    with patch.object(_pf9, "FILE", _P9(_tf9.mkdtemp(prefix="win641_")) / "settings.json"):
+        _r9, _s9 = _open9()
+        check("nothing remembered: it opens maximised, as it always did", _r9.state() == "zoomed", _r9.state())
+        _r9.state("normal")
+        _r9.geometry("1000x700+60+40")
+        _r9.update()
+        _s9.remember_window()
+        _kept9 = _pf9.get("window")
+        check("closed un-maximised: the size and the place are kept",
+              _kept9 == {"zoomed": False, "w": 1000, "h": 700, "x": 60, "y": 40}, str(_kept9))
+        _shut9(_r9)
+        _r9, _s9 = _open9()
+        check("...and it opens there, not maximised",
+              (_r9.state(), _r9.geometry()) == ("normal", "1000x700+60+40"), (_r9.state(), _r9.geometry()))
+        _r9.state("zoomed")
+        _r9.update()
+        _s9.remember_window()
+        _zoom9 = _pf9.get("window")
+        _r9.iconify()
+        _r9.update()
+        _s9.remember_window()
+        check("closed maximised: remembered, and the size from before is kept for the day it is restored",
+              _zoom9 == dict(_kept9, zoomed=True), str(_zoom9))
+        check("closed minimised: says nothing about where the window belongs", _pf9.get("window") == _zoom9)
+        _shut9(_r9)
+        _pf9.set_("window", {"zoomed": False, "w": 1000, "h": 700, "x": 99000, "y": 40})
+        _r9, _s9 = _open9()
+        check("a place on a display that is gone: the size is kept, the window stays reachable",
+              _r9.winfo_width() == 1000 and 0 <= _r9.winfo_x() < _r9.winfo_screenwidth(), _r9.geometry())
+        _shut9(_r9)
+        for _junk9 in ("x", ["a"], {"w": "a"}, {"zoomed": False}, {"w": None, "h": 1, "x": 1, "y": 1},
+                       {"zoomed": False, "w": 999000, "h": 700, "x": 0, "y": 0}):
+            _pf9.set_("window", _junk9)
+            _r9, _s9 = _open9()
+            _s9.remember_window()
+            check(f"a hand-edited entry does not stop the window: {_junk9!r}",
+                  _r9.winfo_width() <= _r9.winfo_screenwidth(), _r9.geometry())
+            _shut9(_r9)
+    check("closing the window is what remembers it - before the tray takes it away",
+          src_of(__import__("core.ui.ctl_watch", fromlist=["x"]).WatchControl.on_close)
+          .index("remember_window") < src_of(__import__("core.ui.ctl_watch", fromlist=["x"]).WatchControl.on_close)
+          .index("withdraw"))
+except Exception as _e9:
+    import traceback as _tb9
+    check("the #641 window section ran to its end", False, "".join(_tb9.format_exception(_e9))[-400:])
+
+
+section("2.0.9: a game started as administrator gets ReShade's Vulkan layer (#562)")
+# The loader's own trace from #562 read HKEY_LOCAL_MACHINE\...\ImplicitLayers
+# and never HKEY_CURRENT_USER: the game ran elevated, and ours is registered
+# per user. When this tool is elevated it now writes the machine's list too -
+# the 64-bit manifest in the 64-bit view, the 32-bit one in the 32-bit view,
+# because HKLM\Software is redirected per architecture.
+try:
+    import types as _ty9v, tempfile as _tf9v, winreg as _wr9v
+    from unittest.mock import patch as _patch9v
+    from core import vulkan as _vk9, wincrash as _wc9, net as _net9v
+    _st9v, _adm9v = {}, {"on": False}
+    _V64, _V32 = _wr9v.KEY_WOW64_64KEY, _wr9v.KEY_WOW64_32KEY
+
+    class _K9v:
+        def __init__(self, slot): self.slot = slot
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def _slot9v(hive, key, access):
+        return (hive, key, 0 if hive == _wr9v.HKEY_CURRENT_USER
+                else (_V32 if access & _V32 else _V64))
+
+    def _open9v(hive, key, reserved=0, access=_wr9v.KEY_READ):
+        slot = _slot9v(hive, key, access)
+        if slot not in _st9v:
+            raise FileNotFoundError(key)
+        if hive == _wr9v.HKEY_LOCAL_MACHINE and access & _wr9v.KEY_SET_VALUE \
+                and not _adm9v["on"]:
+            raise PermissionError(5, "Access is denied")
+        return _K9v(slot)
+
+    def _create9v(hive, key, reserved=0, access=_wr9v.KEY_WRITE):
+        if hive == _wr9v.HKEY_LOCAL_MACHINE and not _adm9v["on"]:
+            raise PermissionError(5, "Access is denied")
+        _st9v.setdefault(_slot9v(hive, key, access), {})
+        return _K9v(_slot9v(hive, key, access))
+
+    def _query9v(k, name):
+        if name not in _st9v[k.slot]:
+            raise FileNotFoundError(name)
+        return _st9v[k.slot][name], _wr9v.REG_DWORD
+
+    def _enum9v(k, i):
+        items = list(_st9v[k.slot].items())
+        if i >= len(items):
+            raise OSError("no more")
+        return items[i][0], items[i][1], _wr9v.REG_DWORD
+
+    def _del9v(k, name):
+        if name not in _st9v[k.slot]:
+            raise FileNotFoundError(name)
+        del _st9v[k.slot][name]
+
+    _fake9v = _ty9v.ModuleType("winreg")
+    for _n9v in dir(_wr9v):
+        if _n9v.isupper():
+            setattr(_fake9v, _n9v, getattr(_wr9v, _n9v))
+    _fake9v.OpenKey, _fake9v.CreateKeyEx = _open9v, _create9v
+    _fake9v.QueryValueEx, _fake9v.EnumValue, _fake9v.DeleteValue = _query9v, _enum9v, _del9v
+    _fake9v.SetValueEx = lambda k, name, r, t, v: _st9v[k.slot].__setitem__(name, v)
+
+    def _extract9v(setup, name, dest):
+        if name.endswith(".json"):
+            Path(dest).write_text(json.dumps({"layer": {
+                "name": "VK_LAYER_reshade",
+                "library_path": ".\\" + name.replace(".json", ".dll")}}), encoding="utf8")
+        else:
+            Path(dest).write_bytes(b"MZ")
+
+    _dir9v = Path(_tf9v.mkdtemp(prefix="vk209_"))
+    _mdir9v = _dir9v / "program files" / "reshade-vulkan"
+    _HKCU9 = (_wr9v.HKEY_CURRENT_USER, _vk9.LAYER_KEY, 0)
+    _HKLM64 = (_wr9v.HKEY_LOCAL_MACHINE, _vk9.LAYER_KEY, _V64)
+    _HKLM32 = (_wr9v.HKEY_LOCAL_MACHINE, _vk9.LAYER_KEY, _V32)
+    with _patch9v.dict(sys.modules, {"winreg": _fake9v}), \
+            _patch9v.object(_vk9, "layer_dir", lambda: _dir9v), \
+            _patch9v.object(_vk9, "machine_dir", lambda: _mdir9v), \
+            _patch9v.object(_wc9, "elevated", lambda: _adm9v["on"]), \
+            _patch9v.object(_net9v, "extract_one", _extract9v):
+        _log9v = []
+        _vk9.install_layer(Path("setup.exe"), _log9v.append, also32=True)
+        check("not elevated: registered per user, nothing on the machine's list, no complaint",
+              len(_st9v.get(_HKCU9, {})) == 2 and _HKLM64 not in _st9v and _HKLM32 not in _st9v
+              and not any("could not" in l for l in _log9v)
+              and not _vk9.reaches_elevated(False) and not _vk9.reaches_elevated(True), str(_log9v))
+        _adm9v["on"] = True
+        _log9v.clear()
+        _vk9.install_layer(Path("setup.exe"), _log9v.append, also32=True)
+        check("elevated: each manifest goes in the registry view its own loader reads",
+              list(_st9v.get(_HKLM64, {})) == [str(_mdir9v / "ReShade64.json")]
+              and list(_st9v.get(_HKLM32, {})) == [str(_mdir9v / "ReShade32.json")],
+              str({k[2]: list(v) for k, v in _st9v.items()}))
+        # Gate 2.0.9: what an elevated program loads must not be a file an
+        # unelevated one can replace, so the machine's list points at its own
+        # copy (Program Files on a real PC), never at the per-user folder.
+        check("...and points at a copy outside the per-user folder, files and all",
+              all((_mdir9v / n).is_file() for n in ("ReShade64.json", "ReShade64.dll",
+                                                    "ReShade32.json", "ReShade32.dll"))
+              and not any(str(_dir9v / n) in _st9v[_HKLM64] or str(_dir9v / n) in _st9v[_HKLM32]
+                          for n in ("ReShade64.json", "ReShade32.json")))
+        check("...the 32-bit one still under its own layer name (#31)",
+              _vk9.layer_name(_mdir9v / "ReShade32.json") == _vk9.LAYER_NAME32
+              and _vk9.layer_name(_dir9v / "ReShade32.json") == _vk9.LAYER_NAME32)
+        (_mdir9v / "ReShade64.dll").unlink()
+        check("a registration whose DLL is gone does not count as reaching an elevated game",
+              not _vk9.machine_registered(True) and _vk9.machine_leftover()[:1] == ["ReShade64.json"])
+        (_mdir9v / "ReShade64.dll").write_bytes(b"MZ")
+        check("...and the log says which list and why",
+              sum("machine's list" in l for l in _log9v) == 2, str(_log9v))
+        check("a manifest on both lists is one registration, not two",
+              len(_vk9.registrations()) == len({str(p) for p, _v in _vk9.registrations()}),
+              str(_vk9.registrations()))
+        check("reaches_elevated answers per architecture",
+              _vk9.reaches_elevated(True) and _vk9.reaches_elevated(False))
+        _adm9v["on"] = False
+        check("uninstall without the rights: the per-user ones go, the rest is NAMED",
+              _vk9.unregister() and not _st9v[_HKCU9]
+              and _vk9.machine_leftover() == ["ReShade64.json", "ReShade32.json"],
+              str(_vk9.machine_leftover()))
+        _adm9v["on"] = True
+        check("with a Vulkan install left, start-up leaves the machine's list alone",
+              _vk9.cleanup_machine(["D:\\Game"]) is False and len(_vk9.machine_leftover()) == 2)
+        _adm9v["on"] = False
+        check("not elevated, start-up cannot and does not claim to",
+              _vk9.cleanup_machine([]) is False and len(_vk9.machine_leftover()) == 2)
+        _adm9v["on"] = True
+        check("started as administrator with no Vulkan install left: it is taken off, files too",
+              _vk9.cleanup_machine([]) is True and _vk9.machine_leftover() == []
+              and not _st9v[_HKLM64] and not _st9v[_HKLM32] and not _mdir9v.exists())
+        check("...and a second one is a quiet no",
+              _vk9.unregister() is False and _vk9.cleanup_machine([]) is False)
+        # A foreign layer on the per-user list only: an elevated game never
+        # sees it, so an elevated install must not answer "reusing it".
+        _fh9v = _dir9v / "foreign64" / "ReShade64.json"
+        _fh9v.parent.mkdir()
+        _fh9v.write_text(json.dumps({"layer": {"name": "VK_LAYER_reshade",
+                                               "library_path": ".\\ReShade64.dll"}}), encoding="utf8")
+        _st9v[_HKCU9][str(_fh9v)] = 0
+        _m9v, _new9v = _vk9.install_layer(Path("setup.exe"), _log9v.append)
+        check("elevated beside a foreign per-user layer: ours goes on the machine's list",
+              _new9v and _vk9.machine_registered(True), str(_m9v))
+        _vk9.unregister()
+        _adm9v["on"] = False
+        _m9v, _new9v = _vk9.install_layer(Path("setup.exe"), _log9v.append)
+        check("not elevated, the foreign per-user layer is reused as before",
+              _m9v == _fh9v and _new9v is False, str(_m9v))
+        del _st9v[_HKCU9][str(_fh9v)]
+        _adm9v["on"] = True
+        # A foreign 32-bit ReShade layer on the machine's list calls itself
+        # VK_LAYER_reshade. Reusing it for a 32-bit game on a PC that has our
+        # 64-bit layer is the name clash of #31 again, so it is not looked at.
+        _for9v = _dir9v / "foreign" / "ReShade32.json"
+        _for9v.parent.mkdir()
+        _for9v.write_text(json.dumps({"layer": {"name": "VK_LAYER_reshade",
+                                                "library_path": ".\\ReShade32.dll"}}), encoding="utf8")
+        _st9v[_HKLM32][str(_for9v)] = 0
+        _adm9v["on"] = False
+        _m9v, _new9v = _vk9.install_layer(Path("setup.exe"), _log9v.append, also32=True)
+        check("a foreign 32-bit layer on the machine's list is not reused for a 32-bit game",
+              _new9v and _vk9.is_ours(_dir9v / "ReShade32.json")
+              and str(_dir9v / "ReShade32.json") in _st9v[_HKCU9], str(_m9v))
+    _src9u = src_of(installer.uninstall)
+    _left9u = installer.machine_leftover_text(["ReShade64.json"])
+    check("uninstall says so when the machine's registration is still there",
+          "machine_leftover_text" in _src9u and "still registered for all users" in _left9u)
+    check("...with a step a person can take once the game is gone: start the tool as administrator",
+          "start this tool once as administrator" in _left9u and "'uninstall'" not in _left9u
+          and "cleanup_machine" in src_of(__import__("core.ui.app", fromlist=["x"])._machine_cleanup)
+          and "cleanup_machine" in src_of(__import__("dlss5_autopilot").main), _left9u)
+    check("...and the window shows it, not only the closed log drawer",
+          '"warnings": [text]' in src_of(__import__("core.ui.ctl_game", fromlist=["x"]).GameControl._on_removed)
+          and "tool once as administrator to remove it" in src_of(__import__("core.ui.ctl_game", fromlist=["x"]).GameControl._on_removed))
+    check("...the card warning does not promise a removal uninstall cannot do",
+          src_of(installer.install).count("removes that part only while") == 1
+          and src_of(installer.preview).count("removes that part only while") == 1)
+    check("--check writes nothing: the command line cleans up on --remove only",
+          'if "--remove" in args:' in src_of(__import__("dlss5_autopilot").main))
+    # Gate 2.0.9 pass 2. Settings that cannot be read are not "no Vulkan
+    # install left"; and beside somebody else's machine-wide ReShade layer
+    # ours is not added (two 32-bit layers under two names would both load).
+    from core import prefs as _pf9v
+    with _patch9v.object(_pf9v, "_read", lambda: ({}, False)):
+        check("unreadable settings: the list is None, not empty",
+              _pf9v.vulkan_games_or_none() is None and _pf9v.vulkan_games() == [])
+    check("...and None never removes the machine's registration",
+          "vulkan_games is None" in src_of(_vk9.cleanup_machine)
+          and "vulkan_games_or_none" in src_of(installer.uninstall))
+    # Gate 2.0.9 pass 3: the preview asks vulkan what the install will do,
+    # so it cannot announce a Program Files copy the install skips.
+    check("the preview reads install_layer's own decision",
+          "vulkan.will_do(x64)" in src_of(installer.preview))
+    with _patch9v.dict(sys.modules, {"winreg": _fake9v}), \
+            _patch9v.object(_vk9, "layer_dir", lambda: _dir9v), \
+            _patch9v.object(_vk9, "machine_dir", lambda: _mdir9v), \
+            _patch9v.object(_wc9, "elevated", lambda: True), \
+            _patch9v.object(_net9v, "extract_one", _extract9v):
+        for _slot9w in (_HKCU9, _HKLM64, _HKLM32):
+            _st9v[_slot9w] = {}
+        check("elevated, nothing registered: ours, and the machine copy too",
+              _vk9.will_do(True) == (None, True) and _vk9.will_do(False) == (None, True))
+        _fm9w = _dir9v / "fm" / "ReShade64.json"
+        _fm9w.parent.mkdir(exist_ok=True)
+        _fm9w.write_text(json.dumps({"layer": {"name": "VK_LAYER_reshade",
+                                               "library_path": ".\\ReShade64.dll"}}), encoding="utf8")
+        _st9v[_HKLM64][str(_fm9w)] = 0
+        check("elevated beside a foreign machine-wide 64-bit layer: it is reused, no copy announced",
+              _vk9.will_do(True) == (_fm9w, False), str(_vk9.will_do(True)))
+        _st9v[_HKCU9][str(_dir9v / "ReShade64.json")] = 0
+        (_dir9v / "ReShade64.json").write_text(json.dumps({"layer": {"name": "VK_LAYER_reshade"}}), encoding="utf8")
+        check("...and with ours on the per-user list as well: ours stays, still no machine copy",
+              _vk9.will_do(True) == (None, False), str(_vk9.will_do(True)))
+        _log9w = []
+        _vk9.install_layer(Path("setup.exe"), _log9w.append)
+        check("...which is exactly what the install then does",
+              not (_mdir9v / "ReShade64.json").exists()
+              and str(_mdir9v / "ReShade64.json") not in _st9v[_HKLM64], str(_log9w))
+    check("the machine copy is extracted from the setup, not copied from the per-user folder",
+          "shutil" not in src_of(_vk9._for_elevated) and "_place(setup_exe" in src_of(_vk9._for_elevated))
+    check("a foreign machine-wide layer stops ours from being added beside it",
+          src_of(_vk9.install_layer).count("_foreign_machine(") == 2
+          and "Windows\\CurrentVersion" in src_of(_vk9.machine_dir)
+          and "os.environ" not in src_of(_vk9.machine_dir))
+    check("the preview discloses the machine-wide registration before it is made",
+          "machine's list (all users)" in src_of(installer.preview))
+    from core import autopilot as _ap9v
+    check("an elevated tool may start a layer game once the layer reaches elevated programs",
+          "_layer_reaches_elevated" in src_of(_ap9v.may_start))
+    _v562, _f562 = _replay205("562")
+    check("#562: the detail offers the way out that does not need a non-elevated start",
+          _v562.startswith("DXVK ran and ReShade did not")
+          and "install again with this tool run as administrator" in _v562
+          and any("machine's list" in (f[2] or "") for f in _f562), _v562)
+    # ...and once a layer IS on the machine's list, the start is not blamed.
+    # The replay pins reaches_elevated to False (their registry, not ours),
+    # so the branch is asked directly, with the answer it would get there.
+    from core.diagnose import chain as _ch9v
+    check("the elevated branches ask the machine's list before blaming the start",
+          src_of(_ch9v).index("reaches_elevated") < src_of(_ch9v).index("runs_as_admin(flags)")
+          and "registered for elevated programs too" in src_of(_ch9v))
+    from core import verdicts as _vd9v
+    check("...and that verdict keeps its stage",
+          _vd9v.stage("DXVK ran and ReShade did not, with ReShade's layer registered for "
+                      "elevated programs too - report it.")[0].startswith("3 "))
+except Exception as _e9v:
+    import traceback as _tb9v
+    check("the #562 machine-list section ran to its end", False,
+          "".join(_tb9v.format_exception(_e9v))[-600:])
+
+
+section("2.0.9: the running game says which renderer it has (#682)")
+try:
+    from core import watch as _w9g
+    from core.diagnose import evidence as _ev9g
+    _got9g = _w9g.Loaded(pid=1, paths=[r"C:\Windows\System32\OPENGL32.dll",
+                                       r"C:\Windows\System32\kernel32.dll",
+                                       r"D:\Game\SDL2.dll"])
+    check("graphics_of reads the names off the module list, whatever the case",
+          _w9g.graphics_of(_got9g) == ["opengl32.dll"], str(_w9g.graphics_of(_got9g)))
+    _man9g = {"proxy": "dxgi.dll", "exe": "Soma.exe"}
+    _says9g = _ev9g._process_says_not_dxgi
+    check("OpenGL in the process and no DXGI: the process is believed",
+          _says9g(_man9g, ["opengl32.dll"]) == ["OpenGL"])
+    check("DXGI in the process as well: nothing is claimed",
+          _says9g(_man9g, ["dxgi.dll", "opengl32.dll"]) is None
+          and _says9g(_man9g, ["d3d11.dll", "d3d9.dll"]) is None)
+    check("no renderer loaded yet is pending, not an answer",
+          _says9g(_man9g, []) is None)
+    check("a record from before the watcher looked (no key) claims nothing",
+          _says9g(_man9g, None) is None)
+    check("an install that is not a DXGI proxy is not second-guessed",
+          _says9g({"proxy": "opengl32.dll"}, ["d3d9.dll"]) is None
+          and _says9g({"proxy": installer.VULKAN_LAYER}, ["d3d9.dll"]) is None)
+    check("junk in a hand-edited record does not raise",
+          _says9g(_man9g, [None, 3, "OPENGL32.DLL"]) == ["OpenGL"]
+          and _says9g(_man9g, "opengl32.dll") is None)
+    _txt9g = (Path("_tools") / "reports" / "682.txt").read_text(encoding="utf8", errors="replace")
+    check("#682 as it was sent still gets the answer it got (no graphics line)",
+          "graphics DLLs in the process" not in _txt9g)
+    _rr9g = _rr205
+
+    def _replay9g(t):
+        t = t.replace("\r\n", "\n")
+        h = _rr9g._header(t)
+        d = _rr9g.build(h.get("route", "feeder"), "DX11", h.get("exe", "Game.exe"),
+                        _rr9g._blocks(t), 64, state=_rr9g.folder_state(t),
+                        extra_manifest=_rr9g.finished(t))
+        try:
+            return _rr9g.analyse(d, t).verdict
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    check("#682 as it was sent still gets the answer it got",
+          "try another proxy name" in _replay9g(_txt9g), _replay9g(_txt9g))
+    for _line9g, _want9g in (("opengl32.dll", "had OpenGL loaded and no DirectX 10/11/12 when the tool looked - if it was already drawing, set 'graphics api' to OpenGL and"),
+                             ("d3d9.dll", "if it was already drawing, set 'graphics api' to DirectX 9 and"),
+                             ("d3d9.dll, opengl32.dll", "set 'graphics api' to one of them"),
+                             ("d3d9.dll, ddraw.dll", "set 'graphics api' to DirectX 9 and"),
+                             ("ddraw.dll", "had only DirectDraw loaded when the tool looked, which no route reaches - start it and check again"),
+                             ("dxgi.dll, opengl32.dll", "try another proxy name"),
+                             ("none", "try another proxy name")):
+        _v9g = _replay9g(_txt9g.replace(
+            "- DLLs in the process: 102",
+            "- DLLs in the process: 102\n- graphics DLLs in the process: " + _line9g))
+        check(f"#682 with '{_line9g}' in the process: {_want9g}", _want9g in _v9g, _v9g)
+    # Gate 2.0.9: the sentence says what was seen and when, never "draws with".
+    _rep9w = _rr9g  # noqa
+    check("the finding says 'had loaded' with the time it was seen, and how to re-check",
+          "draws with DirectX" not in src_of(_ev9g._wrong_api_verdict).replace("A game that draws with DirectX 10/11/12 has", "")
+          and "press 'did it work?' once it is" in src_of(_ev9g._wrong_api_verdict)
+          and "when the tool looked" in src_of(_ev9g._wrong_api_verdict))
+    from core import verdicts as _vd9g
+    for _s9g in ("Soma.exe had OpenGL loaded and no DirectX 10/11/12 when the tool looked - if it was already drawing, set 'graphics api' to OpenGL and install again.",
+                 "Soma.exe had DirectX 9 and OpenGL loaded and no DirectX 10/11/12 when the tool looked - if it was already drawing, set 'graphics api' to one of them and install again.",
+                 "Soma.exe had only DirectDraw loaded when the tool looked, which no route reaches - start it and check again once it is drawing."):
+        check(f"a setup mistake, not a route failure: {_s9g[9:45]}...",
+              _vd9g.stage(_s9g)[0].startswith("3 ") and _vd9g.not_a_route(_s9g), _vd9g.stage(_s9g)[0])
+    check("a hostile record does not raise in the text either",
+          _says9g(_man9g, [["x"], {"a": 1}, "d3d9.dll"]) == ["DirectX 9"])
+    check("the report prints the line and the replay reads it back",
+          "graphics DLLs in the process" in src_of(_ev9g)
+          and "graphics dlls in the process" in src_of(_rr9g.sighting))
+except Exception as _e9g:
+    import traceback as _tb9g
+    check("the #682 renderer section ran to its end", False,
+          "".join(_tb9g.format_exception(_e9g))[-600:])
+
+
+section("2.0.9: a Source game is its root executable, not an SDK tool in bin (#669)")
+try:
+    import tempfile as _tf9s
+    _hl9 = Path(_tf9s.mkdtemp(prefix="src209_")) / "Half-Life 2"
+    (_hl9 / "bin").mkdir(parents=True)
+    (_hl9 / "ep2").mkdir()
+    (_hl9 / "ep2" / "gameinfo.txt").write_text('"GameInfo" {}', encoding="utf8")
+    (_hl9 / "bin" / "engine.dll").write_bytes(b"MZ")
+    (_hl9 / "hl2.exe").write_bytes(b"MZ" + b"\0" * 120_000)
+    for _n9s, _mb9s in (("elementviewer.exe", 3), ("hlmv.exe", 2), ("hammer.exe", 4)):
+        (_hl9 / "bin" / _n9s).write_bytes(b"MZ" + b"\0" * (_mb9s * 1024 * 1024))
+    _got9s = [p.name for p in pe.find_game_exes(_hl9)]
+    check("Half-Life 2's layout: hl2.exe first, the tools still offered",
+          _got9s[0] == "hl2.exe" and "elementviewer.exe" in _got9s, str(_got9s))
+    (_hl9 / "ep2" / "gameinfo.txt").unlink()
+    (_hl9 / "ep2" / "gameinfo.txt").write_text('"GameInfo" {}', encoding="utf8")
+    (_hl9 / "srcds.exe").write_bytes(b"MZ" + b"\0" * (6 * 1024 * 1024))
+    check("the dedicated server beside it does not outrank the game",
+          pe.find_game_exes(_hl9)[0].name == "hl2.exe", str([p.name for p in pe.find_game_exes(_hl9)]))
+    (_hl9 / "srcds.exe").unlink()
+    (_hl9 / "ep2" / "gameinfo.txt").unlink()
+    check("bin\\engine.dll alone is not Source: the ranking is what it was",
+          pe.find_game_exes(_hl9)[0].name != "hl2.exe",
+          str([p.name for p in pe.find_game_exes(_hl9)]))
+except Exception as _e9s:
+    import traceback as _tb9s
+    check("the #669 Source section ran to its end", False,
+          "".join(_tb9s.format_exception(_e9s))[-600:])
+
+
+section("2.0.9 round 3: the October reports' own lines (#740 #744 #748 #749 #751 #761 #768 #770 #787 #511)")
+import re  # noqa: E402
+try:
+    import verdict_check as _vc9  # noqa: E402
+    from core import gpu as _gpu9
+    from core.ui import ctl_game as _cg9
+    from core import wincrash as _wcx, verdicts  # noqa: F811
+    _R9 = SRC_DIR / "_tools" / "reports"
+
+    def _ans9(text: str) -> dict:
+        _p9 = Path(tempfile.mkdtemp(prefix="dlss5r9_")) / "r.txt"
+        _p9.write_text(text, encoding="utf8")
+        try:
+            return _vc9._answer(_p9)
+        finally:
+            shutil.rmtree(_p9.parent, ignore_errors=True)
+
+    # #770: a GTX 1650 is Turing (sm 75) with no tensor cores.
+    check("a GTX 1650 keeps sm 75 and is named a card DLSS cannot run on (#770)",
+          _gpu9.sm_for_name("NVIDIA GeForce GTX 1650") == 75
+          and "no tensor cores" in (_gpu9.no_dlss("NVIDIA GeForce GTX 1650", 75) or ""))
+    check("...an RTX 2060, the same sm, is not",
+          _gpu9.no_dlss("NVIDIA GeForce RTX 2060", 75) is None)
+    check("...and a card nothing can name is left to the build check",
+          _gpu9.no_dlss(None, None) is None)
+    _saved9 = _gpu9._adapters
+    _gpu9._adapters = lambda: ["NVIDIA GeForce GTX 1650", "Intel(R) UHD Graphics"]
+    try:
+        _d9 = Path(tempfile.mkdtemp(prefix="dlss5gtx_"))
+        shutil.copyfile(sys.executable, _d9 / "Game.exe")
+        _g9 = games.manual(_d9)
+        _g9.api = "DX11"
+        try:
+            installer.install(_g9, installer.Options(path="standalone"))
+            _why9 = ""
+        except installer.InstallError as _e9:
+            _why9 = str(_e9)
+        check("...and the install refuses it before the first write",
+              "no tensor cores" in _why9
+              and sorted(p.name for p in _d9.iterdir()) == ["Game.exe"],
+              (_why9[:80], sorted(p.name for p in _d9.iterdir())))
+        _pv9 = installer.preview(_g9, installer.Options(path="standalone"))
+        check("...and 'what will happen?' says the same before any plan",
+              any("no tensor cores" in b for b in _pv9.blockers), _pv9.blockers)
+        shutil.rmtree(_d9, ignore_errors=True)
+        # Windows keeps a removed card's entry: beside a card nothing can
+        # name, the old GTX must not refuse the new one (gate 2.0.9)
+        _gpu9._adapters = lambda: ["NVIDIA GeForce GTX 1660", "NVIDIA GeForce RTX 6090 Founders"]
+        check("...not while another NVIDIA card is one the tool cannot name",
+              _gpu9.no_dlss_here() is None)
+        _gpu9._adapters = lambda: ["NVIDIA GeForce GTX 1650", "NVIDIA GeForce RTX 2060"]
+        check("...nor beside an RTX card",
+              _gpu9.no_dlss_here() is None)
+        check("MX 450 and T1000 have no tensor cores either; an RTX A2000 does",
+              _gpu9.no_tensor_cores("NVIDIA GeForce MX450") and _gpu9.no_tensor_cores("NVIDIA T1000 8GB")
+              and not _gpu9.no_tensor_cores("NVIDIA RTX A2000"))
+    finally:
+        _gpu9._adapters = _saved9
+
+    # #751 #770: over the URL cap the link carries the start of the report.
+    _long9 = (_R9 / "761.txt").read_text(encoding="utf8") * 6
+    _u9, _cut9 = diagnose.issue_url("https://github.com/o/r", "t", _long9)
+    from urllib.parse import unquote as _unq9
+    _b9 = _unq9(_u9.split("&body=", 1)[1])
+    check("a long report: the link fits, and carries the instruction and the report's head (#751)",
+          _cut9 and len(_u9) <= 7800 and _b9.startswith(diagnose.PASTE_FIRST)
+          and "- version: 2.0.8" in _b9 and "- route: standalone" in _b9, (len(_u9), _b9[:120]))
+    _u9s, _cut9s = diagnose.issue_url("https://github.com/o/r", "t", "short body")
+    check("...a short one goes in whole, nothing on the clipboard",
+          not _cut9s and _u9s.endswith("short%20body"))
+    check("...and nothing prints the old one-line placeholder",
+          "details are on your clipboard - paste them here" not in
+          (SRC_DIR / "core" / "ui" / "app.py").read_text(encoding="utf8"))
+
+    # #511: a module of this install is another project's code.
+    _c9 = _wcx.Crash("2026-10-10 16:29:27", "king.exe", "dlss5-feed.addon32",
+                     "0xC0000005", "Application Error")
+    _s9 = _wcx.describe(_c9, "d3d9.dll", ("dlss5-feed.addon32",))[1]
+    check("a fault in dlss5-feed.addon32 names DLSS5-Feeder, not us (#511)",
+          "DLSS5-Feeder's code" in _s9 and "ours to fix" not in _s9, _s9[:120])
+    check("...the standalone route's nvngx.dll is the AIO's, not NVIDIA's, also by full path",
+          _wcx.made_by("nvngx.dll") .startswith("DLSS5-ReShade-AIO")
+          and _wcx.made_by(r"D:\Games\X\nvngx.dll").startswith("DLSS5-ReShade-AIO")
+          and _wcx.made_by("nvngx_dlssnr.dll") == "NVIDIA's DLSS runtime"
+          and _wcx.made_by("nvngx.dll_dlssnr.dll") == "OptiScaler")
+
+    # #768: the model drew, then a Present failed on a window change.
+    _t768 = (_R9 / "768.txt").read_text(encoding="utf8").replace("\r\n", "\n")
+    _opti768 = ("[14:49:23.588112] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 3.61 ms total = 3.48 ms model + 0.14 ms ours (4% ours)\n"
+                "[14:49:37.121317] [W] StreamlineHooks::streamlineLogCallback [14-49-37][streamline][warn][tid:33008][74s:528ms:254us]dlfgPresent.cpp:2054[presentFrame] Async present failed (0x887A0001: x)\n"
+                "[14:49:37.130000] [E] LocalPresent Original present result: 887A0001\n")
+    _t768b = re.sub(r"(\*\*OptiScaler\.log\*\*\s*\n```[^\n]*\n)(.*?)(```)",
+                    lambda m: m.group(1) + _opti768 + m.group(3), _t768, count=1, flags=re.S)
+    _a768 = _ans9(_t768b)
+    # one failed Present in a session that went on drawing is not its end
+    _t768c = _t768b.replace("Original present result: 887A0001\n",
+                            "Original present result: 887A0001\n[14:49:40.000000] [I] DlssNr_Dx12::Dispatch DLSS-NR cost: 3.50 ms total\n")
+    check("...and a Present that failed once while the model kept drawing is not where it ended",
+          not _ans9(_t768c)["verdict"].startswith("Neural rendering ran; a Present failed later"),
+          _ans9(_t768c)["verdict"])
+    check("a Present that fails after the model drew is not 'the game refused the swapchain' (#768)",
+          _a768["verdict"].startswith("Neural rendering ran; a Present failed later in the game's frame generation"),
+          _a768["verdict"])
+    check("...the report keeps the line that decided it",
+          diagnose.body._opti_kind("[E] LocalPresent Original present result: 887A0001") == "present"
+          and diagnose.body._opti_kind("[x] Original present result: 00000000") != "present")
+    check("...and the new verdict is staged",
+          verdicts.stage(_a768["verdict"])[0] != verdicts.CHAIN[-1][0], verdicts.stage(_a768["verdict"]))
+
+    # #749: it said "closed itself", Windows recorded a fault.
+    _a749 = _ans9((_R9 / "749.txt").read_text(encoding="utf8"))
+    check("a session that drew and a recorded fault is a crash, in the replay too (#749)",
+          _a749["verdict"] == "It ran, and then the game crashed - Windows recorded the fault in dxgi.dll.",
+          _a749["verdict"])
+    check("...the module out of an event line with a path and no code (#480)",
+          diagnose.event_module(r"GettingUp.exe faulted in F:\Games\Marc Ecko's Getting Up 2\_Bin\GettingUp.exe ")
+          == "GettingUp.exe")
+    # #748: "play once" over a game that crashed 2 s after ReShade's last line.
+    _a748 = _ans9((_R9 / "748.txt").read_text(encoding="utf8"))
+    check("'play once and check again' gives way to a recorded fault (#748)",
+          _a748["verdict"].startswith("ReShade loaded, and the game crashed before the add-on got going"),
+          _a748["verdict"])
+    check("...and the window and the watcher read the same helpers",
+          _cg9.waiting_verdict(type("R", (), {"verdict": "Add-on loaded, but its own log has nothing yet - play once and check again."})())
+          and "waiting_verdict" in (SRC_DIR / "core" / "ui" / "ctl_watch.py").read_text(encoding="utf8"))
+
+    # #761: the report was made after an uninstall.
+    _a761 = _ans9((_R9 / "761.txt").read_text(encoding="utf8"))
+    check("'install record: MISSING' is no record, not a quarantined install (#761)",
+          _a761["verdict"].startswith("Nothing is installed"), _a761["verdict"])
+    check("...and uninstall drops the diagnosis a later report would carry",
+          "self._forget_last_session()" in
+          (SRC_DIR / "core" / "ui" / "ctl_game.py").read_text(encoding="utf8").split("def _on_removed", 1)[1][:1500])
+
+    # #744: no ReShade.log, and the add-on's own log holds four minutes.
+    _a744 = _ans9((_R9 / "744.txt").read_text(encoding="utf8"))
+    check("the standalone add-on's own log is read when ReShade wrote none (#744)",
+          _a744["ran"] and not _a744["verdict"].startswith("Not started")
+          and any("ReShade ran here and left no ReShade.log" in f for f in _a744["findings"]),
+          (_a744["verdict"], _a744["findings"][:2]))
+    _old9 = diagnose.chain._other_standalone
+    diagnose.chain._other_standalone = lambda _d: ["D:\\Other"]
+    try:
+        _d744 = Path(tempfile.mkdtemp(prefix="dlss5sa_"))
+        check("...but not when another standalone folder could have written it",
+              not diagnose.chain._standalone_ran_here(_d744, time.time() - 600))
+        shutil.rmtree(_d744, ignore_errors=True)
+    finally:
+        diagnose.chain._other_standalone = _old9
+
+    # #787: the add-on in the process and no log: ReShade ran, cannot write.
+    _a787 = _ans9((_R9 / "787.txt").read_text(encoding="utf8"))
+    check("an add-on loaded and no log is ReShade having run, not 'not initialising' (#787)",
+          "wrote no log here - most likely it cannot write" in _a787["verdict"], _a787["verdict"])
+    check("...and it is not counted against the route",
+          not verdicts.route_failed(_a787["verdict"]))
+
+    # #740: a native Vulkan install with nothing of it in the process.
+    # as it was sent: the 2.0.8 sighting still lists the game's own copy
+    _a740 = _ans9((_R9 / "740.txt").read_text(encoding="utf8"))
+    check("a Vulkan-layer install with nothing loaded is the layer not reaching it, not a proxy name (#740)",
+          "Vulkan layer did not reach it" in _a740["verdict"] and "proxy name" not in _a740["verdict"],
+          _a740["verdict"])
+    _wsrc9 = (SRC_DIR / "core" / "watch.py").read_text(encoding="utf8")
+    check("...and the game's own streamline\\nvngx_dlss.dll is not 'loaded from elsewhere'",
+          'name.startswith("nvngx")' in _wsrc9
+          and diagnose.evidence._not_ngx_runtimes([r"C:\Games\G\streamline\nvngx_dlss.dll",
+                                                   r"C:\Windows\System32\nvngx_dlss.dll"])
+          == [r"C:\Windows\System32\nvngx_dlss.dll"])
+except Exception as _e9r:
+    import traceback as _tb9r
+    check("the 2.0.9 round 3 section ran to its end", False,
+          "".join(_tb9r.format_exception(_e9r))[-800:])
 
 
 section("RESULT")

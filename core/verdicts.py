@@ -63,11 +63,16 @@ CHAIN = (
         "Not run yet, or the Remix runtime never",
         "It looks as though it ran and nothing this install wrote was loaded",
         "and no log was written - ReShade's Vulkan layer is not reaching the game",
+        # #740: a native Vulkan install, and nothing of it in the process
+        "and ReShade's Vulkan layer did not reach it - nothing of this install",
         "and no log was written - the proxy is reached and ReShade is not",
         # 2.0.5: how Windows started the game kept the per-user layer out
         # (#400, #348, #238), and an engine a DXGI proxy never reaches (#403)
         "runs as administrator, so ReShade's Vulkan layer is skipped",
         "not DXGI - 'full rescan', then install again",
+        # #682: the running game held another renderer and no DXGI at all
+        "loaded and no DirectX 10/11/12 when the tool looked",
+        "had only DirectDraw loaded when the tool looked",
         # #479: the game drew with D3D9 on an install set up for D3D11/12
         "ReShade found a Direct3D 9 device, not the D3D11/12",
         "on a renderer this tool cannot reach",
@@ -102,7 +107,8 @@ CHAIN = (
         # ("The game never called DLSS" before 2.0.6 - see RETIRED)
         "The game made no D3D12 DLSS call",
         # 2.0.7: the bridge attached and its log has no frame line
-        "The bridge attached and delivered no frame - turn DLSS on",
+        # ("- turn DLSS on" before #637 - see RETIRED)
+        "The bridge attached and delivered no frame - its log shows no DLSS",
         # #127: the bridge replaced the settings the install wrote
         "The bridge's substitute is off",
         "OptiScaler loaded; neural rendering not switched on",
@@ -114,6 +120,8 @@ CHAIN = (
     ("7 loaded, and we cannot see", "us", (
         # 2.0.8: the watcher saw OptiScaler's proxy loaded and no log came
         "and no log was written.",
+        # #787: ReShade's add-on in the process, and no log in the folder
+        "and wrote no log here - most likely it cannot write",
         "Inconclusive - open the overlay",
         "Add-ons loaded. Confirm in",
         "Add-ons loaded and the switch is on",
@@ -151,7 +159,14 @@ CHAIN = (
         "It started, then the bridge stopped",
         "The bridge stopped before it delivered a frame",
         "It started, then the game crashed - see below",
+        # the window's crash correction (ctl_game.crash_overrides) and the
+        # report's own (diagnose.answered, #749): it drew, then a fault
+        "It ran, and then the game crashed - Windows recorded",
+        # #748: ReShade loaded, the add-on's log had nothing, and a fault
+        "and the game crashed before the add-on got going",
         "The game crashed before the bridge delivered a frame",
+        # #768: the model drew, and a later Present failed (a window change)
+        "Neural rendering ran; a Present failed later",
         # #420, #20: Streamline's crash handler wrote a dump on this route
         "The game crashed with OptiScaler loaded",
     )),
@@ -202,6 +217,8 @@ NOT_A_ROUTE = (
     "runs as administrator, so ReShade's Vulkan layer is skipped",
     "not DXGI - 'full rescan', then install again",
     "on a renderer this tool cannot reach",
+    "loaded and no DirectX 10/11/12 when the tool looked",
+    "had only DirectDraw loaded when the tool looked",
     # #479: a D3D9 device on an install set up for D3D11/12 - the next route
     # goes in with the same wrong API (gate 2.0.6)
     "ReShade found a Direct3D 9 device, not the D3D11/12",
@@ -211,6 +228,9 @@ NOT_A_ROUTE = (
     # A proxy name the game does not load: the fix is another name on the
     # same route (gate 2.0.8)
     "try another 'loads as' name",
+    # #787: ReShade ran and wrote nothing - the next route writes into the
+    # same folder (gate 2.0.9 round 3)
+    "and wrote no log here - most likely it cannot write",
 )
 
 _SECOND_HOOK = "another dlss hook was loaded beside ours"
@@ -221,6 +241,8 @@ _SECOND_HOOK = "another dlss hook was loaded beside ours"
 # stage; CHAIN holds only what the tool prints today (the gate checks it).
 RETIRED = (
     ("6 set up, not switched on", "The game never called DLSS"),     # 2.0.5, #390
+    ("6 set up, not switched on",
+     "The bridge attached and delivered no frame - turn DLSS on"),   # 2.0.8, #637
 )
 
 

@@ -1,0 +1,53 @@
+**Did the game start?** it started and ran
+
+**What happened**
+None of the files loaded into the game
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 3070 Ti Laptop GPU (sm_86), driver 610.47
+- game: Game
+- exe: eldenring.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: standalone
+- windows event: eldenring.exe faulted in dxgi.dll 0x80000003 at 2026-10-12 07:38:45 UTC
+- starts as administrator: RUNASADMIN HIGHDPIAWARE (per user); RUNASADMIN (all users)
+
+**Diagnosis**: Add-on loaded, but its own log has nothing yet - play once and check again.
+- [ok] ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0
+- [warn] The add-on has not written its own log yet.
+
+**Files in the folder**
+- dxgi.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- Windows graphics setting: eldenring.exe: High performance
+
+**What ran, and what it loaded** (seen at 12 Oct 13:08)
+- process: eldenring.exe
+- ran from: eldenring.exe
+- DLL list: refused - the process is protected (anti-cheat, or a store build) and will not be opened
+
+**ReShade.log**
+```
+13:08:21:841 [22564] | INFO  | Registered add-on "Standalone DLSS-NR + SR 2.2.4" v0.0.0.0 using ReShade API version 20.
+13:08:22:226 [22564] | INFO  | Redirecting IDXGIFactory::CreateSwapChain(this = 0000022E060D3210, pDevice = 0000022E07617610, pDesc = 000000A02E3DE8D0, ppSwapChain = 0000022E7EE88FA8) ...
+13:08:43:321 [22564] | INFO  | Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = 0000022EFFF39330, pDevice = 0000022E0769FAA0, pDesc = 000000A02E3DEBA8, pRestrictToOutput = 0000000000000
+13:08:43:328 [22564] | WARN  | Skipping swap chain because it was created without a proxy Direct3D device.
+13:08:43:393 [22564] | WARN  | Reference count for IDXGIFactory4 object 0000022EFFF39330 (0000022F11005020) is inconsistent (3).
+13:08:43:631 [ 4344] | WARN  | Skipping D3D11on12 device because it was created without a proxy Direct3D 12 device.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+(none)
+```

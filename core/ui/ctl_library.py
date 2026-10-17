@@ -819,6 +819,8 @@ class LibraryControl:
         # update: the verdict, the offer of a next route, the DLSS build read
         for g in done:
             self.verdicts.pop(str(g.install_dir), None)
+            if g is getattr(self, "game", None) and hasattr(self, "forget_diagnosis"):
+                self.forget_diagnosis()  # the page's answer was about the old install
             try:
                 self.dlss_reread(g)
             except Exception:

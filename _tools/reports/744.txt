@@ -1,0 +1,66 @@
+**Did the game start?** it started and ran
+
+**What happened**
+=== diagnosis ===
+> Not started since the install - run the game once, then check again.
+[!!]   The game has not been started since the install.
+        ReShade writes ReShade.log the moment it loads, and there is none in the folder. Nothing the game itself writes has changed since the install either. All the files are still in place.
+[--]   If you DID start it, it launches something other than Nivalis Nights.exe.
+        A launcher or a different executable in another folder does not pick up the files here. Point the tool at the folder holding the executable that actually runs.
+[--]   Or the game ignores dxgi.dll.
+        Some load the graphics DLLs in a way that skips dxgi.dll. Set 'reshade loads as' to d3d11.dll in the game's settings and install again.
+
+> stuck? 'report a bug' is under help - the diagnosis above and the log tail go into the report, you post it.
+
+=== what Windows recorded ===
+[fail] Windows recorded Nivalis Nights.exe faulting in UnityPlayer.dll (0xC0000005).
+        That module is neither the game's executable nor anything this tool installs, at 2026-10-11 16:53:58 UTC - an overlay, a driver component or another mod. Close overlays (RivaTuner, Discord, GeForce Experience) and try again; if it persists, that module is the one to chase.
+
+> It started, and nothing here recorded the session - Windows recorded the fault in UnityPlayer.dll.
+[fail] Windows recorded Nivalis Nights.exe faulting in UnityPlayer.dll.
+        So it was started. Nothing here wrote a line that describes this session - a fault on record, and no session of our own in the logs.
+> so it WAS started: nothing here recorded the session, and Windows recorded the game faulting - which is what a game that dies before the add-ons load looks like. Uninstall, check the game starts on its own, then install again - and if it faults the same way, try another name in the 'reshade loads as' setting.
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 617.42
+- game: Nivalis Nights
+- exe: Nivalis Nights.exe
+- arch/api: 64-bit / DX11 (Unity player beside the exe - Direct3D 11 on Windows unless the game is started with -force-d3d12, -force-vulkan or -force-glcore)
+- route: standalone
+- windows event: Nivalis Nights.exe faulted in UnityPlayer.dll 0xC0000005 at 2026-10-11 16:53:58 UTC
+- this tool: running as administrator
+
+**Diagnosis**: It started, and nothing here recorded the session - Windows recorded the fault in UnityPlayer.dll.
+- [info] Or the game ignores dxgi.dll.
+- [bad] Windows recorded Nivalis Nights.exe faulting in UnityPlayer.dll.
+
+**Files in the folder**
+- dxgi.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- Windows graphics setting: Nivalis Nights.exe: High performance
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+19:49:35.507 standalone contract ready: NR=feature 18 active passes=1 requested=1 at 2560x1440, DLAA (DLAA preset L) -> 2560x1440, DLSS-G=ready, model=2 style=1, profile=sRGB
+19:52:50.028 on-present frame 7200: NR=Success passes=1 pass2_evals=0 pass3_evals=0, DLAA=Success, model=2, NR-reset=0, NR-guides=same-frame-motion, NR-control-mask=none strength=1.00, SR-history=temp
+19:53:56.521 D3D11 latest-frame mailbox disabled at source sequence 23606; prior captures invalidated
+19:53:56.521 game legacy graphics device is being destroyed; standalone session ending
+19:53:57.637 primary runtime teardown quiesced proxy presentation before backbuffer destruction: worker_state=0
+19:53:57.863 game legacy graphics device is being destroyed; standalone session ending
+```

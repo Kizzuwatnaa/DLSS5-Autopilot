@@ -145,6 +145,19 @@ def _through_user_layer(game) -> bool:
         return False
 
 
+def _layer_reaches_elevated(game) -> bool:
+    """Is a ReShade layer this game can load on the machine's own list?
+
+    False when it cannot be read - the refusal it guards is the safe answer.
+    """
+    try:
+        from . import vulkan
+        bits = getattr(game, "bitness", None)
+        return bits in (32, 64) and vulkan.reaches_elevated(bits == 64)
+    except Exception:
+        return False
+
+
 def may_start(game, check_running: bool = False) -> tuple[bool, str]:
     """Whether this tool may start the game itself, and why not when it may not.
 
@@ -221,12 +234,17 @@ def may_start(game, check_running: bool = False) -> tuple[bool, str]:
     # On a route that reaches the game through that layer the start itself
     # would decide the answer: DXVK runs, ReShade never does, and autopilot
     # records the route as failed (#400, #348).
-    if _through_user_layer(game) and wincrash.elevated():
+    # ...unless the layer is on the machine's list as well, which an install
+    # made as administrator puts there (#562): then the elevated start gets
+    # ReShade like any other.
+    if _through_user_layer(game) and wincrash.elevated() \
+            and not _layer_reaches_elevated(game):
         return False, ("this tool is running as administrator, and a game it "
-                       "starts would be too - Windows gives an elevated game "
-                       "none of the per-user Vulkan layers ReShade needs on "
-                       "this route, so start it yourself the way you always "
-                       "do")
+                       "starts would be too - the Vulkan loader gives an elevated "
+                       "game none of the per-user layers ReShade needs on "
+                       "this route. Install again from here to put the layer "
+                       "where an elevated game looks, or start the game "
+                       "yourself the way you always do")
     src = str(getattr(game, "source", "") or "")
     if src and src.lower() not in ("manual", "emulator"):
         return True, (f"{src} game: it starts from the executable here, but "

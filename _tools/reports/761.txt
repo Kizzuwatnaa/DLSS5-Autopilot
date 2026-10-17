@@ -1,0 +1,67 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Looks good but on an RTX4080 I am getting 40fps - too slow
+
+---
+- version: 2.0.8
+- gpu: NVIDIA GeForce RTX 4080 (sm_89), driver 617.42
+- game: Mafia Definitive Edition
+- exe: mafiadefinitiveedition.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: standalone
+- compatibility flags: DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE (per user)
+
+**Diagnosis**: Working.
+- [ok] ReShade loaded add-on: Standalone DLSS-NR + SR 2.2.4 0.0.0.0
+- [warn] Running on zero-motion guides - expect ghosting.
+- [ok] Frames are going through the pipeline (9 logged, last was frame 1800).
+- [info] Active contract: NR=feature 18 active passes=1 requested=1 at 3840x2160, DLAA (DLAA preset L) -> 3840x2160, DLSS-G=ready, model=1 style=0, profile=sRGB
+
+**Files in the folder**
+- nvngx.dll: MISSING
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: MISSING
+- reshade-shaders/Shaders/vort_Motion.fx: MISSING
+- install record: MISSING (no install recorded in this folder)
+
+**What ran, and what it loaded** (seen at 13 Oct 22:50)
+- process: mafiadefinitiveedition.exe
+- ran from: mafiadefinitiveedition.exe
+- DLLs in the process: 150
+- ours, loaded: dxgi.dll, standalone-dlssnr.addon64
+- ours, not loaded: nvngx_dlssnr.dll
+- not loaded: nvngx.dll, nvngx_dlss.dll, nvngx_dlssg.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+22:50:54.846 standalone contract ready: NR=feature 18 active passes=1 requested=1 at 3840x2160, DLAA (DLAA preset L) -> 3840x2160, DLSS-G=ready, model=1 style=0, profile=sRGB
+22:52:30.251 performance phase-scheduled FG: active=1 api=D3D11 common-post-capture=1 submissions=1788 outstanding=1 dispatcher-waits=5881 common-deferrals=0 completed-in-window=1787 queue-pressure-by
+22:52:30.251 performance adaptive governor: enabled=1 active=1 target=30 real_FPS pacing_wait=32.421ms waits=871 pressure=0ms healthy=1000ms
+22:52:30.617 on-present frame 1800: NR=Success passes=1 pass2_evals=0 pass3_evals=0, DLAA=Success, model=1, NR-reset=0, NR-guides=same-frame-motion, NR-control-mask=none strength=1.00, SR-history=temp
+22:52:33.249 adaptive pressure governor recovery probe: healthy source=30 processed=30 target=30->35 FPS
+22:52:33.910 startup recovery marker cleared: clean process shutdown
+```
+
+**Last error in this session (not from an install into this folder)**
+```
+scanning Epic failed
+Traceback (most recent call last):
+  File "core\games.py", line 992, in list_games
+  File "core\games.py", line 326, in scan_epic
+  File "pathlib.py", line 875, in is_dir
+  File "pathlib.py", line 840, in stat
+OSError: [WinError 1005] The volume does not contain a recognized file system.
+Please make sure that all required file system drivers are loaded and that the volume is not corrupted: 'F:\\Game Installs\\Outlast Trials\\Game\\The Outlast Trials'
+```
