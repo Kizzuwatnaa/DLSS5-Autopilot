@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    }
   },
   "DX11/none": {
@@ -349,7 +349,7 @@
    },
    "optiscaler": {
     "failed": 3,
-    "worked": 23
+    "worked": 24
    },
    "renodx": {
     "failed": 0,
@@ -397,11 +397,19 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Assetto Corsa Competizione",
    "routes": {
     "bridge": {
+     "failed": 0,
+     "worked": 1
+    },
+    "optiscaler": {
      "failed": 0,
      "worked": 1
     }
@@ -5385,6 +5393,6 @@
    }
   }
  },
- "generated": "2026-10-18T15:32:16Z",
- "reports": 518
+ "generated": "2026-10-18T15:56:10Z",
+ "reports": 519
 }
