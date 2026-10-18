@@ -55,7 +55,7 @@
    },
    "upstream": {
     "failed": 4,
-    "worked": 8
+    "worked": 9
    }
   },
   "DX12/fsr": {
@@ -305,7 +305,7 @@
    },
    "upstream": {
     "failed": 1,
-    "worked": 16
+    "worked": 17
    }
   },
   "617.14": {
@@ -1312,7 +1312,7 @@
     },
     "616.92": {
      "failed": 0,
-     "worked": 7
+     "worked": 8
     },
     "617.14": {
      "failed": 0,
@@ -1330,7 +1330,7 @@
      "res": 75
     }
    },
-   "name": "Cyberpunk 2077 - EP1",
+   "name": "Cyberpunk 2077",
    "routes": {
     "optiscaler": {
      "failed": 3,
@@ -1338,7 +1338,7 @@
     },
     "upstream": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    }
   },
@@ -5393,6 +5393,6 @@
    }
   }
  },
- "generated": "2026-10-18T17:25:50Z",
- "reports": 520
+ "generated": "2026-10-18T17:30:57Z",
+ "reports": 521
 }
