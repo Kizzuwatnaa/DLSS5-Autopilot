@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 10
+    "worked": 11
    },
    "standalone": {
     "failed": 0,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 8
+    "worked": 9
    },
    "standalone": {
     "failed": 2,
@@ -1455,7 +1455,7 @@
     },
     "617.42": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Dragon's Dogma 2",
@@ -1465,6 +1465,10 @@
      "worked": 1
     },
     "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
+    "renodx": {
      "failed": 0,
      "worked": 1
     }
@@ -5381,6 +5385,6 @@
    }
   }
  },
- "generated": "2026-10-18T13:47:50Z",
- "reports": 517
+ "generated": "2026-10-18T15:32:16Z",
+ "reports": 518
 }
