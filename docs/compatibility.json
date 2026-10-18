@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 17,
+    "failed": 18,
     "worked": 101
    },
    "renodx": {
@@ -322,7 +322,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 16,
+    "failed": 17,
     "worked": 60
    },
    "renodx": {
@@ -4171,12 +4171,16 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.14": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Clair Obscur: Expedition 33",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -5336,6 +5340,6 @@
    }
   }
  },
- "generated": "2026-10-18T09:23:29Z",
- "reports": 511
+ "generated": "2026-10-18T10:52:06Z",
+ "reports": 512
 }
