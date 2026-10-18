@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 19,
+    "failed": 20,
     "worked": 101
    },
    "renodx": {
@@ -348,7 +348,7 @@
     "worked": 4
    },
    "optiscaler": {
-    "failed": 2,
+    "failed": 3,
     "worked": 23
    },
    "renodx": {
@@ -2451,7 +2451,7 @@
      "worked": 1
     },
     "617.42": {
-     "failed": 1,
+     "failed": 2,
      "worked": 1
     }
    },
@@ -2465,7 +2465,7 @@
    "name": "Forza Horizon 6",
    "routes": {
     "optiscaler": {
-     "failed": 3,
+     "failed": 4,
      "worked": 8
     },
     "renodx": {
@@ -5355,6 +5355,6 @@
    }
   }
  },
- "generated": "2026-10-18T13:06:29Z",
- "reports": 514
+ "generated": "2026-10-18T13:16:43Z",
+ "reports": 515
 }
