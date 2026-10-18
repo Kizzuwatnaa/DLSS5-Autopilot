@@ -122,7 +122,7 @@
   },
   "VULKAN/dlss": {
    "bridge": {
-    "failed": 4,
+    "failed": 5,
     "worked": 0
    },
    "feeder": {
@@ -340,7 +340,7 @@
   },
   "617.42": {
    "bridge": {
-    "failed": 2,
+    "failed": 3,
     "worked": 5
    },
    "feeder": {
@@ -808,10 +808,18 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
-   "name": "Bloodborne",
+   "name": "Bloodborne-Windows",
    "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    },
     "feeder": {
      "failed": 0,
      "worked": 1
@@ -5328,6 +5336,6 @@
    }
   }
  },
- "generated": "2026-10-18T08:51:00Z",
- "reports": 510
+ "generated": "2026-10-18T09:23:29Z",
+ "reports": 511
 }
