@@ -35,7 +35,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 2
+    "worked": 3
    },
    "native": {
     "failed": 1,
@@ -345,7 +345,7 @@
    },
    "feeder": {
     "failed": 4,
-    "worked": 3
+    "worked": 4
    },
    "optiscaler": {
     "failed": 1,
@@ -2225,6 +2225,10 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -2236,6 +2240,10 @@
    },
    "name": "FINAL FANTASY VII REBIRTH",
    "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 1
@@ -5305,6 +5313,6 @@
    }
   }
  },
- "generated": "2026-10-18T03:07:57Z",
- "reports": 508
+ "generated": "2026-10-18T03:22:17Z",
+ "reports": 509
 }
