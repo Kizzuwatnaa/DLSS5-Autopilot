@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 3,
-    "worked": 9
+    "worked": 10
    },
    "renodx": {
     "failed": 0,
@@ -219,7 +219,7 @@
    },
    "feeder": {
     "failed": 12,
-    "worked": 42
+    "worked": 43
    },
    "native": {
     "failed": 2,
@@ -4101,16 +4101,27 @@
   },
   "risk of rain 2.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "616.92": {
      "failed": 2,
      "worked": 0
+    }
+   },
+   "measured": {
+    "feeder": {
+     "fps": 60.0,
+     "n": 1,
+     "res": 100
     }
    },
    "name": "Risk of Rain 2",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     },
     "optiscaler": {
      "failed": 1,
@@ -5370,6 +5381,6 @@
    }
   }
  },
- "generated": "2026-10-18T13:18:17Z",
- "reports": 516
+ "generated": "2026-10-18T13:47:50Z",
+ "reports": 517
 }
