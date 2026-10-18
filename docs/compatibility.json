@@ -75,7 +75,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 4
+    "worked": 5
    },
    "standalone": {
     "failed": 4,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 7
+    "worked": 8
    },
    "standalone": {
     "failed": 2,
@@ -4667,6 +4667,21 @@
     }
    }
   },
+  "super battle golf.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Super Battle Golf",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "super woden rally edge.exe": {
    "drivers": {
     "616.64": {
@@ -5355,6 +5370,6 @@
    }
   }
  },
- "generated": "2026-10-18T13:16:43Z",
- "reports": 515
+ "generated": "2026-10-18T13:18:17Z",
+ "reports": 516
 }
