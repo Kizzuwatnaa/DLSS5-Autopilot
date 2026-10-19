@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 20,
+    "failed": 21,
     "worked": 105
    },
    "renodx": {
@@ -146,7 +146,7 @@
   },
   "581.42": {
    "feeder": {
-    "failed": 2,
+    "failed": 1,
     "worked": 0
    }
   },
@@ -348,7 +348,7 @@
     "worked": 5
    },
    "optiscaler": {
-    "failed": 3,
+    "failed": 4,
     "worked": 27
    },
    "renodx": {
@@ -805,14 +805,14 @@
   "bayonetta.exe": {
    "drivers": {
     "581.42": {
-     "failed": 2,
+     "failed": 1,
      "worked": 0
     }
    },
    "name": "Bayonetta",
    "routes": {
     "feeder": {
-     "failed": 2,
+     "failed": 1,
      "worked": 0
     }
    }
@@ -2016,7 +2016,7 @@
      "worked": 1
     },
     "617.42": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    },
@@ -2031,7 +2031,7 @@
      "worked": 0
     },
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -5426,6 +5426,6 @@
    }
   }
  },
- "generated": "2026-10-19T14:43:05Z",
+ "generated": "2026-10-19T14:43:40Z",
  "reports": 528
 }
