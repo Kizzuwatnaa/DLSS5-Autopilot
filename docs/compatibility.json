@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 9
+    "worked": 10
    }
   },
   "DX12/dlss": {
@@ -357,7 +357,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 4
+    "worked": 5
    }
   },
   "617.70": {
@@ -4449,6 +4449,10 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -4458,11 +4462,15 @@
      "res": 100
     }
    },
-   "name": "Game Root",
+   "name": "The Elder Scrolls V: Skyrim Special Edition",
    "routes": {
     "feeder": {
      "failed": 1,
      "worked": 3
+    },
+    "standalone": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5490,6 +5498,6 @@
    }
   }
  },
- "generated": "2026-10-19T20:39:50Z",
- "reports": 539
+ "generated": "2026-10-19T21:29:49Z",
+ "reports": 540
 }
