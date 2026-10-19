@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 21,
-    "worked": 106
+    "worked": 107
    },
    "renodx": {
     "failed": 1,
@@ -349,7 +349,7 @@
    },
    "optiscaler": {
     "failed": 4,
-    "worked": 28
+    "worked": 29
    },
    "renodx": {
     "failed": 0,
@@ -4230,13 +4230,24 @@
     "617.14": {
      "failed": 1,
      "worked": 0
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "Clair Obscur: Expedition 33",
+   "measured": {
+    "optiscaler": {
+     "ms": 4.29,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Clair Obscur - Expedition 33",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5433,6 +5444,6 @@
    }
   }
  },
- "generated": "2026-10-19T15:05:14Z",
- "reports": 530
+ "generated": "2026-10-19T15:05:34Z",
+ "reports": 531
 }
