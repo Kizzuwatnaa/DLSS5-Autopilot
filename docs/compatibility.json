@@ -34,7 +34,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 3
    },
    "native": {
@@ -146,7 +146,7 @@
   },
   "581.42": {
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 0
    }
   },
@@ -344,7 +344,7 @@
     "worked": 5
    },
    "feeder": {
-    "failed": 4,
+    "failed": 5,
     "worked": 5
    },
    "optiscaler": {
@@ -805,14 +805,14 @@
   "bayonetta.exe": {
    "drivers": {
     "581.42": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    },
    "name": "Bayonetta",
    "routes": {
     "feeder": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    }
@@ -2014,6 +2014,10 @@
     "617.14": {
      "failed": 2,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Enshrouded",
@@ -2023,7 +2027,7 @@
      "worked": 0
     },
     "feeder": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     },
     "optiscaler": {
@@ -5422,6 +5426,6 @@
    }
   }
  },
- "generated": "2026-10-19T12:36:49Z",
- "reports": 526
+ "generated": "2026-10-19T14:43:05Z",
+ "reports": 528
 }
