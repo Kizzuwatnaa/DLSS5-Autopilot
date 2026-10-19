@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 3,
-    "worked": 10
+    "worked": 11
    },
    "renodx": {
     "failed": 0,
@@ -219,7 +219,7 @@
    },
    "feeder": {
     "failed": 12,
-    "worked": 44
+    "worked": 45
    },
    "native": {
     "failed": 2,
@@ -762,6 +762,21 @@
     "optiscaler": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "avp_dx11.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Aliens vs. Predator",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5463,6 +5478,6 @@
    }
   }
  },
- "generated": "2026-10-19T19:23:27Z",
- "reports": 536
+ "generated": "2026-10-19T19:24:50Z",
+ "reports": 537
 }
