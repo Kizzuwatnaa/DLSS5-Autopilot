@@ -122,7 +122,7 @@
   },
   "VULKAN/dlss": {
    "bridge": {
-    "failed": 5,
+    "failed": 6,
     "worked": 0
    },
    "feeder": {
@@ -340,7 +340,7 @@
   },
   "617.42": {
    "bridge": {
-    "failed": 3,
+    "failed": 4,
     "worked": 6
    },
    "feeder": {
@@ -4934,14 +4934,14 @@
      "worked": 0
     },
     "617.42": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    },
    "name": "Indiana Jones and the Great Circle",
    "routes": {
     "bridge": {
-     "failed": 2,
+     "failed": 3,
      "worked": 0
     }
    }
@@ -5448,6 +5448,6 @@
    }
   }
  },
- "generated": "2026-10-19T15:06:53Z",
- "reports": 534
+ "generated": "2026-10-19T15:35:50Z",
+ "reports": 535
 }
