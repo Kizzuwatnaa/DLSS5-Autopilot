@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 2,
-    "worked": 7
+    "worked": 8
    },
    "optiscaler": {
     "failed": 0,
@@ -341,7 +341,7 @@
   "617.42": {
    "bridge": {
     "failed": 4,
-    "worked": 6
+    "worked": 7
    },
    "feeder": {
     "failed": 5,
@@ -3185,13 +3185,17 @@
     "560.94": {
      "failed": 1,
      "worked": 0
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Lies of P",
    "routes": {
     "bridge": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -5478,6 +5482,6 @@
    }
   }
  },
- "generated": "2026-10-19T19:24:50Z",
- "reports": 537
+ "generated": "2026-10-19T20:01:04Z",
+ "reports": 538
 }
