@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 11
+    "worked": 12
    },
    "standalone": {
     "failed": 0,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 10
+    "worked": 11
    },
    "standalone": {
     "failed": 2,
@@ -5449,6 +5449,10 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -5461,6 +5465,10 @@
    "name": "Yakuza Kiwami 3 & Dark Ties",
    "routes": {
     "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
+    "renodx": {
      "failed": 0,
      "worked": 1
     }
@@ -5482,6 +5490,6 @@
    }
   }
  },
- "generated": "2026-10-19T20:01:04Z",
- "reports": 538
+ "generated": "2026-10-19T20:39:50Z",
+ "reports": 539
 }
