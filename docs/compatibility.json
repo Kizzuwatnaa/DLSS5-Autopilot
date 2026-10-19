@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 20,
-    "worked": 104
+    "worked": 105
    },
    "renodx": {
     "failed": 1,
@@ -349,7 +349,7 @@
    },
    "optiscaler": {
     "failed": 3,
-    "worked": 26
+    "worked": 27
    },
    "renodx": {
     "failed": 0,
@@ -1292,13 +1292,24 @@
     "616.92": {
      "failed": 0,
      "worked": 2
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 6.77,
+     "n": 1,
+     "res": 75
     }
    },
    "name": "Cronos: The New Dawn",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "upstream": {
      "failed": 0,
@@ -5407,6 +5418,6 @@
    }
   }
  },
- "generated": "2026-10-19T01:04:05Z",
- "reports": 524
+ "generated": "2026-10-19T01:12:41Z",
+ "reports": 525
 }
