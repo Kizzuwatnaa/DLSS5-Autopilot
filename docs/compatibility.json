@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 2,
-    "worked": 8
+    "worked": 9
    },
    "optiscaler": {
     "failed": 0,
@@ -341,7 +341,7 @@
   "617.42": {
    "bridge": {
     "failed": 4,
-    "worked": 7
+    "worked": 8
    },
    "feeder": {
     "failed": 5,
@@ -639,6 +639,21 @@
     "optiscaler": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "ai-limit.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "AI LIMIT",
+   "routes": {
+    "bridge": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5498,6 +5513,6 @@
    }
   }
  },
- "generated": "2026-10-19T21:45:13Z",
- "reports": 540
+ "generated": "2026-10-19T23:13:58Z",
+ "reports": 541
 }
