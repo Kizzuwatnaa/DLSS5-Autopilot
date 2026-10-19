@@ -21,7 +21,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 9
+    "worked": 10
    },
    "standalone": {
     "failed": 2,
@@ -5335,6 +5335,21 @@
     }
    }
   },
+  "wreckfest_x64.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Wreckfest",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "wwe2k25_x64.exe": {
    "drivers": {
     "617.14": {
@@ -5448,6 +5463,6 @@
    }
   }
  },
- "generated": "2026-10-19T15:41:33Z",
- "reports": 535
+ "generated": "2026-10-19T18:45:05Z",
+ "reports": 536
 }
