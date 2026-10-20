@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 22,
-    "worked": 112
+    "worked": 113
    },
    "renodx": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 36
+    "worked": 37
    },
    "renodx": {
     "failed": 0,
@@ -4230,13 +4230,17 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Ready or Not",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5651,6 +5655,6 @@
    }
   }
  },
- "generated": "2026-10-20T19:48:33Z",
- "reports": 551
+ "generated": "2026-10-20T19:54:08Z",
+ "reports": 552
 }
