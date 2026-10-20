@@ -62,6 +62,10 @@
    "optiscaler": {
     "failed": 0,
     "worked": 1
+   },
+   "standalone": {
+    "failed": 1,
+    "worked": 0
    }
   },
   "DX12/none": {
@@ -356,7 +360,7 @@
     "worked": 11
    },
    "standalone": {
-    "failed": 4,
+    "failed": 5,
     "worked": 6
    }
   },
@@ -867,6 +871,21 @@
     "feeder": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "beamng.drive.x64.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "BeamNG.drive",
+   "routes": {
+    "standalone": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5610,6 +5629,6 @@
    }
   }
  },
- "generated": "2026-10-20T16:18:10Z",
- "reports": 549
+ "generated": "2026-10-20T19:45:58Z",
+ "reports": 550
 }
