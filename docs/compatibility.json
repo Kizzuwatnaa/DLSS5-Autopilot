@@ -47,7 +47,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 12
+    "worked": 13
    },
    "standalone": {
     "failed": 0,
@@ -327,7 +327,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 6
+    "worked": 7
    },
    "standalone": {
     "failed": 8,
@@ -3401,6 +3401,21 @@
     }
    }
   },
+  "metroexodus.exe": {
+   "drivers": {
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Metro Exodus Enhanced Edition",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "millenniumdream-win64-shipping.exe": {
    "drivers": {
     "616.92": {
@@ -5550,6 +5565,6 @@
    }
   }
  },
- "generated": "2026-10-20T01:44:01Z",
- "reports": 545
+ "generated": "2026-10-20T02:08:15Z",
+ "reports": 546
 }
