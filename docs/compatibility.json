@@ -7,7 +7,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 4
+    "worked": 5
    }
   },
   "DX11/none": {
@@ -353,7 +353,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 35
+    "worked": 36
    },
    "renodx": {
     "failed": 0,
@@ -2761,6 +2761,28 @@
    "name": "GridLegends",
    "routes": {
     "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "groundbranch-win64-shipping.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 4.55,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "GROUND BRANCH",
+   "routes": {
+    "optiscaler": {
      "failed": 0,
      "worked": 1
     }
@@ -5629,6 +5651,6 @@
    }
   }
  },
- "generated": "2026-10-20T19:45:58Z",
- "reports": 550
+ "generated": "2026-10-20T19:48:33Z",
+ "reports": 551
 }
