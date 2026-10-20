@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 21,
+    "failed": 22,
     "worked": 112
    },
    "renodx": {
@@ -348,7 +348,7 @@
     "worked": 5
    },
    "optiscaler": {
-    "failed": 4,
+    "failed": 5,
     "worked": 35
    },
    "renodx": {
@@ -1166,6 +1166,21 @@
     "optiscaler": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "cod.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Call of Duty Modern Warfare 4",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5580,6 +5595,6 @@
    }
   }
  },
- "generated": "2026-10-20T09:25:17Z",
- "reports": 547
+ "generated": "2026-10-20T10:11:39Z",
+ "reports": 548
 }
