@@ -116,7 +116,7 @@
     "worked": 0
    },
    "standalone": {
-    "failed": 2,
+    "failed": 3,
     "worked": 0
    }
   },
@@ -356,7 +356,7 @@
     "worked": 11
    },
    "standalone": {
-    "failed": 3,
+    "failed": 4,
     "worked": 6
    }
   },
@@ -2553,6 +2553,21 @@
     "renodx": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "fpvkamikazedrone.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "\u062f\u0631\u0648\u0646",
+   "routes": {
+    "standalone": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5595,6 +5610,6 @@
    }
   }
  },
- "generated": "2026-10-20T12:33:43Z",
- "reports": 548
+ "generated": "2026-10-20T16:18:10Z",
+ "reports": 549
 }
