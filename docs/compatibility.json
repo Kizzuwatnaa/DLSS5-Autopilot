@@ -103,7 +103,7 @@
   "UNKNOWN/dlss": {
    "optiscaler": {
     "failed": 2,
-    "worked": 0
+    "worked": 1
    }
   },
   "UNKNOWN/none": {
@@ -349,7 +349,7 @@
    },
    "optiscaler": {
     "failed": 4,
-    "worked": 32
+    "worked": 33
    },
    "renodx": {
     "failed": 0,
@@ -3582,14 +3582,14 @@
    "drivers": {
     "617.42": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "NBA 2K27",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5528,6 +5528,6 @@
    }
   }
  },
- "generated": "2026-10-20T00:10:23Z",
- "reports": 543
+ "generated": "2026-10-20T00:37:03Z",
+ "reports": 544
 }
