@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 22,
-    "worked": 117
+    "worked": 118
    },
    "renodx": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 41
+    "worked": 42
    },
    "renodx": {
     "failed": 0,
@@ -2474,13 +2474,17 @@
     "616.92": {
      "failed": 0,
      "worked": 2
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "FINAL FANTASY XVI",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    }
   },
@@ -5663,6 +5667,6 @@
    }
   }
  },
- "generated": "2026-10-20T22:25:53Z",
- "reports": 556
+ "generated": "2026-10-20T22:33:51Z",
+ "reports": 557
 }
