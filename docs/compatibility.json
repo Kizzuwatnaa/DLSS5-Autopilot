@@ -100,7 +100,7 @@
   },
   "OPENGL/none": {
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 3
    }
   },
@@ -368,6 +368,12 @@
    "optiscaler": {
     "failed": 0,
     "worked": 1
+   }
+  },
+  "621.01": {
+   "feeder": {
+    "failed": 1,
+    "worked": 0
    }
   }
  },
@@ -1778,12 +1784,16 @@
     "617.42": {
      "failed": 2,
      "worked": 0
+    },
+    "621.01": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "DOOM 3: BFG Edition",
    "routes": {
     "feeder": {
-     "failed": 2,
+     "failed": 3,
      "worked": 0
     }
    }
@@ -5730,6 +5740,6 @@
    }
   }
  },
- "generated": "2026-10-21T20:08:53Z",
- "reports": 564
+ "generated": "2026-10-21T23:59:34Z",
+ "reports": 565
 }
