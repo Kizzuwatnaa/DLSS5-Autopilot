@@ -88,7 +88,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 5,
+    "failed": 6,
     "worked": 4
    }
   },
@@ -222,7 +222,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 12,
+    "failed": 13,
     "worked": 45
    },
    "native": {
@@ -4195,6 +4195,21 @@
     }
    }
   },
+  "re5dx9.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Resident Evil 5",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "re8.exe": {
    "drivers": {
     "617.14": {
@@ -5700,6 +5715,6 @@
    }
   }
  },
- "generated": "2026-10-21T09:21:50Z",
- "reports": 560
+ "generated": "2026-10-21T13:06:57Z",
+ "reports": 561
 }
