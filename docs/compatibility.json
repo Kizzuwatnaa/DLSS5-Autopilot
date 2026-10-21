@@ -82,7 +82,7 @@
     "worked": 5
    },
    "standalone": {
-    "failed": 4,
+    "failed": 5,
     "worked": 2
    }
   },
@@ -275,7 +275,7 @@
    },
    "standalone": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "616.92": {
@@ -360,7 +360,7 @@
     "worked": 11
    },
    "standalone": {
-    "failed": 5,
+    "failed": 6,
     "worked": 6
    }
   },
@@ -1166,14 +1166,14 @@
    "drivers": {
     "616.86": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Captain of Industry",
    "routes": {
     "standalone": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -2522,6 +2522,21 @@
     "feeder": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "fivem_diag.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "FiveM.app",
+   "routes": {
+    "standalone": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5715,6 +5730,6 @@
    }
   }
  },
- "generated": "2026-10-21T13:06:57Z",
- "reports": 561
+ "generated": "2026-10-21T13:35:17Z",
+ "reports": 563
 }
