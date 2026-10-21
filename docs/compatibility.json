@@ -275,7 +275,7 @@
    },
    "standalone": {
     "failed": 0,
-    "worked": 2
+    "worked": 1
    }
   },
   "616.92": {
@@ -1166,14 +1166,14 @@
    "drivers": {
     "616.86": {
      "failed": 0,
-     "worked": 2
+     "worked": 1
     }
    },
    "name": "Captain of Industry",
    "routes": {
     "standalone": {
      "failed": 0,
-     "worked": 2
+     "worked": 1
     }
    }
   },
@@ -5730,6 +5730,6 @@
    }
   }
  },
- "generated": "2026-10-21T13:35:17Z",
- "reports": 563
+ "generated": "2026-10-21T13:35:53Z",
+ "reports": 562
 }
