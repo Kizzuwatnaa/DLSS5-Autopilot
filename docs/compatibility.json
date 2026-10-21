@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 22,
-    "worked": 120
+    "worked": 121
    },
    "renodx": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 44
+    "worked": 45
    },
    "renodx": {
     "failed": 0,
@@ -3304,12 +3304,23 @@
    "drivers": {
     "617.42": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
-   "name": "GTA III - The Definitive Edition",
+   "measured": {
+    "optiscaler": {
+     "ms": 0.91,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Grand Theft Auto III - The Definitive Edition",
    "routes": {
     "bridge": {
+     "failed": 0,
+     "worked": 1
+    },
+    "optiscaler": {
      "failed": 0,
      "worked": 1
     }
@@ -5689,6 +5700,6 @@
    }
   }
  },
- "generated": "2026-10-21T04:36:02Z",
- "reports": 559
+ "generated": "2026-10-21T08:52:04Z",
+ "reports": 560
 }
