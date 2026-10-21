@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 22,
-    "worked": 122
+    "worked": 123
    },
    "renodx": {
     "failed": 1,
@@ -353,7 +353,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 46
+    "worked": 47
    },
    "renodx": {
     "failed": 0,
@@ -4752,14 +4752,14 @@
    "drivers": {
     "617.42": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     }
    },
-   "name": "Call of Duty - Modern Warfare 4",
+   "name": "Call of Duty Modern Warfare 4 2026",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     }
    }
   },
@@ -5730,6 +5730,6 @@
    }
   }
  },
- "generated": "2026-10-21T18:53:55Z",
- "reports": 563
+ "generated": "2026-10-21T20:08:53Z",
+ "reports": 564
 }
