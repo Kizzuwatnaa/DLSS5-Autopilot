@@ -79,7 +79,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 5
+    "worked": 6
    },
    "standalone": {
     "failed": 5,
@@ -357,7 +357,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 11
+    "worked": 12
    },
    "standalone": {
     "failed": 6,
@@ -4205,6 +4205,21 @@
     }
    }
   },
+  "re3.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Resident Evil 3",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "re4.exe": {
    "drivers": {
     "616.92": {
@@ -5740,6 +5755,6 @@
    }
   }
  },
- "generated": "2026-10-21T23:59:34Z",
- "reports": 565
+ "generated": "2026-10-22T05:03:20Z",
+ "reports": 566
 }
