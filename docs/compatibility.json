@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 23,
-    "worked": 130
+    "worked": 131
    },
    "renodx": {
     "failed": 1,
@@ -377,7 +377,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 5
+    "worked": 6
    },
    "renodx": {
     "failed": 1,
@@ -602,13 +602,17 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "621.01": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "Assassin Creed Shadows",
+   "name": "Assassin's Creed Shadows",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -5802,6 +5806,6 @@
    }
   }
  },
- "generated": "2026-10-23T18:10:24Z",
- "reports": 576
+ "generated": "2026-10-23T18:10:50Z",
+ "reports": 577
 }
