@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 23,
-    "worked": 126
+    "worked": 127
    },
    "renodx": {
     "failed": 1,
@@ -377,7 +377,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   }
  },
@@ -4978,21 +4978,21 @@
     },
     "621.01": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 13.24,
-     "n": 1,
+     "ms": 9.52,
+     "n": 2,
      "res": 75
     }
    },
-   "name": "Starfield Terran Armada",
+   "name": "Starfield",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     },
     "upstream": {
      "failed": 0,
@@ -5767,6 +5767,6 @@
    }
   }
  },
- "generated": "2026-10-22T23:30:23Z",
- "reports": 571
+ "generated": "2026-10-23T01:17:20Z",
+ "reports": 572
 }
