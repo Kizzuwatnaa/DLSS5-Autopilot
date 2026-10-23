@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 23,
-    "worked": 127
+    "worked": 128
    },
    "renodx": {
     "failed": 1,
@@ -377,7 +377,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    },
    "renodx": {
     "failed": 1,
@@ -5506,6 +5506,21 @@
     }
    }
   },
+  "wickedisland-win64-shipping.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Wicked Island",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "witcher2.exe": {
    "drivers": {
     "616.56": {
@@ -5779,6 +5794,6 @@
    }
   }
  },
- "generated": "2026-10-23T15:04:32Z",
- "reports": 573
+ "generated": "2026-10-23T18:05:39Z",
+ "reports": 574
 }
