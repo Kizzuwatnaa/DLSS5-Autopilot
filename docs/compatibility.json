@@ -78,7 +78,7 @@
     "worked": 9
    },
    "renodx": {
-    "failed": 0,
+    "failed": 1,
     "worked": 6
    },
    "standalone": {
@@ -378,6 +378,10 @@
    "optiscaler": {
     "failed": 0,
     "worked": 2
+   },
+   "renodx": {
+    "failed": 1,
+    "worked": 0
    }
   }
  },
@@ -5621,10 +5625,18 @@
     "617.14": {
      "failed": 1,
      "worked": 0
+    },
+    "621.01": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "World of Warcraft",
    "routes": {
+    "renodx": {
+     "failed": 1,
+     "worked": 0
+    },
     "standalone": {
      "failed": 1,
      "worked": 0
@@ -5767,6 +5779,6 @@
    }
   }
  },
- "generated": "2026-10-23T09:20:34Z",
- "reports": 572
+ "generated": "2026-10-23T15:04:32Z",
+ "reports": 573
 }
