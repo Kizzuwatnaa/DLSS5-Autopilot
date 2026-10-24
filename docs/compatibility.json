@@ -86,6 +86,12 @@
     "worked": 2
    }
   },
+  "DX9/dlss": {
+   "renodx": {
+    "failed": 1,
+    "worked": 0
+   }
+  },
   "DX9/none": {
    "feeder": {
     "failed": 6,
@@ -356,7 +362,7 @@
     "worked": 48
    },
    "renodx": {
-    "failed": 0,
+    "failed": 1,
     "worked": 12
    },
    "standalone": {
@@ -4202,6 +4208,10 @@
     "617.14": {
      "failed": 1,
      "worked": 2
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Red Dead Redemption 2",
@@ -4215,7 +4225,7 @@
      "worked": 6
     },
     "renodx": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     },
     "upstream": {
@@ -5836,6 +5846,6 @@
    }
   }
  },
- "generated": "2026-10-24T14:18:57Z",
- "reports": 582
+ "generated": "2026-10-24T17:02:08Z",
+ "reports": 583
 }
