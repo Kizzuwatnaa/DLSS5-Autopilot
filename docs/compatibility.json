@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 23,
+    "failed": 24,
     "worked": 135
    },
    "renodx": {
@@ -376,7 +376,7 @@
     "worked": 0
    },
    "optiscaler": {
-    "failed": 0,
+    "failed": 1,
     "worked": 9
    },
    "renodx": {
@@ -1398,7 +1398,7 @@
      "worked": 1
     },
     "621.01": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    },
@@ -1412,7 +1412,7 @@
    "name": "Crimson Desert Enhanced",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 3
     },
     "renodx": {
@@ -5836,6 +5836,6 @@
    }
   }
  },
- "generated": "2026-10-24T13:31:15Z",
- "reports": 581
+ "generated": "2026-10-24T14:18:57Z",
+ "reports": 582
 }
