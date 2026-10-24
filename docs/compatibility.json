@@ -65,7 +65,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 0
+    "worked": 1
    }
   },
   "DX12/none": {
@@ -388,6 +388,10 @@
    "renodx": {
     "failed": 1,
     "worked": 0
+   },
+   "standalone": {
+    "failed": 0,
+    "worked": 1
    }
   }
  },
@@ -3583,6 +3587,21 @@
     }
    }
   },
+  "metro.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Metro 2033 Redux",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "metro2033.exe": {
    "drivers": {
     "610.74": {
@@ -5846,6 +5865,6 @@
    }
   }
  },
- "generated": "2026-10-24T20:07:57Z",
- "reports": 584
+ "generated": "2026-10-24T20:13:45Z",
+ "reports": 585
 }
