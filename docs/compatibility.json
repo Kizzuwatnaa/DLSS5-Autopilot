@@ -143,7 +143,7 @@
   "VULKAN/none": {
    "feeder": {
     "failed": 0,
-    "worked": 4
+    "worked": 5
    }
   }
  },
@@ -379,7 +379,7 @@
   "621.01": {
    "feeder": {
     "failed": 2,
-    "worked": 0
+    "worked": 1
    },
    "optiscaler": {
     "failed": 1,
@@ -4928,6 +4928,21 @@
     }
    }
   },
+  "spartanport-probe.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "gow3-windows",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "speed.exe": {
    "drivers": {
     "617.14": {
@@ -5899,6 +5914,6 @@
    }
   }
  },
- "generated": "2026-10-25T12:54:37Z",
- "reports": 589
+ "generated": "2026-10-25T13:17:26Z",
+ "reports": 590
 }
