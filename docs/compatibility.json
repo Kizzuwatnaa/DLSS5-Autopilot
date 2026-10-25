@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 26,
+    "failed": 27,
     "worked": 137
    },
    "renodx": {
@@ -358,7 +358,7 @@
     "worked": 6
    },
    "optiscaler": {
-    "failed": 6,
+    "failed": 7,
     "worked": 49
    },
    "renodx": {
@@ -3247,12 +3247,16 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
-   "name": "Horizon Zero Dawn\u2122 Remastered",
+   "name": "Horizon Zero Dawn Remastered",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -5936,6 +5940,6 @@
    }
   }
  },
- "generated": "2026-10-25T16:57:47Z",
- "reports": 591
+ "generated": "2026-10-25T19:20:53Z",
+ "reports": 592
 }
