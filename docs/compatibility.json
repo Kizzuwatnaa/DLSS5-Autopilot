@@ -122,7 +122,7 @@
     "worked": 0
    },
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 0
    },
    "standalone": {
@@ -378,7 +378,7 @@
   },
   "621.01": {
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 0
    },
    "optiscaler": {
@@ -1738,6 +1738,21 @@
     "bridge": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "destiny2.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Destiny 2",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5865,6 +5880,6 @@
    }
   }
  },
- "generated": "2026-10-25T09:09:02Z",
- "reports": 586
+ "generated": "2026-10-25T09:49:52Z",
+ "reports": 587
 }
