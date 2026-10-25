@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 26,
-    "worked": 136
+    "worked": 137
    },
    "renodx": {
     "failed": 1,
@@ -359,7 +359,7 @@
    },
    "optiscaler": {
     "failed": 6,
-    "worked": 48
+    "worked": 49
    },
    "renodx": {
     "failed": 1,
@@ -2814,6 +2814,28 @@
     "feeder": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "gotg.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 5.95,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Marvels Guardians of the Galaxy",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -5914,6 +5936,6 @@
    }
   }
  },
- "generated": "2026-10-25T13:17:26Z",
- "reports": 590
+ "generated": "2026-10-25T16:57:47Z",
+ "reports": 591
 }
