@@ -16,7 +16,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 3,
+    "failed": 4,
     "worked": 11
    },
    "renodx": {
@@ -354,7 +354,7 @@
     "worked": 8
    },
    "feeder": {
-    "failed": 5,
+    "failed": 6,
     "worked": 6
    },
    "optiscaler": {
@@ -2265,10 +2265,18 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Euro Truck Simulator 2",
    "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    },
     "renodx": {
      "failed": 0,
      "worked": 1
@@ -5940,6 +5948,6 @@
    }
   }
  },
- "generated": "2026-10-26T06:46:04Z",
- "reports": 592
+ "generated": "2026-10-26T08:07:53Z",
+ "reports": 593
 }
