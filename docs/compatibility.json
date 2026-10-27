@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 11
+    "worked": 12
    }
   },
   "DX12/dlss": {
@@ -395,7 +395,7 @@
    },
    "standalone": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   }
  },
@@ -4242,6 +4242,21 @@
     }
    }
   },
+  "prey.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Prey",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "projectzomboid64.exe": {
    "drivers": {
     "617.42": {
@@ -5988,6 +6003,6 @@
    }
   }
  },
- "generated": "2026-10-27T12:50:28Z",
- "reports": 599
+ "generated": "2026-10-27T22:29:19Z",
+ "reports": 600
 }
