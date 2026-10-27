@@ -16,7 +16,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 4,
+    "failed": 5,
     "worked": 11
    },
    "renodx": {
@@ -382,7 +382,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 3,
+    "failed": 4,
     "worked": 2
    },
    "optiscaler": {
@@ -898,6 +898,21 @@
     "optiscaler": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "batmanac.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Batman: Arkham City GOTY",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -5973,6 +5988,6 @@
    }
   }
  },
- "generated": "2026-10-27T12:25:19Z",
- "reports": 598
+ "generated": "2026-10-27T12:50:28Z",
+ "reports": 599
 }
