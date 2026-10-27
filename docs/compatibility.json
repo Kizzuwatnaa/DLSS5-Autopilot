@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 27,
-    "worked": 138
+    "worked": 139
    },
    "renodx": {
     "failed": 1,
@@ -237,7 +237,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 28
+    "worked": 29
    },
    "remix": {
     "failed": 2,
@@ -4161,12 +4161,17 @@
    }
   },
   "playrdr2.exe": {
-   "drivers": {},
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
    "name": "Red Dead Redemption 2",
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -5964,6 +5969,6 @@
    }
   }
  },
- "generated": "2026-10-27T11:54:41Z",
- "reports": 596
+ "generated": "2026-10-27T12:20:23Z",
+ "reports": 597
 }
