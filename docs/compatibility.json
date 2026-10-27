@@ -94,7 +94,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 6,
+    "failed": 7,
     "worked": 6
    }
   },
@@ -382,7 +382,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 2
    },
    "optiscaler": {
@@ -5074,12 +5074,16 @@
     "616.92": {
      "failed": 1,
      "worked": 0
+    },
+    "621.01": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Tom Clancy's Splinter Cell: Chaos Theory",
    "routes": {
     "feeder": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    }
@@ -5969,6 +5973,6 @@
    }
   }
  },
- "generated": "2026-10-27T12:20:23Z",
- "reports": 597
+ "generated": "2026-10-27T12:24:52Z",
+ "reports": 598
 }
