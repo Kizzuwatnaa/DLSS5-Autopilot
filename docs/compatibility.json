@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 27,
+    "failed": 28,
     "worked": 140
    },
    "renodx": {
@@ -386,7 +386,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 1,
+    "failed": 2,
     "worked": 12
    },
    "renodx": {
@@ -3127,12 +3127,16 @@
     "591.44": {
      "failed": 0,
      "worked": 1
+    },
+    "621.01": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "HELLDIVERS\u2122 2",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -6033,6 +6037,6 @@
    }
   }
  },
- "generated": "2026-10-28T10:55:35Z",
- "reports": 603
+ "generated": "2026-10-28T14:41:05Z",
+ "reports": 604
 }
