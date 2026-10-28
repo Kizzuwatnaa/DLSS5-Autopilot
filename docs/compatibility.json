@@ -142,7 +142,7 @@
   },
   "VULKAN/none": {
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 5
    }
   }
@@ -354,7 +354,7 @@
     "worked": 8
    },
    "feeder": {
-    "failed": 6,
+    "failed": 7,
     "worked": 6
    },
    "optiscaler": {
@@ -1090,6 +1090,21 @@
     "feeder": {
      "failed": 1,
      "worked": 1
+    }
+   }
+  },
+  "bio4.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Resident Evil 4 (2005)",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6018,6 +6033,6 @@
    }
   }
  },
- "generated": "2026-10-28T10:34:47Z",
- "reports": 602
+ "generated": "2026-10-28T10:55:35Z",
+ "reports": 603
 }
