@@ -94,7 +94,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 7,
+    "failed": 8,
     "worked": 6
    }
   },
@@ -354,7 +354,7 @@
     "worked": 8
    },
    "feeder": {
-    "failed": 7,
+    "failed": 8,
     "worked": 6
    },
    "optiscaler": {
@@ -1071,6 +1071,21 @@
     }
    },
    "name": "Resident Evil 6",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
+  "bhd.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Resident Evil",
    "routes": {
     "feeder": {
      "failed": 1,
@@ -6041,6 +6056,6 @@
    }
   }
  },
- "generated": "2026-10-28T15:18:57Z",
- "reports": 605
+ "generated": "2026-10-28T16:25:55Z",
+ "reports": 606
 }
