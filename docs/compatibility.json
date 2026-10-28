@@ -21,7 +21,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 6
+    "worked": 7
    },
    "standalone": {
     "failed": 2,
@@ -391,7 +391,7 @@
    },
    "renodx": {
     "failed": 1,
-    "worked": 0
+    "worked": 1
    },
    "standalone": {
     "failed": 0,
@@ -3551,6 +3551,21 @@
     }
    }
   },
+  "mafia3definitiveedition.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Mafia III: Definitive Edition",
+   "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "mafiatheoldcountry.exe": {
    "drivers": {
     "617.42": {
@@ -6003,6 +6018,6 @@
    }
   }
  },
- "generated": "2026-10-28T01:50:57Z",
- "reports": 601
+ "generated": "2026-10-28T04:19:49Z",
+ "reports": 602
 }
