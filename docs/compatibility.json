@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 12
+    "worked": 13
    }
   },
   "DX12/dlss": {
@@ -367,7 +367,7 @@
    },
    "standalone": {
     "failed": 6,
-    "worked": 6
+    "worked": 7
    }
   },
   "617.70": {
@@ -3182,6 +3182,21 @@
     "feeder": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "heavyrain.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Heavy Rain",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6141,6 +6156,6 @@
    }
   }
  },
- "generated": "2026-10-29T21:32:39Z",
- "reports": 612
+ "generated": "2026-10-29T21:43:14Z",
+ "reports": 613
 }
