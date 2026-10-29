@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 28,
-    "worked": 142
+    "worked": 143
    },
    "renodx": {
     "failed": 1,
@@ -387,7 +387,7 @@
    },
    "optiscaler": {
     "failed": 2,
-    "worked": 14
+    "worked": 15
    },
    "renodx": {
     "failed": 1,
@@ -3532,6 +3532,28 @@
     }
    }
   },
+  "legobatmanlotdk-win64-shipping.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 7.27,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "LEGO\u00ae Batman\u2122: Legacy of the Dark Knight",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "libertycity.exe": {
    "drivers": {
     "617.42": {
@@ -6078,6 +6100,6 @@
    }
   }
  },
- "generated": "2026-10-28T21:58:15Z",
- "reports": 608
+ "generated": "2026-10-29T08:25:30Z",
+ "reports": 609
 }
