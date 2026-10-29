@@ -54,7 +54,7 @@
     "worked": 1
    },
    "upstream": {
-    "failed": 4,
+    "failed": 5,
     "worked": 9
    }
   },
@@ -396,6 +396,10 @@
    "standalone": {
     "failed": 0,
     "worked": 2
+   },
+   "upstream": {
+    "failed": 1,
+    "worked": 0
    }
   }
  },
@@ -1635,7 +1639,7 @@
      "worked": 1
     },
     "621.01": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    },
@@ -1661,7 +1665,7 @@
      "worked": 0
     },
     "upstream": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -6100,6 +6104,6 @@
    }
   }
  },
- "generated": "2026-10-29T10:53:33Z",
- "reports": 609
+ "generated": "2026-10-29T16:40:06Z",
+ "reports": 610
 }
