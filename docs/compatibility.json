@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 28,
-    "worked": 143
+    "worked": 144
    },
    "renodx": {
     "failed": 1,
@@ -387,7 +387,7 @@
    },
    "optiscaler": {
     "failed": 2,
-    "worked": 15
+    "worked": 16
    },
    "renodx": {
     "failed": 1,
@@ -2823,6 +2823,28 @@
     "standalone": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "g1r-win64-shipping.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 4.45,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Gothic 1 Remake",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6119,6 +6141,6 @@
    }
   }
  },
- "generated": "2026-10-29T20:27:09Z",
- "reports": 611
+ "generated": "2026-10-29T21:32:39Z",
+ "reports": 612
 }
