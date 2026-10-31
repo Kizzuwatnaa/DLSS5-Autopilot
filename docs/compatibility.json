@@ -136,7 +136,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 1
    }
   },
@@ -386,7 +386,7 @@
     "worked": 2
    },
    "feeder": {
-    "failed": 5,
+    "failed": 6,
     "worked": 4
    },
    "optiscaler": {
@@ -5633,12 +5633,20 @@
     "617.42": {
      "failed": 2,
      "worked": 0
+    },
+    "621.01": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Indiana Jones and the Great Circle",
    "routes": {
     "bridge": {
      "failed": 3,
+     "worked": 0
+    },
+    "feeder": {
+     "failed": 1,
      "worked": 0
     }
    }
@@ -6214,6 +6222,6 @@
    }
   }
  },
- "generated": "2026-10-31T15:08:41Z",
- "reports": 622
+ "generated": "2026-10-31T17:17:19Z",
+ "reports": 623
 }
