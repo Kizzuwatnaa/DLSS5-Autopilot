@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 28,
-    "worked": 146
+    "worked": 147
    },
    "renodx": {
     "failed": 1,
@@ -391,7 +391,7 @@
    },
    "optiscaler": {
     "failed": 2,
-    "worked": 18
+    "worked": 19
    },
    "renodx": {
     "failed": 1,
@@ -4303,11 +4303,15 @@
    "drivers": {
     "621.01": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Phantom Blade Zero",
    "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
     "renodx": {
      "failed": 0,
      "worked": 1
@@ -6206,6 +6210,6 @@
    }
   }
  },
- "generated": "2026-10-31T10:23:18Z",
- "reports": 620
+ "generated": "2026-10-31T12:38:19Z",
+ "reports": 621
 }
