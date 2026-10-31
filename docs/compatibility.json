@@ -141,6 +141,10 @@
    }
   },
   "VULKAN/none": {
+   "bridge": {
+    "failed": 0,
+    "worked": 1
+   },
    "feeder": {
     "failed": 1,
     "worked": 6
@@ -379,7 +383,7 @@
   "621.01": {
    "bridge": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    },
    "feeder": {
     "failed": 4,
@@ -1824,11 +1828,15 @@
    "drivers": {
     "621.01": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
-   "name": "Detroit.Become.Human.v09.10.2023",
+   "name": "Detroit: Become Human",
    "routes": {
+    "bridge": {
+     "failed": 0,
+     "worked": 1
+    },
     "feeder": {
      "failed": 0,
      "worked": 1
@@ -6156,6 +6164,6 @@
    }
   }
  },
- "generated": "2026-10-30T10:52:15Z",
- "reports": 613
+ "generated": "2026-10-31T03:12:55Z",
+ "reports": 614
 }
