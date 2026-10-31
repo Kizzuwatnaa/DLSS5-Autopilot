@@ -94,7 +94,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 8,
+    "failed": 9,
     "worked": 6
    }
   },
@@ -386,7 +386,7 @@
     "worked": 2
    },
    "feeder": {
-    "failed": 4,
+    "failed": 5,
     "worked": 4
    },
    "optiscaler": {
@@ -4460,6 +4460,21 @@
     }
    }
   },
+  "prototypef.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Prototype",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "quake2ex_steam.exe": {
    "drivers": {
     "616.92": {
@@ -6176,6 +6191,6 @@
    }
   }
  },
- "generated": "2026-10-31T04:52:19Z",
- "reports": 618
+ "generated": "2026-10-31T06:20:02Z",
+ "reports": 619
 }
