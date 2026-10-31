@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 13
+    "worked": 14
    }
   },
   "DX12/dlss": {
@@ -399,7 +399,7 @@
    },
    "standalone": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    },
    "upstream": {
     "failed": 1,
@@ -3335,13 +3335,17 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "621.01": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "HoneySelect2",
+   "name": "HoneySelect2Libido DX",
    "routes": {
     "standalone": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6172,6 +6176,6 @@
    }
   }
  },
- "generated": "2026-10-31T04:46:22Z",
- "reports": 616
+ "generated": "2026-10-31T04:51:46Z",
+ "reports": 617
 }
