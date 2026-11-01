@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 28,
-    "worked": 148
+    "worked": 149
    },
    "renodx": {
     "failed": 1,
@@ -363,7 +363,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 49
+    "worked": 50
    },
    "renodx": {
     "failed": 1,
@@ -2786,6 +2786,21 @@
     "upstream": {
      "failed": 0,
      "worked": 2
+    }
+   }
+  },
+  "forzahorizon5.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Forza Horizon 5",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6237,6 +6252,6 @@
    }
   }
  },
- "generated": "2026-11-01T11:15:51Z",
- "reports": 624
+ "generated": "2026-11-01T11:18:35Z",
+ "reports": 625
 }
