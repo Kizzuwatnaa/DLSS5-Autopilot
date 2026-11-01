@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 14
+    "worked": 15
    }
   },
   "DX12/dlss": {
@@ -285,7 +285,7 @@
    },
    "standalone": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "616.92": {
@@ -3092,6 +3092,21 @@
     }
    },
    "name": "Tom Clancy's Ghost Recon\u00ae Wildlands",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "gt4-gs.exe": {
+   "drivers": {
+    "616.86": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "1.2.1",
    "routes": {
     "standalone": {
      "failed": 0,
@@ -6222,6 +6237,6 @@
    }
   }
  },
- "generated": "2026-10-31T17:22:00Z",
- "reports": 623
+ "generated": "2026-11-01T00:55:35Z",
+ "reports": 624
 }
