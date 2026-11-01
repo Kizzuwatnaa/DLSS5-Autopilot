@@ -94,7 +94,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 9,
+    "failed": 10,
     "worked": 6
    }
   },
@@ -386,7 +386,7 @@
     "worked": 2
    },
    "feeder": {
-    "failed": 6,
+    "failed": 7,
     "worked": 4
    },
    "optiscaler": {
@@ -5960,6 +5960,21 @@
     }
    }
   },
+  "witcher.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "The Witcher: Enhanced Edition",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "witcher2.exe": {
    "drivers": {
     "616.56": {
@@ -6252,6 +6267,6 @@
    }
   }
  },
- "generated": "2026-11-01T17:44:55Z",
- "reports": 626
+ "generated": "2026-11-01T19:00:09Z",
+ "reports": 627
 }
