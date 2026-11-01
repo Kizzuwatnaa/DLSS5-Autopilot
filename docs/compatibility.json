@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 28,
-    "worked": 149
+    "worked": 150
    },
    "renodx": {
     "failed": 1,
@@ -391,7 +391,7 @@
    },
    "optiscaler": {
     "failed": 2,
-    "worked": 20
+    "worked": 21
    },
    "renodx": {
     "failed": 1,
@@ -1553,21 +1553,21 @@
     },
     "621.01": {
      "failed": 0,
-     "worked": 3
+     "worked": 4
     }
    },
    "measured": {
     "optiscaler": {
-     "ms": 5.82,
-     "n": 8,
+     "ms": 5.67,
+     "n": 9,
      "res": 75
     }
    },
-   "name": "Cyberpunk 2077",
+   "name": "Cyberpunk 2077 - EP1",
    "routes": {
     "optiscaler": {
      "failed": 3,
-     "worked": 19
+     "worked": 20
     },
     "upstream": {
      "failed": 0,
@@ -6252,6 +6252,6 @@
    }
   }
  },
- "generated": "2026-11-01T11:18:35Z",
- "reports": 625
+ "generated": "2026-11-01T17:44:55Z",
+ "reports": 626
 }
