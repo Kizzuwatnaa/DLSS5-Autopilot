@@ -105,7 +105,10 @@ def plan(first: str, offer: list[str], data: dict | None = None,
     elsewhere is tried before the rest of the list.
     """
     out = [first] if first and first in (offer or [first]) else []
-    rest = [n for n in (offer or []) if n not in out]
+    # A route offered but never recommended (GITC-Uplift) is tried only when
+    # it is the person's own choice: an untried route is not picked for them.
+    from .dlss import NEVER_AUTO
+    rest = [n for n in (offer or []) if n not in out and n not in NEVER_AUTO]
     if data is not None and game is not None:
         try:
             # every remaining route in the order the shared results put them

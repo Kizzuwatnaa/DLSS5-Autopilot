@@ -41,7 +41,10 @@ API = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases?per_page=2
 # The asset name of the releases this module knows how to place
 # (Universal-RTX-40-MFG-Unlock-v1.2.1.zip, the last of them so far).
 ASSET_PREFIX = "universal-rtx-40-mfg-unlock"
-LOADER_API = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest"
+# Pinned to the release this route was last run against. v10.0.0 (2026-10-21)
+# is a major step nobody has run it with; move the pin once someone has.
+LOADER_API = ("https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/"
+              "releases/tags/v9.7.4")
 LOADER_ASSET = "Ultimate-ASI-Loader_x64.zip"
 # What the release zip carries and where it goes: beside the executable.
 FILES = ("RTX40MFGCore.dll", "RTX40MFG.asi", "RTX40MFG-UI.addon64")

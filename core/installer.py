@@ -53,7 +53,7 @@ from . import (emulators, anticheat, dlss, dxvk, feedcfg, games, gpu, gpupref, m
 # Imported by name as well: inside the Options class body the field
 # `dlss: str | None` shadows the module, so `dlss.FEEDER` would read the
 # field's default (None) instead of the module attribute.
-from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, STANDALONE, UPSTREAM
+from .dlss import BRIDGE, FEEDER, NATIVE, OPTI, STANDALONE, UPLIFT, UPSTREAM
 from .dlss import RENODX as ROUTE_RENODX   # the route; RENODX below is a file name
 from .dlss import REMIX as ROUTE_REMIX
 
@@ -78,6 +78,10 @@ UPSTREAM_ADDON = "nvngx.dll.addon64"
 STANDALONE_ADDON = "standalone-dlssnr.addon64"
 STANDALONE_BRIDGE = "nvngx.dll"
 STANDALONE_FX = "DLSS5_AIO_Feed.fx"
+# GITC-Uplift: its add-ons and helper beside the executable, the runtime in
+# a folder of its own. Never beside the exe: on RTX 50 NVIDIA's DLSS loads
+# nvngx_dlssnr.dll from there first, and the add-on cannot use that copy.
+UPLIFT_DIR = "GITC-Uplift"
 DLSSG = "nvngx_dlssg.dll"
 # Ray reconstruction. Only ever swapped, never added: a game that does
 # not ship it does not ask for it, and dropping one in changes nothing.
@@ -108,6 +112,11 @@ OTHER_NGX_HOOKS = ("OptiScaler.ini", "nvngx.ini", "fakenvapi.ini",
                    # both has two things hooking the model and the runtime
                    # beside the game is not the one this tool put there.
                    "dlssnr-companion.addon64", "nvngx_dlssnr.ini",
+                   # ghostinthecamera/GITC-Uplift (#946): its add-ons are
+                   # caught as foreign add-ons; the helper names it when
+                   # the add-on was moved aside. It refuses to run beside
+                   # another NR add-on, and stops the feeder's SR (its #9).
+                   "gitc-uplift-helper64.exe", "uplift-helper64.exe",
                    # NGX loads a plain nvngx.dll from the game folder before
                    # the driver's: an OptiScaler installed by hand under its
                    # old name, or the standalone route's caller bridge.
@@ -133,8 +142,18 @@ def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
             names.pop(n.lower(), None)
     except Exception:
         pass
+    mine = {n.lower() for n in sources.UPLIFT_ADDONS} if path == UPLIFT else set()
+    # ...nor on another route while they are still on our record: the
+    # previous route's uninstall takes them out (gate 2.1.0)
+    try:
+        mine |= {Path(x).name.lower() for x in _previously_ours(root)
+                 if Path(x).name in sources.UPLIFT_ADDONS}
+    except Exception:
+        pass
     for n in OTHER_NGX_HOOKS:
         if path == STANDALONE and n.lower() == STANDALONE_BRIDGE.lower():
+            continue
+        if n.lower() in mine:
             continue
         if n.lower() in names:
             found.append(names[n.lower()])
@@ -142,9 +161,11 @@ def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
     # loaded by ReShade regardless and hooks the same swap chain.
     ours = {"dlss5-feed.addon64", "dlss5-bridge.addon64",
             RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
-            STANDALONE_ADDON.lower(), "rtx40mfg-ui.addon64"}
+            STANDALONE_ADDON.lower(), "rtx40mfg-ui.addon64",
+            FEEDER_ADDON32.lower()} | mine
     for low, orig in names.items():
-        if low.endswith(".addon64") and low not in ours:
+        # ReShade also loads plain .addon files (Luma mods ship that way).
+        if low.endswith((".addon64", ".addon32", ".addon")) and low not in ours:
             found.append(orig)
     # A name that is both in OTHER_NGX_HOOKS and an add-on of somebody
     # else's was counted twice, and the warning read
@@ -377,6 +398,12 @@ def reliability(g: games.Game, path: str = FEEDER,
                               "is the fragile part: resolution or display-mode "
                               "changes need a restart, and some games hang at "
                               "start. Few games tested.")
+    if path == UPLIFT:
+        return EXPERIMENTAL, ("GITC-Uplift runs the network itself, on the "
+                              "finished frame or inside the game's own DLSS "
+                              "where there is one; 32-bit games go through "
+                              "its 64-bit helper. Its settings and log "
+                              "lines can change between releases.")
     if path == ROUTE_RENODX:
         if g.api == "DX9":
             return BETA, ("64-bit DirectX 9 through the renodx-dlss add-on: it "
@@ -469,7 +496,7 @@ RESHADE_PROXY_HELP = {
     "d3d11.dll": "try this if a D3D11 game will not start with dxgi",
     "d3d12.dll": "D3D12 alternative to dxgi",
     "d3d10.dll": "D3D10 only",
-    "d3d9.dll": "DirectX 9 (rarely useful - DX9 goes through DXVK)",
+    "d3d9.dll": "default for DirectX 9 on the routes that do not go through DXVK",
     "opengl32.dll": "the only option for OpenGL",
 }
 # dinput8.dll is NOT offered here: it used to be, as a ReShade proxy name to
@@ -485,6 +512,10 @@ def _proxy_name(api: str, chosen: str = "") -> str:
         return VULKAN_LAYER
     if chosen in RESHADE_PROXIES:
         return chosen
+    # A DirectX 9 game not translated by DXVK (renodx-dlss, GITC-Uplift)
+    # never loads dxgi.dll: #77 and #171 got it and nothing ever loaded.
+    if api == "DX9":
+        return "d3d9.dll"
     return "opengl32.dll" if api == "OpenGL" else "dxgi.dll"
 
 
@@ -556,7 +587,8 @@ def dxvk_api(g: games.Game, opt: "Options") -> str:
     is one DXVK translates, and either the box is ticked or the executable is
     one of the games known to need it, that detected API is used.
     """
-    if opt.path in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX):
+    # GITC-Uplift reaches Direct3D 9 and 11 itself, through ReShade.
+    if opt.path in (OPTI, ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX, UPLIFT):
         return ""
     api = g.api
     if api not in dxvk.APIS:
@@ -1254,6 +1286,66 @@ def _place_entry(e: dict, dest: Path, rep, root: Path, dl, member: str,
         rep.written.append(str(dest))
 
 
+def _install_uplift(root: Path, rep: "Report", dl, log, begin) -> None:
+    """GITC-Uplift's add-ons, helper and shaders, each file checked against
+    the release's SHA256SUMS.txt before it is used. A runtime of somebody
+    else's beside the executable is moved aside (RTX 50 loads it first)."""
+    begin("GITC-Uplift")
+    tag, zurl, surl = sources.resolve_uplift()
+    zf = dl(zurl, zurl.rsplit("/", 1)[-1])
+    sums = ""
+    if surl:
+        try:
+            sums = net.fetch_text(surl).decode("utf8", "replace")
+        except Exception as e:
+            log(f"      SHA256SUMS.txt could not be read ({e}) - not checked")
+    checked = 0
+    for name in sources.UPLIFT_ADDONS + sources.UPLIFT_SHADERS:
+        dest = (root / SHADERS / name) if name.endswith(".fx") else root / name
+        try:
+            _extract(zf, name, dest, rep, root)
+        except RuntimeError:
+            raise InstallError(f"The GITC-Uplift {tag} archive has no {name}.")
+        want = sources.uplift_sum(sums, name)
+        if sums and want and net.sha256(dest).lower() != want:
+            # the cached zip goes too, or every retry reads the same one
+            for bad in (dest, Path(zf)):
+                try:
+                    bad.unlink()
+                except OSError:
+                    pass
+            raise InstallError(f"{name} from GITC-Uplift {tag} does not match the "
+                               f"SHA-256 its release publishes - the download is "
+                               f"damaged or not the release's. Install again.")
+        checked += bool(sums and want)
+        rep.written.append(str(dest.relative_to(root)))
+        log(f"      {dest.relative_to(root)}")
+    total = len(sources.UPLIFT_ADDONS) + len(sources.UPLIFT_SHADERS)
+    log(f"      GITC-Uplift {tag} ({checked} of {total} files checked against its SHA-256 list)")
+    if surl and checked == 0:
+        rep.warnings.append(f"GITC-Uplift {tag}: its SHA256SUMS.txt could not be read or names "
+                            f"none of the files, so they went in unchecked")
+    rep.notes.append(f"uplift version: {tag}")
+    rep.components["uplift"] = tag
+    stray = root / DLSSNR
+    if stray.is_file() and DLSSNR not in rep.preinstalled:
+        had_backup = (root / (DLSSNR + BACKUP_SUFFIX)).is_file()
+        _backup(stray, rep, root)
+        try:
+            if had_backup:
+                # a backup from an earlier install is there: this one is
+                # another file, kept beside it rather than deleted
+                stray.replace(root / (DLSSNR + SUPERSEDED_SUFFIX))
+            elif (root / (DLSSNR + BACKUP_SUFFIX)).is_file():
+                stray.unlink()
+                log(f"      moved the {DLSSNR} beside the executable aside "
+                    f"(RTX 50 would load it before GITC-Uplift can)")
+        except OSError:
+            rep.warnings.append(f"could not move the {DLSSNR} beside the "
+                                f"executable aside - on RTX 50 GITC-Uplift "
+                                f"cannot run while it is there")
+
+
 def _extract(zpath: Path, member: str, dst: Path, rep: Report, root: Path) -> None:
     """Extract one member, preserving anything already at the destination."""
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1448,6 +1540,13 @@ def plan(g: games.Game, opt: Options) -> list[str]:
         # add-on beside it (two NGX hooks), and the game's nvngx_dlss.dll is
         # never replaced: its DLSS is what the network feeds.
         return steps + ["neural-upstream", "nvngx_dlssnr.dll",
+                        *([DLSSD] if opt.dlssd else []),
+                        "ReShade configuration"]
+
+    if opt.path == UPLIFT:
+        # Runs the network itself (no renodx add-on), on the game's own
+        # DLSS when there is one, so no nvngx_dlss.dll goes in.
+        return steps + ["GITC-Uplift", "nvngx_dlssnr.dll",
                         *([DLSSD] if opt.dlssd else []),
                         "ReShade configuration"]
 
@@ -1798,7 +1897,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
     # Another injector already under the proxy name?
     if opt.path != OPTI and proxy != VULKAN_LAYER:
         existing = root / proxy
-        if existing.is_file() and not _is_reshade(existing):
+        if existing.is_file() and not _is_reshade(existing) and proxy not in preinstalled:
             if optiscaler.is_optiscaler(existing):
                 backup(proxy)
                 add(pv.removes, f"{proxy} (an OptiScaler installed by hand)")
@@ -2025,6 +2124,16 @@ def preview(g: games.Game, opt: Options) -> Preview:
     dlss_dir = "" if (x64 or opt.path != FEEDER) else host
     if opt.path == UPSTREAM:
         write(UPSTREAM_ADDON)
+    elif opt.path == UPLIFT:
+        for n in sources.UPLIFT_ADDONS:
+            write(n)
+        for n in sources.UPLIFT_SHADERS:
+            write(rel(SHADERS, n))
+        if present(DLSSNR) and DLSSNR not in preinstalled:
+            pv.warnings.append(f"the {DLSSNR} beside the executable is moved "
+                               f"aside (uninstall puts it back): on RTX 50 "
+                               f"NVIDIA's DLSS would load it first, and "
+                               f"GITC-Uplift cannot use that copy")
     elif opt.path == STANDALONE:
         for h in sources.RESHADE_HEADERS:
             write(rel(SHADERS, h))
@@ -2049,9 +2158,9 @@ def preview(g: games.Game, opt: Options) -> Preview:
             write(rel(TEXTURES, VORT_TEXTURE))
     else:
         write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
-    write(rel(dlss_dir, DLSSNR))
+    write(rel(UPLIFT_DIR if opt.path == UPLIFT else dlss_dir, DLSSNR))
     game_has = present(DLSS)
-    if opt.path != UPSTREAM and not (x64 and game_has and opt.keep_game_dlss):
+    if opt.path not in (UPSTREAM, UPLIFT) and not (x64 and game_has and opt.keep_game_dlss):
         write(rel(dlss_dir, DLSS))
         _nd = _nested_game_dlss(root, g, opt, x64, ours=preinstalled)
         if _nd is not None and not _same_path(_nd, root / rel(dlss_dir, DLSS)):
@@ -2407,6 +2516,7 @@ ROUTE_ADDONS = {
     ROUTE_RENODX: (RENODX_SF,),
     UPSTREAM: (UPSTREAM_ADDON,),
     STANDALONE: (STANDALONE_ADDON, STANDALONE_BRIDGE),
+    UPLIFT: sources.UPLIFT_ADDONS,
 }
 
 
@@ -2418,7 +2528,7 @@ def _foreign_addons(keep: str) -> list[tuple[str, str]]:
     # hook NGX, and two loaded together fight over the same entry points.
     # The standalone add-on runs the network itself; renodx-dlss5 beside it
     # would process the frame twice.
-    if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX):
+    if keep in (ROUTE_RENODX, UPSTREAM, STANDALONE, ROUTE_REMIX, UPLIFT):
         out.append((NATIVE, RENODX))
     return out
 
@@ -2646,7 +2756,7 @@ def options_from_manifest(root: Path) -> Options | None:
         return None
     path = data.get("path") or FEEDER
     if path not in (NATIVE, BRIDGE, FEEDER, OPTI, ROUTE_RENODX, UPSTREAM,
-                    STANDALONE, ROUTE_REMIX):
+                    STANDALONE, ROUTE_REMIX, UPLIFT):
         return None
     upscaler = str(data.get("upscaler") or "")
     return Options(
@@ -2681,9 +2791,13 @@ def options_from_manifest(root: Path) -> Options | None:
         # dropped them put it back to the state that did not. The record
         # holds the DXVK version when it went in, and the proxy name used.
         dxvk=bool(data.get("dxvk")) and path in (NATIVE, BRIDGE, FEEDER),
+        # ...except dxgi.dll on a DirectX 9 game: that was the default before
+        # 2.1.0, not a choice, and a DX9 game never loads it (#77 #171).
         reshade_proxy=(str(data.get("proxy") or "")
                        if path not in (OPTI, ROUTE_REMIX)
-                       and str(data.get("proxy") or "") in RESHADE_PROXIES else ""),
+                       and str(data.get("proxy") or "") in RESHADE_PROXIES
+                       and not (str(data.get("api") or "") in ("DX9", "DX8")
+                                and str(data.get("proxy") or "") == "dxgi.dll") else ""),
         gpu_pref=bool(data.get("gpu_pref_on", True)),
     )
 
@@ -2696,6 +2810,8 @@ def _gpu_exes(root: Path, g: games.Game, opt: Options) -> list[Path]:
         out.append(Path(g.exe))
     if opt.path == FEEDER and g.bitness != 64:
         out.append(root / HOST_DIR / FEEDER_HOST)
+    if opt.path == UPLIFT and g.bitness != 64:
+        out.append(root / "gitc-uplift-helper64.exe")
     return out
 
 
@@ -2998,8 +3114,11 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
     # Is another injector already in place?
     existing = root / proxy if proxy else root
+    # Our own file under that name (DXVK's d3d9.dll from a previous route,
+    # now that DX9 takes ReShade as d3d9.dll) is not another injector: the
+    # previous route's uninstall below takes it out (gate 2.1.0).
     if opt.path not in (OPTI, ROUTE_REMIX) and existing.is_file() \
-            and not _is_reshade(existing):
+            and not _is_reshade(existing) and proxy not in _previously_ours(root):
         if optiscaler.is_optiscaler(existing):
             # A hand-installed OptiScaler (no record of ours) under the name
             # ReShade needs. Two injectors under one name cannot coexist, and
@@ -3391,17 +3510,17 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.notes.append("OptiScaler is wilsjo2's fork of the DLSS-NR "
                                  "build: the neural pass runs before super "
                                  "resolution rather than after it, over one to "
-                                 "three passes (OptiScaler.ini: Passes=). Not "
-                                 "run in a game here - if it misbehaves, "
-                                 "install again with the DLSS-NR build.")
+                                 "three passes (OptiScaler.ini: Passes=). If it "
+                                 "misbehaves, install again with the "
+                                 "DLSS-NR build.")
             elif opt.opti_build == optiscaler.JANBLADE:
                 log(f"      Janblade's fork, {orel[0]}")
                 rep.notes.append("OptiScaler is Janblade's fork of wilsjo2's "
                                  "build: the neural pass runs before super "
                                  "resolution rather than after it, over one to "
-                                 "three passes (OptiScaler.ini: Passes=). Not "
-                                 "run in a game here - if it misbehaves, "
-                                 "install again with the DLSS-NR build.")
+                                 "three passes (OptiScaler.ini: Passes=). If it "
+                                 "misbehaves, install again with the "
+                                 "DLSS-NR build.")
             elif opt.opti_build == optiscaler.PRESR_MFG:
                 log(f"      wilsjo2's fork with RTX 40 MFG, {orel[0]}")
                 rep.notes.append("OptiScaler is wilsjo2's RTX 40 MFG package: "
@@ -3410,8 +3529,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "Passes=), and its RTX 40 unlock is switched "
                                  "on ([DLSSG] AdaMfgUnlock=true), so a game "
                                  "with its own DLSS frame generation can offer "
-                                 "3x/4x on an RTX 40. Not run in a game here - "
-                                 "if frame generation misbehaves, install again "
+                                 "3x/4x on an RTX 40. If frame generation "
+                                 "misbehaves, install again "
                                  "with \"wilsjo2's fork\" in 'optiscaler build'.")
             try:
                 for f in optiscaler.install(root, proxy=oproxy, dl=dl, log=log,
@@ -3754,6 +3873,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                              "not a driver file - uninstall removes it")
 
             _install_vort(root, rep, dl, log, begin)
+        elif opt.path == UPLIFT:
+            _install_uplift(root, rep, dl, log, begin)
         else:
             sf = opt.path == ROUTE_RENODX
             addon_name = RENODX_SF if sf else RENODX
@@ -3849,6 +3970,8 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 rep.notes.append(f"renodx version: {e['label']}")
                 rep.components["renodx"] = e["label"]
 
+        if opt.path == UPLIFT:
+            dlss_dir = root / UPLIFT_DIR
         begin("nvngx_dlssnr.dll")
         card, sm = gpu.detect()
         if card:
@@ -3905,7 +4028,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         else:
             rep.warnings.append(f"could not verify GPU compatibility ({why_gpu})")
 
-        if opt.path == UPSTREAM:
+        if opt.path in (UPSTREAM, UPLIFT):
             rep.skipped.append(DLSS)
         else:
             begin("nvngx_dlss.dll")
@@ -4103,8 +4226,22 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             reshade_ini.write_addon_only_ini(root)
             _ask_for_the_pass(root, opt, log)
             if opt.path == ROUTE_RENODX:
-                reshade_ini.enable_renodx_dlss_nr(root)
+                _held = reshade_ini.enable_renodx_dlss_nr(
+                    root, g.exe.name if g.exe else "")
                 log("      [RENODX-DLSS] NeuralRenderingEnabled=1")
+                if _held == "kept":
+                    rep.notes.append(
+                        f"DirectNeuralRenderingHookStage is already set in "
+                        f"ReShade.ini and was left as it is - set it to 0 if "
+                        f"{g.exe.name} closes itself at start.")
+                elif _held:
+                    log("      [RENODX-DLSS] DirectNeuralRenderingHookStage=0")
+                    rep.notes.append(
+                        f"{g.exe.name} closes itself when neural rendering is "
+                        f"hooked at start, so it starts with the hook off "
+                        f"(DirectNeuralRenderingHookStage=0 in ReShade.ini). "
+                        f"Start the game, open the ReShade overlay (Home) and "
+                        f"switch neural rendering on there.")
             if opt.path == UPSTREAM:
                 rep.notes.append("neural-upstream is configured from its 'NR "
                                  "Pre-Upscale' tab in the ReShade overlay. With "
@@ -4118,7 +4255,18 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "native, which runs after the game's own "
                                  "tone mapping.")
             rep.written.append("ReShade.ini")
-            if opt.path == STANDALONE:
+            if opt.path == UPLIFT:
+                # Uplift.fx has to compile for the add-on's technique and
+                # its motion-vector links; nothing is enabled in a preset.
+                reshade_ini.write_shader_paths(root)
+                log("      shader search paths set for Uplift.fx")
+                rep.notes.append(
+                    f"GITC-Uplift starts switched off: start the game, open "
+                    f"ReShade ({reshade_ini.overlay_key_name()}), go to the GITC "
+                    f"Uplift tab and tick Enable. The card at the top of that tab "
+                    f"says whether it is working and what to do if not; its "
+                    f"lines in ReShade.log start with [Uplift].")
+            elif opt.path == STANDALONE:
                 # Search paths so ReShade can compile the two shaders; no
                 # technique in any preset - the add-on schedules them itself
                 # inside its Present callback, in the order it needs.

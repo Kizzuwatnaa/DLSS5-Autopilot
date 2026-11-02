@@ -1,0 +1,59 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+if DirectNeuralRenderingHookStage=0 is not set (in other words, to any value other than 0) the game will not start.
+
+It has to be set to 0 to start, then once started can be activated in RenoDX.
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 621.01
+- game: Mafia II: Definitive Edition
+- exe: Mafia II Definitive Edition.exe
+- arch/api: 64-bit / DX11 (imports d3d11.dll statically)
+- route: renodx
+
+**Diagnosis**: The game closed itself and nothing here recorded why - see below for what to take out first.
+- [bad] You said the game closed itself.
+- [ok] ReShade loaded add-on: RenoDX DLSS 0.2026.1003.2333
+- [ok] When it last ran (17 Oct 14:23), the process had dxgi.dll, renodx-dlss.addon64 loaded.
+- [info] nvngx_dlssnr.dll was not loaded yet when the game was seen.
+
+**Files in the folder**
+- dxgi.dll: present
+- renodx-dlss.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: Mafia II Definitive Edition.exe: High performance
+
+**What ran, and what it loaded** (seen at 17 Oct 14:23)
+- process: Mafia II Definitive Edition.exe
+- ran from: Mafia II Definitive Edition.exe
+- DLLs in the process: 137
+- graphics DLLs in the process: d3d12.dll, d3d11.dll, dxgi.dll
+- ours, loaded: dxgi.dll, renodx-dlss.addon64
+- ours, not loaded: nvngx_dlssnr.dll
+- also written, loaded only if the game asks: nvngx_dlss.dll
+
+**ReShade.log**
+```
+17:53:52:549 [26044] | INFO  | Registered add-on "RenoDX DLSS" v0.2026.1003.2333 using ReShade API version 18.
+17:54:35:357 [24936] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+17:54:35:358 [24936] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+17:54:35:358 [24936] | WARN  | Ignoring LoadLibrary('devobj.dll') call to avoid possible deadlock.
+17:54:35:359 [ 4112] | WARN  | Ignoring LoadLibrary('kernel32.dll') call to avoid possible deadlock.
+17:54:35:361 [26588] | WARN  | Ignoring LoadLibrary('api-ms-win-appmodel-runtime-l1-1-2') call to avoid possible deadlock.
+17:54:35:496 [ 4112] | WARN  | Ignoring LoadLibrary('cryptnet.dll') call to avoid possible deadlock.
+17:54:35:497 [11032] | WARN  | Ignoring LoadLibrary('wldp.dll') call to avoid possible deadlock.
+17:54:35:498 [ 4112] | WARN  | Ignoring LoadLibrary('drvstore.dll') call to avoid possible deadlock.
+17:54:35:499 [11032] | WARN  | Ignoring LoadLibrary('crypt32.dll') call to avoid possible deadlock.
+18:48:40:319 [26044] | WARN  | Reference count for ID3D11Device0 object 000000004E9D16A0 (0000000006EA5700) is inconsistent (558).
+18:48:40:319 [26044] | WARN  | Reference count for IDXGISwapChain1 object 000000004EC90750 (000000004EDD7F50) is inconsistent (1).
+18:48:40:786 [26044] | INFO  | Exiting ...
+18:48:40:786 [26044] | WARN  | Add-ons are still loaded! Application may crash on exit.
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

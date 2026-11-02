@@ -35,6 +35,10 @@ _FAIL_WORDS = {"evaluate": "evaluates", "command list": "command lists",
 # later, so anything outside this window is another launch.
 _TIE_BEFORE, _TIE_AFTER = 5.0, 120.0
 
+# The bridge's own count when it is asked to say what the game did with DLSS
+# (#862: RPCS3 asked for nothing, and the verdict said "turn DLSS on").
+_BRIDGE_ASKED_NONE = re.compile(r"CreateFeature calls: 0, EvaluateFeature calls: 0")
+
 
 @dataclass
 class BridgeRun:
@@ -50,6 +54,7 @@ class BridgeRun:
     path: str = "bridge"          # the stop's own tag: bridge, synth or vkmirror
     crashed: bool = False         # the crash handler's block is the stop
     called: bool = False          # the log shows the game calling DLSS
+    asked_none: bool = False      # the bridge counted no call at all
     recorded: int = 0             # Vulkan mirror frames recorded, not yet delivered
     refused: str = ""             # NGX's answer to CreateFeature, when it refused
     failed: list = field(default_factory=list)   # evaluate failures after it
@@ -87,6 +92,7 @@ def read_bridge(text: str) -> BridgeRun | None:
         return None
     run = BridgeRun(version=att.group(2), attached=att.group(0).strip())
     run.called = bool(_BRIDGE_CALLED.search(text))
+    run.asked_none = bool(_BRIDGE_ASKED_NONE.search(text)) and not run.called
     refused = list(_BRIDGE_CREATE_FAILED.finditer(text))
     if refused:
         run.refused = f"{refused[-1].group(1)}, {refused[-1].group(2).rstrip(',')}"
@@ -316,6 +322,13 @@ def _bridge_verdict(rep: Report, run: BridgeRun, panel: str, rtext: str,
                        f"the {own_panel} says why, and 'report a bug' carries "
                        f"{BRIDGE_LOG}."
                        if run.called else
+                       # A synthetic contract is for games that make no
+                       # call, so "no call" alone does not blame the game
+                       # (gate 2.1.0); the feeder needs no call at all.
+                       f"The bridge counted no DLSS call and delivered no "
+                       f"frame - the {own_panel} says why. The feeder route "
+                       f"draws its own frame and needs no call."
+                       if synthetic and run.asked_none else
                        f"The bridge attached and delivered no frame from the "
                        f"driver's optical flow - the {own_panel} says why."
                        if synthetic else
@@ -357,6 +370,7 @@ def _bridge_excerpt(text: str, n: int = 6, budget: int = 900,
     # what made "the game called DLSS" true, or the replay says "turn it on"
     called = [i for i, ln in enumerate(lines)
               if _BRIDGE_CALLED.search(ln) and not _BRIDGE_FAILED.search(ln)]
+    asked = [i for i, ln in enumerate(lines) if _BRIDGE_ASKED_NONE.search(ln)]
     crash = [j for i, ln in enumerate(lines) if "### CRASH RECORDED ###" in ln
              for j in range(i, min(i + 4, len(lines)))]
     # Most important first: what is dropped over budget is the end of this,
@@ -367,7 +381,7 @@ def _bridge_excerpt(text: str, n: int = 6, budget: int = 900,
     # The highest frame count goes before them, or a long stop line pushed
     # it out and the replay read "before it delivered a frame".
     firm = ([0] + frames[-1:] + so_far[-1:] + crash[:4] + stops[-4:] + frames[:1]
-            + called[-1:] + failed[-2:] + stats[-1:])
+            + called[-1:] + asked[-1:] + failed[-2:] + stats[-1:])
     keep = list(dict.fromkeys(firm + stats[-3:-1]
                               + list(range(len(lines) - 1, max(0, len(lines) - n) - 1, -1))))
 

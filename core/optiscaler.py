@@ -92,8 +92,7 @@ PRESR_BEFORE_SR = {"RunBeforeSR": True}
 # same OptiScaler.ini keys, with only OptiScaler.dll changed (and, from
 # 0.1.28, a test zip beside the standard one - see FORKS). Its newest
 # release is often flagged pre-release; like every fork
-# here the pick ignores that flag. Offered and labelled as not run here,
-# never chosen automatically.
+# here the pick ignores that flag. Offered, never chosen automatically.
 JANBLADE_API = ("https://api.github.com/repos/Janblade/"
                 "OptiScaler-F5-DLSSNR-Multipass/releases?per_page=10")
 JANBLADE = "janblade"
@@ -135,11 +134,11 @@ BUILDS = {
     "": "Dagherbou's DLSS-NR build  -  the newest package on its release page",
     FORK: "y4my4my4m's fork  -  multi-frame generation on RTX 40, development builds",
     PRESR: "wilsjo2's fork  -  neural rendering before the upscaler, "
-           "1-3 passes; not run here",
+           "1-3 passes",
     PRESR_MFG: "wilsjo2's fork + RTX 40 MFG  -  the same pass with "
-               "multi-frame generation, RTX 40 cards only; not run here",
+               "multi-frame generation, RTX 40 cards only",
     JANBLADE: "Janblade's fork  -  a fork of wilsjo2's, neural rendering "
-              "before the upscaler; not run here",
+              "before the upscaler",
 }
 
 
@@ -718,6 +717,12 @@ HOTFIX_SECTION = "Hotfix"
 HOTFIX_VALUES = {"CheckForUpdate": "false"}
 NR_PRESETS = {0: "Default", 1: "Preset 1", 2: "Preset 2", 3: "Preset 3"}
 NR_STYLES = {0: "Standard", 1: "Natural", 2: "Cinematic"}
+# The pre-SR forks (wilsjo2, Janblade) run the model again on its own output:
+# [DlssNr] Passes, clamped 1-3 there (#957). 0 is "auto": 1 is written on those
+# builds, so a 3 kept in OptiScaler.ini from an earlier install does not stay.
+# Each pass is a whole pass: 2x costs about twice the model time, 3x three
+# times.
+NR_PASSES = {0: "auto", 2: "2x", 3: "3x"}
 NR_SCALE_MIN, NR_SCALE_MAX = 25, 100
 # Where the dial pays off. At 100% the pass costs about half your fps; the
 # author's note is that cost falls with the square, so 75% is roughly half
@@ -1050,6 +1055,13 @@ def describe_nr(settings: dict | None) -> list[str]:
     pr = settings.get("Preset")
     if pr:
         out.append(f"model preset: {NR_PRESETS.get(int(pr), pr)}")
+    try:
+        ps = int(float(settings.get("Passes") or 0))
+    except (TypeError, ValueError, OverflowError):
+        ps = 0
+    if ps > 1:
+        out.append(f"model passes: {int(ps)}x - each pass runs the whole model "
+                   f"again, so about {int(ps)} times its cost")
     st = settings.get("Style")
     if st:
         out.append(f"style: {NR_STYLES.get(int(st), st)}")

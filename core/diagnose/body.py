@@ -27,7 +27,7 @@ __all__ = [
     "CLOSED_ITSELF", "NEVER_STARTED", "_block", "_dlss_record_root",
     "_last_lines", "_presence", "answered", "event_line", "said_started",
     "_reshade_excerpt", "_their_provider", "_tool_log_lines", "issue_body",
-    "PASTE_FIRST", "issue_url", "event_module"
+    "PASTE_FIRST", "NO_PASTE_FIRST", "issue_url", "event_module"
 ]
 
 def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
@@ -56,14 +56,34 @@ def _reshade_excerpt(text: str, n: int = 25, budget: int = 1500) -> list[str]:
     firm |= {i for i, ln in enumerate(kept) if "[NRPRE] " in ln}
     firm |= set(sorted(i for i, ln in enumerate(kept)
                        if any(k in ln for k in _RESHADE_ALSO))[-8:])
+    # The diagnosis tells a Direct3D 9 device from a DXGI swap chain by these
+    # two lines alone ("Direct3DCreate9" without "CreateSwapChain"). A log full
+    # of WARN lines pushed the newest of each out of the excerpt, and the
+    # replay of #823 answered something else than the machine had (2.1.0).
+    # Only the newest line of each key is held: "Redirecting Direct3DCreate9"
+    # is written by the dozen on a D3D9 game and the driver rule reads other
+    # lines than those.
+    pinned = set()
+    for key in _RESHADE_DECIDES:
+        at = [i for i, ln in enumerate(kept) if key in ln]
+        if at:
+            firm.add(at[-1])
+            pinned.add(_HOOK_ADDRESSES.sub("", kept[at[-1]].rstrip())[:200])
     rest = [i for i in range(len(kept)) if i not in firm][-n:]
     lines = [_HOOK_ADDRESSES.sub("", kept[i].rstrip())[:200]
              for i in sorted(firm | set(rest))]
-    for spare in (lambda ln: ln not in held and not any(k in ln for k in _RESHADE_FIRM + _RESHADE_ALSO),
-                  lambda ln: ln not in held and not any(k in ln for k in _RESHADE_FIRM),
+    for spare in (lambda ln: ln not in held and not any(
+                      k in ln for k in _RESHADE_FIRM + _RESHADE_ALSO),
+                  lambda ln: ln not in held and not any(
+                      k in ln for k in _RESHADE_FIRM),
                   lambda ln: True):
         while len(lines) > n or len("\n".join(lines)) > budget:
-            i = next((i for i, ln in enumerate(lines) if spare(ln)), None)
+            # one occurrence of each pinned line stays (the last: identical
+            # lines are the same text, and only one of them is the newest)
+            keep_at = {max(j for j, ln in enumerate(lines) if ln == s)
+                       for s in pinned if s in lines}
+            i = next((i for i, ln in enumerate(lines)
+                      if i not in keep_at and spare(ln)), None)
             if i is None:
                 break
             del lines[i]
@@ -143,6 +163,8 @@ _FEED_KINDS = (("attached", "attached."), ("provider", "DLSS5_MV_PROVIDER="),
                ("depth", "Depth probe"), ("spawned", "host spawned"),
                ("connected", "host connected"), ("building", "building: "),
                ("fault", " stack, by module (innermost first):"),
+               # the other half of the driver-fault rule (#917)
+               ("raised", "evaluate raised"),
                # feeder 1.18.0-beta: NGX's own result and the helper mode
                ("ngxresult", "FeatureInitResult"),
                ("inprocess", "would not set DLSS up inside this game's process"),
@@ -430,6 +452,11 @@ def _presence(install_dir: Path, man: dict, route: str, game_root=None) -> list[
     # "nvngx_dlssnr.dll: MISSING" on installs that were perfectly fine.
     if man.get("bitness") == 32 and route == "feeder":
         names.append("host64/nvngx_dlssnr.dll")
+    elif route == "uplift":
+        # its runtime is in its own folder; one beside the exe is moved aside
+        names += ["GITC-Uplift/nvngx_dlssnr.dll", "gitc-uplift-helper64.exe",
+                  "reshade-shaders/Shaders/Uplift.fx",
+                  "reshade-shaders/Shaders/UpliftMask.fx"]
     else:
         names.append("nvngx_dlssnr.dll")
     prov = None
@@ -524,6 +551,21 @@ def _work_area(install_dir, route: str, game=None) -> str:
         return ""
 
 
+def _contract(install_dir, route: str) -> str:
+    """"- bridge contract: synthetic" when the bridge was installed for a game
+    that ships no DLSS. The bridge's verdict reads this (it asks nothing of the
+    game then), and the report used to leave it out, so a replay said "turn
+    DLSS on" where the machine said otherwise (#862)."""
+    if route != "bridge" or not install_dir:
+        return ""
+    try:
+        man = _manifest(Path(install_dir))
+        return ("- bridge contract: synthetic\n"
+                if man.get("native_dlss") is False else "")
+    except Exception:
+        return ""
+
+
 # What the person answers in the report dialog (reportui.STARTED), in the
 # words the report prints them. The old template's "yes / no / it closed
 # itself", left untouched, is no answer at all.
@@ -608,6 +650,16 @@ def answered(rep: Report, started: str, presence=(), kind: str = "game",
                     if "swapped to" in x and "backed up" in x]
     ran = rep.verdict.startswith("Working")
     steps = []
+    # Another mod's add-on ran in ReShade beside ours (#944: Prey Luma): it
+    # is the first thing to take out, before anything of ours.
+    beside = next((f.title.split(":", 1)[1].strip() for f in rep.findings
+                   if f.title.startswith(("Other ReShade add-ons are loaded:",
+                                          "Another DLSS hook was loaded beside ours:"))),
+                  "")
+    if beside:
+        steps.append(f"move {beside} out of the game folder first - ReShade "
+                     f"loads every add-on it finds there, this one is not "
+                     f"ours, and it ran beside ours - and start the game once")
     if swaps:
         steps.append(f"undo what the dlss page changed first - "
                      f"{', '.join(swaps[:3])} - with 'restore original' on "
@@ -696,7 +748,13 @@ PASTE_FIRST = ("**The whole report is on your clipboard: click in this box, "
                "start.\n\n")
 
 
-def issue_url(repo: str, title: str, body: str, limit: int = URL_MAX) -> tuple[str, bool]:
+# The clipboard did not take the report (gate 2.1.0: the link said it did).
+NO_PASTE_FIRST = ("**Only the start of the report fits here - attach the zip "
+                  "from 'save zip' in the tool.**\n\n")
+
+
+def issue_url(repo: str, title: str, body: str, limit: int = URL_MAX,
+              pasted: bool = True) -> tuple[str, bool]:
     """(the new-issue link, whether the body had to be cut).
 
     Over GitHub's URL cap the whole body goes on the clipboard, and the link
@@ -706,18 +764,34 @@ def issue_url(repo: str, title: str, body: str, limit: int = URL_MAX) -> tuple[s
     the diagnosis and the file list come first), under the instruction, so
     an issue nobody pasted into still says what happened."""
     from urllib.parse import quote
+    # A long game name in a non-Latin script costs nine characters a letter
+    # once quoted and would eat the room the report needs.
+    title = " ".join(str(title).split())[:120]
     base = f"{repo}/issues/new?title={quote(title)}&body="
     if len(base + quote(body)) <= limit:
         return base + quote(body), False
+    first = PASTE_FIRST if pasted else NO_PASTE_FIRST
     lines = body.splitlines(keepends=True)
     lo, hi = 0, len(lines)
     while lo < hi:
         mid = (lo + hi + 1) // 2
-        if len(base + quote(PASTE_FIRST + "".join(lines[:mid]))) <= limit:
+        if len(base + quote(first + "".join(lines[:mid]))) <= limit:
             lo = mid
         else:
             hi = mid - 1
-    return base + quote(PASTE_FIRST + "".join(lines[:lo])), True
+    if lo:
+        return base + quote(first + "".join(lines[:lo])), True
+    # Not even the first line fits (a header with a long path in it): cut
+    # inside it. The link used to carry the paste instruction alone here,
+    # which is the empty report #751 and #770 arrived as.
+    lo, hi = 0, len(body)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(base + quote(first + body[:mid])) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return base + quote(first + body[:lo]), True
 
 
 def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
@@ -788,6 +862,7 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         # and a report about one of those numbers used to arrive without
         # it - so neither the reply nor the replay could reproduce a line.
         + _work_area(install_dir, route, game)
+        + _contract(install_dir, route)
         # What Windows recorded, when there is one: the faulting module is
         # the most useful line a "the game closed itself" report can carry,
         # and nobody was attaching it because nobody knew to look.

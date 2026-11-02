@@ -96,13 +96,14 @@ class DlssControl:
         return {"g": g, "entries": entries, "behind": behind, "news": news,
                 "anticheat": str(info.get("anticheat") or ""), "running": str(info.get("running") or ""),
                 "anticheat_found": str(info.get("anticheat_found") or ""),
+                "held": du.held(g),
                 "restorable": any(e.backup is not None or e.state == du.UPDATED for e in entries)}
 
     @staticmethod
     def _dlss_rank(r) -> tuple:
         # what can be updated now first, then what is behind but needs a look
         # (anti-cheat, running), then the rest
-        now = bool(r["behind"] and not r["anticheat"] and not r["running"])
+        now = bool(r["behind"] and not r["anticheat"] and not r["held"] and not r["running"])
         return (not now, not r["behind"], r["g"].name.lower())
 
     def dlss_rows(self) -> list[dict]:
@@ -115,8 +116,17 @@ class DlssControl:
         return rows
 
     def dlss_todo(self) -> list[dict]:
-        """What "update all" takes: behind, no anti-cheat, not running."""
-        return [r for r in self.dlss_rows() if r["behind"] and not r["anticheat"] and not r["running"]]
+        """What "update all" takes: behind, no anti-cheat, not kept, not running."""
+        return [r for r in self.dlss_rows()
+                if r["behind"] and not r["anticheat"] and not r["held"] and not r["running"]]
+
+    def dlss_toggle_hold(self, g) -> None:
+        """"keep its own" / "allow updates" on a game's row (#856)."""
+        on = not du.held(g)
+        du.set_held(g, on)
+        self.shell.status(f"{g.name}: update all will " + ("leave it as it is" if on else "update it again"))
+        self.refresh("dlss")
+        self.refresh("game")
 
     def dlss_line(self, g) -> str:
         """The game page's line, when this game's DLSS is behind: "dlss 3.7.20 -> 310.9.1"."""
@@ -131,13 +141,14 @@ class DlssControl:
         n = len({x.family for x in r["behind"]}) - 1
         more = f" and {n} more" if n > 0 else ""
         name = {"dlss": "dlss", "dlssg": "frame generation", "dlssd": "ray reconstruction"}[e.family]
-        held = f" - {r['anticheat'].lower()}" if r["anticheat"] else ""
+        held = (f" - {r['anticheat'].lower()}" if r["anticheat"]
+                else " - kept as it is" if r["held"] else "")
         return f"{name} {e.version} -> {new}{more}{held}"
 
     def dlss_line_quiet(self, g) -> bool:
         """An anti-cheat game's line is drawn without the accent: not a suggestion."""
         r = self.dlss_row(g)
-        return bool(r and r["anticheat"])
+        return bool(r and (r["anticheat"] or r["held"]))
 
     def dlss_background(self) -> None:
         """At start: read the games quietly when the last read is old, so a
@@ -399,6 +410,15 @@ class DlssControl:
                 return
             allow = True
             # the question is modal, but timers are not: a job may have begun meanwhile
+            if not self._dlss_can_start():
+                return
+        elif r.get("held"):
+            if not self.shell.ask(
+                    f"{g.name} is kept as it is - update anyway?",
+                    "You marked this game to keep its own DLSS files, so update all leaves it out. "
+                    "The game's own files are kept beside the new ones either way.",
+                    "update anyway", "cancel"):
+                return
             if not self._dlss_can_start():
                 return
         self._dlss_start(g, "update", families, allow)

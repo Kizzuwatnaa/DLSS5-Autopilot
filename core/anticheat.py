@@ -49,6 +49,11 @@ MARKERS: tuple[tuple[str, str], ...] = (
     ("punkbuster", "PunkBuster"),
     ("faceit", "FACEIT AC"),
     ("ricochet", "Ricochet"),
+    # Activision's PC titles since Warzone/Vanguard (Black Ops 6/7, Modern
+    # Warfare II/III) all start from cod.exe in the install root and carry
+    # no file named for the anti-cheat beside it (#856: Black Ops 7 took part
+    # in "update all").
+    ("cod.exe", "Ricochet"),
     # EA's own anti-cheat (EA SPORTS FC, Battlefield): the service launcher
     # sits beside the game.
     ("eaanticheat", "EA Javelin"),

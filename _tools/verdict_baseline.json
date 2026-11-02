@@ -48,7 +48,7 @@
  "127": {
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
-   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
    "warn: The add-on could not hook NVSDK_NGX_D3D12_EvaluateFeature_C.",
    "info: dlss5-bridge.log has nothing from this launch."
   ],
@@ -61,7 +61,7 @@
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Feed 0.13.1-beta.1 0.13.1.0",
    "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
-   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
    "bad: DLSS5_Feed.fx never loaded."
   ],
   "never_ran": false,
@@ -322,7 +322,7 @@
    "info: An old dlss5-feed.log is still in the folder.",
    "ok: ReShade loaded add-on: DLSS 5 Bridge 1.4.12 1.4.12.0",
    "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.2110",
-   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
    "info: dlss5-bridge.log has nothing from this launch."
   ],
   "never_ran": false,
@@ -391,7 +391,7 @@
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Bridge 1.4.12 1.4.12.0",
    "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
-   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
    "info: dlss5-bridge.log has nothing from this launch."
   ],
   "never_ran": false,
@@ -517,7 +517,7 @@
  },
  "27": {
   "findings": [
-   "warn: The add-on flagged your nvngx_dlssnr as an untested build.",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
    "info: dlss5-bridge.log has nothing from this launch."
   ],
   "never_ran": false,
@@ -670,14 +670,14 @@
  },
  "322": {
   "findings": [
-   "bad: You said the game closed itself.",
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.16.0-beta.5 0.0.0.0",
-   "bad: The game closed before it drew a single frame."
+   "bad: The game closed before it drew a single frame.",
+   "bad: The feed recorded a crash (0xE06D7363) while nothin."
   ],
   "never_ran": false,
   "ran": true,
   "route": "feeder",
-  "verdict": "The game closed itself and nothing here recorded why - see below for what to take out first."
+  "verdict": "The feed crashed after starting - a feeder bug; try another feeder build."
  },
  "325": {
   "findings": [
@@ -1566,6 +1566,19 @@
   "route": "feeder",
   "verdict": "Not started since the install - run the game once, then check again."
  },
+ "808": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: RenoDX DLSS 0.2026.1003.2333",
+   "bad: The game closed before it drew a single frame.",
+   "ok: When it last ran (17 Oct 14:23), the process had dxgi.dll, renodx-dlss.addon64 loaded.",
+   "info: nvngx_dlssnr.dll was not loaded yet when the game was seen."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "renodx",
+  "verdict": "The game closed itself and nothing here recorded why - see below for what to take out first."
+ },
  "82": {
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.14.0-beta.5 0.0.0.0",
@@ -1580,6 +1593,29 @@
   "route": "feeder",
   "verdict": "Inconclusive - the feed did not get far enough to tell."
  },
+ "823": {
+  "findings": [
+   "bad: You said the game never started.",
+   "ok: ReShade loaded add-on: DLSS 5 Bridge 1.4.12 1.4.12.0",
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "warn: The add-on flagged your nvngx_dlssnr as a build it does not list.",
+   "ok: The add-on's own switch is on.",
+   "info: The bridge attached in this launch (dlss5-bridge 1.4.12); its log has no delivered-frame line."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "bridge",
+  "verdict": "The game never started with this install in - see below for what to take out first."
+ },
+ "839": {
+  "findings": [
+   "bad: TheGreatCircle.exe ran at 19 Oct 17:31 and ReShade's Vulkan layer did not come into it."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "bridge",
+  "verdict": "TheGreatCircle.exe ran at 19 Oct 17:31, and ReShade's Vulkan layer did not reach it - nothing of this install was loaded."
+ },
  "84": {
   "findings": [
    "bad: Nothing of this tool is in this folder."
@@ -1588,6 +1624,15 @@
   "ran": false,
   "route": "",
   "verdict": "Nothing is installed in this folder - install first."
+ },
+ "850": {
+  "findings": [
+   "bad: TheOuterWorlds.exe had 19 modules and no graphics DLL loaded at 19 Oct 20:09 - that is what a starter looks like, not the executable that draws."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "standalone",
+  "verdict": "TheOuterWorlds.exe looked like a starter (no graphics DLL loaded) - install beside the executable that draws."
  },
  "86": {
   "findings": [
@@ -1603,6 +1648,20 @@
   "route": "optiscaler",
   "verdict": "OptiScaler loaded; neural rendering not switched on."
  },
+ "862": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "ok: ReShade loaded add-on: DLSS 5 Bridge 1.4.12 1.4.12.0",
+   "ok: The add-on's own switch is on.",
+   "ok: When it last ran (20 Oct 21:34), the process had dlss5-bridge.addon64, renodx-dlss5.addon64 loaded.",
+   "info: nvngx_dlssnr.dll was not loaded yet when the game was seen.",
+   "info: The bridge attached in this launch (dlss5-bridge 1.4.12); its log has no delivered-frame line."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "bridge",
+  "verdict": "The bridge attached and delivered no frame - its log shows no DLSS Super Resolution call from the game. In the game's menu turn DLSS on and, if it has Ray Reconstruction, turn that off, then check the DLSS 5 Bridge panel in the overlay."
+ },
  "87": {
   "findings": [
    "bad: The install did not finish."
@@ -1612,6 +1671,28 @@
   "route": "optiscaler",
   "verdict": "The install never finished - install again."
  },
+ "874": {
+  "findings": [
+   "bad: FactoryGameSteam.exe had 28 modules and no graphics DLL loaded at 21 Oct 20:42 - that is what a starter looks like, not the executable that draws."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "upstream",
+  "verdict": "FactoryGameSteam.exe looked like a starter (no graphics DLL loaded) - install beside the executable that draws."
+ },
+ "886": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: RenoDX DLSS 0.2026.1003.2333",
+   "bad: The game closed before it drew a single frame.",
+   "ok: When it last ran (17 Oct 14:23), the process had dxgi.dll, renodx-dlss.addon64 loaded.",
+   "info: nvngx_dlssnr.dll was not loaded yet when the game was seen."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "renodx",
+  "verdict": "The game closed itself and nothing here recorded why - see below for what to take out first."
+ },
  "89": {
   "findings": [
    "bad: The game refused the swapchain OptiScaler wrapped (0x887A0005)."
@@ -1620,6 +1701,15 @@
   "ran": true,
   "route": "optiscaler",
   "verdict": "The game refused OptiScaler's swapchain - try another name in 'loads as', or the feeder route."
+ },
+ "897": {
+  "findings": [
+   "bad: Nothing of this tool is in this folder."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "",
+  "verdict": "Nothing is installed in this folder - install first."
  },
  "9": {
   "findings": [
@@ -1652,6 +1742,23 @@
   "route": "optiscaler",
   "verdict": "The install never finished - install again."
  },
+ "917": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: LumeniteFX Kernel is enabled.",
+   "ok: The 32-bit helper process started.",
+   "ok: The game and the helper are talking.",
+   "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.",
+   "ok: NGX initialised successfully.",
+   "ok: Frames are being processed (4 logged, last was frame 3)."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "It ran, and then the game crashed - Windows recorded the fault in ReShade32.dll."
+ },
  "92": {
   "findings": [
    "bad: Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5)."
@@ -1676,6 +1783,27 @@
   "route": "optiscaler",
   "verdict": "OptiScaler loaded; neural rendering not switched on. A ReShade with renodx-dlss5 is loading as well - take that ReShade out, then install again."
  },
+ "943": {
+  "findings": [
+   "bad: TheGreatCircle.exe ran at 31 Oct 17:15 and ReShade's Vulkan layer did not come into it."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "TheGreatCircle.exe ran at 31 Oct 17:15, and ReShade's Vulkan layer did not reach it - nothing of this install was loaded."
+ },
+ "944": {
+  "findings": [
+   "bad: You said the game never started.",
+   "warn: Other ReShade add-ons are loaded: Prey Luma",
+   "warn: Running on zero-motion guides - expect ghosting.",
+   "warn: The add-on attached but never reached a contract."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "standalone",
+  "verdict": "The game never started with this install in - see below for what to take out first."
+ },
  "95": {
   "findings": [
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
@@ -1686,6 +1814,15 @@
   "ran": true,
   "route": "feeder",
   "verdict": "The add-on loaded but ReShade never gave it an effect runtime - check 'DLSS 5 Feed' is ticked in the overlay."
+ },
+ "956": {
+  "findings": [
+   "bad: The install stopped with an error, and nothing of it is in this folder."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "",
+  "verdict": "The install stopped: the download server could not be reached - try another network, then install again."
  },
  "96": {
   "findings": [

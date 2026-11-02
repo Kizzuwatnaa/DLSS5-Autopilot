@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 
-from .. import dlss, installer
+from .. import community, dlss, installer, sessioncard
 from . import art, imaging
 from . import theme as T
 from .motion import mix
@@ -163,7 +163,9 @@ class GamePage(Page):
         y = self._features(g, pad, y, width, accent)
         if self.settings_open:
             y = self.section.draw(pad, y + T.px(10), width - 2 * pad, accent)
-        y = self._offer(g, pad, y + T.px(16), width, accent)
+        y += T.px(16)
+        if not self._offer_in_card(g):
+            y = self._offer(g, pad, y, width, accent)
         y = self._result(g, pad, y, width, accent)
         y = self._others(pad, y + T.px(10), width, accent)
         return y + T.px(60)
@@ -452,10 +454,53 @@ class GamePage(Page):
         box = c.bbox(item)
         return (box[3] + T.px(14)) if box else y + T.px(24)
 
+    def _card(self, g):
+        """The session card's content (sessioncard.build) for this game, or
+        None. One reading, used by the layout and by the drawing."""
+        a = self.app
+        verdicts = a.verdicts if isinstance(getattr(a, "verdicts", None), dict) else {}
+        running = g.name if getattr(a, "is_running", lambda _g: False)(g) else ""
+        # "did it work?" pressed while the game runs is the answer the person
+        # asked for: it outranks the running card (gate 2.1.0)
+        r = a.result if isinstance(a.result, dict) else {}
+        since = (getattr(a, "running_since", None) or {}).get(
+            a._folder_key(g.install_dir) if hasattr(a, "_folder_key") else "",
+            float("inf"))     # a start with no time: nothing older outranks it
+        if running and r.get("kind") == "diagnosis" and float(r.get("at") or 0) >= since:
+            running = ""
+        return sessioncard.build(a.result, verdicts.get(str(g.install_dir)),
+                                 getattr(a, "_card_measured", None), running)
+
+    def _offer_in_card(self, g) -> bool:
+        """Does the session card carry the offered route itself? The same
+        conditions _offer has - and then _offer stays out, so the page shows
+        one block, not a card and an offer above it."""
+        a = self.app
+        card = self._card(g)
+        return bool(card and card["state"] == "failed" and card["next"] and not a.busy and g.installed)
+
+    def _running(self, card, pad, y, width):
+        c, tags = self.c, ("page",)
+        w = min(width - 2 * pad, T.px(980))
+        top = y
+        self.kit.glyph(pad + T.px(20), y + T.px(24), "pilot", T.AMBER, 11, anchor="w", tags=tags)
+        c.create_text(pad + T.px(46), y + T.px(24), text=card["headline"], font=T.mono(11, True),
+                      fill=T.MUTED, anchor="w", tags=tags + ("result",))
+        y = top + T.px(48)
+        box = c.create_rectangle(pad, top, pad + w, y, fill=mix(T.BG, T.SURF, 0.9), outline=T.LINE, tags=tags)
+        c.create_rectangle(pad, top, pad + T.px(3), y, fill=T.AMBER, outline="", tags=tags)
+        c.tag_lower(box, "result")
+        for item in c.find_withtag("backdrop"):
+            c.tag_lower(item)
+        return y + T.px(10)
+
     def _result(self, g, pad, y, width, accent):
         a, c, k = self.app, self.c, self.kit
         r = a.result
         tags = ("page",)
+        card = self._card(g)
+        if card is not None and card["state"] == "running":
+            return self._running(card, pad, y, width)
         if not r:
             return y
         kind = r.get("kind")
@@ -464,6 +509,8 @@ class GamePage(Page):
         ok = r.get("ok", kind in ("installed", "removed"))
         warnings = [str(x) for x in (r.get("warnings") or []) if str(x).strip()]
         colour = T.OK if ok else (T.WARN if kind in ("diagnosis", "autopilot", "failed") else T.MUTED)
+        if card is not None and card["state"] == "unsure":
+            colour = T.AMBER          # the logs cannot tell: not a failure
         if ok and warnings:
             colour = T.AMBER          # installed, with something to read first
         title = r.get("title", "")
@@ -489,10 +536,17 @@ class GamePage(Page):
                           fill=T.DIM, anchor="w", tags=tags)
             y += T.px(24)
         if kind == "diagnosis":
+            if card is not None and card["stat"]:
+                c.create_text(pad + T.px(20), y - T.px(4), text=card["stat"], font=T.mono(10), fill=T.TEXT,
+                              anchor="w", tags=tags)
+                y += T.px(26)
             for level, text in r.get("findings", []):
                 col = T.WARN if level == "bad" else T.AMBER
                 k.glyph(pad + T.px(20), y, "cross" if level == "bad" else "warn", col, 10, anchor="w", tags=tags)
                 y = self._wrapped(text, pad + T.px(44), y, w - T.px(64), T.MUTED)
+            offered = card["next"] if card is not None and not a.busy and g.installed else ""
+            if offered and card["why"]:
+                y = self._wrapped(card["why"], pad + T.px(20), y + T.px(6), w - T.px(40), T.MUTED)
         elif kind == "autopilot":
             x = pad + T.px(20)
             for i, t in enumerate(r.get("tries", [])):
@@ -529,6 +583,8 @@ class GamePage(Page):
         x = pad + T.px(20)
         acts = []
         if kind == "diagnosis":
+            if offered:
+                acts.append((f"try {community.route_name(offered)}", lambda: a.try_next(g, offered), "pilot"))
             acts.append(("share the result", a.share_result, "people"))
             if a._tune is not None:
                 acts.append((f"set the work area to {a._tune.resolution}%", a.apply_tune, "gear"))
@@ -541,7 +597,8 @@ class GamePage(Page):
         acts.append(("details", lambda: self.shell.toggle_log(True), "down"))
         for label, cmd, glyph in acts:
             bw = T.width(label, T.mono(10)) + T.px(60)
-            k.button(x, by, bw, label, cmd, glyph=glyph, h=T.px(38), tags=tags, size=10, accent=accent)
+            extra = {"kind": "primary"} if (kind == "diagnosis" and offered and label.startswith("try ")) else {}
+            k.button(x, by, bw, label, cmd, glyph=glyph, h=T.px(38), tags=tags, size=10, accent=accent, **extra)
             x += bw + T.px(10)
         y = by + T.px(38) + T.px(16)
         box = c.create_rectangle(pad, top, pad + w, y, fill=mix(T.BG, T.SURF, 0.9), outline=T.LINE, tags=tags)

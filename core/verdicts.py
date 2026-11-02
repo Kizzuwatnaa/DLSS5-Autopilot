@@ -22,6 +22,8 @@ from __future__ import annotations
 # about one verdict.
 CHAIN = (
     ("1 the install stopped", "us", (
+        # RTX 50 loads a runtime beside the exe first; the install moves it
+        "loaded an nvngx_dlssnr.dll from beside the executable",
         "The install never finished",
         "The install crashed",
         "The install stopped",
@@ -41,6 +43,7 @@ CHAIN = (
         "The release installed here was not an OptiScaler build",
     )),
     ("2 a file went missing after it", "the person's antivirus", (
+        "GITC-Uplift found no nvngx_dlssnr.dll",
         "is missing from the folder - reinstall",      # ReShade's proxy, DXVK
         "ReShade's Vulkan layer is not registered",
         "ReShade Vulkan layer is not registered",
@@ -78,6 +81,8 @@ CHAIN = (
         "on a renderer this tool cannot reach",
         # the watcher saw another executable run (was unmapped until 2.0.8)
         ", and the install went beside",
+        # #850 #874: the process held no graphics DLL at all - a starter
+        "looked like a starter (no graphics DLL loaded)",
         # 2.0.8, #577: the OptiScaler route's proxy was never loaded
         "was not loaded in it - try another 'loads as' name",
     )),
@@ -89,6 +94,8 @@ CHAIN = (
     ("5 loaded, the feed never got going", "upstream", (
         # 2.0.7: DLSS was called and the bridge's log has no frame
         "The game called DLSS and the bridge delivered no frame",
+        # #862: the game made no DLSS call and the bridge has nothing to take over
+        "The bridge counted no DLSS call and delivered no frame",
         "Inconclusive - the feed did not get far enough",
         "Inconclusive - the add-on attached but built nothing",
         "It started and closed during start-up",
@@ -147,10 +154,14 @@ CHAIN = (
         "The game never started with this install in",
     )),
     ("8 the add-on crashed", "upstream", (
+        "GITC-Uplift's helper did not run",
+        "GITC-Uplift could not start on the game's device",
         "The feed crashed after starting",
         # #482: the feeder's own wait for its 64-bit helper ran out
         "The feed stopped waiting for the 64-bit helper",
         "The crash is in the",
+        # #562: a file of somebody else's (an .asi mod) took the process down
+        "not in this install - take that file out",
         "The 64-bit helper lost its graphics device",
         "its neural add-on never created the DLSS 5 feature",
         "the add-on crashed creating the feature",
@@ -188,6 +199,7 @@ CHAIN = (
     # names; only the replaced "we cannot see" verdicts land here (#250).
     ("11 a second DLSS hook beside ours", "the person", (
         "Another DLSS hook was loaded beside ours",
+        "GITC-Uplift refuses to run beside",
         # #439: the bridge route's own add-on under its 1.0.x name
         "An older bridge add-on was loaded beside ours",
         # #348: a ReShade d3d9.dll found before DXVK's
@@ -225,6 +237,10 @@ NOT_A_ROUTE = (
     # The game ran from another executable or folder: the next route would
     # go in beside the same one that does not start (gate 2.0.8)
     ", and the install went beside",
+    # A starter holds nothing the next route would reach either (#850 #874),
+    # and somebody else's file that crashed the game stays there on any route
+    "looked like a starter (no graphics DLL loaded)",
+    "not in this install - take that file out",
     # A proxy name the game does not load: the fix is another name on the
     # same route (gate 2.0.8)
     "try another 'loads as' name",

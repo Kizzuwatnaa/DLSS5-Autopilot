@@ -2,7 +2,7 @@ r"""DLSS 5 Autopilot - entry point.
 
 GUI:            dlss5-autopilot.exe
 Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
-                                                    [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|remix]
+                                                    [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|uplift|remix]
                                                     [--dxvk | --no-dxvk] [--remix-swap] [--vr]
                                                     [--no-gpu-pref]
                                                     [--opti-build y4my4my4m|wilsjo2|wilsjo2-mfg|janblade]
@@ -236,6 +236,10 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
     if sup.recommended == dlss.REMIX or route == dlss.REMIX:
         print("In game: press Alt+X, then 'Developer Settings Menu', then the "
               "Post-Processing tab: 'Enable Neural Uplift (DLSS-NR)'.")
+    elif route == dlss.UPLIFT:
+        print(f"In game: press {reshade_ini.overlay_key_name()}, open the GITC "
+              f"Uplift tab and tick Enable - it starts switched off. The card "
+              f"at the top of the tab says whether it is working.")
     elif sup.recommended == dlss.FEEDER and g.bitness == 32:
         # See the matching note in gui.py: the DLSS 5 page is in the game's
         # own overlay and drives the 64-bit helper; the helper's separate

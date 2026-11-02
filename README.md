@@ -18,7 +18,7 @@ The library shows every game it found - Steam, Epic, GOG, EA, Ubisoft,
 Battle.net, Rockstar, Xbox, folders and 19 emulators - with its cover and
 one line: installed, working, needs a look, update, anti-cheat. Open a
 game and press **install**: the tool has already read the executable and
-the folder, and picked one of eight routes for DirectX 8 through 12,
+the folder, and picked one of nine routes for DirectX 8 through 12,
 Vulkan, OpenGL, 32-bit, emulators and RTX Remix mods. **settings** shows
 only what that route reads, and **uninstall** puts back every file it
 replaced.
@@ -165,11 +165,12 @@ OpenGL); the choice is remembered for that folder.
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
-| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's, or wilsjo2's - which is installed with its neural pass before the upscaler, the placement it exists for - or wilsjo2's RTX 40 multi-frame generation package, on RTX 40 cards only, or Janblade's fork of wilsjo2's, with the same placement; none of those four is tested) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
+| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's, or wilsjo2's - which is installed with its neural pass before the upscaler, the placement it exists for - or wilsjo2's RTX 40 multi-frame generation package, on RTX 40 cards only, or Janblade's fork of wilsjo2's, with the same placement; those two run the model 1-3 times, **model passes**) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS; offered without one too, from the driver's optical flow | the game's DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 8 and 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
-| **renodx-dlss** | ShortFuse's add-on hooks D3D9/11/12 in-process; no bridge, no shaders | 64-bit DirectX 9 (nothing else reaches it); reported failing in many other games | the game's DLSS mode |
+| **renodx-dlss** | ShortFuse's add-on hooks D3D9/11/12 in-process; no bridge, no shaders | 64-bit DirectX 9 (gitc-uplift too); reported failing in many other games | the game's DLSS mode |
+| **gitc-uplift** | ghostinthecamera's GITC-Uplift add-on runs the network itself, on the finished frame or inside the game's own DLSS; a 64-bit helper serves 32-bit games | DirectX 9-12, Vulkan and OpenGL, 32- and 64-bit; offered beside the others, never picked by auto | resolution and pass count in its tab |
 | **remix** | the game has an **RTX Remix** mod; DLSS 5 runs inside the Remix runtime, after its upscaler. Nothing injected | any game with a `.trex` folder beside it | Remix's Neural Uplift sliders |
 
 **Four things that override the diagram.** A Remix mod present means
@@ -282,8 +283,9 @@ The tool reads the games a few seconds after it starts, and again when the
 page is opened if the last read is a day old or the library has games it has
 not read; **check again** reads them
 now. **update** on a row replaces that game's files; **update all** does
-every game that is behind, except games with an anti-cheat and games that
-are running. The game's own file stays beside the new one as
+every game that is behind, except games with an anti-cheat, games that
+are running and games marked **keep its own** (the link under a game's
+**update**; **allow updates** takes it back). The game's own file stays beside the new one as
 `<name>.dlss5-dlss-original`, the swaps are recorded in
 `dlss5-dlss-update.json` in the game folder, and **restore original** puts
 the game's own files back. Once the page has read a game, that game's own
@@ -361,6 +363,7 @@ are there for a board with no navigation cluster at all.
 | renodx-dlss | **Home** → RenoDX DLSS tab; already on |
 | remix | **Alt+X** → Developer Settings → Post-Processing → Enable Neural Uplift |
 | standalone-dlssnr | **F10** compares |
+| gitc-uplift | **Home** → GITC Uplift tab → tick **Enable**; the card at the top says whether it runs |
 
 Everywhere: MSAA/SSAA off. Set resolution and display mode **before**
 turning neural rendering on - the feature is built for one back-buffer
@@ -669,8 +672,11 @@ folder cannot be changed, and the Steam version of the game can be set up.
 Bugs: **report a bug** (on a game's result, or in the **help** menu) asks two questions - did the game start,
 and what happened - and then opens a GitHub issue already filled in with
 version, card, driver, game, route, the last diagnosis, the log tails and,
-when Windows recorded one, the faulting module of the crash. Nothing is sent
-by itself - you see it in the browser and decide.
+when Windows recorded one, the faulting module of the crash. The whole
+report is saved to a file and put on the clipboard first; when it is too long
+for a link, the page holds its start and the window says how to paste the whole.
+**copy report** and **save zip** (the report with its logs) stay on the
+result. Nothing is sent by itself - you see it in the browser and decide.
 
 **share the result** does the same for the compatibility list: the game's
 name and executable, the route and build, the graphics API, whether the game ships DLSS, FSR or XeSS, the card and
@@ -695,15 +701,15 @@ Every shared result, by game, card, driver and build:
 dlss5-autopilot.exe "D:\Games\Game"                 install
 dlss5-autopilot.exe "D:\Games\Game" --check         detect only, write nothing
 dlss5-autopilot.exe "D:\Games\Game" --remove        uninstall
-dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler, renodx, bridge, feeder, standalone, remix
+dlss5-autopilot.exe "D:\Games\Game" --route feeder  native, upstream, optiscaler, renodx, bridge, feeder, standalone, uplift, remix
 dlss5-autopilot.exe "D:\Games\Game" --route remix --remix-swap   replace a Remix runtime that has no neural pass
 dlss5-autopilot.exe "D:\Games\Game" --dxvk          run the game on Vulkan through DXVK (--no-dxvk turns the automatic choice off)
 dlss5-autopilot.exe "D:\Games\Game" --vr            register ReShade's OpenXR layer as well (VR, OpenXR games; unverified with a headset)
 dlss5-autopilot.exe "D:\Games\Game" --no-gpu-pref   leave Windows' graphics setting alone (two-GPU machines)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   another OptiScaler build than Dagherbou's (untested)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes (untested)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2-mfg   ...the same with RTX 40 multi-frame generation (RTX 40 only, untested)
-dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build janblade     ...Janblade's fork of wilsjo2's, the same placement (untested)
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   another OptiScaler build than Dagherbou's
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2-mfg   ...the same with RTX 40 multi-frame generation (RTX 40 only)
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build janblade     ...Janblade's fork of wilsjo2's, the same placement
 dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --own-fg "D:\Downloads\version.dll"   your dlssg_for_sm86 / DLSS Enabler files, D3D12 (after the first time its name: sm86, sm86-winmm, enabler...; experimental)
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
@@ -793,6 +799,7 @@ component stays under its own licence, fetched from its own publisher.
 | dlss5-bridge | [NIGos/dlss5-bridge](https://github.com/NIGos/dlss5-bridge) | MIT |
 | neural-upstream | [matiasLombo/neural-upstream](https://github.com/matiasLombo/neural-upstream) | MIT |
 | standalone-dlssnr | [kibblerz/DLSS5-Reshade-AIO](https://github.com/kibblerz/DLSS5-Reshade-AIO) | Apache-2.0 |
+| GITC-Uplift | [ghostinthecamera/GITC-Uplift](https://github.com/ghostinthecamera/GITC-Uplift) | MIT |
 | OptiScaler DLSS-NR fork | [Dagherbou/OptiScaler_DLSSNR](https://github.com/Dagherbou/OptiScaler_DLSSNR) | GPL-3.0 |
 | OptiScaler fork, multi-frame generation | [y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG) | GPL-3.0 |
 | OptiScaler fork, neural pass before the upscaler | [wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass](https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass) | GPL-3.0 |

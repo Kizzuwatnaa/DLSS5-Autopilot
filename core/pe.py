@@ -294,7 +294,8 @@ _NGX_ADDON_WORDS = ("dlss", "ngx", "swapper")
 _FOREIGN_NGX_FILES = ("optiscaler.ini", "nvngx.ini", "fakenvapi.ini", "dlss-enabler.dll",
                       "dlss-enabler-upscaler.dll", "nvngx-wrapper.dll",
                       "dlssg_to_fsr3_amd_is_better.dll", "dlssg_to_fsr3.ini",
-                      "nvngx.dll_dlssnr.dll", "dlssg_sm86.ini", "nvngx_dlssnr.ini")
+                      "nvngx.dll_dlssnr.dll", "dlssg_sm86.ini", "nvngx_dlssnr.ini",
+                      "gitc-uplift-helper64.exe", "uplift-helper64.exe")
 
 
 def _foreign_ngx(names: set[str]) -> str:

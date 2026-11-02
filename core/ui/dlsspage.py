@@ -209,7 +209,7 @@ class DlssPage(Page):
         folder = str(g.folder)
         entries = r["entries"]
         news = r["news"]
-        dim = bool(r["anticheat"])
+        dim = bool(r["anticheat"] or r["held"])
         top = y
         # One line per build: RE Engine keeps a second copy of each runtime
         # under _storage_, and six lines for three runtimes read as six.
@@ -261,6 +261,9 @@ class DlssPage(Page):
         if r["anticheat"] and tag_room > T.px(30):
             c.create_text(mx, top + T.px(27), text=T.fit(r["anticheat"].lower(), T.mono(8), tag_room),
                           font=T.mono(8), fill=T.AMBER, anchor="w", tags=tags)
+        elif r["held"] and tag_room > T.px(30):
+            c.create_text(mx, top + T.px(27), text=T.fit("kept by you", T.mono(8), tag_room),
+                          font=T.mono(8), fill=T.AMBER, anchor="w", tags=tags)
         elif r["running"] and tag_room > T.px(30):
             c.create_text(mx, top + T.px(27), text=T.fit(f"running: {r['running']}", T.mono(8), tag_room),
                           font=T.mono(8), fill=T.WARN, anchor="w", tags=tags)
@@ -299,8 +302,8 @@ class DlssPage(Page):
             k.button(bx, by, bw, "update", lambda: a.dlss_update(g), glyph="warn" if dim else "download",
                      kind="secondary" if dim or r["running"] else "primary", h=T.px(38), tags=tags, size=10,
                      enabled=free,
-                     tip=f"{r['anticheat']}: asks first" if dim else ("close the game first" if r["running"]
-                                                                       else ""))
+                     tip=f"{r['anticheat'] or 'kept by you'}: asks first" if dim
+                     else ("close the game first" if r["running"] else ""))
         elif news and any(e.state != du.INSTALL for e in entries) \
                 and all(e.version for e in entries if e.state != du.INSTALL):
             k.glyph(bx + T.px(4), by + T.px(19), "check", T.OK, 11, anchor="w", tags=tags)
@@ -311,8 +314,17 @@ class DlssPage(Page):
             # chosen in the game's settings, not on this page
             k.link(bx + T.px(4), by + T.px(19), "game settings", lambda: a.open_game(g), glyph="gear",
                    colour=T.MUTED, tags=tags, tip="the dlss 5 install picked this build")
+        if ((r["behind"] and not r["anticheat"]) or r["held"]) and not job:
+            # "update all" takes every game that is behind unless it is marked
+            # here (#856). An anti-cheat game is left out already.
+            k.link(bx + T.px(4), by + T.px(50),
+                   "allow updates" if r["held"] else "keep its own",
+                   lambda: a.dlss_toggle_hold(g) if free else None,
+                   glyph="check" if r["held"] else "hide", colour=T.MUTED if free else T.DIM, tags=tags,
+                   tip=("update all takes this game again" if r["held"]
+                        else "update all leaves this game's dlss files as they are"))
         if r["restorable"] and not job:
-            k.link(bx + T.px(4), by + T.px(62), "restore original", lambda: a.dlss_restore(g) if free else None,
+            k.link(bx + T.px(4), by + T.px(72), "restore original", lambda: a.dlss_restore(g) if free else None,
                    glyph="back", colour=T.MUTED if free else T.DIM, tags=tags,
                    tip="puts the game's own files back")
         c.create_line(pad + T.px(16), top + h, width - pad, top + h, fill=T.LINE, tags=tags)

@@ -1,0 +1,46 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+it start and then pc restart
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 5080 Laptop GPU (sm_120), driver 617.42
+- game: Indiana Jones and the Great Circle
+- exe: TheGreatCircle.exe
+- arch/api: 64-bit / Vulkan (imports vulkan-1.dll, no DXGI)
+- route: bridge
+
+**Diagnosis**: TheGreatCircle.exe ran at 19 Oct 17:31, and ReShade's Vulkan layer did not reach it - nothing of this install was loaded.
+- [bad] TheGreatCircle.exe ran at 19 Oct 17:31 and ReShade's Vulkan layer did not come into it.
+
+**Files in the folder**
+- dlss5-bridge.addon64: present
+- renodx-dlss5.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- ReShade 64-bit Vulkan layer: registered (for this user only)
+- DLSS 5 add-on switch: NeuralUplift=1
+- Windows graphics setting: TheGreatCircle.exe: High performance
+- streamline/nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- streamline/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- streamline/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+
+**What ran, and what it loaded** (seen at 19 Oct 17:31)
+- process: TheGreatCircle.exe
+- ran from: TheGreatCircle.exe
+- DLLs in the process: 85
+- graphics DLLs in the process: d3d12.dll, d3d11.dll, dxgi.dll, vulkan-1.dll
+- ours, loaded: none
+- ours, not loaded: dlss5-bridge.addon64, nvngx_dlssnr.dll, renodx-dlss5.addon64
+- also written, loaded only if the game asks: nvngx_dlss.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

@@ -32,6 +32,7 @@ LABELS = {
     "bridge":     "dlss5-bridge",
     "upstream":   "neural-upstream",
     "standalone": "standalone-dlssnr (DLSS5-Reshade-AIO)",
+    "uplift":     "GITC-Uplift",
     "feeder":     "DLSS5-Feeder",
     "optiscaler": "OptiScaler",
     "remix_runtime": "RTX Remix runtime (dxvk-remix-plus-dlssnr)",
@@ -56,6 +57,8 @@ def _latest(name: str) -> str:
         latest = sources.resolve_upstream()[0]
     elif name == "standalone":
         latest = sources.resolve_standalone()[0]
+    elif name == "uplift":
+        latest = sources.resolve_uplift()[0]
     elif name == "feeder":
         latest = sources.resolve_feeder()[0]
     elif name == "remix_runtime":

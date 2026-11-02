@@ -1,0 +1,55 @@
+**Did the game start?** it never started
+
+**What happened**
+reshade.me: reshade.me refused the connection (<urlopen error [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión>). That is usually a proxy or VPN in the way rather than the server. Turn it off or try another network, then install again.
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 3090 (sm_86), driver 617.42
+- game: BLACK-XBERecomp
+- exe: BLACK.exe
+- arch/api: 64-bit / DX12 (imports d3d12.dll statically)
+- route: standalone
+- this tool: running as administrator
+
+**Files in the folder**
+- nvngx.dll: MISSING
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: MISSING
+- reshade-shaders/Shaders/vort_Motion.fx: MISSING
+- install record: MISSING (no install recorded in this folder)
+- d3dcompiler_47.dll: present (the game's own)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log**
+```
+(none)
+```
+
+**Last error**
+```
+line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión>
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "core\installer.py", line 3576, in install
+  File "core\installer.py", line 3114, in dl
+  File "core\net.py", line 486, in download
+core.net.Unreachable: reshade.me: reshade.me refused the connection (<urlopen error [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión>). That is usually a proxy or VPN in the way rather than the server. Turn it off or try another network, then install again.
+
+```

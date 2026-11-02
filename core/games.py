@@ -83,6 +83,14 @@ XBOX_EXE_HINT = ("Windows protects this Xbox game's executable, so the tool "
                  "details (almost every Game Pass game is 64-bit) and check "
                  "the graphics API there - that guess comes from the files "
                  "beside the game, not from the game itself.")
+# The same unreadable exe outside a store folder (#897: a Game Pass library on
+# another drive). The Xbox wording would send somebody to an app that has
+# nothing to do with their game, so it says the same without it.
+EXE_PROTECTED_HINT = ("Windows does not let the tool read this game's "
+                      "executable. Choose 64-bit or 32-bit in the game's "
+                      "details and check the graphics API there - that guess "
+                      "comes from the files beside the game, not from the "
+                      "game itself.")
 # ...and in the game's settings, where the choice has already been made.
 XBOX_EXE_CHOSEN = ("Windows protects this executable: the architecture is "
                    "the one chosen in the game's settings, and the graphics API is "
@@ -109,14 +117,19 @@ def is_locked_store_path(path: Path) -> bool:
 
 def _xbox_locked(g: "Game") -> bool:
     """Warn about EXE protection without inferring directory write access."""
-    if g.exe is None or not is_locked_store_path(g.exe):
+    # Any folder, not only C:\XboxGames and WindowsApps: a Game Pass library
+    # on another drive has a name of the person's choosing, and its protected
+    # exe was refused as "Cannot read ... Errno 13" with no way to choose the
+    # architecture (#897).
+    if g.exe is None:
         return False
     try:
         with open(g.exe, "rb") as f:
             f.read(1)
     except PermissionError:
-        g.exe_warning = XBOX_EXE_HINT
-        log.write(f"{g.name}: {g.exe} is protected - {XBOX_EXE_HINT}")
+        g.exe_warning = (XBOX_EXE_HINT if is_locked_store_path(g.exe)
+                         else EXE_PROTECTED_HINT)
+        log.write(f"{g.name}: {g.exe} is protected - {g.exe_warning}")
         return True
     except OSError:
         return False

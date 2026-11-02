@@ -430,17 +430,25 @@ class ProtectedXboxTests(unittest.TestCase):
         self.assertEqual(cached[0].api, g.api_detected)
         self.assertFalse(installer.check_supported(cached[0])[0])
 
-    def test_non_xbox_permission_error_stays_fatal_despite_overrides(self):
+    def test_protected_exe_outside_a_store_folder_asks_for_the_choice(self):
+        # #897: a Game Pass library on another drive is not under XboxGames;
+        # the exe was refused as "Cannot read ... Errno 13" and the person had
+        # no way to say 64-bit. Same choice as the Xbox case, no Xbox wording.
         plain = self.root / "Plain"
         plain.mkdir()
         self.exe = self.exe.rename(plain / "Game.exe")
         self.protect()
+        g = games.manual(plain)
+        self.assertFalse(g.error)
+        self.assertEqual(g.exe_warning, games.EXE_PROTECTED_HINT)
+        self.assertNotIn("Xbox", g.exe_warning)
+        self.assertFalse(installer.check_supported(g)[0])
         games.set_bitness_override(plain, 64)
         games.set_api_override(plain, "DX12")
         g = games.manual(plain)
-        self.assertTrue(g.error)
-        self.assertFalse(g.exe_warning)
-        self.assertFalse(installer.check_supported(g)[0])
+        self.assertFalse(g.error)
+        self.assertEqual((g.bitness, g.api), (64, "DX12"))
+        self.assertTrue(installer.check_supported(g)[0])
 
     def test_corrupt_readable_xbox_exe_stays_fatal(self):
         self.exe.write_bytes(b"not a PE")

@@ -38,8 +38,8 @@ directly and keeps its own Quality/Balanced/Performance modes.
 
     FEEDER   DLSS5-Feeder builds a synthetic DLAA contract out of ReShade's
              depth buffer and shader-estimated motion vectors. Works without
-             any DLSS in the game, on D3D11/D3D12/Vulkan/OpenGL, and is the
-             only way in for 32-bit games (through its host64 helper).
+             any DLSS in the game, on D3D11/D3D12/Vulkan/OpenGL, and reaches
+             32-bit games through its host64 helper (GITC-Uplift has one too).
 
     STANDALONE kibblerz's standalone-dlssnr add-on (DLSS5-Reshade-AIO). Its
              own feed and its own private NGX session - no feeder, no renodx
@@ -48,6 +48,13 @@ directly and keeps its own Quality/Balanced/Performance modes.
              game renders below it, frame generation on top, and shows the
              result in a topmost window of its own. Works with or without
              DLSS in the game. Experimental: the window trick is fragile.
+
+    UPLIFT   ghostinthecamera's GITC-Uplift: one ReShade add-on for
+             Direct3D 9-12, Vulkan and OpenGL, 32- and 64-bit (a 64-bit
+             helper runs the network for 32-bit games). Works on the
+             finished frame, or inside the game's own DLSS where there
+             is one. Its runtime goes in a GITC-Uplift folder, never
+             beside the executable. Offered, never picked by auto.
 
     REMIX    the game already has an RTX Remix mod. Remix replaces d3d9.dll
              and path traces the frame in its own runtime (a `.trex` folder),
@@ -70,8 +77,12 @@ NATIVE, BRIDGE, FEEDER, OPTI, RENODX = "native", "bridge", "feeder", "optiscaler
 UPSTREAM = "upstream"
 STANDALONE = "standalone"
 REMIX = "remix"
+UPLIFT = "uplift"
 ALL_ROUTES = (RENODX, NATIVE, UPSTREAM, OPTI, BRIDGE, FEEDER, STANDALONE,
-              REMIX)
+              REMIX, UPLIFT)
+# Offered, never chosen for the person: not by auto, not by the shared
+# results' steer, not as the autopilot's next try.
+NEVER_AUTO = (UPLIFT,)
 
 # Streamline is NVIDIA's own plugin layer; if a game ships it, it ships DLSS.
 # These are never files this tool installs, so they are unambiguous.
@@ -441,7 +452,9 @@ def _shared_steer(s: Support, api: str, sm: int | None, shared: dict | None,
     if community.reports_for(shared, exe) >= community.MIN_REPORTS:
         return
     klass = community.game_class(api, s.native_dlss, s.upscaler)
-    pick, why = community.class_pick(shared, klass, s.options, s.recommended)
+    pick, why = community.class_pick(shared, klass,
+                                     [o for o in s.options if o not in NEVER_AUTO],
+                                     s.recommended)
     if not pick or not fit(pick, api, s.native_dlss, sm, upscaler=s.upscaler)[0]:
         return
     was = s.recommended
@@ -575,6 +588,9 @@ def fit(route: str, api: str, native_dlss: bool, sm: int | None,
         return True, ("own feed: DLAA at native resolution, DLSS SR below it, "
                       "frame generation; experimental - presents through a "
                       "window of its own")
+    if route == UPLIFT:
+        return True, ("one add-on, every API, 32- and 64-bit; switched on "
+                      "in its own tab in ReShade")
     if route == RENODX:
         return True, "unproven - reported not working in many games; try the others first"
     if route == BRIDGE:
@@ -598,6 +614,10 @@ def _detect(install_dir: Path, folder: Path, api: str, bitness: int) -> Support:
     ever the recommendation here.
     """
     s = _detect_routes(install_dir, folder, api, bitness)
+    # GITC-Uplift reaches every API but DirectX 8, in both bitnesses. It
+    # is offered beside the others and never recommended (#946).
+    if uplift_fits(api, bitness) and UPLIFT not in s.options:
+        s.options = list(s.options) + [UPLIFT]
     trex = remix.find_runtime(install_dir) or remix.find_runtime(folder)
     if trex is None:
         return s
@@ -713,17 +733,18 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
     # --- pick a path ----------------------------------------------------
     if api == "DX10":
         # DXGI-based, so ReShade attaches as dxgi.dll like any D3D11 game.
-        # Only the feeder reaches D3D10, and only from 0.13.1: it creates a
+        # The feeder reaches D3D10 from 0.13.1 (GITC-Uplift too): it creates a
         # private D3D11 relay device inside the game, because a D3D10 device
         # has no shared NT handles, no fences and no UAVs to hand a frame to
         # the helper with. The add-ons hook D3D9/11/12, the bridge D3D11 and
         # Vulkan - none of them will ever see a D3D10 device.
         s.options = [FEEDER]
         s.recommended = FEEDER
-        s.reason = ("Direct3D 10: only the feeder reaches it, from build "
-                    "0.13.1 on (it relays the frame through a private D3D11 "
-                    "device inside the game). Older feeder builds refuse "
-                    "D3D10, so the install checks the build it picked.")
+        s.reason = ("Direct3D 10: the feeder reaches it from build 0.13.1 "
+                    "on (it relays the frame through a private D3D11 device "
+                    "inside the game). Older feeder builds refuse D3D10, so "
+                    "the install checks the build it picked. GITC-Uplift "
+                    "reaches it too, as an add-on of its own.")
         return s
 
     if bitness != 64:
@@ -732,9 +753,12 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
         # only way in - DX9 games get DXVK in front of it.
         s.options = [FEEDER]
         s.recommended = FEEDER
-        s.reason = ("32-bit games can only use the feeder path: every other "
-                    "add-on is 64-bit and a 32-bit process cannot load it, so "
-                    "the feeder's host64 helper process is the only way in."
+        s.reason = ("32-bit games: most DLSS 5 add-ons are 64-bit only and a "
+                    "32-bit process cannot load them, so the feeder runs the "
+                    "network in its host64 helper process."
+                    + (" GITC-Uplift has a 32-bit add-on that hands the "
+                       "network to a 64-bit helper of its own."
+                       if uplift_fits(api, bitness) else "")
                     + (" DirectX 9 is translated to Vulkan by DXVK first."
                        if api == "DX9" else
                        " DirectX 8 is translated to Vulkan by DXVK first "
@@ -748,9 +772,10 @@ def _detect_routes(install_dir: Path, folder: Path, api: str,
         # backbuffer. The feeder's D3D9 support is the 32-bit DXVK path.
         s.options = [RENODX]
         s.recommended = RENODX
-        s.reason = ("64-bit DirectX 9: only the renodx-dlss add-on hooks this "
+        s.reason = ("64-bit DirectX 9: the renodx-dlss add-on hooks this "
                     "directly (D3D9Ex, presentation backbuffer). No motion "
-                    "vectors on this path, so expect the result to be softer.")
+                    "vectors on this path, so expect the result to be softer. "
+                    "GITC-Uplift reaches DirectX 9 too.")
         return s
 
     if api == "Vulkan":
@@ -852,6 +877,7 @@ LABELS = {
     STANDALONE: "standalone-dlssnr - own feed, DLSS SR and frame generation",
     RENODX: "renodx-dlss - in-process hook (D3D9/11/12), unproven",
     REMIX: "remix - DLSS 5 inside RTX Remix (path tracing)",
+    UPLIFT: "gitc-uplift - one add-on for every API, 32- and 64-bit",
 }
 
 # One paragraph per route, shown under the dropdown. What it does, what it
@@ -892,8 +918,8 @@ BLURB = {
                  "mode change needs a restart. F10 compares. Experimental."),
     RENODX: ("ShortFuse's renodx-dlss add-on hooks D3D9, D3D11 and D3D12 "
              "presentation in-process - no bridge, no shaders. Reported "
-             "not working in many games; the only route for 64-bit DirectX "
-             "9, otherwise try the recommended one first."),
+             "not working in many games; one of two routes for 64-bit "
+             "DirectX 9, otherwise try the recommended one first."),
     REMIX: ("This game has an RTX Remix mod. Remix path traces the frame in "
             "its own runtime (the '.trex' folder) and the neural pass runs "
             "there, after DLSS, so the game's DLSS quality setting applies. "
@@ -904,6 +930,13 @@ BLURB = {
             "pass (NVIDIA's own has none), 'swap the Remix runtime' puts in "
             "a community build that does - experimental, it can undo fixes "
             "the mod's own runtime carried."),
+    UPLIFT: ("ghostinthecamera's GITC-Uplift add-on runs the network itself, "
+             "on the finished frame (every game) or inside the game's own "
+             "DLSS where there is one. One add-on for Direct3D 9 to 12, "
+             "Vulkan and OpenGL, 32- and 64-bit: a 64-bit helper runs the "
+             "network for 32-bit games. Switched on in its own 'GITC Uplift' "
+             "tab in ReShade, where it also has resolution, look and pass "
+             "count. Single-player games only."),
 }
 
 # Per-executable facts the route texts cannot know. Found by people who did
@@ -917,9 +950,14 @@ QUIRKS: dict[str, str] = {
     "openmw.exe": ("OpenGL: the renodx-dlss5 add-on is pinned to 4.60 here "
                    "(4.70 stalls after four frames on GL) and motion vectors "
                    "come from VORT - LumeniteFX reads none on OpenGL"),
+    "mafia ii definitive edition.exe": (
+        "Mafia II (Definitive Edition) closes itself when the renodx add-on "
+        "hooks neural rendering at start: the install sets "
+        "DirectNeuralRenderingHookStage=0, so start the game and switch "
+        "neural rendering on from the ReShade overlay"),
     "forspoken.exe": ("Forspoken checks the signature of the dxgi.dll in its "
-                      "folder and closes on ReShade's. Not tried on Forspoken "
-                      "yet: on a ReShade route set 'reshade loads as' to "
+                      "folder and closes on ReShade's. On a ReShade route "
+                      "set 'reshade loads as' to "
                       "d3d12.dll; if it refuses that too, the optiscaler route "
                       "with 'loads as' winmm.dll goes through a different file"),
 }
@@ -928,7 +966,8 @@ QUIRKS: dict[str, str] = {
 # Every route on this list ends up inside the driver's own NGX runtime -
 # the add-on asks the driver to evaluate the model. The Remix route does
 # not: its runtime carries the neural pass itself.
-_NGX_ROUTES = (NATIVE, BRIDGE, FEEDER, OPTI, RENODX, UPSTREAM, STANDALONE)
+_NGX_ROUTES = (NATIVE, BRIDGE, FEEDER, OPTI, RENODX, UPSTREAM, STANDALONE,
+               UPLIFT)
 # ...and these are the ones that get a renodx-dlss5 add-on, so they are the
 # only ones the 4.55 pin says anything about. OptiScaler runs the model
 # through its own build, the upstream and standalone add-ons through theirs.
@@ -937,6 +976,14 @@ _RENODX_ROUTES = (NATIVE, BRIDGE, FEEDER, RENODX)
 # optiscaler.DRIVER_MIN says the same thing for its own route; kept here as
 # its own name so this module does not import that one for a constant.
 _DRIVER_KNOWN_GOOD = "616.56"
+
+
+def uplift_fits(api: str, bitness: int | None) -> bool:
+    """Is GITC-Uplift offered for this game? Direct3D 9 to 12, Vulkan
+    and OpenGL, 32- or 64-bit; not DirectX 8, and not a game whose
+    architecture could not be read."""
+    return bitness in (32, 64) and str(api or "").upper() in (
+        "DX9", "DX10", "DX11", "DX12", "VULKAN", "OPENGL", "UNKNOWN", "", "?")
 
 
 def standalone_fits(api: str, bitness: int | None) -> bool:
@@ -1118,6 +1165,16 @@ CONFLICTS: dict[str, tuple[tuple[str, str], ...]] = {
         ("note",
              "reported not working in many games; nothing to tune if it does "
              "nothing, switch route"),
+    ),
+    UPLIFT: (
+        ("ingame",
+             "open ReShade, go to the GITC Uplift tab and tick "
+             "Enable - it starts off"),
+        ("folder",
+             "no other neural add-on in the folder - it refuses to run "
+             "beside one"),
+        ("note",
+             "single-player games only"),
     ),
     STANDALONE: (
         ("ingame",

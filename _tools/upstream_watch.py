@@ -71,7 +71,9 @@ INSTALLED = {
     # release of another shape, so an exact name here would cry every run
     # since v1.3.2; the tag moving is the signal to look (#141).
     "RTX40MFG-Unlock (dashdogy)": (mfg.API, ()),
-    "Ultimate ASI Loader": (mfg.LOADER_API, (mfg.LOADER_ASSET,)),
+    "GITC-Uplift": (sources.UPLIFT_API, ()),
+    "Ultimate ASI Loader": (mfg.LOADER_API.split("/releases/")[0] + "/releases/latest",
+                             (mfg.LOADER_ASSET,)),
     "REFramework nightly": (refw.API, ("REFramework.zip",)),
     "DXVK": (dxvk.API, ()),
     "neural-upstream": (sources.UPSTREAM_API, (sources.UPSTREAM_ASSET,)),
@@ -80,6 +82,11 @@ INSTALLED = {
 # Watched, deliberately not installed. The note says why, so a future
 # session does not have to work it out again.
 WATCHED = {
+    "dashdogy/MFG-Unlocker":
+        "RTX40MFG-Unlock renamed. Since v1.5.0 one MFGUnlocker.dll the user "
+        "renames to a proxy, and from v1.7.0 a DLSS 5 tab of its own (another "
+        "NR hook). mfg.py stays on the v1.2.1 three-file layout until the "
+        "owner decides: the new shape is a different route.",
     # VR. The one route into a headset is ReShade's OpenXR layer, and there
     # is no headset here to prove any of it, so anything that moves in this
     # corner is worth reading before the vr page's wording changes.

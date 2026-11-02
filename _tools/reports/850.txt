@@ -1,0 +1,55 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+same thing happened
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 617.42
+- game: The Outer Worlds
+- exe: TheOuterWorlds.exe
+- arch/api: 64-bit / Unknown (graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll)
+- route: standalone
+
+**Diagnosis**: TheOuterWorlds.exe ran at 19 Oct 20:09 and loaded nothing from this folder - try another proxy name.
+- [bad] TheOuterWorlds.exe ran at 19 Oct 20:09 with none of this folder's files loaded.
+
+**Files in the folder**
+- dxgi.dll: present
+- standalone-dlssnr.addon64: present
+- nvngx.dll: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_AIO_Feed.fx: present
+- reshade-shaders/Shaders/vort_Motion.fx: present
+- Windows graphics setting: TheOuterWorlds.exe: High performance
+
+**What ran, and what it loaded** (seen at 19 Oct 20:09)
+- process: TheOuterWorlds.exe
+- ran from: TheOuterWorlds.exe
+- DLLs in the process: 19
+- graphics DLLs in the process: none
+- ours, loaded: none
+- ours, not loaded: dxgi.dll, nvngx_dlssnr.dll, standalone-dlssnr.addon64
+- also written, loaded only if the game asks: nvngx.dll, nvngx_dlss.dll, nvngx_dlssg.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**standalone-dlssnr.log (last written 19 Oct 20:05, before this install - not this game's)**
+```
+20:05:07.777 observed D3D12 graphics queue: reshade=000001A4BB217528 native=000001A4BAC52970
+20:05:07.778 legacy interop session ready: api=D3D11 D3D11=000001A4D14620F0 D3D12 queue=000001A4BB217520 shared fence=000001A4BB5E7C30 capture fence=000001A4BB5E6650
+20:05:07.779 presentation contract candidate: capture=1920x1080 work=1920x1080 output=1920x1080 fmt=24; waiting for stability
+20:05:07.779 current-frame guide handles: VORT=MISSING feed=MISSING mv=MISSING depth=MISSING sr_mask=optional/missing nr_mask=optional/missing strength=optional/missing depth_reversed=1
+20:05:07.779 same-frame optical-flow path unavailable; internal zero-motion fallback will be used
+20:05:09.826 ignored helper swapchain: hwnd=0000000000030BB0 surface=2x2
+20:05:09.827 game legacy graphics device is being destroyed; standalone session ending
+```

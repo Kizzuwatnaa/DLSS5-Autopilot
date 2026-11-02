@@ -544,6 +544,33 @@ def running(g, all_procs=None) -> str:
     return ps[0].name if ps else ""
 
 
+def _hold_key(g) -> str:
+    return os.path.normcase(str(getattr(g, "folder", "") or ""))
+
+
+def held(g) -> bool:
+    """Did the person mark this game "keep its own"? Then "update all" leaves
+    it out, and updating it by hand asks first - whatever detection says. The
+    answer to #856: Black Ops 7 was updated by "update all", and the only
+    protection was a name the tool did not know."""
+    try:
+        return _hold_key(g) in {os.path.normcase(str(x)) for x in
+                                (prefs.get("dlss_hold") or []) if isinstance(x, str)}
+    except Exception:
+        return False
+
+
+def set_held(g, on: bool) -> None:
+    key = _hold_key(g)
+    if not key:
+        return
+    cur = [x for x in (prefs.get("dlss_hold") or [])
+           if isinstance(x, str) and os.path.normcase(x) != key]
+    if on:
+        cur.append(str(g.folder))
+    prefs.set_("dlss_hold", cur)
+
+
 def anticheat_name(g) -> str:
     return anticheat_info(g)[0]
 

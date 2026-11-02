@@ -26,6 +26,8 @@ class WatchControl:
         self.lookout = Lookout(lambda ev: self.q.put(("look", ev)))
         self.tray = None
         self.hidden_to_tray = False
+        self.running: set = set()      # folders the watcher saw start and not yet close
+        self.running_since: dict = {}  # ...and when (a 'did it work?' after that outranks the card)
         plans = prefs.get("autopilot_plans")
         # a hand-edited entry that is not a plan is dropped, not raised on
         self.plans: dict = ({k: v for k, v in plans.items() if isinstance(v, dict)}
@@ -39,9 +41,19 @@ class WatchControl:
         """Watch every installed game in the library (after a scan, install, uninstall)."""
         if not self.watch_on():
             self.lookout.stop()
+            # nothing will say 'closed' any more: a card left at 'is running'
+            # would stay there, over every later result (gate 2.1.0)
+            self.running.clear()
+            self.running_since.clear()
             self._paint_watch()
             return
         n = self.lookout.set_games(self.all_games)
+        # a folder no longer watched never sends 'closed' either
+        watched = {self._folder_key(g.install_dir) for g in (self.all_games or [])
+                   if getattr(g, "installed", False)}
+        self.running.intersection_update(watched)
+        for k in [k for k in self.running_since if k not in self.running]:
+            self.running_since.pop(k, None)
         if n:
             self.lookout.start()
         self._paint_watch()
@@ -108,9 +120,15 @@ class WatchControl:
         g = self._game_at(folder)
         name = g.name if g else Path(folder).name
         if kind == "started":
+            self.running.add(self._folder_key(folder))
+            self.running_since[self._folder_key(folder)] = time.time()
             self.shell.status(f"{name} started - watching")
+            if self.game is g and g is not None:
+                self.refresh("game", soft=True)
             self.write(f"> {name} started - the watcher read what it loaded", "ok")
             return
+        self.running.discard(self._folder_key(folder))
+        self.running_since.pop(self._folder_key(folder), None)
         # A pass that waits for the game to close is rewriting this folder:
         # reading it now answered from half an install, overwrote the result
         # and offered the very route being installed.
@@ -137,8 +155,39 @@ class WatchControl:
                     crash, _said = diagnose.windows_crash(Path(folder), exe)
                 except Exception:
                     crash = None
-            self.q.put(("lookdiag", (folder, rep, self.offered_routes(g, rep, sm), crash)))
+            self.q.put(("lookdiag", (folder, rep, self.offered_routes(g, rep, sm), crash,
+                                     self._card_measure(g, folder, rep))))
         threading.Thread(target=work, daemon=True).start()
+
+    @staticmethod
+    def _folder_key(folder) -> str:
+        try:
+            return os.path.normcase(os.path.abspath(str(folder)))
+        except Exception:
+            return str(folder)
+
+    def is_running(self, g) -> bool:
+        return g is not None and self._folder_key(g.install_dir) in self.running
+
+    def _card_measure(self, g, folder, rep):
+        """What the session just closed cost, for the card - read the way
+        'did it work?' reads it, and for the same routes. Worker thread; None
+        when the route logs nothing to read or the game did not run."""
+        if g is None or not getattr(rep, "ran", False):
+            return None
+        try:
+            man = diagnose._manifest(Path(folder)) or {}
+            route = str(man.get("path") or "")
+            if route == dlss.OPTI:
+                pass
+            elif route == dlss.FEEDER:
+                if not (g.bitness == 64 and g.api == "DX11" and not man.get("dxvk")):
+                    return None
+            else:
+                return None
+            return self._measure_session(folder, route, 100)
+        except Exception:
+            return None
 
     @staticmethod
     def ran(rep, seen: bool = True) -> bool:
@@ -171,6 +220,7 @@ class WatchControl:
     def _on_lookdiag(self, payload) -> None:
         folder, rep, offered = payload[:3]
         crash = payload[3] if len(payload) > 3 else None
+        measured = payload[4] if len(payload) > 4 else None
         g = self._game_at(folder)
         if g is None:
             return
@@ -226,7 +276,9 @@ class WatchControl:
         if self.game is g:
             self._last_diag = rep
             self._last_crash = crash
+            self._card_measured = measured if working else None
             self.result = {"kind": "diagnosis", "ok": working, "ran": bool(rep.ran), "title": said,
+                           "at": time.time(),
                            "findings": [(f.level, f.title) for f in rep.findings if f.level in ("bad", "warn")][:3]}
         self.write("")
         self.write(f"=== {g.name} closed: {said} ===", "ok" if working else "warn")

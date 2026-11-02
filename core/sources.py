@@ -39,6 +39,18 @@ RHI_REPO = "RankFTW/rhi-repo"
 RHI_API = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"
 BRIDGE_API = "https://api.github.com/repos/NIGos/dlss5-bridge/releases/latest"
 UPSTREAM_API = "https://api.github.com/repos/matiasLombo/neural-upstream/releases/latest"
+# ghostinthecamera/GITC-Uplift (#946, vetted 2026-11-02): one zip a release,
+# GITC-Uplift-<version>.zip, with SHA256SUMS.txt beside it. The release list,
+# not /latest: a release without the zip is skipped, not taken on trust.
+UPLIFT_API = ("https://api.github.com/repos/ghostinthecamera/GITC-Uplift/"
+              "releases?per_page=10")
+UPLIFT_ZIP_RE = re.compile(r"^GITC-Uplift-v?(\d[\w.\-]*)\.zip$", re.I)
+UPLIFT_SUMS = "SHA256SUMS.txt"
+# What the zip carries and the tool places: the Addons folder beside the
+# executable, the shaders in ReShade's shader folder.
+UPLIFT_ADDONS = ("gitc-uplift.addon64", "gitc-uplift.addon32",
+                 "gitc-uplift-helper64.exe")
+UPLIFT_SHADERS = ("Uplift.fx", "UpliftMask.fx")
 # The file name is load-bearing: the NGX snippet only creates the feature
 # for a caller whose module path contains "nvngx.dll".
 UPSTREAM_ASSET = "nvngx.dll.addon64"
@@ -718,6 +730,52 @@ def resolve_upstream() -> tuple[str, str]:
         if a["name"].lower() == UPSTREAM_ASSET:
             return rel.get("tag_name", "?"), a["browser_download_url"]
     raise RuntimeError(f"The neural-upstream release has no {UPSTREAM_ASSET} asset.")
+
+
+def resolve_uplift() -> tuple[str, str, str]:
+    """(tag, zip url, SHA256SUMS url or "") of the newest GITC-Uplift release.
+
+    By asset name pattern over the release list, newest first. With the
+    API out of reach, the newest zip already in the cache (its sums URL is
+    then unknown: the zip was checked when it was fetched).
+    """
+    errors: list[str] = []
+    try:
+        rels = _json(UPLIFT_API)
+        rels = [r for r in (rels if isinstance(rels, list) else [])
+                if isinstance(r, dict) and not r.get("draft") and not r.get("prerelease")]
+        rels.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+        for r in rels:
+            assets = {str(a.get("name", "")): a.get("browser_download_url", "")
+                      for a in r.get("assets") or [] if isinstance(a, dict)}
+            zips = [n for n in assets if UPLIFT_ZIP_RE.match(n) and assets[n]]
+            if zips:
+                return (str(r.get("tag_name") or "?"), assets[zips[0]],
+                        assets.get(UPLIFT_SUMS, "") or "")
+        errors.append("no release carries a GITC-Uplift-<version>.zip")
+    except Exception as e:
+        errors.append(f"GitHub: {e}")
+    try:
+        from . import net
+        cached = sorted((p for p in net.cache_dir().glob("GITC-Uplift-*.zip")
+                         if UPLIFT_ZIP_RE.match(p.name)),
+                        key=lambda p: p.stat().st_mtime)
+        if cached:
+            m = UPLIFT_ZIP_RE.match(cached[-1].name)
+            return "v" + m.group(1), cached[-1].as_uri(), ""
+    except Exception as e:
+        errors.append(f"cache: {e}")
+    raise RuntimeError("Could not find a GITC-Uplift release: " + "; ".join(errors))
+
+
+def uplift_sum(sums_text: str, name: str) -> str:
+    """The SHA-256 SHA256SUMS.txt gives for `name`, or ""."""
+    for line in (sums_text or "").splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2 and parts[-1].lstrip("*").rsplit("/", 1)[-1] == name \
+                and re.fullmatch(r"[0-9a-fA-F]{64}", parts[0]):
+            return parts[0].lower()
+    return ""
 
 
 def resolve_standalone() -> tuple[str, dict[str, str]]:

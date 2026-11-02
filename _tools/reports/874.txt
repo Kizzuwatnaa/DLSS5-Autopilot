@@ -1,0 +1,39 @@
+**Did the game start?** it started and ran
+
+**What happened**
+Tried optiscaler, renodx, upstream - nothing of yours ended up running in the game.
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 3060 (sm_86), driver 630.20
+- game: Satisfactory
+- exe: FactoryGameSteam.exe
+- arch/api: 64-bit / Unknown (graphics DLL loaded at runtime; assuming DX11/DX12 via dxgi.dll)
+- route: upstream
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx.dll.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+- FactoryGame/Plugins/StreamlineCore/Binaries/ThirdParty/Win64/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- FactoryGame/Plugins/DLSS/Binaries/ThirdParty/Win64/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- FactoryGame/Plugins/DLSS/Binaries/ThirdParty/Win64/nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.9.1 kept beside it)
+
+**What ran, and what it loaded** (seen at 21 Oct 20:42)
+- process: FactoryGameSteam.exe
+- ran from: FactoryGameSteam.exe
+- DLLs in the process: 28
+- graphics DLLs in the process: none
+- ours, loaded: none
+- ours, not loaded: dxgi.dll, nvngx.dll.addon64, nvngx_dlssnr.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

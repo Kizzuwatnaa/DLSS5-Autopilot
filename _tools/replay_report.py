@@ -89,7 +89,8 @@ def _header(text: str) -> dict:
     """
     out = {}
     for k in ("version", "gpu", "game", "exe", "arch/api", "route",
-              "work area", "starts as administrator", "compatibility flags",
+              "work area", "bridge contract", "starts as administrator",
+              "compatibility flags",
               "this tool"):
         m = re.search(r"^- " + re.escape(k) + r":\s*(.+)$", text, re.M)
         if m:
@@ -129,11 +130,13 @@ def finished(text: str) -> dict:
     carries a traceback out of the installer (#97, #103).
     """
     said = printed_verdict(text)
+    extra = {"native_dlss": False} if re.search(
+        r"^- bridge contract: synthetic\s*$", text, re.M) else {}
     if said:
-        return {"complete": said not in UNFINISHED}
+        return {"complete": said not in UNFINISHED, **extra}
     crashed = re.search(r"\*\*Last error\*\*(.*?)```", text, re.S) is not None \
         and "installer.py" in text
-    return {"complete": not crashed}
+    return {"complete": not crashed, **extra}
 
 
 def started(text: str) -> str:

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time as _time
 import traceback
 import webbrowser
 from pathlib import Path
@@ -332,6 +333,7 @@ class GameControl:
         self._tune = None
         self._measured = None
         self._measured_rows = None
+        self._card_measured = None
         self._noted_routes = set()
         self.result = None
         self.seen_exe = None
@@ -345,7 +347,7 @@ class GameControl:
         return {
             "provider": 3, "renodx": AUTO, "dlssnr": AUTO, "dlss": AUTO, "dlssd": DLSSD_KEEP,
             "keep_dlss": True, "workres": 100, "preset": 0, "hdr": -1, "nr_preset": 0,
-            "nr_style": 0, "fg": False, "feeder": "stable", "opti_build": "",
+            "nr_style": 0, "nr_passes": 0, "fg": False, "feeder": "stable", "opti_build": "",
             "dxvk": False, "mfg": False, "vr": False, "remix_swap": swapped, "gpu_pref": True,
             "opti_proxy": "", "reshade_proxy": "", "own_fg": "",
         }
@@ -702,7 +704,8 @@ class GameControl:
         g, r = self.game, self.route
         opti, feeder, remix = r == dlss.OPTI, r == dlss.FEEDER, r == dlss.REMIX
         api = g.api if g else ""
-        reshade_routes = r in (dlss.NATIVE, dlss.BRIDGE, dlss.FEEDER, dlss.RENODX, dlss.UPSTREAM, dlss.STANDALONE)
+        reshade_routes = r in (dlss.NATIVE, dlss.BRIDGE, dlss.FEEDER, dlss.RENODX, dlss.UPSTREAM, dlss.STANDALONE,
+                               dlss.UPLIFT)
         # Only the rule asked is evaluated. This is asked for every row on
         # every redraw (and by apply_route and opts()); building the whole
         # table each time ran every rule, the disk-reading ones included,
@@ -723,16 +726,18 @@ class GameControl:
             # With 'keep the game's own' on and the game's file beside the
             # executable, the install leaves that file alone and never reads
             # this choice; a game with none still gets the build picked here.
-            "dlss": lambda: r not in (dlss.UPSTREAM, dlss.REMIX) and not (
+            "dlss": lambda: r not in (dlss.UPSTREAM, dlss.REMIX, dlss.UPLIFT) and not (
                 bool(self.settings.get("keep_dlss", True)) and self.shown_setting("keep_dlss")
                 and bool((getattr(self, "entry", {}) or {}).get("dlss_beside"))),
-            "keep_dlss": lambda: r not in (dlss.UPSTREAM, dlss.REMIX) and (g is None or g.bitness != 32),
+            "keep_dlss": lambda: r not in (dlss.UPSTREAM, dlss.REMIX, dlss.UPLIFT) and (g is None or g.bitness != 32),
             "dlssd": lambda: self.has_rr() and reshade_routes,
             "workres": lambda: self.work_applies(),
             "preset": lambda: feeder,
             "hdr": lambda: feeder,
             "nr_preset": lambda: opti,
             "nr_style": lambda: opti,
+            # only the pre-SR forks read [DlssNr] Passes (#957)
+            "nr_passes": lambda: opti and optiscaler.is_presr(str(self.settings.get("opti_build") or "")),
             "fg": lambda: opti and api == "DX12",
             "feeder": lambda: feeder,
             "opti_build": lambda: opti,
@@ -984,6 +989,8 @@ class GameControl:
             return [(k, "auto" if k == 0 else v.lower()) for k, v in optiscaler.NR_PRESETS.items()]
         if key == "nr_style":
             return [(k, v.lower()) for k, v in optiscaler.NR_STYLES.items()]
+        if key == "nr_passes":
+            return list(optiscaler.NR_PASSES.items())
         if key == "feeder":
             return [("stable", "newest release"), ("pre", "newest pre-release")] + [
                 (t, t + ("  (pre-release)" if pre or "beta" in t.lower() else "")) for t, pre in self.feeder_tags]
@@ -1059,6 +1066,11 @@ class GameControl:
                     nr["Preset"] = s["nr_preset"]
                 if s["nr_style"]:
                     nr["Style"] = s["nr_style"]
+                # auto is written as 1 on these builds: OptiScaler.ini is kept
+                # across installs, and a Passes=3 left in it would go on
+                # costing three times while the page says auto (gate 2.1.0)
+                if vis("nr_passes"):
+                    nr["Passes"] = s.get("nr_passes") or 1
             extra = self.profile_extra
             # A profile's own feed and model dials (depth, say) go to the
             # route that reads them, and to the route shown only: the feed
@@ -1787,6 +1799,8 @@ class GameControl:
             s["hdr"] = number(feed.get("hdr", -1), -1)
         if vis("nr_style") and number(nr.get("Style", 0), 0) in optiscaler.NR_STYLES:
             s["nr_style"] = number(nr.get("Style", 0), 0)
+        if number(nr.get("Passes", 0), 0) in optiscaler.NR_PASSES:
+            s["nr_passes"] = number(nr.get("Passes", 0), 0)
         if vis("provider") and opt.provider in reshade_ini.PROVIDERS:
             s["provider"] = opt.provider
         # dxvk before the proxy and keep_dlss before dlss: each decides
@@ -1992,7 +2006,9 @@ class GameControl:
         self.seen_exe = self._seen_other_exe_for(g)
         working = rep.verdict.startswith("Working")
         self.result = {"kind": "diagnosis", "ok": working, "ran": bool(rep.ran), "title": rep.verdict,
+                       "at": _time.time(),
                        "findings": [(f.level, f.title) for f in rep.findings if f.level in ("bad", "warn")][:3]}
+        self._card_measured = measured
         self._record_verdict(rep, measured)
         if not working:
             self.what_next(rep)
@@ -2385,6 +2401,12 @@ class GameControl:
                     ("step", "F10 flips between the processed and the original picture"),
                     ("note", "a lower in-game resolution than your monitor = DLSS super resolution; same "
                              "resolution = DLAA")]
+        elif route == dlss.UPLIFT:
+            out += [("step", f"press {key} to open reshade, then the GITC Uplift tab"),
+                    ("step", "tick Enable - the card at the top of the tab says whether it is working"),
+                    ("step", "NR stage: Present works in every game; After DLSS runs before the hud in "
+                             "64-bit d3d11/d3d12/vulkan games that use dlss"),
+                    ("note", "resolution and pass count in the same tab are the fps levers")]
         elif route == dlss.UPSTREAM:
             out += [("note", "reshade's overlay will say 'no .fx files found' - normal on this route"),
                     ("step", "keep the game's own DLSS ON - the network runs before it"),

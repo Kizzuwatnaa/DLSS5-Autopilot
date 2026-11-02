@@ -200,6 +200,9 @@ def describe(opt: Options) -> list[str]:
     st = opt.nr.get("Style")
     if st:
         out.append(f"style {optiscaler.NR_STYLES.get(int(st), st)}")
+    ps = opt.nr.get("Passes")
+    if isinstance(ps, (int, float)) and int(ps) > 1:
+        out.append(f"model passes {int(ps)}x")
     if opt.dlssnr:
         out.append(f"dlssnr {opt.dlssnr}")
     if opt.dlss:

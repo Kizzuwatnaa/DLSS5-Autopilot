@@ -1,0 +1,34 @@
+**Did the game start?** it never started
+
+**What happened**
+The game folder is writable, but GoWEDay.exe is protected against reading (Errno 13). I verified both conditions independently using PowerShell.
+
+According to the v1.8.2 release notes, protected Xbox/Game Pass executables should support manual architecture and graphics API selection when the folder is writable.
+
+However, in AutoPilot v2.0.9, there is no visible architecture selection, the game remains "?-bit", and the Install button is disabled.
+
+Is this an issue with the protected-executable fallback, or is installation intentionally blocked because Easy Anti-Cheat is detected?
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 617.14
+- game: Content
+- exe: GoWEDay.exe
+- arch/api: ? / DX12 (set by hand (detected ?))
+- route: feeder
+
+**Files in the folder**
+- ReShade.ini: MISSING
+- nvngx_dlssnr.dll: MISSING
+- reshade-shaders/Shaders/DLSS5_Feed.fx: MISSING
+- install record: MISSING (no install recorded in this folder)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

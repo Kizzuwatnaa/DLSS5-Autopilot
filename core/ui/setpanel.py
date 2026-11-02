@@ -36,9 +36,10 @@ GROUPS = (
         ("preset", "dlss preset", "dd", "the feeder path is always DLAA"),
         ("nr_preset", "model preset", "dd", "the rest of the model's dials are in OptiScaler's overlay"),
         ("nr_style", "style", "dd", ""),
+        ("nr_passes", "model passes", "dd", "runs the model again on its own output; 2x costs about twice, 3x three times"),
         ("hdr", "hdr", "dd", ""),
         ("feeder", "feeder build", "dd", "pin a feeder build; the matching add-on is chosen for it"),
-        ("opti_build", "optiscaler build", "dd", "the default takes the newest package on Dagherbou's release page; the forks are not run here; RTX 40 MFG is for RTX 40 cards only"),
+        ("opti_build", "optiscaler build", "dd", "the default takes the newest package on Dagherbou's release page; RTX 40 MFG is for RTX 40 cards only"),
     )),
     ("extras", (
         ("keep_dlss", "keep the game's own nvngx_dlss", "toggle",

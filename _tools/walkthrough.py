@@ -339,6 +339,29 @@ def main() -> int:
         ok("'report a bug' with no game picked raises nothing", len(sb.errors) == errs, sb.errors[errs:][:1])
         ok("...asks its questions and opens a new issue",
            ask.call_count == 1 and bool(sb.opened) and "/issues/new" in sb.opened[-1], sb.opened[-1:])
+        from core import reportout
+        bn0 = shell.banner_kit
+        ok("...and says in one line what happened to the report, with 'copy report' and 'save zip'",
+           "report" in shell.banners and bn0.find("copy report", "button") is not None
+           and bn0.find("save zip", "button") is not None, list(shell.banners))
+        said0 = (shell.banners.get("report") or {}).get("text", "")
+        ok("...the line is one of the true ones and the whole report is on the clipboard",
+           said0.startswith(("the report is open on github", "report open on github"))
+           and len(root.clipboard_get()) > 200, said0)
+        root.clipboard_clear()
+        root.clipboard_append("x")
+        sb.click(shell.banner_c, bn0.find("copy report", "button"))
+        ok("...'copy report' puts the whole report back", len(root.clipboard_get()) > 200)
+        sb.click(shell.banner_c, bn0.find("save zip", "button"))
+        zips = sorted(reportout.reports_dir().glob("report-*.zip"))
+        import zipfile as _zf0
+        ok("...'save zip' writes the report and the tool's log into a zip",
+           bool(zips) and "report.md" in _zf0.ZipFile(zips[-1]).namelist(), [z.name for z in zips])
+        ok("...and the line then names the file, with a 'show it' button",
+           (shell.banners.get("report") or {}).get("text", "").startswith("saved report-")
+           and shell.banner_kit.find("show it", "button") is not None,
+           (shell.banners.get("report") or {}).get("text", ""))
+        shell.unbanner("report")
 
         idx = names_shown().index("Walkthrough Game")
         sb.click(c, f"card{idx}")
@@ -346,6 +369,57 @@ def main() -> int:
            getattr(shell.page, "name", None))
         sb.until(root, lambda: not app.entering and app.support is not None, 20)
         sb.pump(root, 0.4)
+
+        # ============================================================ the session card
+        print("the session card")
+        from core import autotune, sessioncard
+        from core.ui import theme as _T
+        inst = str(main_game.install_dir)
+
+        def page_texts():
+            return [c.itemcget(i, "text") for i in c.find_withtag("page") if c.type(i) == "text"]
+
+        def show_card(result, entry=None, measured=None):
+            app.result, app._card_measured = result, measured
+            app.verdicts.pop(inst, None)
+            if entry:
+                app.verdicts[inst] = entry
+            app.refresh("game")
+            sb.pump(root, 0.3)
+
+        show_card({"kind": "diagnosis", "ok": True, "ran": True, "title": "Working.", "findings": []}, None,
+                  autotune.Measured(route="optiscaler", resolution=75, model_ms=7.2, frames=40))
+        ok("a working session: the card says Working and what it cost",
+           "Working." in page_texts() and "7.2 ms of model a frame  \u00b7  75% work area" in page_texts(),
+           [t for t in page_texts() if "ms" in t or "Working" in t])
+        ok("...and no 'try' button beside a session that worked",
+           k.find("try ", "button") is None, [x[2] for x in k.controls("button")])
+        show_card({"kind": "diagnosis", "ok": False, "ran": True,
+                   "title": "Not started since the install - play once and check again.",
+                   "findings": [("bad", "Nothing was loaded.")]},
+                  {"ok": False, "said": "x", "next": "feeder", "why": "the feeder reads its own log"})
+        tries = [x for x in k.controls("button") if x[2].startswith("try ")]
+        ok("a session that failed: one card, with the route to try inside it",
+           len(tries) == 1 and "the feeder reads its own log" in page_texts(), [x[2] for x in tries])
+        if tries:
+            with patch.object(app, "try_next") as tn:
+                sb.click(c, tries[0][0])
+                ok("...and its button starts that route for this game",
+                   tn.call_count == 1 and tn.call_args[0][1] == "feeder", tn.call_args)
+        show_card({"kind": "diagnosis", "ok": False, "ran": True,
+                   "title": "Inconclusive - open the overlay and check.", "findings": []})
+        head = [i for i in c.find_withtag("result") if c.type(i) == "text"]
+        ok("logs that cannot tell are amber, not the colour of a failure",
+           bool(head) and c.itemcget(head[0], "fill") == _T.AMBER, [c.itemcget(i, "fill") for i in head])
+        show_card({"kind": "diagnosis", "ok": True, "ran": True, "title": "Working.", "findings": []})
+        app.running.add(app._folder_key(main_game.install_dir))
+        app.refresh("game")
+        sb.pump(root, 0.3)
+        ok("while the watcher has the game running the card says so, not the last session's answer",
+           f"{main_game.name} is running" in page_texts() and "Working." not in page_texts(), page_texts()[:6])
+        app.running.discard(app._folder_key(main_game.install_dir))
+        show_card(None)
+        ok("no session yet: no card at all", not [i for i in c.find_withtag("result")])
 
         # ============================================================ game page
         print("game page")

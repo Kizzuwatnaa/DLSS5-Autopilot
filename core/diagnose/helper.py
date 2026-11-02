@@ -35,7 +35,10 @@ _REMOVED = re.compile(r"\[host\] Present failed (0x887A0005)", re.I)
 _OUTCOME = re.compile(r"\[host\] neural consumer outcome: ([^\n]+)")
 _KEEP = re.compile(r"DLSS 5 add-on|NGX_D3D12_Init|NeuralUplift|Present failed|"
                    r"in a row|consumer outcome|feature ready|evaluated|"
-                   r"CRASH|stack|\] exit|lost|pipe closed")
+                   r"CRASH|EXCEPTION|evaluate raised|stack|\] exit|lost|"
+                   r"pipe closed")
+# "evaluate raised" is half of the driver-fault rule (chain.py); #917's
+# report carried the stack line without it and replayed to another answer.
 
 
 def _helper_session(text: str) -> str:

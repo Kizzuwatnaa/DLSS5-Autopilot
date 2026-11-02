@@ -358,17 +358,37 @@ def enable_dlss5_addon(game_dir: Path) -> bool:
     return True
 
 
-def enable_renodx_dlss_nr(game_dir: Path) -> None:
+# Games that close themselves when the add-on hooks neural rendering at
+# start, and run fine when it is switched on from the overlay afterwards
+# (#808, #886: Mafia II: Definitive Edition, two launches, same fix by hand).
+# The add-on's own key for "hook nothing yet" is DirectNeuralRenderingHookStage=0.
+START_OFF_EXES = frozenset({"mafia ii definitive edition.exe"})
+
+
+def starts_off(exe_name: str) -> bool:
+    return str(exe_name or "").strip().lower() in START_OFF_EXES
+
+
+def enable_renodx_dlss_nr(game_dir: Path, exe_name: str = "") -> bool:
     """Ask ShortFuse's renodx-dlss add-on for neural rendering up front.
 
     The add-on keeps its settings in ReShade.ini under [RENODX-DLSS]; the key
     is what its overlay toggles. Only set when absent, so a user who turned it
-    off on purpose is not overruled.
+    off on purpose is not overruled. For a game in START_OFF_EXES the hook
+    stage starts at 0 instead, and the overlay switches it on. Returns
+    "set" when 0 was written, "kept" when a stage was already there (it is
+    left alone), "" for every other game.
     """
     p = game_dir / "ReShade.ini"
     ini = Ini.load(p)
     ini.set_default("RENODX-DLSS", "NeuralRenderingEnabled", "1")
+    held = ""
+    if starts_off(exe_name):
+        held = ("kept" if ini.get("RENODX-DLSS", "DirectNeuralRenderingHookStage")
+                not in (None, "") else "set")
+        ini.set_default("RENODX-DLSS", "DirectNeuralRenderingHookStage", "0")
     ini.save(p)
+    return held
 
 
 def write_preset(game_dir: Path, provider: int = 3) -> None:

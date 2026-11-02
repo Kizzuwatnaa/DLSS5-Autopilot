@@ -404,6 +404,10 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
         return True
     if _layer_only(man):
         return _layer_not_reached(rep, running, "is running", app)
+    if man.get("kind") != "video" and s.loaded.known and _starter_verdict(
+            install_dir, man, rep, running, "when the tool looked",
+            len(s.loaded.paths), s.graphics):
+        return True
     rep.add(BAD, f"{running} is running and has loaded none of the files "
                  f"here.",
             f"Windows lists every DLL in a process, and not one of this "
@@ -797,6 +801,9 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
     if _layer_only(man):
         return _layer_not_reached(rep, running, f"ran at {when}",
                                   "app" if man.get("kind") == "video" else "game")
+    if _starter_verdict(install_dir, man, rep, running, f"at {when}",
+                        seen.get("modules"), seen.get("graphics")):
+        return True
     rep.add(BAD, f"{running} ran at {when} with none of this folder's files "
                  f"loaded.",
             f"Windows lists every DLL in a process and not one of this "
@@ -806,6 +813,60 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
             f"the game's settings.")
     rep.verdict = (f"{running} ran at {when} and loaded nothing from this "
                    f"folder - try another proxy name.")
+    rep.never_ran = False
+    return True
+
+
+# A process that draws holds a hundred modules and at least one graphics
+# runtime. Fewer than this, and none: a starter that hands over to another
+# executable (Unreal's root TheOuterWorlds.exe and FactoryGameSteam.exe start
+# Binaries\Win64\...-Shipping.exe, #850 #874: 19 and 28 modules).
+_STARTER_MODULES = 45
+
+
+def _starter_verdict(install_dir: Path, man: dict, rep: Report, running: str,
+                     when: str, modules, graphics) -> bool:
+    """Say the executable the install went beside is a starter, when the
+    process read says so; False when it does not.
+
+    LIMITS: ONE reading of the module list. A real game read in its first
+    second looks the same, so this says "had", names the executable that
+    draws only when the folder holds one, and never claims what the game
+    "is". A graphics DLL anywhere decides it the other way."""
+    if not isinstance(graphics, (list, tuple)) or graphics:
+        return False
+    if not isinstance(modules, int) or not 0 < modules < _STARTER_MODULES:
+        return False
+    try:
+        from .. import pe
+        better = [p for p in pe.find_game_exes(install_dir)
+                  if p.name.lower() != running.lower()
+                  and pe.looks_like_game(p) and not pe.launcher_like(p)
+                  and p.parent != install_dir]
+    except Exception:
+        better = []
+    rep.add(BAD, f"{running} had {modules} modules and no graphics DLL "
+                 f"loaded {when} - that is what a starter looks like, not the "
+                 f"executable that draws.",
+            f"Windows lists every DLL in a process: a game that is drawing has "
+            f"a graphics DLL (d3d9, d3d11, d3d12, opengl32, vulkan-1) in it "
+            f"and well over a hundred modules, and {running} had neither. A "
+            f"starter runs another program and hands over, and a process only loads what is beside "
+            f"the executable it started from, so nothing put beside "
+            f"{running} is ever reached - whatever name is chosen in 'reshade "
+            f"loads as'. "
+            + (f"{better[0].name} in {better[0].parent.name} looks like the "
+               f"one that draws: pick it in the game's details and install "
+               f"again. " if better else
+               "Pick the executable the game itself runs from - on Unreal "
+               "games the one ending in -Win64-Shipping.exe under "
+               "Binaries\\Win64, elsewhere usually under a Binaries or Bin "
+               "folder - in the game's details and install again. ")
+            + "If the game was still at a launcher window, start it again "
+              "and press 'did it work?' once it is drawing.")
+    rep.verdict = (f"{running} looked like a starter (no graphics DLL loaded) - "
+                   + (f"install beside {better[0].name} instead."
+                      if better else "install beside the executable that draws."))
     rep.never_ran = False
     return True
 
@@ -999,6 +1060,8 @@ def _route_from_files(install_dir: Path) -> str:
         return "feeder"
     if there(_i.STANDALONE_ADDON, _i.STANDALONE_BRIDGE):
         return "standalone"
+    if there("gitc-uplift.addon64", "gitc-uplift.addon32"):
+        return "uplift"
     # Last: the feeder and the bridge put renodx-dlss5.addon64 down too. The
     # RenoDX route's own build has a different name; the native route is
     # the one left with the plain add-on and nothing else.

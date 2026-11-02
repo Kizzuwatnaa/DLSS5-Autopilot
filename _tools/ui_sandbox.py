@@ -115,7 +115,8 @@ class Sandbox:
         if hasattr(sources, "_API_CACHE"):
             sources._API_CACHE = self.dir / "api-cache"
         self._start(patch.object(urllib.request, "urlopen", _no_network))
-        self._start(patch("webbrowser.open", side_effect=lambda url, *a, **k: self.opened.append(str(url))))
+        self._start(patch("webbrowser.open",
+                          side_effect=lambda url, *a, **k: (self.opened.append(str(url)), True)[1]))
         self._start(patch("subprocess.Popen", side_effect=OSError("no processes from a UI check")))
         from core import community
         self._start(patch.object(community, "fetch", side_effect=OSError("offline")))

@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 __all__ = [
-    "BAD", "BRIDGE_LOG", "FEED_LOG", "FEED_SHADERS", "Finding",
+    "UPLIFT_ADDON_NAME", "BAD", "BRIDGE_LOG", "FEED_LOG", "FEED_SHADERS", "Finding",
     "_BRIDGE_ATTACHED", "_BRIDGE_CALLED", "_BRIDGE_CREATE_FAILED", "_BRIDGE_CRASH",
     "_BRIDGE_FAILED", "_BRIDGE_FAULTED",
     "_BRIDGE_FRAME",
@@ -41,7 +41,7 @@ __all__ = [
     "_OUR_MARKS", "_RAN_CONTAINERS", "_RAN_ENTRIES", "_RAN_LOOK",
     "_RAN_MARGIN", "_RAN_NOT_A_NAME", "_RAN_NOT_EVIDENCE", "_RAN_PARENTS",
     "_RAN_PER_DIR", "_RAN_SECONDS", "_RAN_SKIP", "_RAN_SKIP_PART", "_RAN_SKIP_SUFFIX",
-    "_RESHADE_ALSO", "_RESHADE_FIRM", "_RESHADE_GOT_GOING", "_RESHADE_KEEP",
+    "_RESHADE_ALSO", "_RESHADE_DECIDES", "_RESHADE_FIRM", "_RESHADE_GOT_GOING", "_RESHADE_KEEP",
     "_RESHADE_SESSION", "_RESHADE_STARTED", "_SCAN_NOISE", "_STANDALONE_NO_RUNTIME",
     "_STANDALONE_SESSION", "_layer_state", "_user_data_roots"
 ]
@@ -132,6 +132,10 @@ NATIVE_ADDON_NAME = "DLSS 5 Neural Rendering"
 
 
 STANDALONE_ADDON_NAME = "Standalone DLSS-NR + SR"
+
+
+# What GITC-Uplift registers as, and the prefix of its own ReShade.log lines.
+UPLIFT_ADDON_NAME = "GITC Uplift"
 
 
 STANDALONE_PANEL = "'Standalone DLSS-NR + SR' add-on tab"
@@ -238,7 +242,9 @@ _OURS_IN_STACK = ("dlss5-feed.addon64", "dlss5-feed.addon32",
                   "dlss5-feed-host64.exe", "dlss5-feed-host32.exe",
                   "renodx-dlss5.addon64", "renodx-dlss.addon64",
                   "dlss5-bridge.addon64", "dlss5-dx11-bridge.addon64",
-                  "nvngx.dll.addon64", "standalone-dlssnr.addon64")
+                  "nvngx.dll.addon64", "standalone-dlssnr.addon64",
+                  "gitc-uplift.addon64", "gitc-uplift.addon32",
+                  "gitc-uplift-helper64.exe")
 
 
 _NGX_IN_STACK = ("nvngx_dlssnr.dll", "_nvngx.dll", "nvngx.dll",
@@ -453,7 +459,9 @@ def _user_data_roots() -> list[Path]:
 
 
 _RESHADE_KEEP = ("WARN", "ERROR", "Registered add-on", "CreateSwapChain",
-                 "Direct3DCreate9", "Exiting", "EvaluateFeature")
+                 "Direct3DCreate9", "Exiting", "EvaluateFeature",
+                 # GITC-Uplift's two INFO lines its reader decides on
+                 "registered (ReShade API", "NR ran on the game's frame")
 
 
 _RESHADE_GOT_GOING = ("registered add-on", "redirecting", "initialized runtime",
@@ -468,6 +476,11 @@ _RESHADE_FIRM = ("EvaluateFeature",)
 
 
 _RESHADE_ALSO = ("Registered add-on",)
+
+
+# The two lines that tell a Direct3D 9 device from a DXGI swap chain.
+_RESHADE_DECIDES = ("Direct3DCreate9", "CreateSwapChain",
+                    "registered (ReShade API", "NR ran on the game's frame")
 
 
 _HOOK_ADDRESSES = re.compile(r" with 0x[0-9A-Fa-f]+ => 0x[0-9A-Fa-f]+")

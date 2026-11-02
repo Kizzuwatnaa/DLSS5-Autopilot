@@ -90,6 +90,7 @@ _REGISTERS_AS = (("bridge", ("dlss 5 bridge",)), ("feed", ("dlss 5 feed",)),
                  ("renodx-dlss.", ("renodx dlss",)),
                  ("nvngx.dll.addon", ("pre-upscale", "upstream")),
                  ("standalone-dlssnr", ("standalone dlss-nr",)),
+                 ("gitc-uplift", ("gitc uplift",)),
                  ("rtx40mfg", ("mfg unlock",)))
 
 
@@ -166,7 +167,7 @@ def _loaded_note(install_dir: Path, man: dict, rep: Report) -> None:
 # What a registered add-on's name has to carry to be a DLSS hook, rather
 # than an HDR mod, a limiter or a shader tool. The RTX 40 MFG unlock this
 # tool installs ("Universal RTX 40 MFG Unlock V1.2") carries none of them.
-_HOOK_WORDS = re.compile(r"dlss|\bngx\b|nvngx|neural|optiscaler", re.I)
+_HOOK_WORDS = re.compile(r"dlss|\bngx\b|nvngx|neural|optiscaler|uplift", re.I)
 
 
 def _route_owns(name: str, route: str) -> bool:
@@ -185,6 +186,8 @@ def _route_owns(name: str, route: str) -> bool:
         return _upstream_named(name)
     if route == "standalone":
         return _standalone_named(name)
+    if route == "uplift":
+        return "uplift" in low
     return False
 
 

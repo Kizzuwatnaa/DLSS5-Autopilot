@@ -238,7 +238,7 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
 
         Works with no game picked - the 1.9 window read the picked game's
         install folder outside any guard and raised from the help menu."""
-        from .. import diagnose, installer, reportui
+        from .. import diagnose, installer, reportout, reportui
         try:
             name, sm = gpu.detect()
         except Exception:
@@ -279,15 +279,53 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
         App._reprint_answered(self, g, route, answers)
         try:
             url, cut = diagnose.issue_url(REPO_URL, title, body)
-            if cut:
-                self.root.clipboard_clear()
-                self.root.clipboard_append(body)
-            webbrowser.open(url)
         except Exception:
+            url, cut = f"{REPO_URL}/issues/new", True
+        done = reportout.deliver(body, url, cut, lambda s: App._to_clipboard(self, s), webbrowser.open,
+                                 g.name if g is not None else "",
+                                 link=lambda ok: diagnose.issue_url(REPO_URL, title, body, pasted=ok))
+        App._report_banner(self, done.text, body, install_dir, g.name if g is not None else "")
+
+    def _to_clipboard(self, text: str) -> bool:
+        """Put the text on the clipboard and read it back: "it is on your
+        clipboard" is only said when it is."""
+        try:
             self.root.clipboard_clear()
-            self.root.clipboard_append(body)
-            self.shell.info("report a bug", "The details are on the clipboard - paste them into a new issue on "
-                                            "GitHub.")
+            self.root.clipboard_append(text)
+            # no update(): it ran every pending event inside the report
+            # handler; Tk reads its own selection back without it
+            got = self.root.clipboard_get()
+        except Exception:
+            return False
+        return got.replace("\r\n", "\n") == text.replace("\r\n", "\n")
+
+    def _report_banner(self, text: str, body: str, install_dir, name: str, extra=()) -> None:
+        """What happened to the report, in one line, with the two things that
+        can still be done: copy it again, or save it with its logs as a zip."""
+        from .. import reportout
+
+        def copy() -> None:
+            self.shell.status("the report is on your clipboard" if App._to_clipboard(self, body)
+                              else "the clipboard did not take the report - use 'save zip'")
+
+        def zipit() -> None:
+            p = reportout.save_zip(body, install_dir, name)
+            if p is None:
+                self.shell.status("the zip could not be written - 'copy report' still works")
+                return
+            App._report_banner(self, f"saved {p.name} - attach it to the issue", body, install_dir, name,
+                               extra=[("show it", lambda: App._show_file(p), True)])
+
+        actions = list(extra) + [("copy report", copy, False), ("save zip", zipit, False)]
+        self.shell.banner("report", text, actions=actions, colour=T.AMBER)
+
+    @staticmethod
+    def _show_file(p) -> None:
+        import subprocess
+        try:
+            subprocess.Popen(["explorer", "/select,", str(p)])
+        except OSError:
+            pass
 
     def _reprint_answered(self, g, route: str, answers) -> None:
         """What the report now says, on the screen and the card as well.

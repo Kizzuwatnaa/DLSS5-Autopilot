@@ -1,0 +1,87 @@
+**The whole report is on your clipboard: click in this box, press Ctrl+A, then Ctrl+V, then submit.** Below is only its start.
+
+**Did the game start?** it started, then closed itself
+
+**What happened**
+crashed when starting mission
+
+---
+- version: 2.0.9
+- gpu: NVIDIA GeForce RTX 5090 (sm_120), driver 621.01
+- game: Tom Clancy's Splinter Cell: Chaos Theory
+- exe: splintercell3.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: feeder
+- windows event: splintercell3.exe faulted in ReShade32.dll 0xC0000005 at 2026-10-27 12:24:10 UTC
+- compatibility flags: HIGHDPIAWARE (per user)
+
+**Diagnosis**: Driver 616.64+ faults inside NGX even with renodx-dlss5 4.55 - roll the driver back to 616.56.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] The 32-bit helper process started.
+- [ok] The game and the helper are talking.
+- [info] On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+- [bad] Every DLSS evaluate faults inside NVIDIA's NGX runtime (D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5).
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: registered (for this user and on the machine's list)
+- DLSS 5 add-on switch: NeuralUplift=1
+- splintercell3_d3d9.log: present (written since the install)
+
+**What ran, and what it loaded** (seen at 27 Oct 08:23)
+- process: splintercell3.exe
+- ran from: splintercell3.exe
+- DLLs in the process: 142
+- graphics DLLs in the process: d3d11.dll, dxgi.dll, d3d9.dll, ddraw.dll, opengl32.dll, vulkan-1.dll
+- ours, loaded: d3d9.dll, dlss5-feed.addon32
+
+**ReShade.log**
+```
+08:23:26:380 [ 5292] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 1.19.0" v0.0.0.0 using ReShade API version 20.
+08:23:28:154 [ 5292] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+08:23:28:235 [ 5292] | WARN  | IDirectInput8W::CreateDevice failed with error code E_FAIL.
+08:23:28:576 [ 5292] | ERROR | Failed to register add-on, because it provided an invalid module handle!
+08:23:29:038 [ 5292] | ERROR | Failed to register add-on, because it provided an invalid module handle!
+08:23:42:045 [34176] | WARN  | [DLSS 5 Feed (32-bit) 1.19.0] [DLSS 5 Feed 32] stopped: the 64-bit host went away -- its own dlss5-feed-host.log (in host64\) names the reason. The game renders normally
+08:24:12:853 [ 5292] | INFO  | Exiting ...
+```
+
+**dlss5-feed.log**
+```
+08:23:26.380  dlss5-feed32 1.19.0 commit 3c09eab (built Oct 11 2026 07:49:34) attached.
+08:23:31.157  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled), depth reversed=1
+08:23:31.197  [feed32] host spawned (pid 24076): "c:\program files (x86)\steam\steamapps\common\Splintercell Chaos Theory\System\host64\dlss5-feed-host64.exe" 24788
+08:23:37.232  [feed32] host connected in 6062 ms (protocol v11, Vulkan client)
+08:23:37.233  [feed32] building: 3840x2160 backbuffer B8G8R8A8_TYPELESS (Vulkan, depth reversed=1, mode=2) -- handed to the host, the game keeps rendering
+08:23:38.415  [feed32] frame 3 delivered (3840x2160, reset=0, Vulkan)
+08:24:09.688  [feed32] runtime generation advanced to 2; asynchronous results from the destroyed runtime will be discarded
+08:24:09.700  [feed32] game device destroyed; shutting down
+08:24:09.701  ### EXCEPTION RECORDED ###  exception 0xC0000005 (reading address 00000520) at 5248A1DB in C:\Users\<user>\AppData\Local\dlss5-autopilot\reshade-vulkan\ReShade32.dll; this add-on was last
+08:24:09.936  [feed32] crash dump written: c:\program files (x86)\steam\steamapps\common\Splintercell Chaos Theory\System\dlss5-feed-crash.dmp -- attach it to the issue with this log
+08:24:12.851  [feed] vkCreateDevice hook removed
+08:24:12.852  shut down cleanly.
+```
+
+**dlss5-feed-host.log**
+```
+...
+08:23:37.136  [host] NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)
+08:23:38.356  [host] feature ready: 3840x2160 DLAA flags=74
+08:23:38.374  [host] frame 1 evaluated (0 presents skipped so far, 0 owed)
+08:23:38.383  [host] frame 2 evaluated (0 presents skipped so far, 0 owed, DLSS GPU 0.01 ms/frame)
+08:23:38.519  [host] evaluate fault stack, by module (innermost first): D3D12Core.dll <- nvngx_dlssnr.dll <- _nvngx.dll <- renodx-dlss5.addon64 <- dlss5-feed-host64.exe <- KERNEL32.DLL <- ntdll.dll
+08:23:38.519  [host] frame 3 evaluated (0 presents skipped so far, 0 owed, DLSS GPU 0.03 ms/frame) | pace: 8.80 ms/evaluate (113.6/s), 1.00 presents per evaluate, client queued up to 0 frames ahead, r
+08:23:38.520  [host] crash stack, by module (innermost first): KERNELBASE.dll <- renodx-dlss5.addon64 <- dxgi.dll <- dlss5-feed-host64.exe <- KERNEL32.DLL <- ntdll.dll
+```
+
+**autopilot.log (`C:\Users\<user>\AppData\Local\dlss5-autopilot\autopilot.log`)**
+```
+...
