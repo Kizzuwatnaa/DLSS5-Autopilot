@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 31,
-    "worked": 153
+    "worked": 154
    },
    "renodx": {
     "failed": 1,
@@ -303,7 +303,7 @@
    },
    "optiscaler": {
     "failed": 14,
-    "worked": 58
+    "worked": 59
    },
    "remix": {
     "failed": 2,
@@ -3668,6 +3668,21 @@
     }
    }
   },
+  "lf-win64-shipping.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Night Of The Dead",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "libertycity.exe": {
    "drivers": {
     "617.42": {
@@ -6332,6 +6347,6 @@
    }
   }
  },
- "generated": "2026-11-02T19:43:30Z",
- "reports": 635
+ "generated": "2026-11-02T22:34:05Z",
+ "reports": 636
 }
