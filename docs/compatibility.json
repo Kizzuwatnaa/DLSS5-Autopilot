@@ -146,7 +146,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 1,
+    "failed": 2,
     "worked": 6
    }
   }
@@ -294,7 +294,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 25,
+    "failed": 26,
     "worked": 13
    },
    "native": {
@@ -4174,6 +4174,21 @@
     }
    }
   },
+  "newcolossus_x64vk.exe": {
+   "drivers": {
+    "616.92": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Wolfenstein II The New Colossus",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "nfs13.exe": {
    "drivers": {
     "616.64": {
@@ -6298,6 +6313,6 @@
    }
   }
  },
- "generated": "2026-11-02T12:23:48Z",
- "reports": 632
+ "generated": "2026-11-02T13:54:49Z",
+ "reports": 633
 }
