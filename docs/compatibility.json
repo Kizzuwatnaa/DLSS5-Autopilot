@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 29,
+    "failed": 30,
     "worked": 151
    },
    "renodx": {
@@ -218,7 +218,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 2,
+    "failed": 3,
     "worked": 0
    },
    "renodx": {
@@ -2786,6 +2786,21 @@
     "upstream": {
      "failed": 0,
      "worked": 2
+    }
+   }
+  },
+  "fortniteclient-win64-shipping.exe": {
+   "drivers": {
+    "610.88": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Fortnite",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6275,6 +6290,6 @@
    }
   }
  },
- "generated": "2026-11-01T21:42:31Z",
- "reports": 629
+ "generated": "2026-11-02T00:15:37Z",
+ "reports": 630
 }
