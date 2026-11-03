@@ -136,7 +136,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 1
    }
   },
@@ -386,7 +386,7 @@
     "worked": 3
    },
    "feeder": {
-    "failed": 8,
+    "failed": 9,
     "worked": 4
    },
    "optiscaler": {
@@ -4302,7 +4302,7 @@
      "worked": 0
     },
     "621.01": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    },
@@ -4311,6 +4311,10 @@
     "bridge": {
      "failed": 1,
      "worked": 2
+    },
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6366,6 +6370,6 @@
    }
   }
  },
- "generated": "2026-11-03T20:28:08Z",
- "reports": 638
+ "generated": "2026-11-03T21:54:14Z",
+ "reports": 639
 }
