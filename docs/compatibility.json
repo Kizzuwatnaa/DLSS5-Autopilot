@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 31,
+    "failed": 32,
     "worked": 154
    },
    "renodx": {
@@ -390,7 +390,7 @@
     "worked": 4
    },
    "optiscaler": {
-    "failed": 3,
+    "failed": 4,
     "worked": 24
    },
    "renodx": {
@@ -772,6 +772,21 @@
     "optiscaler": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "amtrucks.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "American Truck Simulator",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6347,6 +6362,6 @@
    }
   }
  },
- "generated": "2026-11-02T22:34:05Z",
- "reports": 636
+ "generated": "2026-11-03T00:27:25Z",
+ "reports": 637
 }
