@@ -42,7 +42,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 32,
+    "failed": 33,
     "worked": 156
    },
    "renodx": {
@@ -390,7 +390,7 @@
     "worked": 4
    },
    "optiscaler": {
-    "failed": 4,
+    "failed": 5,
     "worked": 26
    },
    "renodx": {
@@ -4912,6 +4912,21 @@
     }
    }
   },
+  "remnant-win64-shipping.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Remnant: From the Ashes",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "resonance.exe": {
    "drivers": {
     "617.14": {
@@ -6392,6 +6407,6 @@
    }
   }
  },
- "generated": "2026-11-03T22:09:00Z",
- "reports": 641
+ "generated": "2026-11-03T22:25:04Z",
+ "reports": 642
 }
