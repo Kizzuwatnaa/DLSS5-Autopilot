@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 32,
-    "worked": 154
+    "worked": 155
    },
    "renodx": {
     "failed": 1,
@@ -391,7 +391,7 @@
    },
    "optiscaler": {
     "failed": 4,
-    "worked": 24
+    "worked": 25
    },
    "renodx": {
     "failed": 1,
@@ -5727,6 +5727,28 @@
     }
    }
   },
+  "tempest-win64-shipping.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 6.05,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Tempest Rising",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "thecomplex.exe": {
    "drivers": {
     "617.42": {
@@ -6370,6 +6392,6 @@
    }
   }
  },
- "generated": "2026-11-03T21:54:14Z",
- "reports": 639
+ "generated": "2026-11-03T21:59:25Z",
+ "reports": 640
 }
