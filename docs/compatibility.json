@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 156
+    "worked": 157
    },
    "renodx": {
     "failed": 1,
@@ -241,7 +241,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 29
+    "worked": 30
    },
    "remix": {
     "failed": 2,
@@ -3423,6 +3423,10 @@
   },
   "horizonforbiddenwest.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "617.42": {
      "failed": 0,
      "worked": 1
@@ -3432,7 +3436,7 @@
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6407,6 +6411,6 @@
    }
   }
  },
- "generated": "2026-11-03T22:47:33Z",
- "reports": 643
+ "generated": "2026-11-03T22:49:57Z",
+ "reports": 644
 }
