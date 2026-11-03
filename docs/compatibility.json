@@ -146,7 +146,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 6
    }
   }
@@ -386,7 +386,7 @@
     "worked": 3
    },
    "feeder": {
-    "failed": 9,
+    "failed": 10,
     "worked": 4
    },
    "optiscaler": {
@@ -1842,7 +1842,7 @@
   "detroitbecomehuman.exe": {
    "drivers": {
     "621.01": {
-     "failed": 0,
+     "failed": 1,
      "worked": 2
     }
    },
@@ -1853,7 +1853,7 @@
      "worked": 1
     },
     "feeder": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    }
@@ -6407,6 +6407,6 @@
    }
   }
  },
- "generated": "2026-11-03T22:25:04Z",
- "reports": 642
+ "generated": "2026-11-03T22:47:33Z",
+ "reports": 643
 }
