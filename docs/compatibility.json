@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 157
+    "worked": 158
    },
    "renodx": {
     "failed": 1,
@@ -245,7 +245,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 30
+    "worked": 31
    },
    "remix": {
     "failed": 2,
@@ -3806,6 +3806,10 @@
   },
   "mafiatheoldcountry.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    },
     "617.42": {
      "failed": 0,
      "worked": 1
@@ -3818,11 +3822,11 @@
      "res": 75
     }
    },
-   "name": "Mafia The Old Country",
+   "name": "Mafia: The Old Country",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6423,6 +6427,6 @@
    }
   }
  },
- "generated": "2026-11-04T04:10:59Z",
- "reports": 645
+ "generated": "2026-11-04T06:57:01Z",
+ "reports": 646
 }
