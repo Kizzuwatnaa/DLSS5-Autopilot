@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 2,
-    "worked": 10
+    "worked": 11
    },
    "optiscaler": {
     "failed": 0,
@@ -412,6 +412,12 @@
    "upstream": {
     "failed": 1,
     "worked": 0
+   }
+  },
+  "621.14": {
+   "bridge": {
+    "failed": 0,
+    "worked": 1
    }
   }
  },
@@ -1755,6 +1761,10 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -1766,6 +1776,10 @@
    },
    "name": "Dead Space",
    "routes": {
+    "bridge": {
+     "failed": 0,
+     "worked": 1
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 1
@@ -6427,6 +6441,6 @@
    }
   }
  },
- "generated": "2026-11-04T12:07:53Z",
- "reports": 646
+ "generated": "2026-11-04T18:31:45Z",
+ "reports": 647
 }
