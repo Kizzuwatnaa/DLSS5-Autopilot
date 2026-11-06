@@ -43,7 +43,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 161
+    "worked": 162
    },
    "renodx": {
     "failed": 1,
@@ -421,7 +421,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    }
   }
  },
@@ -1576,6 +1576,28 @@
      "worked": 3
     },
     "upstream": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
+  "crtoiprototype-win64-shipping.exe": {
+   "drivers": {
+    "621.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 4.61,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Crisol: Theater of Idols",
+   "routes": {
+    "optiscaler": {
      "failed": 0,
      "worked": 1
     }
@@ -6468,6 +6490,6 @@
    }
   }
  },
- "generated": "2026-11-05T12:19:48Z",
- "reports": 651
+ "generated": "2026-11-06T06:33:20Z",
+ "reports": 652
 }
