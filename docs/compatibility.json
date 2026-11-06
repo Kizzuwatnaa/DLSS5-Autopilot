@@ -47,7 +47,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 163
+    "worked": 164
    },
    "renodx": {
     "failed": 1,
@@ -249,7 +249,7 @@
    },
    "optiscaler": {
     "failed": 7,
-    "worked": 31
+    "worked": 32
    },
    "remix": {
     "failed": 2,
@@ -4917,7 +4917,7 @@
    "drivers": {
     "616.56": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "616.92": {
      "failed": 1,
@@ -4943,7 +4943,7 @@
    "routes": {
     "optiscaler": {
      "failed": 1,
-     "worked": 3
+     "worked": 4
     }
    }
   },
@@ -6536,6 +6536,6 @@
    }
   }
  },
- "generated": "2026-11-06T16:25:04Z",
- "reports": 658
+ "generated": "2026-11-06T22:13:48Z",
+ "reports": 659
 }
