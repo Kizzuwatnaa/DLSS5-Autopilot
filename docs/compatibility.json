@@ -47,7 +47,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 162
+    "worked": 163
    },
    "renodx": {
     "failed": 1,
@@ -440,6 +440,12 @@
     "worked": 1
    },
    "uplift": {
+    "failed": 0,
+    "worked": 1
+   }
+  },
+  "630.20": {
+   "optiscaler": {
     "failed": 0,
     "worked": 1
    }
@@ -4619,6 +4625,10 @@
     "616.56": {
      "failed": 0,
      "worked": 1
+    },
+    "630.20": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -4628,11 +4638,11 @@
      "res": 75
     }
    },
-   "name": "PRAGMATA.Deluxe.Edition-InsaneRamZes",
+   "name": "PRAGMATA",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6526,6 +6536,6 @@
    }
   }
  },
- "generated": "2026-11-06T12:06:23Z",
- "reports": 656
+ "generated": "2026-11-06T15:35:48Z",
+ "reports": 657
 }
