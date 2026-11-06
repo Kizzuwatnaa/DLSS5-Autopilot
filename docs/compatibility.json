@@ -25,7 +25,7 @@
    },
    "standalone": {
     "failed": 2,
-    "worked": 15
+    "worked": 16
    }
   },
   "DX12/dlss": {
@@ -422,6 +422,10 @@
    "optiscaler": {
     "failed": 0,
     "worked": 3
+   },
+   "standalone": {
+    "failed": 0,
+    "worked": 1
    }
   }
  },
@@ -2544,13 +2548,17 @@
     "617.14": {
      "failed": 1,
      "worked": 0
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Fallout 4",
    "routes": {
     "standalone": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6490,6 +6498,6 @@
    }
   }
  },
- "generated": "2026-11-06T06:33:20Z",
- "reports": 652
+ "generated": "2026-11-06T10:59:09Z",
+ "reports": 653
 }
