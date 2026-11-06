@@ -21,7 +21,7 @@
    },
    "renodx": {
     "failed": 0,
-    "worked": 7
+    "worked": 8
    },
    "standalone": {
     "failed": 2,
@@ -422,6 +422,10 @@
    "optiscaler": {
     "failed": 0,
     "worked": 3
+   },
+   "renodx": {
+    "failed": 0,
+    "worked": 1
    },
    "standalone": {
     "failed": 0,
@@ -2551,11 +2555,15 @@
     },
     "621.14": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Fallout 4",
    "routes": {
+    "renodx": {
+     "failed": 0,
+     "worked": 1
+    },
     "standalone": {
      "failed": 1,
      "worked": 2
@@ -6498,6 +6506,6 @@
    }
   }
  },
- "generated": "2026-11-06T10:59:09Z",
- "reports": 653
+ "generated": "2026-11-06T11:16:41Z",
+ "reports": 654
 }
