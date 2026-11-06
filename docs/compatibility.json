@@ -26,6 +26,10 @@
    "standalone": {
     "failed": 2,
     "worked": 16
+   },
+   "uplift": {
+    "failed": 0,
+    "worked": 1
    }
   },
   "DX12/dlss": {
@@ -428,6 +432,10 @@
     "worked": 1
    },
    "standalone": {
+    "failed": 0,
+    "worked": 1
+   },
+   "uplift": {
     "failed": 0,
     "worked": 1
    }
@@ -2555,7 +2563,7 @@
     },
     "621.14": {
      "failed": 0,
-     "worked": 2
+     "worked": 3
     }
    },
    "name": "Fallout 4",
@@ -2567,6 +2575,10 @@
     "standalone": {
      "failed": 1,
      "worked": 2
+    },
+    "uplift": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6506,6 +6518,6 @@
    }
   }
  },
- "generated": "2026-11-06T11:16:41Z",
- "reports": 654
+ "generated": "2026-11-06T11:28:57Z",
+ "reports": 655
 }
