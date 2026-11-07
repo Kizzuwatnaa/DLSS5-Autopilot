@@ -86,7 +86,7 @@
     "worked": 8
    },
    "standalone": {
-    "failed": 5,
+    "failed": 6,
     "worked": 2
    }
   },
@@ -436,7 +436,7 @@
     "worked": 1
    },
    "standalone": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    },
    "uplift": {
@@ -3841,6 +3841,21 @@
     }
    }
   },
+  "lichii.exe": {
+   "drivers": {
+    "621.14": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Lichii-Frizti-v3",
+   "routes": {
+    "standalone": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "lop-win64-shipping.exe": {
    "drivers": {
     "560.94": {
@@ -6540,6 +6555,6 @@
    }
   }
  },
- "generated": "2026-11-07T12:23:28Z",
- "reports": 660
+ "generated": "2026-11-07T13:45:14Z",
+ "reports": 661
 }
