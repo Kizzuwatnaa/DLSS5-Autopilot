@@ -47,7 +47,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 164
+    "worked": 165
    },
    "renodx": {
     "failed": 1,
@@ -429,7 +429,7 @@
    },
    "optiscaler": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    },
    "renodx": {
     "failed": 0,
@@ -4788,6 +4788,10 @@
     "621.01": {
      "failed": 0,
      "worked": 1
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Red Dead Redemption 2",
@@ -4798,7 +4802,7 @@
     },
     "optiscaler": {
      "failed": 2,
-     "worked": 7
+     "worked": 8
     },
     "renodx": {
      "failed": 1,
@@ -6536,6 +6540,6 @@
    }
   }
  },
- "generated": "2026-11-06T22:13:48Z",
- "reports": 659
+ "generated": "2026-11-07T02:58:40Z",
+ "reports": 660
 }
