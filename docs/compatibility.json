@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 2,
-    "worked": 11
+    "worked": 12
    },
    "optiscaler": {
     "failed": 0,
@@ -391,7 +391,7 @@
   "621.01": {
    "bridge": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    },
    "feeder": {
     "failed": 10,
@@ -5226,13 +5226,17 @@
     "617.42": {
      "failed": 0,
      "worked": 1
+    },
+    "621.01": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "Stellar Blade",
+   "name": "Stellar Blade\u2122",
    "routes": {
     "bridge": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "optiscaler": {
      "failed": 1,
@@ -6555,6 +6559,6 @@
    }
   }
  },
- "generated": "2026-11-07T13:45:14Z",
- "reports": 661
+ "generated": "2026-11-07T18:20:21Z",
+ "reports": 662
 }
