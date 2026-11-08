@@ -82,7 +82,7 @@
     "worked": 9
    },
    "renodx": {
-    "failed": 1,
+    "failed": 2,
     "worked": 8
    },
    "standalone": {
@@ -374,7 +374,7 @@
     "worked": 50
    },
    "renodx": {
-    "failed": 1,
+    "failed": 2,
     "worked": 13
    },
    "standalone": {
@@ -5857,6 +5857,21 @@
     }
    }
   },
+  "tangopc.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "STAR WARS\u2122: Bounty Hunter\u2122",
+   "routes": {
+    "renodx": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "tanki.exe": {
    "drivers": {
     "610.74": {
@@ -6559,6 +6574,6 @@
    }
   }
  },
- "generated": "2026-11-08T14:40:41Z",
- "reports": 662
+ "generated": "2026-11-08T19:21:53Z",
+ "reports": 663
 }
