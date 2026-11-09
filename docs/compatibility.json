@@ -88,6 +88,10 @@
    "standalone": {
     "failed": 6,
     "worked": 3
+   },
+   "uplift": {
+    "failed": 0,
+    "worked": 1
    }
   },
   "DX9/dlss": {
@@ -441,7 +445,7 @@
    },
    "uplift": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "630.20": {
@@ -3692,12 +3696,16 @@
    "drivers": {
     "621.14": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    },
    "name": "Life is Strange: Reunion",
    "routes": {
     "standalone": {
+     "failed": 0,
+     "worked": 1
+    },
+    "uplift": {
      "failed": 0,
      "worked": 1
     }
@@ -6589,6 +6597,6 @@
    }
   }
  },
- "generated": "2026-11-09T04:25:10Z",
- "reports": 664
+ "generated": "2026-11-09T08:30:48Z",
+ "reports": 665
 }
