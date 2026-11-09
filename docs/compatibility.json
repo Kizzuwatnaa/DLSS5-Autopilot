@@ -59,7 +59,7 @@
    },
    "uplift": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    },
    "upstream": {
     "failed": 5,
@@ -449,7 +449,7 @@
    },
    "uplift": {
     "failed": 0,
-    "worked": 3
+    "worked": 4
    }
   },
   "630.20": {
@@ -2741,6 +2741,10 @@
     "617.42": {
      "failed": 0,
      "worked": 1
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -2757,6 +2761,10 @@
      "worked": 1
     },
     "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    },
+    "uplift": {
      "failed": 0,
      "worked": 1
     }
@@ -6639,6 +6647,6 @@
    }
   }
  },
- "generated": "2026-11-09T15:20:07Z",
- "reports": 668
+ "generated": "2026-11-09T16:16:16Z",
+ "reports": 669
 }
