@@ -766,13 +766,13 @@ def _analyse_uplift(rep: Report, rtext: str) -> Report:
         return rep
     helper = line(r"Uplift's 64-bit helper (?:could not start|stopped|did not answer)[^\n]*")
     start = line(r"Uplift could not start on this [^\n]*")
-    # 1.8.0 logs 'NR diagnostic' each time an evaluation is recorded and an 'NR running'
-    # summary every minute (#984, #973); 1.7.0 logged 'NR ran on the game's frame'.
+    # 1.8.0 logs 'NR diagnostic' each time an evaluation is recorded and an 'NR running' summary every
+    # minute (#984, #973), as '[Uplift] helper: ...' for a 32-bit game; 1.7.0 logged 'NR ran on the game's frame'.
     ran = line(r"NR ran on the game's frame \(([^)\n]*)\)")
-    running = line(r"\[Uplift\] NR running: ([1-9]\d*) frames with ([^\n]+?) in (\d+) s, of a \d+ s run")
-    diag = line(r"\[Uplift\] NR diagnostic: enabled (\w+) evaluation recorded")
+    running = line(r"\[Uplift\] (?:helper: )?NR running: ([1-9]\d*) frames with ([^\n]+?) in (\d+) s, of a \d+ s run")
+    diag = line(r"\[Uplift\] (?:helper: )?NR diagnostic: enabled (\w+) evaluation recorded")
     if running or ran or diag:
-        api = f" ({diag.group(1)})" if diag else ""
+        api = f" ({(ran or diag).group(1)})" if ran or diag else ""   # the game's API, not the helper's
         rep.add(OK, f"NR ran: {running.group(1)} frames in {running.group(3)} s with {running.group(2)}{api}."
                     if running else f"NR ran on the game's frame ({(ran or diag).group(1)}).")
         rep.verdict = "Working."

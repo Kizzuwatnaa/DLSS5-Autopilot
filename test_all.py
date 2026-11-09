@@ -19324,6 +19324,20 @@ try:
     check("...and the report excerpt keeps 1.8.0's 'NR diagnostic' and 'NR running' lines",
           any("NR diagnostic: enabled D3D12" in x for x in _ex18)
           and any("NR running: 3548 frames" in x for x in _ex18), _ex18)
+    # A 32-bit game: NR runs in the 64-bit helper, whose lines come as '[Uplift] helper: ...'
+    # (Brothers - A Tale of Two Sons, DX9, 1.8.0); the 1.7.0 line is still written there.
+    _r18_32 = _rt13._analyse_uplift(_Rep13(route="uplift"),
+        "16:03:45:218 [ 3868] | INFO  | [Uplift] Uplift 1.8.0 (32-bit) registered (ReShade API 10, Dear ImGui 19000, ReShade 6.8.0.2156)\n"
+        "16:04:30:562 [ 6824] | INFO  | [Uplift] helper: NR diagnostic: enabled D3D12 evaluation recorded (NGX 0x00000001, "
+        "handle 0x2ef14f80370, style 0, mask mode 1, intensity 1, character mask true, motion true, native control mask false)\n"
+        "16:04:30:563 [ 6824] | INFO  | [Uplift] NR ran on the game's frame (Direct3D 9, 32-bit)\n"
+        "16:06:30:581 [ 6824] | INFO  | [Uplift] helper: NR running: 6685 frames with no motion vectors in 120 s, "
+        "of a 120 s run; private 890 MiB, VRAM 511 MiB\n")
+    check("...and a 32-bit game's '[Uplift] helper: NR running' line gives the frame count",
+          _r18_32.verdict == "Working."
+          and any("6685 frames in 120 s with no motion vectors (Direct3D 9, 32-bit)" in f.title
+                  for f in _r18_32.findings),
+          (_r18_32.verdict, [f.title for f in _r18_32.findings]))
     _ui_cleanup()
 except Exception as _e13:
     import traceback as _tb13
