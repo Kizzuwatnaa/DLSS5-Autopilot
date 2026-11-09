@@ -460,8 +460,9 @@ def _user_data_roots() -> list[Path]:
 
 _RESHADE_KEEP = ("WARN", "ERROR", "Registered add-on", "CreateSwapChain",
                  "Direct3DCreate9", "Exiting", "EvaluateFeature",
-                 # GITC-Uplift's two INFO lines its reader decides on
-                 "registered (ReShade API", "NR ran on the game's frame")
+                 # GITC-Uplift's INFO lines its reader decides on (#946, #984)
+                 "registered (ReShade API", "NR ran on the game's frame",
+                 "NR running: ", "NR diagnostic: enabled ")
 
 
 _RESHADE_GOT_GOING = ("registered add-on", "redirecting", "initialized runtime",
@@ -480,7 +481,8 @@ _RESHADE_ALSO = ("Registered add-on",)
 
 # The two lines that tell a Direct3D 9 device from a DXGI swap chain.
 _RESHADE_DECIDES = ("Direct3DCreate9", "CreateSwapChain",
-                    "registered (ReShade API", "NR ran on the game's frame")
+                    "registered (ReShade API", "NR ran on the game's frame",
+                    "NR running: ", "NR diagnostic: enabled ")
 
 
 _HOOK_ADDRESSES = re.compile(r" with 0x[0-9A-Fa-f]+ => 0x[0-9A-Fa-f]+")

@@ -11475,10 +11475,11 @@ from core import diagnose as _dpkg  # noqa: E402
 # name is loaded, #944), body +12 (it is the first thing to take out; the
 # driver-fault rule's "evaluate raised" stays in the excerpt, #917), helper +3.
 # 2.1.0 gate + gitc-uplift: routes +66 (_analyse_uplift reads its own [Uplift]
-# lines, #946), model +6, process +3 (its name and files), chain +8, body +7
+# lines, #946; +7 for 1.8.0's NR running / NR diagnostic lines, #984 #973),
+# model +8, process +3 (its name and files), chain +8, body +7
 # (the link's first line after the clipboard), live +3, evidence +1.
-_parts = {"model": 503, "layer": 107, "evidence": 1550, "process": 235,  # pass 3: +3, the verdicts say when and what to re-check  # evidence +3: its own words for a renderer no route reaches
-          "helper": 254, "live": 392, "routes": 1132, "body": 954, "chain": 1786}  # routes +5: a dump the session went on after (gate 2.0.5)
+_parts = {"model": 505, "layer": 107, "evidence": 1550, "process": 235,  # pass 3: +3, the verdicts say when and what to re-check  # evidence +3: its own words for a renderer no route reaches
+          "helper": 254, "live": 392, "routes": 1139, "body": 954, "chain": 1786}  # routes +5: a dump the session went on after (gate 2.0.5)
 _sizes = {n: sum(1 for _ in open(SRC_DIR / "core" / "diagnose" / f"{n}.py",
                                  encoding="utf8"))
           for n in _parts}
@@ -19299,6 +19300,30 @@ try:
         + "12:00:09:000 [1] | INFO  | [Uplift] NR ran on the game's frame (Direct3D 12, 64-bit)\n")
     check("the report keeps GITC-Uplift's registered and NR-ran lines in a log full of warnings",
           any("registered (ReShade API" in x for x in _ex13) and any("NR ran on the game's frame" in x for x in _ex13))
+    # GITC-Uplift 1.8.0 (#984, #973): 'NR diagnostic' and 'NR running'
+    _reg18 = "11:39:36:758 [ 5904] | INFO  | [Uplift] Uplift 1.8.0 registered (ReShade API 10, Dear ImGui 19000, ReShade 6.8.0.2155)\n"
+    _diag18 = ("11:39:40:400 [ 5904] | INFO  | [Uplift] NR diagnostic: enabled D3D12 evaluation recorded "
+               "(NGX 0x00000001, handle 0x1d962fc0910, style 2, mask mode 1, intensity 1, character mask true, "
+               "motion true, native control mask false); runtime network: "
+               "CC_Control_History_Blend_Quantize_With_Teacher_honest_tench_2026_07_04_22_30_weights\n")
+    _run18 = ("11:40:40:400 [ 5904] | INFO  | [Uplift] NR running: 3548 frames with Launchpad's motion vectors "
+              "in 59 s, of a 60 s run; private 9172 MiB, VRAM 5529 MiB\n")
+    _r18_full = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg18 + _diag18 + _run18)
+    _r18_short = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg18 + _diag18)
+    _r18_idle = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg18)
+    check("GITC-Uplift 1.8.0: 'NR running' and 'NR diagnostic' lines count as Working (#984, #973)",
+          _r18_full.verdict == "Working."
+          and any("3548 frames in 59 s with Launchpad's motion vectors (D3D12)" in f.title for f in _r18_full.findings)
+          and _r18_short.verdict == "Working."
+          and any("NR ran on the game's frame (D3D12)" in f.title for f in _r18_short.findings)
+          and _r18_idle.verdict.startswith("Loaded and set up; no neural frame yet"),
+          (_r18_full.verdict, _r18_short.verdict, _r18_idle.verdict))
+    _ex18 = _bd12._reshade_excerpt(_reg18 + _diag18 + "".join(
+        f"12:00:0{i % 10}:000 [1] | WARN  | Ignoring LoadLibrary('k{i}.dll') call\n" for i in range(300))
+        + _run18)
+    check("...and the report excerpt keeps 1.8.0's 'NR diagnostic' and 'NR running' lines",
+          any("NR diagnostic: enabled D3D12" in x for x in _ex18)
+          and any("NR running: 3548 frames" in x for x in _ex18), _ex18)
     _ui_cleanup()
 except Exception as _e13:
     import traceback as _tb13
