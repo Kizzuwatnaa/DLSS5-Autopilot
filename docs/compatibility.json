@@ -86,7 +86,7 @@
     "worked": 9
    },
    "renodx": {
-    "failed": 2,
+    "failed": 3,
     "worked": 8
    },
    "standalone": {
@@ -382,7 +382,7 @@
     "worked": 50
    },
    "renodx": {
-    "failed": 2,
+    "failed": 3,
     "worked": 13
    },
    "standalone": {
@@ -6450,6 +6450,21 @@
     }
    }
   },
+  "wow.exe": {
+   "drivers": {
+    "617.42": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "World of Warcraft",
+   "routes": {
+    "renodx": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "wowb.exe": {
    "drivers": {
     "617.14": {
@@ -6624,6 +6639,6 @@
    }
   }
  },
- "generated": "2026-11-09T15:16:41Z",
- "reports": 667
+ "generated": "2026-11-09T15:20:07Z",
+ "reports": 668
 }
