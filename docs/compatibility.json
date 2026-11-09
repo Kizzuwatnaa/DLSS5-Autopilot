@@ -87,7 +87,7 @@
    },
    "standalone": {
     "failed": 6,
-    "worked": 2
+    "worked": 3
    }
   },
   "DX9/dlss": {
@@ -437,7 +437,7 @@
    },
    "standalone": {
     "failed": 1,
-    "worked": 1
+    "worked": 2
    },
    "uplift": {
     "failed": 0,
@@ -3688,6 +3688,21 @@
     }
    }
   },
+  "iris-win64-shipping.exe": {
+   "drivers": {
+    "621.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Life is Strange: Reunion",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "jdm-win64-shipping.exe": {
    "drivers": {
     "616.92": {
@@ -6574,6 +6589,6 @@
    }
   }
  },
- "generated": "2026-11-08T19:52:05Z",
- "reports": 663
+ "generated": "2026-11-09T04:25:10Z",
+ "reports": 664
 }
