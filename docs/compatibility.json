@@ -57,6 +57,10 @@
     "failed": 0,
     "worked": 1
    },
+   "uplift": {
+    "failed": 0,
+    "worked": 1
+   },
    "upstream": {
     "failed": 5,
     "worked": 9
@@ -445,7 +449,7 @@
    },
    "uplift": {
     "failed": 0,
-    "worked": 2
+    "worked": 3
    }
   },
   "630.20": {
@@ -899,13 +903,21 @@
     "616.92": {
      "failed": 1,
      "worked": 0
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "A Plague Tale Requiem-InsaneRamZes",
+   "name": "A Plague Tale: Requiem",
    "routes": {
     "feeder": {
      "failed": 1,
      "worked": 0
+    },
+    "uplift": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6597,6 +6609,6 @@
    }
   }
  },
- "generated": "2026-11-09T08:30:48Z",
- "reports": 665
+ "generated": "2026-11-09T10:31:55Z",
+ "reports": 666
 }
