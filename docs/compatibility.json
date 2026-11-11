@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 6,
-    "worked": 13
+    "worked": 14
    },
    "renodx": {
     "failed": 0,
@@ -249,7 +249,7 @@
    },
    "feeder": {
     "failed": 13,
-    "worked": 46
+    "worked": 47
    },
    "native": {
     "failed": 2,
@@ -5381,6 +5381,21 @@
     }
    }
   },
+  "shenmue.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Shenmue I & II",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "shf-win64-shipping.exe": {
    "drivers": {
     "616.56": {
@@ -6666,6 +6681,6 @@
    }
   }
  },
- "generated": "2026-11-10T19:52:37Z",
- "reports": 671
+ "generated": "2026-11-11T07:28:25Z",
+ "reports": 672
 }
