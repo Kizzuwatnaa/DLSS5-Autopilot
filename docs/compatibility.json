@@ -91,7 +91,7 @@
    },
    "standalone": {
     "failed": 6,
-    "worked": 4
+    "worked": 5
    },
    "uplift": {
     "failed": 0,
@@ -445,7 +445,7 @@
    },
    "standalone": {
     "failed": 3,
-    "worked": 3
+    "worked": 4
    },
    "uplift": {
     "failed": 0,
@@ -6277,6 +6277,21 @@
     }
    }
   },
+  "unreallusttheory-win64-shipping.exe": {
+   "drivers": {
+    "621.14": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Unreal Lust Theory-0.5.0-EA-GoG",
+   "routes": {
+    "standalone": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "vanguard.exe": {
    "drivers": {
     "617.14": {
@@ -6704,6 +6719,6 @@
    }
   }
  },
- "generated": "2026-11-13T08:36:38Z",
- "reports": 678
+ "generated": "2026-11-13T08:58:59Z",
+ "reports": 679
 }
