@@ -727,9 +727,10 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
 def _analyse_uplift(rep: Report, rtext: str) -> Report:
     """GITC-Uplift's own lines in ReShade.log ([Uplift] ...), worst first.
 
-    The words are the add-on's (read from its 1.7.0 binary). Whether NR is
-    switched on is a tick in its tab, so a session that never ran NR is
-    'set up', not a failure."""
+    The words are the add-on's (read from its 1.7.0 binary, and 1.8.0's
+    'NR running' / 'NR diagnostic' lines). Whether NR is switched on is a
+    tick in its tab, so a session that never ran NR is 'set up', not a
+    failure."""
     def line(pat: str):
         m = None
         for m in re.finditer(pat, rtext):
@@ -765,9 +766,15 @@ def _analyse_uplift(rep: Report, rtext: str) -> Report:
         return rep
     helper = line(r"Uplift's 64-bit helper (?:could not start|stopped|did not answer)[^\n]*")
     start = line(r"Uplift could not start on this [^\n]*")
+    # 1.8.0 logs 'NR diagnostic' each time an evaluation is recorded and an 'NR running' summary every
+    # minute (#984, #973), as '[Uplift] helper: ...' for a 32-bit game; 1.7.0 logged 'NR ran on the game's frame'.
     ran = line(r"NR ran on the game's frame \(([^)\n]*)\)")
-    if ran:
-        rep.add(OK, f"NR ran on the game's frame ({ran.group(1)}).")
+    running = line(r"\[Uplift\] (?:helper: )?NR running: ([1-9]\d*) frames with ([^\n]+?) in (\d+) s, of a \d+ s run")
+    diag = line(r"\[Uplift\] (?:helper: )?NR diagnostic: enabled (\w+) evaluation recorded")
+    if running or ran or diag:
+        api = f" ({(ran or diag).group(1)})" if ran or diag else ""   # the game's API, not the helper's
+        rep.add(OK, f"NR ran: {running.group(1)} frames in {running.group(3)} s with {running.group(2)}{api}."
+                    if running else f"NR ran on the game's frame ({(ran or diag).group(1)}).")
         rep.verdict = "Working."
         return rep
     if helper or start:
