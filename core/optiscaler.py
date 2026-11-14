@@ -46,6 +46,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import zipfile
 from pathlib import Path
@@ -509,6 +510,25 @@ def extract_7z(archive: Path, dest: Path) -> None:
                            f"{err}{hint}")
 
 
+def _refuse_escaping_members(arc: zipfile.ZipFile, dest: Path) -> None:
+    """Refuse a member that would be written outside dest, or that is a symlink.
+
+    The archive is downloaded, so `..` or an absolute name inside it is somebody
+    else's path, not ours; a link member can point the rest of the extraction out
+    of the folder just as well.
+    """
+    root = dest.resolve()
+    for info in arc.infolist():
+        name = info.filename
+        if name.endswith("/"):
+            continue
+        target = (root / name).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError(f"refusing unsafe path in archive: {name}")
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise RuntimeError(f"refusing symlink member in archive: {name}")
+
+
 def _unpacked(archive: Path) -> Path:
     """The archive's files in a folder under the cache, unpacked once."""
     out = net.cache_dir() / "unpacked" / archive.stem
@@ -524,6 +544,7 @@ def _unpacked(archive: Path) -> Path:
     else:
         tmp.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(archive) as arc:
+            _refuse_escaping_members(arc, tmp)
             arc.extractall(tmp)
     tmp.rename(out)
     return _top(out)
