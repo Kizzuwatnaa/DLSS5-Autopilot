@@ -2,7 +2,7 @@
  "by_class": {
   "DX11/dlss": {
    "bridge": {
-    "failed": 2,
+    "failed": 3,
     "worked": 13
    },
    "optiscaler": {
@@ -450,6 +450,12 @@
    "uplift": {
     "failed": 0,
     "worked": 4
+   }
+  },
+  "621.24": {
+   "bridge": {
+    "failed": 1,
+    "worked": 0
    }
   },
   "630.20": {
@@ -3302,6 +3308,10 @@
     "617.42": {
      "failed": 0,
      "worked": 1
+    },
+    "621.24": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "measured": {
@@ -3313,6 +3323,10 @@
    },
    "name": "GROUND BRANCH",
    "routes": {
+    "bridge": {
+     "failed": 1,
+     "worked": 0
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 1
@@ -6742,6 +6756,6 @@
    }
   }
  },
- "generated": "2026-11-14T10:48:08Z",
- "reports": 682
+ "generated": "2026-11-14T11:15:51Z",
+ "reports": 683
 }
