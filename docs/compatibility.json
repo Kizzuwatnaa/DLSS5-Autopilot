@@ -83,7 +83,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 9
+    "worked": 10
    },
    "renodx": {
     "failed": 4,
@@ -433,7 +433,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 1
+    "worked": 2
    },
    "optiscaler": {
     "failed": 0,
@@ -4441,13 +4441,17 @@
     "616.64": {
      "failed": 1,
      "worked": 0
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "Need for Speed\u2122 Heat",
+   "name": "Need for Speed Heat",
    "routes": {
     "feeder": {
      "failed": 1,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6738,6 +6742,6 @@
    }
   }
  },
- "generated": "2026-11-14T05:16:13Z",
- "reports": 681
+ "generated": "2026-11-14T10:48:08Z",
+ "reports": 682
 }
