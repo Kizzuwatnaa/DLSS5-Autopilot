@@ -38,7 +38,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 3,
+    "failed": 4,
     "worked": 3
    },
    "native": {
@@ -248,7 +248,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 14,
+    "failed": 15,
     "worked": 48
    },
    "native": {
@@ -3673,7 +3673,7 @@
   "horizonforbiddenwest.exe": {
    "drivers": {
     "616.56": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     },
     "617.42": {
@@ -3683,6 +3683,10 @@
    },
    "name": "Horizon Forbidden West\u2122 Complete Edition",
    "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 2
@@ -6861,6 +6865,6 @@
    }
   }
  },
- "generated": "2026-11-15T14:45:45Z",
- "reports": 689
+ "generated": "2026-11-15T15:33:39Z",
+ "reports": 690
 }
