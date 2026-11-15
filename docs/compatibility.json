@@ -148,7 +148,7 @@
     "worked": 1
    },
    "feeder": {
-    "failed": 3,
+    "failed": 4,
     "worked": 1
    },
    "uplift": {
@@ -458,7 +458,7 @@
     "worked": 0
    },
    "feeder": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    },
    "optiscaler": {
@@ -2155,6 +2155,21 @@
     "optiscaler": {
      "failed": 0,
      "worked": 1
+    }
+   }
+  },
+  "doomthedarkages.exe": {
+   "drivers": {
+    "621.24": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "DOOM.The.Dark.Ages.Premium.Edition-InsaneRamZes",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6816,6 +6831,6 @@
    }
   }
  },
- "generated": "2026-11-15T11:56:54Z",
- "reports": 686
+ "generated": "2026-11-15T13:14:32Z",
+ "reports": 687
 }
