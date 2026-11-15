@@ -462,7 +462,7 @@
     "worked": 1
    },
    "optiscaler": {
-    "failed": 0,
+    "failed": 1,
     "worked": 1
    }
   },
@@ -5324,6 +5324,21 @@
     }
    }
   },
+  "ryse.exe": {
+   "drivers": {
+    "621.24": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "Ryse Son of Rome",
+   "routes": {
+    "optiscaler": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "s2_sp64_ship.exe": {
    "drivers": {
     "616.56": {
@@ -6846,6 +6861,6 @@
    }
   }
  },
- "generated": "2026-11-15T14:36:00Z",
- "reports": 688
+ "generated": "2026-11-15T14:45:45Z",
+ "reports": 689
 }
