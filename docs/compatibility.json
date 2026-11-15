@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 6,
-    "worked": 15
+    "worked": 16
    },
    "renodx": {
     "failed": 0,
@@ -249,7 +249,7 @@
    },
    "feeder": {
     "failed": 14,
-    "worked": 47
+    "worked": 48
    },
    "native": {
     "failed": 2,
@@ -5516,6 +5516,21 @@
     }
    }
   },
+  "shooter_win64_release.exe": {
+   "drivers": {
+    "616.56": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "X-Morph: Defense",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "shproto-win64-shipping.exe": {
    "drivers": {
     "616.92": {
@@ -6831,6 +6846,6 @@
    }
   }
  },
- "generated": "2026-11-15T13:14:32Z",
- "reports": 687
+ "generated": "2026-11-15T14:36:00Z",
+ "reports": 688
 }
