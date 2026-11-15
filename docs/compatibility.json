@@ -46,7 +46,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 33,
+    "failed": 34,
     "worked": 169
    },
    "renodx": {
@@ -378,7 +378,7 @@
     "worked": 6
    },
    "optiscaler": {
-    "failed": 8,
+    "failed": 9,
     "worked": 50
    },
    "renodx": {
@@ -1184,6 +1184,10 @@
     "617.14": {
      "failed": 0,
      "worked": 2
+    },
+    "617.42": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "name": "Baldur's Gate 3",
@@ -1193,7 +1197,7 @@
      "worked": 1
     },
     "optiscaler": {
-     "failed": 2,
+     "failed": 3,
      "worked": 1
     }
    }
@@ -6880,6 +6884,6 @@
    }
   }
  },
- "generated": "2026-11-15T15:38:16Z",
- "reports": 691
+ "generated": "2026-11-15T17:26:04Z",
+ "reports": 692
 }
