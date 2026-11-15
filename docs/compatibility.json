@@ -17,7 +17,7 @@
    },
    "feeder": {
     "failed": 6,
-    "worked": 14
+    "worked": 15
    },
    "renodx": {
     "failed": 0,
@@ -456,6 +456,10 @@
    "bridge": {
     "failed": 1,
     "worked": 0
+   },
+   "feeder": {
+    "failed": 0,
+    "worked": 1
    }
   },
   "630.20": {
@@ -1269,6 +1273,21 @@
     "feeder": {
      "failed": 1,
      "worked": 0
+    }
+   }
+  },
+  "blacklist_dx11_game.exe": {
+   "drivers": {
+    "621.24": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "name": "Splinter Cell Blacklist Complete",
+   "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
     }
    }
   },
@@ -6771,6 +6790,6 @@
    }
   }
  },
- "generated": "2026-11-14T12:31:06Z",
- "reports": 684
+ "generated": "2026-11-15T02:59:04Z",
+ "reports": 685
 }
