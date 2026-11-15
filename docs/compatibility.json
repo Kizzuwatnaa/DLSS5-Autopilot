@@ -47,7 +47,7 @@
    },
    "optiscaler": {
     "failed": 33,
-    "worked": 168
+    "worked": 169
    },
    "renodx": {
     "failed": 1,
@@ -458,6 +458,10 @@
     "worked": 0
    },
    "feeder": {
+    "failed": 0,
+    "worked": 1
+   },
+   "optiscaler": {
     "failed": 0,
     "worked": 1
    }
@@ -6669,6 +6673,28 @@
     }
    }
   },
+  "wwm.exe": {
+   "drivers": {
+    "621.24": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 2.85,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Where Winds Meet",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "xenia_canary.exe": {
    "drivers": {
     "616.56": {
@@ -6790,6 +6816,6 @@
    }
   }
  },
- "generated": "2026-11-15T02:59:04Z",
- "reports": 685
+ "generated": "2026-11-15T11:43:27Z",
+ "reports": 686
 }
