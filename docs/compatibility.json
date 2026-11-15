@@ -118,7 +118,7 @@
   },
   "OPENGL/none": {
    "feeder": {
-    "failed": 2,
+    "failed": 3,
     "worked": 4
    }
   },
@@ -402,7 +402,7 @@
     "worked": 4
    },
    "feeder": {
-    "failed": 10,
+    "failed": 11,
     "worked": 4
    },
    "optiscaler": {
@@ -6029,6 +6029,21 @@
     }
    }
   },
+  "swkotor.exe": {
+   "drivers": {
+    "621.01": {
+     "failed": 1,
+     "worked": 0
+    }
+   },
+   "name": "STAR WARS\u2122 Knights of the Old Republic\u2122",
+   "routes": {
+    "feeder": {
+     "failed": 1,
+     "worked": 0
+    }
+   }
+  },
   "swzerocompany.exe": {
    "drivers": {
     "617.14": {
@@ -6865,6 +6880,6 @@
    }
   }
  },
- "generated": "2026-11-15T15:33:39Z",
- "reports": 690
+ "generated": "2026-11-15T15:38:16Z",
+ "reports": 691
 }
