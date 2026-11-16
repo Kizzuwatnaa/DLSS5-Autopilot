@@ -47,7 +47,7 @@
    },
    "optiscaler": {
     "failed": 35,
-    "worked": 169
+    "worked": 170
    },
    "renodx": {
     "failed": 1,
@@ -437,7 +437,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 5
+    "worked": 6
    },
    "renodx": {
     "failed": 0,
@@ -5282,13 +5282,17 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Resonance: A Plague Tale Legacy",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -6900,6 +6904,6 @@
    }
   }
  },
- "generated": "2026-11-16T17:17:21Z",
- "reports": 699
+ "generated": "2026-11-16T23:03:08Z",
+ "reports": 700
 }
