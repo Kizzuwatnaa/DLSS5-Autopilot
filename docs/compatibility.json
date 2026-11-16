@@ -46,7 +46,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 34,
+    "failed": 35,
     "worked": 169
    },
    "renodx": {
@@ -436,7 +436,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 0,
+    "failed": 1,
     "worked": 5
    },
    "renodx": {
@@ -5915,6 +5915,10 @@
     "621.01": {
      "failed": 0,
      "worked": 4
+    },
+    "621.14": {
+     "failed": 1,
+     "worked": 0
     }
    },
    "measured": {
@@ -5927,7 +5931,7 @@
    "name": "Starfield",
    "routes": {
     "optiscaler": {
-     "failed": 0,
+     "failed": 1,
      "worked": 6
     },
     "upstream": {
@@ -6884,6 +6888,6 @@
    }
   }
  },
- "generated": "2026-11-16T15:36:49Z",
- "reports": 697
+ "generated": "2026-11-16T17:08:46Z",
+ "reports": 698
 }
