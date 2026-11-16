@@ -106,7 +106,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 12,
+    "failed": 13,
     "worked": 6
    }
   },
@@ -1279,7 +1279,7 @@
    "name": "Bin32",
    "routes": {
     "feeder": {
-     "failed": 3,
+     "failed": 4,
      "worked": 0
     }
    }
@@ -6884,6 +6884,6 @@
    }
   }
  },
- "generated": "2026-11-16T02:55:48Z",
- "reports": 695
+ "generated": "2026-11-16T02:56:51Z",
+ "reports": 696
 }
