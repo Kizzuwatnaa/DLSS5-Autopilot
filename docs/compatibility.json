@@ -106,7 +106,7 @@
   },
   "DX9/none": {
    "feeder": {
-    "failed": 10,
+    "failed": 11,
     "worked": 6
    }
   },
@@ -1276,10 +1276,10 @@
      "worked": 0
     }
    },
-   "name": "Resident Evil 4 (2005)",
+   "name": "Bin32",
    "routes": {
     "feeder": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    }
@@ -6884,6 +6884,6 @@
    }
   }
  },
- "generated": "2026-11-15T20:33:06Z",
- "reports": 693
+ "generated": "2026-11-16T02:45:58Z",
+ "reports": 694
 }
