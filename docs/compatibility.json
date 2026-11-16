@@ -107,7 +107,7 @@
   "DX9/none": {
    "feeder": {
     "failed": 13,
-    "worked": 6
+    "worked": 7
    }
   },
   "OPENGL/dlss": {
@@ -1280,7 +1280,7 @@
    "routes": {
     "feeder": {
      "failed": 4,
-     "worked": 0
+     "worked": 1
     }
    }
   },
@@ -6884,6 +6884,6 @@
    }
   }
  },
- "generated": "2026-11-16T02:58:34Z",
- "reports": 696
+ "generated": "2026-11-16T02:59:27Z",
+ "reports": 697
 }
