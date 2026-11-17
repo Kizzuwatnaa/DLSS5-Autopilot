@@ -83,7 +83,7 @@
    },
    "feeder": {
     "failed": 2,
-    "worked": 10
+    "worked": 11
    },
    "renodx": {
     "failed": 4,
@@ -459,7 +459,7 @@
    },
    "feeder": {
     "failed": 1,
-    "worked": 1
+    "worked": 2
    },
    "optiscaler": {
     "failed": 1,
@@ -5082,10 +5082,18 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "621.24": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "Resident Evil 4",
    "routes": {
+    "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
     "optiscaler": {
      "failed": 0,
      "worked": 1
@@ -6904,6 +6912,6 @@
    }
   }
  },
- "generated": "2026-11-16T23:03:08Z",
- "reports": 700
+ "generated": "2026-11-17T07:15:34Z",
+ "reports": 701
 }
