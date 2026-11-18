@@ -1,0 +1,91 @@
+**The whole report is on your clipboard: click in this box, press Ctrl+A, then Ctrl+V, then submit.** Below is only its start.
+
+**Did the game start?** it started, then closed itself
+
+**What happened**
+=== diagnosis :: log 06 Nov 19:18 ===
+> Inconclusive - the feed did not get far enough to tell.
+[ok]   ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0
+[ok]   DLSS5_Feed.fx loaded and its textures were found.
+[ok]   Motion vectors: LumeniteFX Kernel is enabled.
+[ok]   The 32-bit helper process started.
+[fail] The helper started but never connected.
+[--]   On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+
+> stuck? 'report a bug' is under help - the diagnosis above and the log tail go into the report, you post it.
+
+=== what Windows recorded ===
+[fail] Windows recorded Fahrenheit.exe faulting in ucrtbase.dll (0xC0000005).
+        That module is neither the game's executable nor anything this tool installs, at 2026-11-06 16:18:07 UTC - an overlay, a driver component or another mod. Close overlays (RivaTuner, Discord, GeForce Experience) and try again; if it persists, that module is the one to chase.
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 4070 Ti (sm_89), driver 621.14
+- game: Fahrenheit: Indigo Prophecy Remastered
+- exe: Fahrenheit.exe
+- arch/api: 32-bit / DX9 (imports d3d9.dll, no DXGI)
+- route: feeder
+- windows event: Fahrenheit.exe faulted in ucrtbase.dll 0xC0000005 at 2026-11-06 16:18:07 UTC
+- compatibility flags: HIGHDPIAWARE (per user); HIGHDPIAWARE (all users)
+- this tool: running as administrator
+
+**Diagnosis**: Windows recorded the game faulting - see below for what to take out first.
+- [bad] You said the game closed itself.
+- [ok] ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0
+- [ok] DLSS5_Feed.fx loaded and its textures were found.
+- [ok] Motion vectors: LumeniteFX Kernel is enabled.
+- [ok] The 32-bit helper process started.
+- [bad] The helper started but never connected.
+- [info] On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64\renodx-dlss5.addon64: present
+- ReShade.ini: present
+- d3d9.dll: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: registered (for this user and on the machine's list)
+- DLSS 5 add-on switch: NeuralUplift=1
+- Windows graphics setting: Fahrenheit.exe: High performance
+- Windows graphics setting: dlss5-feed-host64.exe: High performance
+- Fahrenheit_d3d9.log: present (written since the install)
+
+**ReShade.log**
+```
+19:17:57:937 [16292] | INFO  | Registered add-on "DLSS 5 Feed (32-bit) 1.19.0" v0.0.0.0 using ReShade API version 20.
+19:18:00:818 [16292] | ERROR | Failed to register add-on, because it provided an invalid module handle!
+19:18:06:743 [16292] | ERROR | Failed to register add-on, because it provided an invalid module handle!
+```
+
+**dlss5-feed.log**
+```
+19:17:57.937  dlss5-feed32 1.19.0 commit 3c09eab (built Oct 11 2026 07:49:34) attached.
+19:18:02.482  [feed32] effects: technique found, DLSS5_MV found, DLSS5_Depth found, DLSS5_MV_PROVIDER=3 (LumeniteFX Kernel) -> Lumenite_Kernel (enabled), depth reversed=1
+19:18:02.489  [feed32] host spawned (pid 14432): "F:\Games\Fahrenheit Remastered\host64\dlss5-feed-host64.exe" 12600
+19:18:05.660  [feed32] game device destroyed; shutting down
+19:18:05.661  [feed32] the host had not connected yet; stopping it without the save grace
+19:18:06.745  [feed32] a new Vulkan device generation appeared, but ReShade rejected late add-on registration; will retry on the next device
+19:18:06.745  [feed] vkCreateDevice #3: app asked for 46 extension(s), added 5, timelineSemaphore already enabled by the app, graphics queue family 0
+19:18:06.746  [feed]   VK_KHR_external_memory                   ADDED
+19:18:06.746  [feed]   VK_KHR_external_memory_win32             (app)
+19:18:06.746  [feed]   VK_KHR_external_semaphore                ADDED
+19:18:06.746  [feed]   VK_KHR_external_semaphore_win32          (app)
+19:18:06.746  [feed]   VK_KHR_dedicated_allocation              ADDED
+19:18:06.746  [feed]   VK_KHR_get_memory_requirements2          ADDED
+19:18:06.746  [feed]   VK_KHR_timeline_semaphore                ADDED
+19:18:06.801  [feed] vkCreateDevice -> 0
+```
+
+**dlss5-feed-host.log**
+```
+19:18:02.503  [host] DLSS 5 add-on file: renodx-dlss5.addon64
+19:18:02.507  [host] DLSS 5 add-on: v4.1.5 (file version 0.2026.828.517) -- v4.6 (lazy adoption, global hotkeys, upscaling latch) engine
+19:18:02.507  [host] NeuralUplift=1 (user-set; leaving it alone)
+```
+
+**autopilot.log (`C:\Users\<user>\AppData\Local\dlss5-autopilot\autopilot.log`)**
+```
+======================================================================
+2026-11-06 19:18:16 info  DLSS 5 Autopilot 2.1.0 starting

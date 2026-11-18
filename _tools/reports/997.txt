@@ -1,0 +1,58 @@
+**Did the game start?** it started, then closed itself
+
+**What happened**
+Just tern on, through 30 sec off and instanly tern on again, but without optiscaler, insert didn't work. And before it worked..
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 5080 Laptop GPU (sm_120), driver 621.14
+- game: Control Ultimate Edition
+- exe: Control_DX12.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (CheckDXR.dll beside the exe imports it); no static graphics import)
+- route: optiscaler
+- work area: 75%
+- compatibility flags: HIGHDPIAWARE (per user)
+
+**Diagnosis**: The game closed itself and nothing here recorded why - see below for what to take out first.
+- [bad] You said the game closed itself.
+- [info] This folder was set up by version 2.0.9; you are running 2.1.0.
+- [warn] OptiScaler mentions neural rendering but never reports it running.
+- [ok] When it last ran (08 Nov 22:48), the process had amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx_dlssnr.dll loaded.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: Control_DX12.exe: High performance
+- nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.2.1 kept beside it)
+- optiscaler build: Dagherbou (v0.2.0-dlssnr)
+- d3dcompiler_47.dll: present (the game's own)
+
+**What ran, and what it loaded** (seen at 08 Nov 22:48)
+- process: Control_DX12.exe
+- ran from: Control_DX12.exe
+- DLLs in the process: 169
+- graphics DLLs in the process: d3d12.dll, dxgi.dll, vulkan-1.dll
+- ours, loaded: amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_upscaler_dx12.dll, dxgi.dll, libxell.dll, libxess.dll, libxess_dx11.dll, libxess_fg.dll, nvngx_dlssnr.dll
+- also written, loaded only if the game asks: nvngx.dll_dlssnr.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+[22:49:00.650780] [I] DlssNr.WorkingScale: 0.75
+[22:49:00.660135] [W] Config::CheckUpscalerFiles libxess.dll not found!
+[22:49:05.263527] [I] CreateRenderTargetDx12 done!
+[22:49:05.356824] [I] DlssNr::ExposureScan::NoteResource DLSS-NR scan near-miss #33: UAV dim 1 21979552x1x1 fmt 0 (filter rejected)
+[22:49:05.474834] [I] DlssNr::ExposureScan::NoteResource DLSS-NR scan near-miss #34: UAV dim 1 2097152x1x1 fmt 0 (filter rejected)
+[22:49:05.474885] [I] DlssNr::ExposureScan::NoteResource DLSS-NR scan near-miss #35: UAV dim 1 2097152x1x1 fmt 0 (filter rejected)
+[22:49:29.471870] [I] DlssNr::ExposureScan::NoteResource DLSS-NR scan near-miss #36: UAV dim 3 1920x1080x1 fmt 28 (filter rejected)
+[22:49:33.819763] [I] DlssNr::ExposureScan::NoteResource DLSS-NR scan near-miss #37: UAV dim 3 1920x1080x1 fmt 28 (filter rejected)
+```

@@ -172,8 +172,18 @@ def analyse(d: Path, text: str):
             rep.verdict = crashed_waiting(diagnose.event_module(ev.group(1)))
             rep.findings = [f for f in rep.findings
                             if "play once and check again" not in f"{f.title} {f.detail}"]
+    ref = re.search(r"^- DLL list: refused - (.+?)\s*$", text, re.M)
+    ac = re.search(r"^- anti-cheat: (.+?)\s*$", text, re.M)
+    acs = ac.group(1) if ac else ""
+    if not acs:
+        # Reports from before 2.1.1 carry no anti-cheat line; the live tool
+        # finds one by the executable's name too (Endfield, HoYoverse, cod).
+        from core import anticheat as _ac
+        exe = Path(_header(text).get("exe", "") or "").name
+        acs = (_ac.match(exe) or "") if exe else ""
     return diagnose.answered(rep, started(text), presence(text), kind,
-                             ev.group(1).strip() if ev else "")
+                             ev.group(1).strip() if ev else "",
+                             ref.group(1) if ref else "", acs)
 
 
 _DXVK_LOG = re.compile(r"_(d3d8|d3d9|d3d10|d3d11|dxgi)\.log$", re.I)
@@ -425,6 +435,15 @@ def build(route: str, api: str, exe: str, logs: dict, bitness: int = 64,
         p.write_text(logs["remix"], encoding="utf8")
         if rx and rx.get("stale"):
             os.utime(p, (978307200, 978307200))      # 2001: before any install
+    # The report prints no OptiScaler.ini line at all, and the install always
+    # writes one with neural rendering and the log on (optiscaler.LOG_VALUES).
+    # Without it the replay said "OptiScaler.ini is missing" (verdict_check)
+    # or "the log is off" (CLI) where the machine had said neither (#991
+    # #1047 #56 #110 #130 #497). A file the report DOES list wins.
+    if route == "optiscaler" and not (d / "OptiScaler.ini").exists():
+        (d / "OptiScaler.ini").write_text(
+            "[DlssNr]\nEnabled=true\n\n[Log]\nLogToFile=true\nLogLevel=2\n",
+            encoding="utf8")
     if work_area:
         digits = re.search(r"(\d+)", work_area)
         if digits:
@@ -438,7 +457,8 @@ def build(route: str, api: str, exe: str, logs: dict, bitness: int = 64,
                 # evidence for (it does not include OptiScaler.ini at all).
                 # Every optiscaler report with a work-area header got it.
                 (d / "OptiScaler.ini").write_text(
-                    f"[DlssNr]\nEnabled=true\nWorkingScale={n / 100:.3f}\n",
+                    f"[DlssNr]\nEnabled=true\nWorkingScale={n / 100:.3f}\n\n"
+                    f"[Log]\nLogToFile=true\nLogLevel=2\n",
                     encoding="utf8")
             else:
                 cfg = d / "dlss5-feed.cfg"

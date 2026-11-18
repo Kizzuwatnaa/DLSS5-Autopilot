@@ -1,0 +1,60 @@
+**Did the game start?** it never started
+
+**What happened**
+not started, dead space 2
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 4060 Ti (sm_89), driver 621.01
+- game: Dead Space 2
+- exe: deadspace2.exe
+- arch/api: 32-bit / DX9 (set by hand (detected DX9))
+- route: feeder
+- starts as administrator: RUNASADMIN HIGHDPIAWARE (per user)
+
+**Files in the folder**
+- dlss5-feed.addon32: present
+- host64/renodx-dlss5.addon64: present
+- ReShade.ini: present
+- host64/nvngx_dlssnr.dll: present
+- reshade-shaders/Shaders/DLSS5_Feed.fx: present
+- reshade-shaders/Shaders/lumenite_Kernel.fx: present
+- ReShade 32-bit Vulkan layer: NOT REGISTERED
+- DLSS 5 add-on switch: NeuralUplift=1
+- Cyberpunk 2077/bin/x64/nvngx_dlss.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.1.0 kept beside it)
+- Cyberpunk 2077/bin/x64/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.1.0 kept beside it)
+- Cyberpunk 2077/bin/x64/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.1 (NVIDIA SDK); the game's own 310.1.0 kept beside it)
+- 007 First Light (2026)/007 First Light/Retail/nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.7.128 kept beside it)
+- 007 First Light (2026)/007 First Light/Retail/nvngx_dlssg.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.7.128 kept beside it)
+- 007 First Light (2026)/007 First Light/Retail/nvngx_dlssd.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.7.128 kept beside it)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error**
+```
+request.py", line 515, in open
+  File "urllib\request.py", line 532, in _open
+  File "urllib\request.py", line 492, in _call_chain
+  File "urllib\request.py", line 1392, in https_open
+  File "urllib\request.py", line 1347, in do_open
+urllib.error.URLError: <urlopen error [Errno 11001] getaddrinfo failed>
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "core\installer.py", line 3272, in install
+  File "core\dxvk.py", line 161, in install
+  File "core\dxvk.py", line 114, in resolve
+  File "core\net.py", line 644, in json_get
+  File "core\net.py", line 603, in fetch_text
+core.net.Unreachable: api.github.com: this PC could not look up api.github.com (<urlopen error [Errno 11001] getaddrinfo failed>). The internet connection or its DNS is not answering. Check that the PC is online, or set its DNS to 1.1.1.1, then install again.
+
+```

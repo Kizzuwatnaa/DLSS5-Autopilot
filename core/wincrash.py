@@ -224,6 +224,17 @@ def describe(c: Crash | None, proxy: str = "",
                    if who else
                    ". Press 'report a bug' so the module, the exception code "
                    "and the route go in together."))
+    if _base(c.module) in _SHARED_RUNTIME:
+        # Every module in the process calls these, so the event names who was
+        # called, not who called (#987: ucrtbase.dll one second after the
+        # game rebuilt its device). "An overlay" there was a guess (#289).
+        return (f"Windows recorded {c.exe} faulting in {c.module} "
+                f"({c.code or 'no code'}).",
+                f"{c.module} is a Windows or Visual C++ runtime library that "
+                f"every module in the process calls, so the event names it, "
+                f"not the caller, at {where}. The last lines of the add-on logs "
+                f"before that time may point to the caller. To tell ours apart "
+                f"from the game's: uninstall from here and start the game once.")
     return (f"Windows recorded {c.exe} faulting in {c.module} "
             f"({c.code or 'no code'}).",
             f"That module is neither the game's executable nor anything this "
@@ -231,6 +242,12 @@ def describe(c: Crash | None, proxy: str = "",
             f"another mod. Close overlays (RivaTuner, Discord, GeForce "
             f"Experience) and try again; if it persists, that module is the "
             f"one to chase.")
+
+
+# Windows' own runtime libraries: a fault in one says who was called.
+_SHARED_RUNTIME = frozenset({
+    "ucrtbase.dll", "msvcrt.dll", "vcruntime140.dll", "vcruntime140_1.dll",
+    "msvcp140.dll", "ntdll.dll", "kernelbase.dll"})
 
 
 # Which project made a module this tool installs, by its file name. The

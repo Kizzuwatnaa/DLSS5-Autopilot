@@ -46,7 +46,7 @@ GROUPS = (
          "leave the DLSS file the game ships alone - the safe choice for anything played online"),
         ("fg", "frame generation  (FSR 3.1, 2x)", "toggle", "D3D12; turn the game's own frame generation off"),
         ("mfg", "multi-frame generation 3x/4x  (RTX 40)", "toggle",
-         "dashdogy's RTX40MFG-Unlock with the Ultimate ASI Loader - research software"),
+         "dashdogy's MFG-Unlocker (v1.2.1) with the Ultimate ASI Loader - research software"),
         ("own_fg", "frame generation files", "dd",
          "RTX 30: dlssg_for_sm86; RTX 20/30: DLSS Enabler - downloaded by you; experimental, out again on uninstall"),
         # its own row: beside 'add your own...' it did not fit at common
@@ -56,6 +56,9 @@ GROUPS = (
          "uninstall takes them out of that game's folder"),
         ("dxvk", "run through DXVK (Vulkan)", "toggle",
          "for games that close when ReShade loads inside them; DirectX 8 and 9 always go through DXVK"),
+        ("feed_helper", "run DLSS in a helper process", "toggle",
+         "64-bit games whose own process cannot start DLSS: the feeder hands its frames to "
+         "host64\\dlss5-feed-host64.exe, which runs it"),
         ("vr", "VR headset (OpenXR layer)", "toggle", "registers ReShade's OpenXR layer so the pass runs on what the "
                                                       "headset shows"),
         ("remix_swap", "swap the Remix runtime", "toggle",

@@ -1272,7 +1272,7 @@ check("rate-limit fallback message exists", hasattr(sources, "last_fallback"))
 check("api cache path set", "api-cache" in str(sources._API_CACHE))
 check("download supports retry", "attempts" in net.download.__code__.co_varnames)
 check("update points at the right repo", update.REPO.endswith("DLSS5-Autopilot"))
-check("version is 2.1.0", update.VERSION == "2.1.0", update.VERSION)
+check("version is 2.1.1", update.VERSION == "2.1.1", update.VERSION)
 
 from core import log as _log  # noqa: E402
 _log.write("test run")
@@ -9195,7 +9195,13 @@ try:
     net.json_get = lambda url: (_asked141.append(url), _rels141)[1]
     check("a v1.3.2 of the new shape above v1.2.1 resolves to v1.2.1, from the release list (#141)",
           _m141.resolve() == ("v1.2.1", "u121") and _asked141
-          and "/releases?" in _asked141[0] and "latest" not in _asked141[0], str(_asked141))
+          and any("/releases?" in u for u in _asked141)
+          and not any("latest" in u for u in _asked141), str(_asked141))
+    # 2.1.1: v1.2.1 asked for by its tag, so a long list (or github.com's
+    # 12-entry pages) cannot push it out
+    net.json_get = lambda url: (_rels141[-1] if url == _m141.PIN_API else [])
+    check("...and the pinned v1.2.1 is found by its tag when the list no longer holds it",
+          _m141.resolve() == ("v1.2.1", "u121"))
     net.json_get = lambda url: _rels141[:1]
     try:
         _m141.resolve()
@@ -11477,8 +11483,14 @@ from core import diagnose as _dpkg  # noqa: E402
 # 2.1.0 gate + gitc-uplift: routes +66 (_analyse_uplift reads its own [Uplift]
 # lines, #946), model +6, process +3 (its name and files), chain +8, body +7
 # (the link's first line after the clipboard), live +3, evidence +1.
-_parts = {"model": 503, "layer": 107, "evidence": 1550, "process": 235,  # pass 3: +3, the verdicts say when and what to re-check  # evidence +3: its own words for a renderer no route reaches
-          "helper": 254, "live": 392, "routes": 1132, "body": 954, "chain": 1786}  # routes +5: a dump the session went on after (gate 2.0.5)
+# 2.1.1: evidence +31 (a big process with no graphics DLL is pending, #975),
+# routes +16 (GITC-Uplift's Enabled is read), body +79 (anti-cheat and a
+# protected process answer "never started", #992 #1047; the report's
+# anti-cheat line), live +22 (a bridge on a D3D12 game, #1014), chain +66
+# (D3D12_ERROR_INVALID_REDIST #1035, feeder 2.0.0's built-in vectors and its
+# protocol mismatch, the device rebuild #987).
+_parts = {"model": 503, "layer": 107, "evidence": 1581, "process": 235,  # pass 3: +3, the verdicts say when and what to re-check  # evidence +3: its own words for a renderer no route reaches
+          "helper": 254, "live": 414, "routes": 1148, "body": 1035, "chain": 1857}  # routes +5: a dump the session went on after (gate 2.0.5)
 _sizes = {n: sum(1 for _ in open(SRC_DIR / "core" / "diagnose" / f"{n}.py",
                                  encoding="utf8"))
           for n in _parts}
@@ -18119,7 +18131,7 @@ try:
 
     check("the build is in the table and the dropdown, after the older ones",
           _jn in _op6.BUILDS and _jn in _op6.FORKS and list(_op6.BUILDS)[0] == ""
-          and list(_op6.BUILDS)[-1] == _jn, list(_op6.BUILDS))
+          and list(_op6.BUILDS).index(_jn) > list(_op6.BUILDS).index(_op6.PRESR), list(_op6.BUILDS))
     check("its dropdown text is short, lower-case style and distinct from wilsjo2's",
           _op6.BUILDS[_jn].split("  -  ")[0] == "Janblade's fork"
           and len({v.split("  -  ")[0] for v in _op6.BUILDS.values()}) == len(_op6.BUILDS))
@@ -18541,7 +18553,9 @@ try:
                              ("d3d9.dll, ddraw.dll", "set 'graphics api' to DirectX 9 and"),
                              ("ddraw.dll", "had only DirectDraw loaded when the tool looked, which no route reaches - start it and check again"),
                              ("dxgi.dll, opengl32.dll", "try another proxy name"),
-                             ("none", "try another proxy name")):
+                             # 2.1.1 (#975): 102 modules and no graphics DLL had
+                             # not opened a renderer yet - pending, not "wrong name"
+                             ("none", "was read before it loaded any graphics DLL")):
         _v9g = _replay9g(_txt9g.replace(
             "- DLLs in the process: 102",
             "- DLLs in the process: 102\n- graphics DLLs in the process: " + _line9g))
@@ -19267,6 +19281,8 @@ try:
         "loaded an nvngx_dlssnr.dll from beside the executable": _reg13 + "12:00:01:000 [1] | ERROR | [Uplift] error: "
         "NVIDIA's DLSS loaded nvngx_dlssnr.dll from the game's folder before Uplift could (RTX 50 cards do this)\n",
         "GITC-Uplift's helper did not run": _reg13 + "12:00:01:000 [1] | ERROR | [Uplift] error: Uplift's 64-bit helper stopped\n",
+        # 2.1.1: the switch is read, not guessed (gate 2.1.0 ORTA)
+        "Switched on, but no frame got NR": _reg13 + "12:00:02:000 [1] | INFO  | [Uplift] Enabled set to 1 in ReShade.ini\n",
     }
     _got13 = {k: _rt13._analyse_uplift(_Rep13(route="uplift"), v).verdict for k, v in _cases13.items()}
     check("GITC-Uplift's own ReShade.log lines decide the answer, worst first",
@@ -19274,6 +19290,17 @@ try:
     check("...and every one of those answers is staged",
           not any(_vd13.stage(v)[0].startswith("unmapped") for v in _got13.values()),
           {v: _vd13.stage(v)[0] for v in _got13.values()})
+    _ud13 = Path(tempfile.mkdtemp())
+    (_ud13 / "ReShade.ini").write_text("[Uplift]\nEnabled=1\n", encoding="utf8")
+    _on13 = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg13, _ud13).verdict
+    (_ud13 / "ReShade.ini").write_text("[Uplift]\nEnabled=0\n", encoding="utf8")
+    _off13 = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg13, _ud13).verdict
+    _flip13 = _rt13._analyse_uplift(_Rep13(route="uplift"), _reg13
+        + "12:00:02:000 [1] | INFO  | [Uplift] Enabled set to 0 in ReShade.ini\n", None).verdict
+    check("GITC-Uplift's Enable is read from [Uplift] Enabled, not guessed; ticked off again is 'tick Enable'",
+          _on13.startswith("Switched on") and "tick Enable" in _off13 and "tick Enable" in _flip13,
+          (_on13, _off13, _flip13))
+    shutil.rmtree(_ud13, ignore_errors=True)
     check("its own [Uplift] lines are not another add-on on its own route, and are on the feeder's",
           "Uplift" not in __import__("core.diagnose.chain", fromlist=["x"])._addon_voices(
               "1 | WARN  | [Uplift] x \n", "uplift")
@@ -19294,6 +19321,22 @@ try:
     (_g13c.install_dir / "d3d9.dll").write_bytes(b"MZ dxvk, ours")
     _pv13c = installer.preview(_g13c, installer.Options(path=dlss.UPLIFT))
     check("switching a DX9 game off DXVK is not blocked by our own d3d9.dll", not _pv13c.blockers, _pv13c.blockers)
+    # 2.1.1 (gate 2.1.0 DUSUK): an old cached ReShade is refused for Vulkan/OpenGL
+    # before the previous route is taken out
+    _g13v = _ui_game(name="UplVk13", api="Vulkan", bitness=64,
+                     manifest={"path": "feeder", "api": "Vulkan", "files": ["keepme.addon64"]})
+    (_g13v.install_dir / "keepme.addon64").write_bytes(b"ours")
+    _keep13v = sources.resolve_reshade
+    sources.resolve_reshade = lambda: ("6.7.3", "https://example.invalid/ReShade_Setup_6.7.3_Addon.exe")
+    try:
+        installer.install(_g13v, installer.Options(path=dlss.UPLIFT))
+        _e13v = ""
+    except installer.InstallError as _e:
+        _e13v = str(_e)
+    finally:
+        sources.resolve_reshade = _keep13v
+    check("GITC-Uplift on Vulkan refuses a ReShade older than 6.8 before touching the previous route",
+          "6.8.0" in _e13v and "6.7.3" in _e13v and (_g13v.install_dir / "keepme.addon64").is_file(), _e13v)
     _ex13 = _bd12._reshade_excerpt(_reg13 + "".join(
         f"12:00:0{i % 10}:000 [1] | WARN  | Ignoring LoadLibrary('k{i}.dll') call\n" for i in range(300))
         + "12:00:09:000 [1] | INFO  | [Uplift] NR ran on the game's frame (Direct3D 12, 64-bit)\n")
@@ -19304,6 +19347,154 @@ except Exception as _e13:
     import traceback as _tb13
     check("the gitc-uplift section ran to its end", False,
           "".join(_tb13.format_exception(_e13))[-900:])
+
+
+section("2.1.1: the November reports (#975 #987 #991 #992 #1014 #1035 #1047) and feeder 2.0.0")
+try:
+    from core import anticheat as _ac14, wincrash as _wc14, reshade_ini as _ri14, pe as _pe14
+    from core import verdicts as _vd14
+    from core.diagnose import body as _bd14, chain as _ch14
+    from core.diagnose.model import Report as _Rep14
+    check("Endfield's ACE is known by the executable name (#991 #992)",
+          _ac14.match("Endfield.exe") == "ACE (Anti-Cheat Expert)")
+
+    def _nr14(v):
+        r = _Rep14(route="optiscaler")
+        r.verdict = v
+        r.never_ran = True
+        return r
+    _p14 = _bd14.answered(_nr14("Not run yet, or OptiScaler did not load."), "no, it never started", (),
+                          "game", "", "the process is protected (anti-cheat, or a store build) and will not be opened")
+    check("'never started' + a protected process names the anti-cheat (#992)",
+          _p14.verdict.startswith("The game is protected"), _p14.verdict)
+    _s14 = _bd14.answered(_nr14("Not run yet, or OptiScaler did not load."), "no, it never started", (),
+                          "game", "", "the process was still starting")
+    check("...a process that was only still starting is not that (#1047's refusal)",
+          not _s14.verdict.startswith("The game is protected"), _s14.verdict)
+    _a14 = _bd14.answered(_nr14("Not run yet, or OptiScaler did not load."), "no, it never started", (),
+                          "game", "", "", "nProtect GameGuard (GameGuard)")
+    check("'never started' + an anti-cheat beside the game names it (#1047)",
+          "its anti-cheat refuses them" in _a14.verdict and "GameGuard" in _a14.findings[0].title, _a14.verdict)
+    _c14 = _bd14.answered(_nr14("Not run yet, or OptiScaler did not load."), "it closed itself", (),
+                          "game", "", "", "nProtect GameGuard (GameGuard)")
+    check("...and a game that closed itself is not blamed on it", "anti-cheat" not in _c14.verdict, _c14.verdict)
+    for _v14 in (_p14.verdict, _a14.verdict,
+                 "Wow.exe was read before it loaded any graphics DLL - press 'did it work?' again while the game is drawing.",
+                 "Direct3D 12 cannot start inside this game on this Windows - the game asks for an Agility SDK it does not ship. See below.",
+                 "The game ran on Direct3D 12, where the DLSS 5 add-on works on the game's own DLSS without the bridge - x",
+                 "The feeder's add-on and its helper are from different releases - close the game and install again.",
+                 "Switched on, but no frame got NR in this session - the card at the top of the GITC Uplift tab says why."):
+        check(f"staged: {_v14[:50]}", not _vd14.stage(_v14)[0].startswith("unmapped"), _vd14.stage(_v14))
+    _cr14 = _wc14.describe(_wc14.Crash(when="2026-11-06 16:18:07", exe="Fahrenheit.exe", module="ucrtbase.dll", provider="Application Error",
+                                       code="0xc0000005"), "d3d9.dll")
+    check("a fault in ucrtbase.dll names the caller question, not 'an overlay' (#987)",
+          _cr14 and "runtime library" in _cr14[1] and "an overlay" not in _cr14[1], _cr14)
+    check("D3D12_ERROR_INVALID_REDIST is read in both spellings (#1035)",
+          bool(_ch14._INVALID_REDIST.search("[feed] D3D12CreateDevice failed 0x887E0003 (D3D12_ERROR_INVALID_REDIST)"))
+          and bool(_ch14._INVALID_REDIST.search("D3D12CreateDevice failed with error code 0x887e0003.")))
+    _sys14 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "D3D12Core.dll"
+    if _sys14.is_file():
+        check("the Agility export reader reads Windows' own D3D12Core.dll",
+              isinstance(_pe14.agility_export(_sys14)[0], int), _pe14.agility_export(_sys14))
+    check("...and answers (None, None) for an exe without one", _pe14.agility_export(X64) == (None, None))
+    # feeder 2.0.0
+    _t14 = ("12:00 DLSS5_MV_PROVIDER=3 (LumeniteFX) -> Lumenite_Kernel@lumenite_Kernel.fx (not installed)\n"
+            "12:01 DLSS5_MV_PROVIDER=5 (built in) -> DLSS5_Feed.fx's own estimator (nothing to enable)\n")
+    import re as _re14
+    _pv14 = _re14.findall(r"DLSS5_MV_PROVIDER=(\d+) \(([^)]+)\) -> "
+                          r"(?:DLSS5_Feed\.fx's own estimator|(\S+) \(([^)]+)\))", _t14)
+    check("feeder 2.0.0's built-in provider line is read, not skipped for an older provider line",
+          _pv14[-1][0] == "5" and not _pv14[-1][3], _pv14)
+    _d14 = Path(tempfile.mkdtemp())
+    (_d14 / "ReShadePreset.ini").write_text(
+        "Techniques=Lumenite_Kernel@lumenite_Kernel.fx,DLSS5_Feed@DLSS5_Feed.fx,DLSS5_Feed_Restore@DLSS5_Feed.fx\n"
+        "PreprocessorDefinitions=DLSS5_MV_PROVIDER=3\n\n[DLSS5_Feed.fx]\nPreprocessorDefinitions=DLSS5_MV_PROVIDER=5\n",
+        encoding="utf8")
+    check("the effect's own DLSS5_MV_PROVIDER (feeder 2.0.0's Alt+C menu) is the one read",
+          _ri14.provider_in_preset(_d14) == 5)
+    check("update keeps a provider switched in the feeder's own menu",
+          installer._carried_provider(_d14, {"provider": 3}) == 5)
+    check("...and a recorded 0 stays 0, not 3", installer._carried_provider(Path(tempfile.mkdtemp()), {"provider": 0}) == 0)
+    _ri14.remove_our_techniques(_d14, 5)
+    _left14 = (_d14 / "ReShadePreset.ini").read_text(encoding="utf8")
+    check("uninstalling a built-in-vectors install keeps the person's own LumeniteFX technique",
+          "Lumenite_Kernel@lumenite_Kernel.fx" in _left14 and "DLSS5_Feed@" not in _left14
+          and "DLSS5_Feed_Restore@" not in _left14, _left14)
+    _ri14.write_preset(_d14, 3)
+    check("write_preset sets the provider where the effect reads it, too",
+          _ri14.provider_in_preset(_d14) == 3, (_d14 / "ReShadePreset.ini").read_text(encoding="utf8"))
+    shutil.rmtree(_d14, ignore_errors=True)
+    check("the feeder's helper is written before its add-on (IPC v12 pairs them)",
+          "needed = ((FEEDER_HOST,) if split else ()) + (addon, FEEDER_FX)" in inspect.getsource(installer))
+    # feeder's 64-bit helper mode (#1035): the 32-bit layout, built x64
+    _gh14 = _ui_game(name="Helper14", api="DX11", bitness=64)
+    _pvh14 = installer.preview(_gh14, installer.Options(path=dlss.FEEDER, feed_helper=True))
+    _w14 = [str(x).replace("\\", "/") for x in _pvh14.writes]
+    check("helper mode puts the helper add-on, host64's helper and its ReShade down, not the in-process add-on",
+          any(x.endswith("dlss5-feed-helper.addon64") for x in _w14)
+          and any("host64/dlss5-feed-host64.exe" in x for x in _w14)
+          and any("host64/dxgi.dll" in x for x in _w14)
+          and not any(x.endswith("dlss5-feed.addon64") for x in _w14), _w14)
+    _pvn14 = installer.preview(_gh14, installer.Options(path=dlss.FEEDER))
+    check("...and without it a 64-bit game has no host64 at all",
+          not any("host64" in str(x).replace("\\", "/") for x in _pvn14.writes), _pvn14.writes)
+    # gate 2.1.1: switching the helper on or off is taken out like a route change
+    _gm14 = _ui_game(name="HelperSw14", api="DX11", bitness=64,
+                     manifest={"path": "feeder", "files": ["dlss5-feed.addon64"]})
+    check("turning the helper mode on over an in-process install takes the old one out first",
+          installer._mode_switch(_gm14.install_dir, _gm14, installer.Options(path=dlss.FEEDER, feed_helper=True))
+          and not installer._mode_switch(_gm14.install_dir, _gm14, installer.Options(path=dlss.FEEDER)))
+    _pvb14 = installer.preview(_gm14, installer.Options(path=dlss.FEEDER, feed_helper=True,
+                                                        feeder_tag="v1.17.0"))
+    check("a pinned feeder without the helper mode is a blocker before anything is written",
+          any("no 64-bit helper mode" in b for b in _pvb14.blockers), _pvb14.blockers)
+    check("the helper choice is recorded and carried by update",
+          installer._split(_gh14, installer.Options(path=dlss.FEEDER, feed_helper=True))
+          and not installer._split(_gh14, installer.Options(path=dlss.OPTI, feed_helper=True)))
+    # #1014: NVIDIA's Unreal plugins say D3D12 where the exe imports d3d11.dll
+    _ur14 = Path(tempfile.mkdtemp()) / "AtomicHeart"
+    _ub14 = _ur14 / "AtomicHeart" / "Binaries" / "Win64"
+    _ub14.mkdir(parents=True)
+    _pl14 = _ur14 / "Engine" / "Plugins" / "Runtime" / "Nvidia" / "Streamline" / "Binaries" / "ThirdParty" / "Win64"
+    _pl14.mkdir(parents=True)
+    check("no NVIDIA plugin file, no D3D12 claim", _pe14._unreal_dx12_plugin(_ub14 / "AtomicHeart-Win64-Shipping.exe") == "")
+    (_pl14 / "nvngx_dlssg.dll").write_bytes(b"MZ")
+    check("an Unreal game with DLSS Frame Generation in its Streamline plugin is D3D12 (#1014)",
+          _pe14._unreal_dx12_plugin(_ub14 / "AtomicHeart-Win64-Shipping.exe") == "nvngx_dlssg.dll")
+    check("...and a game outside the Unreal layout is not read that way",
+          _pe14._unreal_dx12_plugin(_ur14 / "Game.exe") == "")
+    shutil.rmtree(_ur14.parent, ignore_errors=True)
+    # #1035 before the install: the game's Agility request against Windows' own
+    _keep14 = _pe14.agility_export
+    _ag14 = Path(tempfile.mkdtemp()) / "AoE3DE_s.exe"
+    _ag14.write_bytes(b"MZ")
+    try:
+        _pe14.agility_export = lambda p: (4, ".\\") if Path(p).name == "AoE3DE_s.exe" else (3, None)
+        _pe14._AGILITY_SEEN.clear()
+        _why14 = _pe14.agility_unmet(_ag14)
+        _pe14.agility_export = lambda p: (4, ".\\") if Path(p).name == "AoE3DE_s.exe" else (616, None)
+        _pe14._AGILITY_SEEN.clear()
+        _ok14 = _pe14.agility_unmet(_ag14)
+        (_ag14.parent / "D3D12Core.dll").write_bytes(b"MZ")
+        _pe14.agility_export = lambda p: (4, ".\\") if Path(p).name == "AoE3DE_s.exe" else (3, None)
+        _pe14._AGILITY_SEEN.clear()
+        _ships14 = _pe14.agility_unmet(_ag14)
+    finally:
+        _pe14.agility_export = _keep14
+        _pe14._AGILITY_SEEN.clear()
+    check("an Agility SDK the game asks for and does not ship, on an older Windows D3D12, is said before the install",
+          "version 4" in _why14 and "version 3" in _why14, _why14)
+    check("...not when Windows' own is new enough, nor when the game ships D3D12Core.dll",
+          _ok14 == "" and _ships14 == "", (_ok14, _ships14))
+    shutil.rmtree(_ag14.parent, ignore_errors=True)
+    check("the jlrouzies fork is a pre-SR build with its own label",
+          optiscaler.is_presr(optiscaler.JLROUZIES) and optiscaler.JLROUZIES in optiscaler.BUILDS
+          and optiscaler.JLROUZIES in optiscaler.FORKS)
+    check("the MFG unlock asks for v1.2.1 by its tag, on the renamed repository",
+          __import__("core.mfg", fromlist=["x"]).PIN_API.endswith("/MFG-Unlocker/releases/tags/v1.2.1"))
+except Exception as _e14:
+    import traceback as _tb14
+    check("the 2.1.1 section ran to its end", False, "".join(_tb14.format_exception(_e14))[-900:])
 
 
 section("RESULT")

@@ -1,0 +1,42 @@
+**Did the game start?** it never started
+
+**What happened**
+Anti cheat blocked the starting of the game
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 4090 (sm_89), driver 621.01
+- game: HELLDIVERS™ 2
+- exe: helldivers2.exe
+- arch/api: 64-bit / DX12 (loads d3d12.dll at run time (dstoragecore.dll beside the exe imports it); no static graphics import)
+- route: optiscaler
+- work area: 75%
+
+**Diagnosis**: Not run yet, or OptiScaler did not load.
+- [warn] No OptiScaler log from this install yet.
+
+**Files in the folder**
+- winmm.dll: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: helldivers2.exe: High performance
+- optiscaler build: Dagherbou (v0.2.0-dlssnr)
+
+**What ran, and what it loaded** (seen at 17 Nov 15:32)
+- process: helldivers2.exe
+- ran from: helldivers2.exe
+- DLL list: refused - the process was still starting - try again in a moment
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```

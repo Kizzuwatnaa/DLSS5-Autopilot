@@ -407,6 +407,11 @@ def _detect_api(path: Path) -> tuple[str, str]:
             return ("DX12", "imports d3d11.dll, but ships a D3D12 Agility SDK "
                             "or DLSS Frame Generation/Ray Reconstruction - "
                             "the real renderer is D3D12")
+        plug = _unreal_dx12_plugin(path, bits)
+        if plug:
+            return ("DX12", f"imports d3d11.dll, but its Unreal plugins ship "
+                            f"{plug} (DLSS Frame Generation/Ray Reconstruction "
+                            f"run on D3D12 only) - the real renderer is D3D12")
         return "DX11", "imports d3d11.dll statically"
     if has("d3d10.dll") or has("d3d10_1.dll") or has("d3d10core.dll"):
         # DX10 is DXGI-based, so ReShade still installs as dxgi.dll. Only
@@ -618,6 +623,69 @@ _AMBIGUOUS = {"opengl32.dll", "vulkan-1.dll"}
 # never loads, and the report would have come back with no log at all.
 # Found by detect_check on an installed UE5 game (WARDOGS).
 _UNREAL_BIN = ("win64", "wingdk", "winarm64")
+
+
+def agility_unmet(exe: Path) -> str:
+    """Why no Direct3D 12 device can be made in this game's process, or "".
+
+    The game exports D3D12SDKVersion/D3D12SDKPath, there is no D3D12Core.dll
+    at that path, and Windows' own D3D12Core.dll is older than the version
+    asked for (#1035, AoE3DE: 4 and ".\\" on Windows 10). Any doubt is "".
+    """
+    try:
+        exe = Path(exe)
+        st = exe.stat()
+        key = (str(exe).lower(), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return ""
+    # preview asks on every redraw, on the Tk thread: read each exe once
+    if key not in _AGILITY_SEEN:
+        _AGILITY_SEEN[key] = _agility_unmet(exe)
+    return _AGILITY_SEEN[key]
+
+
+_AGILITY_SEEN: dict = {}
+
+
+def _agility_unmet(exe: Path) -> str:
+    try:
+        ver, sdk = agility_export(exe)
+        if not ver:
+            return ""
+        rel = (sdk or "").strip().strip("\\/") or "."
+        if (exe.parent / rel / "D3D12Core.dll").is_file():
+            return ""
+        sysdir = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        have, _ = agility_export(sysdir / "D3D12Core.dll")
+        if have is None or have >= ver:
+            return ""
+        return (f"{exe.name} asks Windows for the Direct3D 12 Agility SDK "
+                f"version {ver} at '{sdk}', which it does not ship, and this "
+                f"Windows has version {have}.")
+    except Exception:
+        return ""
+
+
+def _unreal_dx12_plugin(exe: Path, bits: int | None = None) -> str:
+    """nvngx_dlssg/dlssd.dll in NVIDIA's Unreal plugins, or "".
+
+    Unreal keeps them under Engine/Plugins/Runtime/Nvidia/<plugin>/Binaries/
+    ThirdParty/Win64, not beside the exe, so _has_d3d12_agility_sdk never saw
+    them: Atomic Heart imports d3d11.dll, draws with D3D12, and got the bridge
+    (#1014). Fixed paths only - no walk of the game folder."""
+    if not _is_unreal(exe):
+        return ""
+    try:
+        base = exe.parents[3] / "Engine" / "Plugins" / "Runtime" / "Nvidia"
+        for plugin in ("Streamline", "DLSS", "StreamlineCore", "StreamlineDLSSG"):
+            d = base / plugin / "Binaries" / "ThirdParty" / "Win64"
+            for n in ("nvngx_dlssg.dll", "nvngx_dlssd.dll"):
+                f = d / n
+                if f.is_file() and _fits(f, bits):
+                    return n
+    except OSError:
+        return ""
+    return ""
 
 
 def _is_unreal(exe: Path) -> bool:
@@ -1134,3 +1202,50 @@ def resolve_target(target: Path) -> tuple[Path, list[Path]]:
             raise PEError(f"No .exe found in {target}.")
         return cands[0], cands
     raise PEError(f"{target} not found.")
+
+
+
+def agility_export(path, read_cap=64 << 20):
+    """(D3D12SDKVersion, D3D12SDKPath) an exe exports, or (None, None).
+    The D3D12 runtime reads these two exports from the process exe."""
+    try:
+        with open(path, "rb") as fh:
+            b = fh.read(read_cap)
+        pe = struct.unpack_from("<I", b, 0x3C)[0]
+        if b[pe:pe + 4] != b"PE\0\0":
+            return None, None
+        nsec = struct.unpack_from("<H", b, pe + 6)[0]
+        optsz = struct.unpack_from("<H", b, pe + 20)[0]
+        opt = pe + 24
+        magic = struct.unpack_from("<H", b, opt)[0]
+        dd = opt + (112 if magic == 0x20B else 96)
+        erva, esz = struct.unpack_from("<II", b, dd)
+        if not erva:
+            return None, None
+        secs = [struct.unpack_from("<IIII", b, opt + optsz + i * 40 + 8)
+                for i in range(nsec)]           # vsize, va, rawsize, rawptr
+        def off(rva):
+            for vs, va, rs, rp in secs:
+                if va <= rva < va + max(vs, rs):
+                    return rva - va + rp
+            return None
+        e = off(erva)
+        n = struct.unpack_from("<I", b, e + 24)[0]
+        funcs, names, ords = struct.unpack_from("<III", b, e + 28)
+        ver = sdk = None
+        for i in range(n):
+            nm_off = off(struct.unpack_from("<I", b, off(names) + 4 * i)[0])
+            nm = b[nm_off:b.index(b"\0", nm_off)]
+            if nm not in (b"D3D12SDKVersion", b"D3D12SDKPath"):
+                continue
+            o = struct.unpack_from("<H", b, off(ords) + 2 * i)[0]
+            rva = struct.unpack_from("<I", b, off(funcs) + 4 * o)[0]
+            p = off(rva)
+            if nm == b"D3D12SDKVersion":
+                ver = struct.unpack_from("<I", b, p)[0]
+            else:
+                sdk = b[p:b.index(b"\0", p)].decode("ascii", "replace")
+        return ver, sdk
+    except (OSError, struct.error, ValueError, TypeError):
+        return None, None
+

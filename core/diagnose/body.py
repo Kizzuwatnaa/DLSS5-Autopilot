@@ -25,7 +25,7 @@ from .live import _bridge_excerpt, _bridge_text
 
 __all__ = [
     "CLOSED_ITSELF", "NEVER_STARTED", "_block", "_dlss_record_root",
-    "_last_lines", "_presence", "answered", "event_line", "said_started",
+    "_last_lines", "_presence", "answered", "refused_reason", "anticheat_named", "event_line", "said_started",
     "_reshade_excerpt", "_their_provider", "_tool_log_lines", "issue_body",
     "PASTE_FIRST", "NO_PASTE_FIRST", "issue_url", "event_module"
 ]
@@ -450,7 +450,7 @@ def _presence(install_dir: Path, man: dict, route: str, game_root=None) -> list[
     # On the 32-bit feeder route the DLSS runtimes live in host64/ beside the
     # helper, not next to the game - looking for them in the folder reported
     # "nvngx_dlssnr.dll: MISSING" on installs that were perfectly fine.
-    if man.get("bitness") == 32 and route == "feeder":
+    if route == "feeder" and (man.get("bitness") == 32 or man.get("feed_helper")):
         names.append("host64/nvngx_dlssnr.dll")
     elif route == "uplift":
         # its runtime is in its own folder; one beside the exe is moved aside
@@ -624,8 +624,33 @@ def event_module(event: str) -> str:
     return m.group(1).strip().replace("/", "\\").rsplit("\\", 1)[-1] if m else ""
 
 
+def refused_reason(install_dir) -> str:
+    """Why Windows would not list the game's modules on its last run since
+    the install ("the process is protected ..."), or "". For answered()."""
+    try:
+        from .. import watch
+        d = Path(install_dir)
+        return str(watch.last_sighting(d, _installed_at(d)).get("refused") or "")
+    except Exception:
+        return ""
+
+
+def anticheat_named(install_dir, folder=None) -> str:
+    """'nProtect GameGuard (GameGuard)' when an anti-cheat is beside the
+    game, or "". The same check the install warns with (core/anticheat)."""
+    try:
+        from .. import anticheat
+        d = Path(install_dir)
+        f = anticheat.detect(d, Path(folder) if folder else d.parent)
+        if not f.present:
+            return ""
+        return f"{f.summary}, found: {', '.join(f.evidence[:3])}" if f.evidence else f.summary
+    except Exception:
+        return ""
+
+
 def answered(rep: Report, started: str, presence=(), kind: str = "game",
-             event: str = "") -> Report:
+             event: str = "", protected: str = "", anticheat: str = "") -> Report:
     """The verdict, corrected by what the person saw.
 
     `started` is their answer to "did the game start?" and `presence` the
@@ -641,8 +666,57 @@ def answered(rep: Report, started: str, presence=(), kind: str = "game",
     controls it does not have.
     """
     said = said_started(started)
-    if not said or not rep.verdict or kind == "video" \
-            or not any(n in rep.verdict for n in _LOOK_IN_GAME):
+    if not said or not rep.verdict or kind == "video":
+        return rep
+    look = any(n in rep.verdict for n in _LOOK_IN_GAME)
+    # The two anti-cheat answers below also replace "not run yet" (#1047:
+    # the game was started and its anti-cheat stopped it before any log).
+    # Only those: every other verdict without a look-in-game ask stands
+    # (nothing installed, a launcher, the install stopped).
+    not_run = rep.verdict.startswith(("Not run yet", "Not started since the install"))
+    blocked = said == NEVER_STARTED and not event_module(event) and (
+        "protected" in (protected or "").lower() or (anticheat or "").strip())
+    if not look and not (not_run and blocked):
+        return rep
+    # `protected` is the watcher's refusal reason. Windows refusing to show a
+    # process's modules because it is protected, and the person saying it
+    # never started, is an anti-cheat closing it over our files (#992:
+    # Endfield's ACE named dxgi.dll an "illegal hijack module"). Only
+    # "protected": a process that was still starting (#1047) is not that.
+    if "protected" in (protected or "").lower() and said == NEVER_STARTED \
+            and not event_module(event):
+        rep.findings = [f for f in rep.findings
+                        if not f.title.startswith(("You said", "Neural rendering was switched on"))
+                        and "graphics menu" not in f.detail]
+        rep.findings.insert(0, Finding(
+            BAD, "You said the game never started, and Windows would not let "
+                 "this tool look into its process.",
+            f"{protected[:1].upper()}{protected[1:]}. An anti-cheat does "
+            f"that, and so does a store build or a game started as "
+            f"administrator. If the game showed its own message naming one of "
+            f"the files here, its anti-cheat refused them, and no route of "
+            f"this tool gets past that. Press uninstall on the game's page."))
+        rep.verdict = ("The game is protected and stopped with our files in - "
+                       "most likely its anti-cheat. If it named one of our "
+                       "files, uninstall; no route gets past it.")
+        return rep
+    # An anti-cheat the install found beside the game, and a game that never
+    # started (#1047: HELLDIVERS 2's GameGuard, "anti cheat blocked the
+    # starting of the game"). A game that ran and then closed is not this.
+    if (anticheat or "").strip() and said == NEVER_STARTED and not event_module(event):
+        rep.findings = [f for f in rep.findings
+                        if not f.title.startswith(("You said", "Neural rendering was switched on"))
+                        and "graphics menu" not in f.detail]
+        rep.findings.insert(0, Finding(
+            BAD, f"You said the game never started, and it ships an "
+                 f"anti-cheat: {anticheat.strip()}.",
+            "An anti-cheat refuses files injected into the game's process, "
+            "and every route of this tool injects one. No route gets past "
+            "that. Press uninstall on the game's page and the game starts "
+            "as before; do not use this in an online game."))
+        rep.verdict = ("The game never started with our files in - its "
+                       "anti-cheat refuses them. Uninstall; no route gets "
+                       "past it.")
         return rep
     lines = [str(x).strip().lstrip("- ") for x in (presence or ())]
     swaps = [x.split(":", 1)[0] for x in lines if "updated on the dlss page" in x]
@@ -824,7 +898,10 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
             last_diag = answered(copy.deepcopy(last_diag),
                                  str(answers.get("started") or ""), presence,
                                  str(getattr(game, "kind", "") or "game"),
-                                 event_line(crash))
+                                 event_line(crash),
+                                 refused_reason(d) if d is not None else "",
+                                 anticheat_named(d, getattr(game, "folder", None))
+                                 if d is not None else "")
         except Exception:
             pass
     if last_diag is not None:
@@ -857,6 +934,10 @@ def issue_body(version: str, gpu_name: str, sm, driver: str, game, route: str,
         f"{getattr(game, 'api', None) or '-'}"
         + (f" ({game.api_why})" if getattr(game, 'api_why', None) else "") + "\n"
         f"- route: {route or '-'}\n"
+        # What the install saw beside the game (#1047): the replay and the
+        # reply read it from here, the person's "it never started" with it.
+        + (f"- anti-cheat: {ac}\n" if (ac := anticheat_named(
+            install_dir, getattr(game, "folder", None))) else "")
         # The work area the add-on itself was told to use. Every number the
         # tool prints about what the session cost is worked out from this,
         # and a report about one of those numbers used to arrive without

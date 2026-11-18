@@ -9,6 +9,18 @@
   "route": "feeder",
   "verdict": "Inconclusive - the feed did not get far enough to tell."
  },
+ "1014": {
+  "findings": [
+   "ok: ReShade loaded add-on: DLSS 5 Neural Rendering 0.2026.828.517",
+   "ok: The add-on's own switch is on.",
+   "info: dlss5-bridge.log has nothing from this launch.",
+   "ok: When it last ran (12 Nov 13:20), the process had dlss5-bridge.addon64, dxgi.dll, nvngx_dlssnr.dll, renodx-dlss5.addon64 loaded."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "bridge",
+  "verdict": "Add-ons loaded and the switch is on. The bridge's log has nothing from this launch, so the DLSS 5 Neural Rendering panel is the only live picture."
+ },
  "103": {
   "findings": [
    "bad: The install did not finish."
@@ -17,6 +29,37 @@
   "ran": false,
   "route": "feeder",
   "verdict": "The install never finished - install again."
+ },
+ "1034": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "-",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "1042": {
+  "findings": [
+   "warn: The game has not been started since the install.",
+   "info: If you DID start it, it launches something other than -.",
+   "info: Or the game ignores dxgi.dll."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "-",
+  "verdict": "Not started since the install - run the game once, then check again."
+ },
+ "1047": {
+  "findings": [
+   "warn: No OptiScaler log from this install yet."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "Not run yet, or OptiScaler did not load."
  },
  "11": {
   "findings": [
@@ -29,12 +72,12 @@
  },
  "110": {
   "findings": [
-   "bad: OptiScaler.ini is missing."
+   "warn: No OptiScaler log from this install yet."
   ],
-  "never_ran": false,
+  "never_ran": true,
   "ran": false,
   "route": "optiscaler",
-  "verdict": "OptiScaler.ini is missing - install again."
+  "verdict": "Not run yet, or OptiScaler did not load."
  },
  "119": {
   "findings": [
@@ -71,12 +114,12 @@
  },
  "130": {
   "findings": [
-   "bad: OptiScaler.ini is missing."
+   "warn: No OptiScaler log from this install yet."
   ],
-  "never_ran": false,
+  "never_ran": true,
   "ran": false,
   "route": "optiscaler",
-  "verdict": "OptiScaler.ini is missing - install again."
+  "verdict": "Not run yet, or OptiScaler did not load."
  },
  "134": {
   "findings": [
@@ -431,7 +474,7 @@
  "231": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -528,7 +571,7 @@
  "275": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -554,7 +597,7 @@
  "289": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -568,7 +611,7 @@
  "29": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -859,7 +902,7 @@
  "41": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -993,7 +1036,7 @@
   "findings": [
    "bad: You said the game closed itself.",
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1074,7 +1117,7 @@
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.15.1 0.0.0.0",
    "ok: DLSS5_Feed.fx loaded and its textures were found.",
    "ok: Motion vectors: LumeniteFX Kernel is enabled.",
-   "ok: The 32-bit helper process started.",
+   "ok: The helper process (host64) started.",
    "bad: The helper started but never connected.",
    "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.",
    "ok: NGX initialised successfully.",
@@ -1087,12 +1130,12 @@
  },
  "497": {
   "findings": [
-   "bad: OptiScaler.ini is missing."
+   "warn: No OptiScaler log from this install yet."
   ],
-  "never_ran": false,
+  "never_ran": true,
   "ran": false,
   "route": "optiscaler",
-  "verdict": "OptiScaler.ini is missing - install again."
+  "verdict": "Not run yet, or OptiScaler did not load."
  },
  "511": {
   "findings": [
@@ -1111,7 +1154,7 @@
   "findings": [
    "bad: You said the game never started.",
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1126,7 +1169,7 @@
   "findings": [
    "bad: You said the game closed itself.",
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1194,12 +1237,12 @@
  },
  "56": {
   "findings": [
-   "bad: OptiScaler.ini is missing."
+   "warn: No OptiScaler log from this install yet."
   ],
-  "never_ran": false,
+  "never_ran": true,
   "ran": false,
   "route": "optiscaler",
-  "verdict": "OptiScaler.ini is missing - install again."
+  "verdict": "Not run yet, or OptiScaler did not load."
  },
  "562": {
   "findings": [
@@ -1243,7 +1286,7 @@
   "findings": [
    "bad: You said the game closed itself.",
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1276,7 +1319,7 @@
   "findings": [
    "bad: You said the game never started.",
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1344,7 +1387,7 @@
  "66": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1584,7 +1627,7 @@
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 0.14.0-beta.5 0.0.0.0",
    "ok: DLSS5_Feed.fx loaded and its textures were found.",
    "ok: Motion vectors: LumeniteFX Kernel is enabled.",
-   "ok: The 32-bit helper process started.",
+   "ok: The helper process (host64) started.",
    "bad: The helper started but never connected.",
    "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down."
   ],
@@ -1637,7 +1680,7 @@
  "86": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1748,7 +1791,7 @@
    "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0",
    "ok: DLSS5_Feed.fx loaded and its textures were found.",
    "ok: Motion vectors: LumeniteFX Kernel is enabled.",
-   "ok: The 32-bit helper process started.",
+   "ok: The helper process (host64) started.",
    "ok: The game and the helper are talking.",
    "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down.",
    "ok: NGX initialised successfully.",
@@ -1771,7 +1814,7 @@
  "94": {
   "findings": [
    "warn: OptiScaler ran, but neural rendering was never asked for.",
-   "info: OptiScaler.ini: no [DlssNr] Enabled line (the file is not there).",
+   "info: OptiScaler.ini: [DlssNr] Enabled=true.",
    "info: nvngx_dlssnr.dll: present.",
    "info: nvngx.dll_dlssnr.dll: not in this folder (this build may not use one).",
    "info: the game's own upscaler, recorded at install: none recorded - the game was expected to use DLSS. It has to be running for the model to have anything to attach to.",
@@ -1835,6 +1878,15 @@
   "route": "",
   "verdict": "No install record here and no ReShade.log - install again, then run the game once."
  },
+ "965": {
+  "findings": [
+   "bad: The install did not finish: the download could not get through."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "feeder",
+  "verdict": "The install stopped: this PC could not look up the download server - check the connection, then install again."
+ },
  "97": {
   "findings": [
    "bad: The install did not finish."
@@ -1844,10 +1896,66 @@
   "route": "feeder",
   "verdict": "The install never finished - install again."
  },
+ "975": {
+  "findings": [
+   "warn: Wow.exe had 62 modules and no graphics DLL at 04 Nov 12:00 - it had not started drawing."
+  ],
+  "never_ran": false,
+  "ran": false,
+  "route": "renodx",
+  "verdict": "Wow.exe was read before it loaded any graphics DLL - press 'did it work?' again while the game is drawing."
+ },
  "98": {
   "findings": [
    "bad: You said the game closed itself.",
    "warn: OptiScaler mentions neural rendering but never reports it running."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "The game closed itself and nothing here recorded why - see below for what to take out first."
+ },
+ "987": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "ok: ReShade loaded add-on: DLSS 5 Feed (32-bit) 1.19.0 0.0.0.0",
+   "ok: DLSS5_Feed.fx loaded and its textures were found.",
+   "ok: Motion vectors: LumeniteFX Kernel is enabled.",
+   "ok: The helper process (host64) started.",
+   "bad: The helper started but never connected.",
+   "warn: The game rebuilt its graphics device during start-up, and ReShade refused the add-on on the new one.",
+   "info: On 32-bit the DLSS 5 page in the game's overlay drives the 64-bit helper; the helper's own window is there too, but do not alt-tab to it while playing - that minimizes the game and tears the feature down."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "feeder",
+  "verdict": "Windows recorded the game faulting - see below for what to take out first."
+ },
+ "991": {
+  "findings": [
+   "bad: You said the game never started, and it ships an anti-cheat: ACE (Anti-Cheat Expert).",
+   "warn: No OptiScaler log from this install yet."
+  ],
+  "never_ran": true,
+  "ran": false,
+  "route": "optiscaler",
+  "verdict": "The game never started with our files in - its anti-cheat refuses them. Uninstall; no route gets past it."
+ },
+ "992": {
+  "findings": [
+   "bad: You said the game never started, and Windows would not let this tool look into its process.",
+   "info: OptiScaler runs the model around the game's own upscaler. Turn DLSS (or FSR 2 or later, or XeSS) on in the game's graphics menu - FSR 1.0 does not count, it makes no call OptiScaler can take over. With no upscaler running there is nothing for neural rendering to attach to, which is what the overlay means by 'waiting for the upscaler to run'. If the game has no upscaler at all, use the feeder route."
+  ],
+  "never_ran": false,
+  "ran": true,
+  "route": "optiscaler",
+  "verdict": "The game is protected and stopped with our files in - most likely its anti-cheat. If it named one of our files, uninstall; no route gets past it."
+ },
+ "997": {
+  "findings": [
+   "bad: You said the game closed itself.",
+   "warn: OptiScaler mentions neural rendering but never reports it running.",
+   "ok: When it last ran (08 Nov 22:48), the process had dxgi.dll, nvngx_dlssnr.dll loaded."
   ],
   "never_ran": false,
   "ran": true,

@@ -65,6 +65,7 @@ INSTALLED = {
     "OptiScaler fork (y4my4my4m)": (optiscaler.FORK_API, ()),
     "OptiScaler fork (wilsjo2)": (optiscaler.PRESR_API, ()),
     "OptiScaler fork (Janblade)": (optiscaler.JANBLADE_API, ()),
+    "OptiScaler fork (jlrouzies)": (optiscaler.JLROUZIES_API, ()),
     "dxvk-remix-plus-dlssnr": (sources.REMIX_RUNTIME_API, sources.REMIX_RUNTIME_ASSETS),
     "ffmpeg (BtbN)": (video.FFMPEG_API, (video.FFMPEG_ASSET,)),
     # The unlock resolves by prefix across its release list and skips a
@@ -94,19 +95,21 @@ WATCHED = {
         "the OpenXR layer the vr page registers ships in ReShade itself "
         "(ReShade64_XR.json). Watch for changes to that manifest's name or "
         "to how the layer is registered - the vr page reads both.",
-    "fholger/openxr_vulkan_layer":
-        "an OpenXR layer that touches the same implicit-layer registry key "
-        "as ours. If it gains a Windows build with our layer's name, that is "
-        "the collision that killed every 32-bit DXVK game once already.",
     "mbucchia/OpenXR-Toolkit":
         "the widest-used OpenXR layer on Windows, with its own upscalers. "
         "People run it beside us: it is a second layer on the same swapchain, "
         "so its notes are where a conflict would show first.",
     "sdli1995/dlssg_for_sm86":
-        "frame generation on RTX 30 (sm_86). No release, no licence, and it "
+        "frame generation on RTX 30 (sm_86). Releases since 0.4.x, still no "
+        "licence, and it "
         "is a version.dll proxy - the same slot as the MFG loader and one of "
         "the OptiScaler proxies. Add only if it publishes releases under a "
         "licence that allows fetching.",
+    "apex-compute/ANR":
+        "Apex Neural Rendering (#1023): frame generation for GTX 16, AMD, "
+        "Intel and RTX through OptiScaler, not the DLSS 5 neural pass. No "
+        "licence on the repository or its files (2026-11-17), so nothing "
+        "can be fetched; a licence is what changes the answer.",
     "ShyVortex/dlss-unlocked":
         "MFG 2x-4x on RTX 20/30/40 by bundling DLLs their publishers do not "
         "ship. Bundled binaries - watch for a build that fetches its own.",
@@ -270,7 +273,8 @@ def main() -> int:
     known = {r.lower() for r in WATCHED} | {
         "kizzuwatnaa/dlss5-autopilot", "y4my4my4m/optiscaler_dlssnr_multipass_mfg",
         "wilsjo2/optiscaler-dlssnr-presr-multipass", "dagherbou/optiscaler_dlssnr",
-        "janblade/optiscaler-f5-dlssnr-multipass"}
+        "janblade/optiscaler-f5-dlssnr-multipass",
+        "jlrouzies-fr/optiscaler-dlssnr-presr-multipass"}
     hits: dict[str, dict] = {}
     for q in SEARCHES:
         r = _get("https://api.github.com/search/repositories?sort=updated&order=desc&q="

@@ -349,6 +349,7 @@ class GameControl:
             "keep_dlss": True, "workres": 100, "preset": 0, "hdr": -1, "nr_preset": 0,
             "nr_style": 0, "nr_passes": 0, "fg": False, "feeder": "stable", "opti_build": "",
             "dxvk": False, "mfg": False, "vr": False, "remix_swap": swapped, "gpu_pref": True,
+            "feed_helper": False,
             "opti_proxy": "", "reshade_proxy": "", "own_fg": "",
         }
 
@@ -616,6 +617,8 @@ class GameControl:
             s["mfg"] = False
         if not self.shown_setting("vr"):
             s["vr"] = False
+        if not self.shown_setting("feed_helper"):
+            s["feed_helper"] = False
         if not self.shown_setting("remix_swap"):
             s["remix_swap"] = False
         if not self.shown_setting("own_fg"):
@@ -689,6 +692,9 @@ class GameControl:
             return True
         if route != dlss.FEEDER:
             return False
+        # the helper mode runs at 100% (DLSS5-Feeder's own notes)
+        if self.settings.get("feed_helper"):
+            return False
         return bool(g and g.bitness == 64 and g.api == "DX11" and not self.settings.get("dxvk"))
 
     def shown_setting(self, key: str) -> bool:
@@ -740,6 +746,9 @@ class GameControl:
             "nr_passes": lambda: opti and optiscaler.is_presr(str(self.settings.get("opti_build") or "")),
             "fg": lambda: opti and api == "DX12",
             "feeder": lambda: feeder,
+            # feeder 1.18.0+: NGX in host64's helper process, for a 64-bit
+            # game whose own process cannot run it (#1035)
+            "feed_helper": lambda: feeder and bool(g) and g.bitness == 64,
             "opti_build": lambda: opti,
             # the person's own frame generation files go in with OptiScaler,
             # and only a D3D12 game has DLSS frame generation to act on
@@ -980,7 +989,11 @@ class GameControl:
             # On OpenGL the installer swaps LumeniteFX for VORT (it reads 0%
             # motion there), so those two are not offered as if they worked.
             gl = bool(g) and g.api == "OpenGL"
-            return [(k, v[0]) for k, v in reshade_ini.PROVIDERS.items() if not (gl and k in (3, 4))]
+            # Feeder 2.0.0's built-in vectors are not verified by upstream on
+            # Direct3D 10 or Vulkan, so they are not offered there.
+            unproven = bool(g) and g.api in ("DX10", "Vulkan")
+            return [(k, v[0]) for k, v in reshade_ini.PROVIDERS.items()
+                    if not (gl and k in (3, 4)) and not (unproven and k == reshade_ini.BUILTIN)]
         if key == "preset":
             return [(k, "auto" if k == 0 else v) for k, v in feedcfg.PRESETS.items()]
         if key == "hdr":
@@ -1097,6 +1110,7 @@ class GameControl:
                 fg=bool(s["fg"]) and route == dlss.OPTI and vis("fg") and not other,
                 mfg=bool(s["mfg"]) and vis("mfg") and not other,
                 vr=bool(s["vr"]) and vis("vr") and not other,
+                feed_helper=bool(s.get("feed_helper")) and vis("feed_helper") and not other,
                 remix_swap=bool(s["remix_swap"]) and route == dlss.REMIX,
                 gpu_pref=bool(s.get("gpu_pref", True)),
                 path=route,
@@ -1811,7 +1825,7 @@ class GameControl:
         if vis("keep_dlss"):
             s["keep_dlss"] = bool(opt.keep_game_dlss)
         for key, value in (("fg", opt.fg), ("mfg", opt.mfg), ("vr", opt.vr), ("remix_swap", opt.remix_swap),
-                           ("gpu_pref", opt.gpu_pref)):
+                           ("gpu_pref", opt.gpu_pref), ("feed_helper", getattr(opt, "feed_helper", False))):
             if vis(key):
                 s[key] = bool(value)
         if vis("feeder"):
@@ -2422,8 +2436,11 @@ class GameControl:
         else:
             out.append(("step", f"press {key} to open reshade"))
             p = reshade_ini.PROVIDERS.get(s.get("provider", 3), reshade_ini.PROVIDERS[3])
-            out.append(("step", f"tick '{p[0]}' and 'DLSS 5 Feed', provider ABOVE the feed" if p[1]
-                        else "put your provider's technique ABOVE DLSS 5 Feed"))
+            if s.get("provider") == reshade_ini.BUILTIN:
+                out.append(("step", "switch on DLSS 5 Feed in reshade's list - its motion vectors are built in, nothing else to enable"))
+            else:
+                out.append(("step", f"tick '{p[0]}' and 'DLSS 5 Feed', provider ABOVE the feed" if p[1]
+                            else "put your provider's technique ABOVE DLSS 5 Feed"))
             if g and g.bitness == 32:
                 out.append(("step", "turn on neural rendering in the DLSS 5 page of this overlay - it drives the "
                                     "64-bit helper for you"))
@@ -2431,6 +2448,12 @@ class GameControl:
                                     "game and DLSS is rebuilt every time"))
             else:
                 out.append(("step", "turn on neural rendering in the DLSS 5 panel"))
+            # feeder 2.0.0: its own menu, the same in every mode
+            ftag = str(s.get("feeder") or "stable")
+            if ftag in ("stable", "pre") or (
+                    ftag.startswith("v") and sources.feeder_key(ftag) >= sources.feeder_key("v2.0.0")):
+                out.append(("note", "alt+c in the game opens the feeder's own menu: the neural "
+                                    "settings, its cost per frame and the motion vectors in use"))
             out.append(("step", "turn OFF the game's own MSAA/SSAA"))
             out.append(("warn", "play BORDERLESS or true fullscreen at your display's own resolution - a bordered "
                                 "window presents a few pixels short and the result never lands (Bayonetta)"))

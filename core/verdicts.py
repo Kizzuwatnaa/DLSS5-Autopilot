@@ -90,6 +90,12 @@ CHAIN = (
         "The game refused OptiScaler's swapchain",
         "The game refused the swapchain",
         "The game's DLSS call was never hooked",
+        # 2.1.1, #992: "never started" + a protected process = its anti-cheat
+        "The game is protected and stopped with our files in",
+        # 2.1.1, #1047: "never started" + an anti-cheat found beside the game
+        "never started with our files in - its anti-cheat",
+        # 2.1.1, #1035: the game's Agility SDK request breaks every D3D12 device
+        "Direct3D 12 cannot start inside this game on this Windows",
     )),
     ("5 loaded, the feed never got going", "upstream", (
         # 2.0.7: DLSS was called and the bridge's log has no frame
@@ -106,6 +112,8 @@ CHAIN = (
         "No Remix runtime",
         "The Remix runtime here has no neural pass",
         "The add-on runs but never produces a frame",
+        # 2.1.1: GITC-Uplift's [Uplift] Enabled=1 and no "NR ran" line
+        "Switched on, but no frame got NR in this session",
     )),
     ("6 set up, not switched on", "the person", (
         "Set up correctly, but not switched on yet",
@@ -131,6 +139,11 @@ CHAIN = (
         "and wrote no log here - most likely it cannot write",
         "Inconclusive - open the overlay",
         "Add-ons loaded. Confirm in",
+        # 2.1.1, #1014: a bridge install on a game that drew with D3D12 - the
+        # native route is the one; nothing shows the add-on took a call
+        "The game ran on Direct3D 12, where the DLSS 5 add-on",
+        # 2.1.1, #975: read before the game opened any graphics runtime
+        "was read before it loaded any graphics DLL",
         "Add-ons loaded and the switch is on",
         "Frames reach the 64-bit helper, and only its own log",
         # 2.0.7: the bridge's own log counts its frames; whether the neural
@@ -193,6 +206,8 @@ CHAIN = (
         "Driver 616.64+ faults",
         "The driver has no DLSS 5 entry point",
         "Every DLSS evaluate faults",
+        # 2.1.1: feeder 2.0.0's add-on and host refuse each other across releases
+        "The feeder's add-on and its helper are from different releases",
     )),
     ("0 working", "-", ("Working",)),
     # Last: an appended "...beside ours too" keeps the stage its own verdict

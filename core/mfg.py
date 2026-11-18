@@ -37,10 +37,16 @@ from . import net, pe
 # The release LIST, not /releases/latest: v1.3.2 turned the three files into
 # a single RTXMFG.dll in RTXMFG-v1.3.2.zip, and "latest" plus an any-zip
 # fallback picked that zip and failed on its first missing file (#141).
-API = "https://api.github.com/repos/dashdogy/RTX40MFG-Unlock/releases?per_page=20"
+API = "https://api.github.com/repos/dashdogy/MFG-Unlocker/releases?per_page=20"
 # The asset name of the releases this module knows how to place
 # (Universal-RTX-40-MFG-Unlock-v1.2.1.zip, the last of them so far).
 ASSET_PREFIX = "universal-rtx-40-mfg-unlock"
+# ...and that release asked for by its tag. It is the 15th entry of the list
+# today and github.com's pages (the fallback when the API is rate limited)
+# show 12, so the list alone lost it (2.1.1). The project renamed itself
+# RTX40MFG-Unlock -> MFG-Unlocker; the old name only works by redirect.
+PIN_TAG = "v1.2.1"
+PIN_API = f"https://api.github.com/repos/dashdogy/MFG-Unlocker/releases/tags/{PIN_TAG}"
 # Pinned to the release this route was last run against. v10.0.0 (2026-10-21)
 # is a major step nobody has run it with; move the pin once someone has.
 LOADER_API = ("https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/"
@@ -237,6 +243,15 @@ def resolve() -> tuple[str, str]:
     newer layout is not taken on trust (#141); the installer places FILES
     and nothing else.
     """
+    try:
+        pin = net.json_get(PIN_API)
+    except Exception:
+        pin = None
+    for a in (pin.get("assets") or []) if isinstance(pin, dict) else []:
+        n = str(a.get("name", "")).lower()
+        if (n.startswith(ASSET_PREFIX) and n.endswith(".zip")
+                and a.get("browser_download_url")):
+            return pin.get("tag_name", PIN_TAG), a["browser_download_url"]
     rels = net.json_get(API)
     if not isinstance(rels, list):
         rels = [rels] if isinstance(rels, dict) else []

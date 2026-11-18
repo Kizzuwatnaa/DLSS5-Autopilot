@@ -24,11 +24,15 @@ NAME = "dlss5-feed.cfg"
 # DLSS preset hint. Per the DLSS5-Feeder troubleshooting table: if you see
 # warping around flames or transparent objects, try 5 or 6 (the older CNN).
 PRESETS = {
-    0:  "Default (let the add-on decide)",
+    # Feeder 2.0.0: "preset=0 now means DLSS preset L" (it was the DLL's own
+    # pick, K, before). The number written is the same either way.
+    0:  "Default (preset L from feeder 2.0.0, K before)",
     5:  "Preset E - legacy CNN (helps with flame/transparency warping)",
     6:  "Preset F - legacy CNN",
     10: "Preset J - transformer",
-    11: "Preset K - transformer (newest)",
+    11: "Preset K - transformer",
+    12: "Preset L - 2nd-gen transformer",
+    13: "Preset M - 2nd-gen transformer",
 }
 
 HDR = {-1: "Auto", 0: "Force SDR", 1: "Force HDR"}

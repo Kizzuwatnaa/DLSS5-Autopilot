@@ -59,6 +59,14 @@ from .dlss import REMIX as ROUTE_REMIX
 
 MANIFEST = "dlss5-autopilot.json"
 
+# GITC-Uplift's README: "Vulkan and OpenGL games need 6.8 or newer".
+UPLIFT_RESHADE_MIN = "6.8.0"
+
+
+def _vkey(ver: str) -> tuple:
+    """'6.7.3' -> (6, 7, 3); anything that is not a number counts as 0."""
+    return tuple(int(x) if x.isdigit() else 0 for x in (ver or "").split(".")[:3])
+
 FEEDER_ADDON64 = "dlss5-feed.addon64"
 FEEDER_ADDON32 = "dlss5-feed.addon32"
 FEEDER_HOST = "dlss5-feed-host64.exe"
@@ -162,7 +170,7 @@ def other_ngx_hooks(root: Path, path: str = "") -> list[str]:
     ours = {"dlss5-feed.addon64", "dlss5-bridge.addon64",
             RENODX.lower(), RENODX_SF.lower(), UPSTREAM_ADDON.lower(),
             STANDALONE_ADDON.lower(), "rtx40mfg-ui.addon64",
-            FEEDER_ADDON32.lower()} | mine
+            FEEDER_ADDON32.lower(), FEEDER_HELPER64.lower()} | mine
     for low, orig in names.items():
         # ReShade also loads plain .addon files (Luma mods ship that way).
         if low.endswith((".addon64", ".addon32", ".addon")) and low not in ours:
@@ -190,6 +198,35 @@ def hook_warning(root: Path, path: str) -> str:
 DLSSNR = "nvngx_dlssnr.dll"
 DLSS = "nvngx_dlss.dll"
 HOST_DIR = "host64"
+# Feeder's 64-bit helper mode: the in-game half of the 32-bit path, built x64.
+FEEDER_HELPER64 = "dlss5-feed-helper.addon64"
+FEEDER_HELPER_MIN = "v1.18.0-beta.1"
+
+
+def _split(g, opt) -> bool:
+    """The feeder runs NGX in the host64 folder - a 32-bit game, or the
+    helper mode."""
+    return opt.path == FEEDER and (getattr(g, "bitness", None) != 64
+                                   or bool(getattr(opt, "feed_helper", False)))
+
+
+def _mode_switch(root: Path, g, opt) -> bool:
+    """A 64-bit feeder install switching between in-process and the helper
+    mode. Same route, different files: the old add-on beside the new one is
+    "two feeder add-ons", and the in-process one stands down beside the
+    helper's (gate 2.1.1). Taken out like a route change."""
+    if opt.path != FEEDER or getattr(g, "bitness", None) != 64:
+        return False
+    data = _previous_manifest(root) or {}
+    if (data.get("path") or FEEDER) != FEEDER:
+        return False
+    return bool(data.get("feed_helper")) != bool(getattr(opt, "feed_helper", False))
+
+
+def _feeder_addon(g, opt) -> str:
+    if getattr(g, "bitness", None) != 64:
+        return FEEDER_ADDON32
+    return FEEDER_HELPER64 if getattr(opt, "feed_helper", False) else FEEDER_ADDON64
 
 # The RTX Remix route. Nothing of ours goes beside the executable: the
 # runtime lives in the mod's .trex folder and everything we write goes in
@@ -286,6 +323,11 @@ class Options:
     # line (#325, #348); this asks for the beta line instead.
     feeder_prerelease: bool = False
     feeder_tag: str = ""                    # "" = stable or newest pre-release
+    # Feeder, 64-bit game: NGX in host64\dlss5-feed-host64.exe instead of in
+    # the game (dlss5-feed-helper.addon64), for a game whose own process
+    # cannot run it (D3D12_ERROR_INVALID_REDIST #1035, "NGX would not set
+    # DLSS up inside this game's process"). The 32-bit layout, built x64.
+    feed_helper: bool = False
     dxvk: bool = False                      # run a D3D11 game on Vulkan via DXVK
     nr: dict = field(default_factory=dict)  # OptiScaler [DlssNr] settings
     # OptiScaler route, D3D12: FSR 3.1 frame generation from the libraries
@@ -437,7 +479,7 @@ def reliability(g: games.Game, path: str = FEEDER,
     if g.api == "DX8":
         return EXPERIMENTAL, (
             "DirectX 8 through DXVK's d3d8.dll, then the same path as a 32-bit "
-            "DirectX 9 game. It has not been run here - if you try it, "
+            "DirectX 9 game. If you try it, "
             "'share the result' under "
             "'did it work?' tells the next person how it went.")
     if g.api == "DX9":
@@ -1578,7 +1620,7 @@ def plan(g: games.Game, opt: Options) -> list[str]:
               else "DLSS 5 add-on (renodx)",
               "nvngx_dlssnr.dll", "nvngx_dlss.dll"] \
         + ([DLSSD] if opt.dlssd else [])
-    if opt.path == FEEDER and g.bitness == 32:
+    if _split(g, opt):
         steps.append("host64 helper process")
     if opt.mfg and mfg.applies(gpu.detect()[1], g.api, g.install_dir, g.folder)[0] \
             and (mfg.loader_name(g.exe,
@@ -1788,6 +1830,18 @@ def preview(g: games.Game, opt: Options) -> Preview:
             f"start, or nothing to happen, or a ban. Do not use this online.")
     if opt.path != ROUTE_REMIX and reengine.detected(root):
         pv.warnings.append(reengine.message())
+    # #1035: the game asks Windows for a D3D12 Agility SDK it does not ship
+    # and this Windows' own D3D12 is older - no Direct3D 12 device can be made
+    # inside its process. Said before the install, with the way round.
+    if opt.path in (FEEDER, STANDALONE, ROUTE_RENODX, UPSTREAM) \
+            and not _split(g, opt) and g.exe is not None:
+        why = pe.agility_unmet(g.exe)
+        if why:
+            pv.warnings.append(
+                why + " Every route that makes a Direct3D 12 device inside the "
+                "game fails there with D3D12_ERROR_INVALID_REDIST."
+                + (" 'run DLSS in a helper process' runs DLSS outside the game "
+                   "and may get past it." if opt.path == FEEDER and g.bitness == 64 else ""))
 
     preinstalled = _previously_ours(root)
 
@@ -1795,7 +1849,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
     # anything else: a file it removes will not be there to back up later.
     gone: set[str] = set()
     previous = _previous_route(root)
-    if previous and previous != opt.path:
+    if previous and (previous != opt.path or _mode_switch(root, g, opt)):
         data = _previous_manifest(root) or {}
         files = [str(f).replace("\\", "/")
                  for f in (data.get("files") or data.get("dosyalar") or [])]
@@ -2069,7 +2123,7 @@ def preview(g: games.Game, opt: Options) -> Preview:
         pv.warnings.append("VR: the OpenXR layer is 64-bit only - nothing is "
                            "registered for this 32-bit game")
     host = HOST_DIR
-    if not x64 and opt.path == FEEDER:
+    if _split(g, opt):
         add(pv.writes, rel(host, "dxgi.dll"))
 
     # 2) the path-specific middle
@@ -2084,9 +2138,9 @@ def preview(g: games.Game, opt: Options) -> Preview:
     if opt.path == FEEDER:
         for h in sources.RESHADE_HEADERS:
             write(rel(SHADERS, h))
-        write(FEEDER_ADDON64 if x64 else FEEDER_ADDON32)
+        write(_feeder_addon(g, opt))
         write(rel(SHADERS, FEEDER_FX))
-        if not x64:
+        if _split(g, opt):
             add(pv.writes, rel(host, FEEDER_HOST))
         if opt.provider in (3, 4) and foreign_lumenite(root, _previously_ours(root)):
             pv.warnings.append("LumeniteFX is already installed here - your "
@@ -2114,14 +2168,15 @@ def preview(g: games.Game, opt: Options) -> Preview:
                 add(pv.writes, rel(SHADERS, LUMENITE_PROVIDER_FX.get(opt.provider, "lumenite_Kernel.fx")))
                 add(pv.writes, rel(INCLUDE, "lumenite_*.fxh"))
                 add(pv.writes, rel(TEXTURES, "lumenite_*.png"))
-        elif opt.provider == 2 or g.api == "OpenGL":
+        # what install writes: VORT for 2, and for LumeniteFX on OpenGL
+        elif opt.provider == 2 or (g.api == "OpenGL" and opt.provider in (3, 4)):
             if not foreign_lumenite(root, preinstalled, marker=VORT_FX):
                 add(pv.writes, rel(SHADERS, VORT_FX))
                 add(pv.writes, rel(VORT_INCLUDE, "vort_*.fxh"))
                 add(pv.writes, rel(TEXTURES, VORT_TEXTURE))
 
     # 5/6/7) DLSS parts: in host64/ on the 32-bit feeder path
-    dlss_dir = "" if (x64 or opt.path != FEEDER) else host
+    dlss_dir = host if _split(g, opt) else ""
     if opt.path == UPSTREAM:
         write(UPSTREAM_ADDON)
     elif opt.path == UPLIFT:
@@ -2160,7 +2215,8 @@ def preview(g: games.Game, opt: Options) -> Preview:
         write(rel(dlss_dir, RENODX_SF if opt.path == ROUTE_RENODX else RENODX))
     write(rel(UPLIFT_DIR if opt.path == UPLIFT else dlss_dir, DLSSNR))
     game_has = present(DLSS)
-    if opt.path not in (UPSTREAM, UPLIFT) and not (x64 and game_has and opt.keep_game_dlss):
+    if opt.path not in (UPSTREAM, UPLIFT) and not (
+            x64 and not _split(g, opt) and game_has and opt.keep_game_dlss):
         write(rel(dlss_dir, DLSS))
         _nd = _nested_game_dlss(root, g, opt, x64, ours=preinstalled)
         if _nd is not None and not _same_path(_nd, root / rel(dlss_dir, DLSS)):
@@ -2241,9 +2297,17 @@ def preview(g: games.Game, opt: Options) -> Preview:
             sources.feeder_key(opt.feeder_tag) < sources.feeder_key(sources.FEEDER_DX10_MIN):
         pv.blockers.append(f"DLSS5-Feeder {opt.feeder_tag} refuses Direct3D 10 games - "
                            f"pick {sources.FEEDER_DX10_MIN} or newer in 'feeder build'")
+    if opt.path == FEEDER and opt.feeder_tag:
+        tkey = sources.feeder_key(opt.feeder_tag)
+        if _split(g, opt) and g.bitness == 64 and tkey < sources.feeder_key(FEEDER_HELPER_MIN):
+            pv.blockers.append(f"DLSS5-Feeder {opt.feeder_tag} has no 64-bit helper mode - "
+                               f"pick 1.18.0 or newer in 'feeder build'")
+        if opt.provider == reshade_ini.BUILTIN and tkey < sources.feeder_key(reshade_ini.BUILTIN_MIN):
+            pv.blockers.append(f"DLSS5-Feeder {opt.feeder_tag} has no built-in motion vectors - "
+                               f"pick {reshade_ini.BUILTIN_MIN} or newer in 'feeder build'")
 
     # 8/9/10) host64, ReShade configuration, the cfg
-    if not x64 and opt.path == FEEDER:
+    if _split(g, opt):
         add(pv.writes, rel(host, "ReShade.ini"))
     write("ReShade.ini")
     if opt.path == FEEDER:
@@ -2316,8 +2380,13 @@ def _install_feeder_parts(g, opt, root: Path, host: Path, x64: bool,
             f"DLSS5-Feeder {tag} refuses Direct3D 10 games. Pick "
             f"{sources.FEEDER_DX10_MIN} or newer in 'feeder build' - that is "
             f"the first build with the D3D10 relay - and install again.")
-    addon = FEEDER_ADDON64 if x64 else FEEDER_ADDON32
-    needed = (addon, FEEDER_FX) + ((FEEDER_HOST,) if not x64 else ())
+    addon = _feeder_addon(g, opt)
+    split = _split(g, opt)
+    # The host first (2.1.1): feeder 2.0.0 add-on and host refuse each other
+    # across releases, and a host still held by the last session (it outlives
+    # the game by seconds) failing AFTER the add-on was replaced left a v12
+    # add-on beside a v11 host.
+    needed = ((FEEDER_HOST,) if split else ()) + (addon, FEEDER_FX)
     # From 0.10.0 the feeder ships one zip instead of loose files.
     zurl = next((u for n, u in assets.items()
                  if n.lower().endswith(".zip") and "feeder" in n.lower()), None)
@@ -2511,7 +2580,7 @@ def _previously_ours(root: Path) -> set:
 # The standalone route's nvngx.dll is not an add-on, but NGX loads it from
 # the game folder ahead of the driver's own - as much a hook as any of these.
 ROUTE_ADDONS = {
-    FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32),
+    FEEDER: (FEEDER_ADDON64, FEEDER_ADDON32, FEEDER_HELPER64),
     BRIDGE: (BRIDGE_ADDON,),
     ROUTE_RENODX: (RENODX_SF,),
     UPSTREAM: (UPSTREAM_ADDON,),
@@ -2697,6 +2766,7 @@ def _write_manifest(root: Path, g: games.Game, opt: Options, rep: Report,
             "keep_game_dlss": opt.keep_game_dlss,
             "feeder_prerelease": opt.feeder_prerelease,
             "feeder_tag": opt.feeder_tag,
+            "feed_helper": bool(getattr(opt, "feed_helper", False)),
             "dxvk": rep.components.get("dxvk"),
             "components": rep.components,
             "kind": g.kind,
@@ -2744,6 +2814,18 @@ def _write_atomic(path: Path, text: str) -> None:
                 pass
 
 
+def _carried_provider(root: Path, data: dict) -> int:
+    """The motion-vector provider an update keeps: the preset's, when the
+    person switched it in the feeder's own menu, else the recorded one."""
+    rec = data.get("provider")
+    rec = int(rec) if isinstance(rec, (int, str)) and str(rec).isdigit() else 3
+    try:
+        now = reshade_ini.provider_in_preset(root)
+    except Exception:
+        now = None
+    return now if now in reshade_ini.PROVIDERS and now != rec else rec
+
+
 def options_from_manifest(root: Path) -> Options | None:
     """Rebuild the choices an earlier install was made with.
 
@@ -2761,7 +2843,9 @@ def options_from_manifest(root: Path) -> Options | None:
     upscaler = str(data.get("upscaler") or "")
     return Options(
         upscaler=upscaler,
-        provider=int(data.get("provider") or 3),
+        # 0 is a provider (generic texMotionVectors), not "unset"; and a
+        # switch made in feeder 2.0.0's Alt+C menu lives in the preset (2.1.1)
+        provider=_carried_provider(root, data),
         feed=dict(data.get("feed_cfg") or {}),
         nr=dict(data.get("nr") or {}),
         fg=bool(data.get("fg", False)),
@@ -2771,6 +2855,7 @@ def options_from_manifest(root: Path) -> Options | None:
         keep_game_dlss=bool(data.get("keep_game_dlss", True)),
         feeder_prerelease=bool(data.get("feeder_prerelease", False)),
         feeder_tag=str(data.get("feeder_tag") or ""),
+        feed_helper=bool(data.get("feed_helper", False)),
         # OptiScaler used to imply the game's own DLSS; with an upscaler
         # recorded it is OptiScaler's DLSS in place of the game's FSR/XeSS.
         native_dlss=(path in (NATIVE, UPSTREAM) or (path == OPTI and not upscaler)
@@ -2808,7 +2893,7 @@ def _gpu_exes(root: Path, g: games.Game, opt: Options) -> list[Path]:
     out: list[Path] = []
     if getattr(g, "exe", None):
         out.append(Path(g.exe))
-    if opt.path == FEEDER and g.bitness != 64:
+    if _split(g, opt):
         out.append(root / HOST_DIR / FEEDER_HOST)
     if opt.path == UPLIFT and g.bitness != 64:
         out.append(root / "gitc-uplift-helper64.exe")
@@ -3175,6 +3260,49 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                 f"{sources.FEEDER_DX10_MIN} or newer in 'feeder build' - that is "
                 f"the first build with the D3D10 relay - and install again.")
 
+    if opt.path == FEEDER and g.bitness == 64 and opt.provider == reshade_ini.BUILTIN \
+            and g.api in ("DX10", "Vulkan"):
+        # not verified there by the feeder's author; the dropdown does not
+        # offer it, and an update carrying it from a preset falls back
+        opt.provider = 3
+    need5 = opt.path == FEEDER and opt.provider == reshade_ini.BUILTIN
+    needh = _split(g, opt) and g.bitness == 64
+    if need5 or needh:
+        # Both need a feeder build that has them, and are refused before the
+        # first write. Unreachable GitHub: the step itself says so later.
+        try:
+            tagf, _ = sources.resolve_feeder(prerelease=opt.feeder_prerelease,
+                                             tag=opt.feeder_tag)
+        except Exception:
+            tagf = ""
+        if tagf and need5 and sources.feeder_key(tagf) < sources.feeder_key(reshade_ini.BUILTIN_MIN):
+            raise InstallError(
+                f"DLSS5-Feeder {tagf} has no built-in motion vectors - they "
+                f"start with {reshade_ini.BUILTIN_MIN}. Pick that or newer in "
+                f"'feeder build', or another motion-vector provider, and "
+                f"install again.")
+        if tagf and needh and sources.feeder_key(tagf) < sources.feeder_key(FEEDER_HELPER_MIN):
+            raise InstallError(
+                f"DLSS5-Feeder {tagf} has no 64-bit helper mode - it starts "
+                f"with 1.18.0. Pick a newer 'feeder build', or untick 'run "
+                f"DLSS in a helper process', and install again.")
+
+    if opt.path == UPLIFT and g.api in ("Vulkan", "OpenGL"):
+        # GITC-Uplift's README: "Vulkan and OpenGL games need 6.8 or newer".
+        # When reshade.me and GitHub are both unreachable the newest cached
+        # setup is used, which can be older (gate 2.1.0). Unknown = no refusal:
+        # step 1 says why it could not resolve ReShade at all.
+        try:
+            rver = sources.resolve_reshade()[0]
+        except Exception:
+            rver = ""
+        if rver and _vkey(rver) < _vkey(UPLIFT_RESHADE_MIN):
+            raise InstallError(
+                f"GITC-Uplift needs ReShade {UPLIFT_RESHADE_MIN} or newer for "
+                f"{g.api} games, and the only ReShade this PC can get right now "
+                f"is {rver} (reshade.me and GitHub could not be reached). "
+                f"Connect and install again.")
+
     if opt.path == OPTI:
         # The same rule for the RTX 40 MFG package: raised inside the
         # OptiScaler step it came after the previous route was taken out,
@@ -3191,7 +3319,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
     previous = _previous_route(root)
     # The route taken out below, named when a failure rolls this one back.
     switched = previous if previous and previous != opt.path else ""
-    if previous and previous != opt.path:
+    if previous and (previous != opt.path or _mode_switch(root, g, opt)):
         log(f"[0] removing the previous {previous} install first")
         for line in uninstall(g, on_log=lambda s: None):
             pass
@@ -3521,6 +3649,15 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                                  "three passes (OptiScaler.ini: Passes=). If it "
                                  "misbehaves, install again with the "
                                  "DLSS-NR build.")
+            elif opt.opti_build == optiscaler.JLROUZIES:
+                log(f"      jlrouzies' fork, {orel[0]}")
+                rep.notes.append("OptiScaler is jlrouzies' fork of wilsjo2's "
+                                 "build: the neural pass runs before super "
+                                 "resolution, over one to three passes, and "
+                                 "the [DlssNr] settings in OptiScaler.ini are "
+                                 "applied while the game runs. If it "
+                                 "misbehaves, install again with the "
+                                 "DLSS-NR build.")
             elif opt.opti_build == optiscaler.PRESR_MFG:
                 log(f"      wilsjo2's fork with RTX 40 MFG, {orel[0]}")
                 rep.notes.append("OptiScaler is wilsjo2's RTX 40 MFG package: "
@@ -3752,7 +3889,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                             root / proxy)
             rep.written.append(proxy)
             log(f"      {proxy} <- ReShade{'64' if x64 else '32'}.dll")
-        if not x64 and opt.path == FEEDER:
+        if _split(g, opt):
             net.extract_one(setup, "ReShade64.dll", host / "dxgi.dll")
             rep.written.append(f"{HOST_DIR}/dxgi.dll")
             log(f"      {HOST_DIR}/dxgi.dll <- ReShade64.dll (for the helper process)")
@@ -3807,7 +3944,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
 
         # --- 5/6/7) DLSS parts ------------------------------------------------
         # On the 32-bit path these live in host64/, otherwise next to the game.
-        dlss_dir = root if (x64 or opt.path != FEEDER) else host
+        dlss_dir = host if _split(g, opt) else root
         catalog = sources.rhi_catalog()
         if sources.last_fallback:
             log(f"      {sources.last_fallback}")
@@ -4033,7 +4170,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         else:
             begin("nvngx_dlss.dll")
             game_has = (root / DLSS).is_file() and str(Path(DLSS)) not in rep.written
-            if x64 and game_has and opt.keep_game_dlss:
+            if x64 and not _split(g, opt) and game_has and opt.keep_game_dlss:
                 log("      the game ships its own nvngx_dlss.dll, left untouched")
                 rep.skipped.append(DLSS)
             else:
@@ -4145,7 +4282,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
                     rep.notes.append(fg)
 
         # --- 8) host64 --------------------------------------------------------
-        if not x64 and opt.path == FEEDER:
+        if _split(g, opt):
             begin("host64 helper process")
             reshade_ini.write_addon_only_ini(host)
             rep.written.append(f"{HOST_DIR}/ReShade.ini")
@@ -4214,6 +4351,9 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             log(f"      DLSS5_MV_PROVIDER={opt.provider} ({label})")
             if tech:
                 log(f"      technique order: {tech} -> {reshade_ini.FEED_TECHNIQUE}")
+            elif opt.provider == reshade_ini.BUILTIN:
+                rep.notes.append("Motion vectors: DLSS5_Feed.fx's own, built in - "
+                                 "nothing else to install or enable.")
             else:
                 rep.notes.append("You must install your chosen provider's shader "
                                  "yourself, and place its technique ABOVE DLSS 5 "
@@ -4325,7 +4465,7 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         if opt.path == FEEDER:
             begin("dlss5-feed.cfg")
             _backup(root / feedcfg.NAME, rep, root)
-            feedcfg.write(root, opt.feed, host_window=None if x64 else True)
+            feedcfg.write(root, opt.feed, host_window=True if _split(g, opt) else None)
             rep.written.append(feedcfg.NAME)
             summary = feedcfg.describe(opt.feed) if opt.feed else []
             if summary:
@@ -4507,7 +4647,7 @@ def uninstall(g: games.Game, on_log=None) -> list[str]:
             files = []
             data = {}
     else:
-        files = [FEEDER_ADDON64, FEEDER_ADDON32, RENODX, RENODX_SF, UPSTREAM_ADDON,
+        files = [FEEDER_ADDON64, FEEDER_ADDON32, FEEDER_HELPER64, RENODX, RENODX_SF, UPSTREAM_ADDON,
                  STANDALONE_ADDON, DLSSNR, DLSS, DLSSG,
                  BRIDGE_ADDON, BRIDGE_CFG, feedcfg.NAME,
                  # dgVoodoo2 was the DX9 translation until 1.6.0. Its files

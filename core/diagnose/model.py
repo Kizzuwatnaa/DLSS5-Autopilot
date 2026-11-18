@@ -238,7 +238,7 @@ _FEED_GOT_RUNTIME = re.compile(
     r"|feature ready|session ready|frame \d+", re.I)
 
 
-_OURS_IN_STACK = ("dlss5-feed.addon64", "dlss5-feed.addon32",
+_OURS_IN_STACK = ("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-feed-helper.addon64",
                   "dlss5-feed-host64.exe", "dlss5-feed-host32.exe",
                   "renodx-dlss5.addon64", "renodx-dlss.addon64",
                   "dlss5-bridge.addon64", "dlss5-dx11-bridge.addon64",

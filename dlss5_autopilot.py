@@ -5,7 +5,8 @@ Command line:   dlss5-autopilot.exe "D:\Games\Game" [--check | --remove]
                                                     [--route native|upstream|optiscaler|renodx|bridge|feeder|standalone|uplift|remix]
                                                     [--dxvk | --no-dxvk] [--remix-swap] [--vr]
                                                     [--no-gpu-pref]
-                                                    [--opti-build y4my4my4m|wilsjo2|wilsjo2-mfg|janblade]
+                                                    [--opti-build y4my4my4m|wilsjo2|wilsjo2-mfg|janblade|jlrouzies]
+                                                    [--feed-helper]
                                                     [--own-fg "D:\Downloads\version.dll" | sm86 | enabler]
                 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]  the video player
 
@@ -22,11 +23,11 @@ fixes the mod's own runtime carried.
 through OpenXR. The desktop window is only a mirror, so a proxy DLL on its
 own changes nothing in the headset; OpenVR/SteamVR titles are not reached
 either way. The registration is per user rather than per game, and the
-last VR uninstall removes it. Untried with a headset here.
+last VR uninstall removes it.
 
 --no-gpu-pref leaves Windows' graphics setting alone. By default, on a
 machine with an NVIDIA card and another GPU (a laptop), the game - and the
-32-bit feeder's helper - are set to High performance so they draw on the
+feeder's helper process - are set to High performance so they draw on the
 NVIDIA card; a choice already made there is kept, --remove takes it out.
 
 --opti-build applies to --route optiscaler only and picks a fork other
@@ -35,7 +36,12 @@ wilsjo2 (the neural pass before the upscaler - installed with that
 placement switched on, which is off in the fork's own default), or
 wilsjo2-mfg (the same, from that fork's RTX 40 multi-frame generation
 package; refused on a card known not to be an RTX 40), or janblade (a fork
-of wilsjo2's, the same placement). None of them has been run here.
+of wilsjo2's, the same placement), or jlrouzies (wilsjo2's, with the
+neural-rendering settings in OptiScaler.ini applied while the game runs).
+
+--feed-helper applies to --route feeder on a 64-bit game: DLSS runs in
+host64\dlss5-feed-host64.exe instead of the game's own process, for a game
+whose process cannot start it (feeder 1.18.0 and newer).
 
 --own-fg applies to --route optiscaler on a D3D12 game only: frame
 generation files you downloaded yourself - dlssg_for_sm86 (its version.dll,
@@ -81,7 +87,7 @@ def _console() -> None:
 def cli(target: Path, remove: bool, check: bool, route: str = "",
         dxvk: bool | None = None, game=None, remix_swap: bool = False,
         vr: bool = False, opti_build: str = "", gpu_pref: bool = True,
-        own_fg: str = "") -> int:
+        own_fg: str = "", feed_helper: bool = False) -> int:
     g = game or games.manual(target)
     if not g.exe:
         print(f"error: no executable found in {target}", file=sys.stderr)
@@ -194,7 +200,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
             popt = installer.Options(path=sup.recommended,
                                      native_dlss=sup.native_dlss, dxvk=use_dxvk, vr=vr, opti_build=opti_build,
                                      upscaler=sup.upscaler,
-                                     remix_swap=remix_swap, gpu_pref=gpu_pref, own_fg=own_fg)
+                                     remix_swap=remix_swap, gpu_pref=gpu_pref, own_fg=own_fg,
+                                     feed_helper=feed_helper)
             print(f"plan     : {' -> '.join(installer.plan(g, popt))}")
             # ...and what the MFG package needs from the game, which only
             # the finished install used to say.
@@ -218,7 +225,8 @@ def cli(target: Path, remove: bool, check: bool, route: str = "",
         rep = installer.install(
             g, installer.Options(path=sup.recommended, native_dlss=sup.native_dlss,
                                  dxvk=use_dxvk, vr=vr, opti_build=opti_build, upscaler=sup.upscaler,
-                                 remix_swap=remix_swap, gpu_pref=gpu_pref, own_fg=own_fg),
+                                 remix_swap=remix_swap, gpu_pref=gpu_pref, own_fg=own_fg,
+                                 feed_helper=feed_helper),
             on_log=print,
             on_prog=lambda p, m: print(f"\r  {p:3d}%  {m:<60}", end="", flush=True))
     except installer.InstallError as e:
@@ -348,7 +356,8 @@ def main() -> int:
                    dxvk=(True if "--dxvk" in args
                          else False if "--no-dxvk" in args else None),
                    remix_swap="--remix-swap" in args,
-                   gpu_pref="--no-gpu-pref" not in args)
+                   gpu_pref="--no-gpu-pref" not in args,
+                   feed_helper="--feed-helper" in args)
     if "--help" in args or "-h" in args:
         _console()
         print(__doc__)

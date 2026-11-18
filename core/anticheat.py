@@ -71,6 +71,10 @@ MARKERS: tuple[tuple[str, str], ...] = (
     ("elytra", "Elytra Anti-Cheat"),
     ("ace-base", "ACE (Anti-Cheat Expert)"),
     ("anticheatexpert", "ACE (Anti-Cheat Expert)"),
+    # Arknights: Endfield ships ACE with nothing named after it beside the
+    # game; its own message named our dxgi.dll an "illegal hijack module"
+    # (#991 #992), so the executable name is the evidence.
+    ("endfield", "ACE (Anti-Cheat Expert)"),
 )
 
 

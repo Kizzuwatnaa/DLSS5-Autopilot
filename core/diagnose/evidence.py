@@ -408,6 +408,9 @@ def _live_evidence(install_dir: Path, man: dict, rep: Report) -> bool:
             install_dir, man, rep, running, "when the tool looked",
             len(s.loaded.paths), s.graphics):
         return True
+    if man.get("kind") != "video" and s.loaded.known and _not_drawing_yet(
+            man, rep, running, "when the tool looked", len(s.loaded.paths), s.graphics):
+        return True
     rep.add(BAD, f"{running} is running and has loaded none of the files "
                  f"here.",
             f"Windows lists every DLL in a process, and not one of this "
@@ -804,6 +807,9 @@ def _remembered_evidence(install_dir: Path, man: dict, rep: Report,
     if _starter_verdict(install_dir, man, rep, running, f"at {when}",
                         seen.get("modules"), seen.get("graphics")):
         return True
+    if man.get("kind") != "video" and _not_drawing_yet(
+            man, rep, running, f"at {when}", seen.get("modules"), seen.get("graphics")):
+        return True
     rep.add(BAD, f"{running} ran at {when} with none of this folder's files "
                  f"loaded.",
             f"Windows lists every DLL in a process and not one of this "
@@ -867,6 +873,31 @@ def _starter_verdict(install_dir: Path, man: dict, rep: Report, running: str,
     rep.verdict = (f"{running} looked like a starter (no graphics DLL loaded) - "
                    + (f"install beside {better[0].name} instead."
                       if better else "install beside the executable that draws."))
+    rep.never_ran = False
+    return True
+
+
+def _not_drawing_yet(man: dict, rep: Report, running: str, when: str,
+                     modules, graphics) -> bool:
+    """A big process with no graphics DLL in it had not opened its graphics
+    runtime yet, so it cannot have loaded a proxy of any name (#975: Wow.exe,
+    62 modules, none). "Try another proxy name" there is a guess.
+
+    LIMITS: runs after _starter_verdict, which takes the small processes."""
+    if not isinstance(graphics, (list, tuple)) or graphics:
+        return False
+    if not isinstance(modules, int) or modules < _STARTER_MODULES:
+        return False
+    proxy = man.get("proxy") or "dxgi.dll"
+    rep.add(WARN, f"{running} had {modules} modules and no graphics DLL {when} "
+                  f"- it had not started drawing.",
+            f"A proxy such as {proxy} is only loaded when the game opens its "
+            f"graphics runtime, and it had not opened one - not ours, not "
+            f"Windows' own. So that reading cannot say whether the name is "
+            f"right. Start the game, get past any launcher or login into the "
+            f"game itself, and press 'did it work?' while it is drawing.")
+    rep.verdict = (f"{running} was read before it loaded any graphics DLL - "
+                   f"press 'did it work?' again while the game is drawing.")
     rep.never_ran = False
     return True
 
@@ -1056,7 +1087,7 @@ def _route_from_files(install_dir: Path) -> str:
     # the feeder's and was answered about add-ons it never had.
     if there(_i.UPSTREAM_ADDON):
         return "upstream"
-    if there(_i.FEEDER_ADDON64, _i.FEEDER_ADDON32, "dlss5-feed.log"):
+    if there(_i.FEEDER_ADDON64, _i.FEEDER_ADDON32, _i.FEEDER_HELPER64, "dlss5-feed.log"):
         return "feeder"
     if there(_i.STANDALONE_ADDON, _i.STANDALONE_BRIDGE):
         return "standalone"

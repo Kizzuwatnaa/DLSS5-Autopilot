@@ -32,7 +32,8 @@ BACKUP_SUFFIX = ".dlss5-autopilot-backup"
 
 def resolve() -> tuple[str, str]:
     """(tag, download url) of the newest nightly REFramework.zip."""
-    r = net.json_get(API)
+    from . import sources
+    r = sources.json_or_html(API)
     tag = r.get("tag_name", "?")
     for a in r.get("assets", []):
         if a.get("name", "").lower() == "reframework.zip":

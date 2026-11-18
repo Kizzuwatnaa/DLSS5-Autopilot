@@ -111,7 +111,8 @@ def logs_for(exe: Path | None) -> tuple[str, ...]:
 
 def resolve() -> tuple[str, str]:
     """(version, download_url) of the latest DXVK release archive."""
-    rel = net.json_get(API)
+    from . import sources
+    rel = sources.json_or_html(API)
     for a in rel.get("assets", []):
         n = a["name"].lower()
         if n.startswith("dxvk-") and n.endswith(".tar.gz") and "native" not in n:

@@ -38,6 +38,9 @@ _TIE_BEFORE, _TIE_AFTER = 5.0, 120.0
 # The bridge's own count when it is asked to say what the game did with DLSS
 # (#862: RPCS3 asked for nothing, and the verdict said "turn DLSS on").
 _BRIDGE_ASKED_NONE = re.compile(r"CreateFeature calls: 0, EvaluateFeature calls: 0")
+# The Vulkan mirror's note when ReShade's effect runtime is a D3D12 one
+# (#1014): the game draws with Direct3D 12, where the bridge takes no call.
+_BRIDGE_ON_D3D12 = re.compile(r"\[vkmirror\] ReShade created an effect runtime on D3D12")
 
 
 @dataclass
@@ -55,6 +58,7 @@ class BridgeRun:
     crashed: bool = False         # the crash handler's block is the stop
     called: bool = False          # the log shows the game calling DLSS
     asked_none: bool = False      # the bridge counted no call at all
+    on_d3d12: bool = False        # ReShade's runtime was on D3D12 (vkmirror says so)
     recorded: int = 0             # Vulkan mirror frames recorded, not yet delivered
     refused: str = ""             # NGX's answer to CreateFeature, when it refused
     failed: list = field(default_factory=list)   # evaluate failures after it
@@ -93,6 +97,7 @@ def read_bridge(text: str) -> BridgeRun | None:
     run = BridgeRun(version=att.group(2), attached=att.group(0).strip())
     run.called = bool(_BRIDGE_CALLED.search(text))
     run.asked_none = bool(_BRIDGE_ASKED_NONE.search(text)) and not run.called
+    run.on_d3d12 = bool(_BRIDGE_ON_D3D12.search(text))
     refused = list(_BRIDGE_CREATE_FAILED.finditer(text))
     if refused:
         run.refused = f"{refused[-1].group(1)}, {refused[-1].group(2).rstrip(',')}"
@@ -315,6 +320,23 @@ def _bridge_verdict(rep: Report, run: BridgeRun, panel: str, rtext: str,
                       f"delivered yet.",
                 "It counts delivered frames every 600, after their evaluate "
                 "finished.")
+    if not n and run.on_d3d12 and not run.called and not synthetic:
+        # #1014 (Atomic Heart, read as DX11 from its d3d11 import): the game
+        # drew with D3D12, the bridge counted no call, and the person saw
+        # the pass switch with F6. On D3D12 the DLSS 5 add-on hooks the
+        # game's own DLSS call itself - the native route - and the bridge,
+        # which carries a DirectX 11 game's call, has nothing to take.
+        rep.add(INFO, "The game drew with Direct3D 12 in this launch.",
+                f"{BRIDGE_LOG} says ReShade's effect runtime was on D3D12 and "
+                f"the bridge counted no DLSS call. The bridge carries a "
+                f"DirectX 11 game's DLSS call; on Direct3D 12 the DLSS 5 "
+                f"add-on takes the game's own call by itself, with no bridge. "
+                f"That is the native route.")
+        rep.verdict = ("The game ran on Direct3D 12, where the DLSS 5 add-on "
+                       "takes the game's own DLSS call without the bridge - "
+                       "install the native route for this game; if F6 already "
+                       "switches the pass, the add-on is doing it.")
+        return True
     if not n:
         # The "no frame log" line is gone for this launch, so the verdict
         # cannot say the route logs none (gate 2.0.7).

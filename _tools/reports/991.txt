@@ -1,0 +1,41 @@
+**Did the game start?** it never started
+
+**What happened**
+无法确定
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 2070 SUPER (sm_75), driver 621.01
+- game: Endfield Game
+- exe: Endfield.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+- work area: 75%
+
+**Diagnosis**: Not run yet, or OptiScaler did not load.
+- [warn] No OptiScaler log from this install yet.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: Endfield.exe: High performance
+- nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- nvngx_dlssg.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- nvngx_dlssd.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- optiscaler build: Dagherbou (v0.2.0-dlssnr)
+- d3dcompiler_47.dll: present (the game's own)
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+(none)
+```

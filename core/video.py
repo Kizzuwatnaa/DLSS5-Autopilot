@@ -471,9 +471,21 @@ def process(folder: Path, src: Path, scale: str = "native", style: int = 0,
     p1.wait()
     t.join(timeout=5)
     enc_err = (p3.stderr.read().decode("utf8", "replace").strip() if p3.stderr else "")
+    # Everything video2dlssnr printed, beside the output: its environment
+    # block (driver, which nvngx_dlssnr.dll, its version) is what says which
+    # side failed, and the last three lines dropped it (#1042: err 127).
+    log_path = dst.with_suffix(".log")
+    try:
+        log_path.write_text("\n".join(errs + ([enc_err] if enc_err else [])) + "\n",
+                            encoding="utf8")
+    except OSError:
+        pass
     if rc3 != 0 or p2.returncode not in (0, None) or not dst.is_file():
-        raise RuntimeError("processing failed: " + " | ".join((errs[-3:] + [enc_err])[-3:])
-                           or "no output written")
+        first = [e for e in errs if e.startswith("ERROR")][:1]
+        raise RuntimeError("processing failed: "
+                           + (" | ".join((first + errs[-2:] + [enc_err])[-3:])
+                              or "no output written")
+                           + f" (full output: {log_path.name})")
     prog(100, dst.name)
     return dst
 
@@ -652,6 +664,7 @@ def download(folder: Path, url: str, on_prog=None, on_log=None,
                             creationflags=creationflags)
     result = None
     tail: list[str] = []
+    errors: list[str] = []
     assert proc.stdout is not None
     for line in proc.stdout:
         line = line.rstrip()
@@ -666,14 +679,22 @@ def download(folder: Path, url: str, on_prog=None, on_log=None,
         if line.startswith("[") and "ERROR" not in line:
             say(f"      {line[:120]}")
         elif "ERROR" in line:
+            errors.append(line)
             say(f"      !! {line[:160]}")
         else:
             candidate = Path(line)
             if candidate.suffix and str(out_dir).lower() in line.lower():
                 result = candidate
     proc.wait()
-    if proc.returncode != 0 or result is None or not result.is_file():
-        raise RuntimeError("yt-dlp failed: " + " | ".join(tail[-3:]))
+    # The file is the answer (#1034: 100% downloaded, fixed up, saved, and
+    # a non-zero exit afterwards was reported as a failed download).
+    if result is not None and result.is_file() and result.stat().st_size > 0:
+        if proc.returncode != 0:
+            say(f"      yt-dlp ended with exit code {proc.returncode} after "
+                f"saving the file" + (f": {errors[-1][:160]}" if errors else ""))
+    else:
+        raise RuntimeError(f"yt-dlp failed (exit {proc.returncode}): "
+                           + " | ".join(errors[-2:] or tail[-3:]))
     prog(100, result.name)
     return result
 

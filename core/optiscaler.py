@@ -97,6 +97,15 @@ JANBLADE_API = ("https://api.github.com/repos/Janblade/"
                 "OptiScaler-F5-DLSSNR-Multipass/releases?per_page=10")
 JANBLADE = "janblade"
 
+# The DLSS5-Feeder author's fork of wilsjo2's (CLEAN: GPL-3.0, a SHA256SUMS
+# file per release, 2026-11-17). wilsjo2's package with one addition: the
+# [DlssNr] keys are re-read from OptiScaler.ini while the game runs ("DLSS-NR
+# live settings"), which is what the feeder 2.0.0 menu drives. Feeder
+# 2.0.0's own installer defaults to it. Offered, never chosen automatically.
+JLROUZIES_API = ("https://api.github.com/repos/jlrouzies-fr/"
+                 "OptiScaler-DLSSNR-PreSR-Multipass/releases?per_page=10")
+JLROUZIES = "jlrouzies"
+
 # Every fork publishes on its own release page, in the same shape: pick the
 # newest release that carries an OptiScaler PACKAGE (see PACKAGE_WORD - a
 # release page can carry a different program of its author's, #364). The
@@ -118,6 +127,9 @@ FORKS = {
     # already took the standard zip (the shorter name); named here so the
     # choice does not rest on name length alone.
     JANBLADE: (JANBLADE_API, ("-test-",)),
+    # One OptiScaler-NR-v<x>.zip per release; an rtx40-mfg one is passed
+    # over the way wilsjo2's is, should it ever appear.
+    JLROUZIES: (JLROUZIES_API, ("rtx40-mfg",)),
 }
 
 # The inverse of a skip list: a build that exists FOR one variant takes only
@@ -139,13 +151,15 @@ BUILDS = {
                "multi-frame generation, RTX 40 cards only",
     JANBLADE: "Janblade's fork  -  a fork of wilsjo2's, neural rendering "
               "before the upscaler",
+    JLROUZIES: "jlrouzies' fork  -  wilsjo2's, with neural-rendering settings "
+               "applied while the game runs",
 }
 
 
 def is_presr(build: str) -> bool:
     """wilsjo2's packages and Janblade's fork of them: all run the pass
     before the upscaler."""
-    return build in (PRESR, PRESR_MFG, JANBLADE)
+    return build in (PRESR, PRESR_MFG, JANBLADE, JLROUZIES)
 
 
 def card_refusal(build: str, sm: int | None) -> str:

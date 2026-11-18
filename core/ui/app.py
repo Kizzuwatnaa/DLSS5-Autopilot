@@ -348,7 +348,9 @@ class App(LibraryControl, GameControl, VideoControl, WatchControl, DlssControl):
                                           getattr(g, "folder", None))
             new = diagnose.answered(copy.deepcopy(rep), str(answers.get("started") or ""),
                                     presence, str(getattr(g, "kind", "") or "game"),
-                                    diagnose.event_line(getattr(self, "_last_crash", None)))
+                                    diagnose.event_line(getattr(self, "_last_crash", None)),
+                                    diagnose.refused_reason(d),
+                                    diagnose.anticheat_named(d, getattr(g, "folder", None)))
         except Exception:
             return
         if new.verdict == shown.verdict:

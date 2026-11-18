@@ -13,6 +13,7 @@ the technique list, otherwise the feed never receives vectors.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # Provider number -> (label, technique entry or None, we install the shader)
@@ -26,7 +27,17 @@ PROVIDERS = {
     # motion (perseval-BLR, six GL games); works on the other APIs too.
     2: ("VORT Motion (optical flow - the OpenGL default)",
         "vort_MotionEffects@vort_Motion.fx", True),
+    # DLSS5-Feeder 2.0.0's own estimator inside DLSS5_Feed.fx: nothing to
+    # download and no technique to enable. Upstream has not verified it on
+    # Direct3D 10 or Vulkan, so it is offered, not picked for anyone.
+    5: ("Built in - DLSS5_Feed.fx's own (feeder 2.0.0 and newer)", None, False),
 }
+# The feeder build that first carries provider 5.
+BUILTIN = 5
+BUILTIN_MIN = "v2.0.0"
+FEED_EFFECT = "DLSS5_Feed.fx"
+# Techniques DLSS5_Feed.fx itself has (2.0.0 added Restore; Debug is older).
+FEED_EXTRA = ("DLSS5_Feed_Restore@DLSS5_Feed.fx", "DLSS5_Feed_Debug@DLSS5_Feed.fx")
 
 FEED_TECHNIQUE = "DLSS5_Feed@DLSS5_Feed.fx"
 
@@ -405,7 +416,27 @@ def write_preset(game_dir: Path, provider: int = 3) -> None:
     ini.set("", "PreprocessorDefinitions",
             _ensure_define(ini.get("", "PreprocessorDefinitions") or "",
                            f"DLSS5_MV_PROVIDER={provider}"))
+    # The effect's own definition wins over the global one, and feeder
+    # 2.0.0's Alt+C menu writes it there ("Use the built-in vectors"). Once
+    # that section exists a provider written only globally is ignored, so it
+    # is set where it is read. update keeps a choice made in the menu
+    # (provider_in_preset).
+    if ini.get(FEED_EFFECT, "PreprocessorDefinitions") is not None:
+        ini.set(FEED_EFFECT, "PreprocessorDefinitions",
+                _ensure_define(ini.get(FEED_EFFECT, "PreprocessorDefinitions") or "",
+                               f"DLSS5_MV_PROVIDER={provider}"))
     ini.save(p)
+
+
+def provider_in_preset(game_dir: Path) -> int | None:
+    """DLSS5_MV_PROVIDER as the feeder's effect will read it, or None."""
+    ini = Ini.load(Path(game_dir) / "ReShadePreset.ini")
+    for sec in (FEED_EFFECT, ""):
+        m = re.search(r"DLSS5_MV_PROVIDER\s*=\s*(\d+)",
+                      ini.get(sec, "PreprocessorDefinitions") or "")
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def remove_our_techniques(game_dir: Path, provider: int | None = None) -> None:
@@ -425,10 +456,14 @@ def remove_our_techniques(game_dir: Path, provider: int | None = None) -> None:
     p = game_dir / "ReShadePreset.ini"
     if not p.is_file():
         return
-    if provider in PROVIDERS and PROVIDERS[provider][1]:
-        ours = {FEED_TECHNIQUE, PROVIDERS[provider][1]}
+    if provider in PROVIDERS:
+        # A provider with no technique (0, 1, built-in 5) owns none: LumeniteFX
+        # techniques in such a preset are the person's own, and the old else
+        # branch stripped them (2.1.1).
+        ours = {FEED_TECHNIQUE, *FEED_EXTRA} | (
+            {PROVIDERS[provider][1]} if PROVIDERS[provider][1] else set())
     else:
-        ours = {FEED_TECHNIQUE} | {v[1] for k, v in PROVIDERS.items() if v[1] and k in (3, 4)}
+        ours = {FEED_TECHNIQUE, *FEED_EXTRA} | {v[1] for k, v in PROVIDERS.items() if v[1] and k in (3, 4)}
     ini = Ini.load(p)
     changed = False
     for key in ("Techniques", "TechniqueSorting"):

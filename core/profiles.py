@@ -39,7 +39,7 @@ DIR = prefs.FILE.parent / "profiles"
 # shape - they live in the settings, not in a per-game profile.
 FIELDS = ("path", "provider", "renodx", "dlssnr", "dlss", "keep_game_dlss",
           "feed", "nr", "feeder_prerelease", "feeder_tag", "reshade_proxy",
-          "opti_proxy", "opti_build", "dxvk")
+          "opti_proxy", "opti_build", "dxvk", "feed_helper")
 
 # work_resolution is the feeder's only cost dial (the route is always DLAA -
 # see feedcfg). OptiScaler's WorkingScale is quadratic in cost, which is why

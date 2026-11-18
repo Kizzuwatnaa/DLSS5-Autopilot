@@ -165,7 +165,7 @@ OpenGL); the choice is remembered for that folder.
 |---|---|---|---|
 | **native** | Krish's `renodx-dlss5` add-on hooks the DLSS calls the game already makes | 64-bit D3D12 games with DLSS; on an RTX card optiscaler is recommended first, native is one click away | the game's DLSS mode |
 | **neural-upstream** | matiasLombo's add-on runs the network at render resolution, *before* the game's DLSS upscales | 64-bit D3D12 games with DLSS | cadence (every 1st/2nd/3rd frame) |
-| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's, or wilsjo2's - which is installed with its neural pass before the upscaler, the placement it exists for - or wilsjo2's RTX 40 multi-frame generation package, on RTX 40 cards only, or Janblade's fork of wilsjo2's, with the same placement; those two run the model 1-3 times, **model passes**) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
+| **optiscaler** | Dagherbou's OptiScaler fork (or y4my4my4m's, or wilsjo2's - which is installed with its neural pass before the upscaler, the placement it exists for - or wilsjo2's RTX 40 multi-frame generation package, on RTX 40 cards only, or Janblade's fork of wilsjo2's, with the same placement, or jlrouzies' fork of wilsjo2's, which applies the neural-rendering settings in OptiScaler.ini while the game runs; the pre-upscaler builds run the model 1-3 times, **model passes**) replaces the upscaler and runs the model over its output; no ReShade | 64-bit D3D11/12 with DLSS, or with FSR 2/3 / XeSS redirected into DLSS | **model resolution 25-100 %** - cost falls with the square; optional **frame generation** (FSR 3.1, any card, D3D12) |
 | **bridge** | NIGos' `dlss5-bridge` mirrors the game's DLSS contract onto a private D3D12 session | D3D11 and Vulkan games with DLSS; offered without one too, from the driver's optical flow | the game's DLSS mode |
 | **feeder** | jlrouzies-fr's `DLSS5-Feeder` builds a DLAA contract from ReShade's depth buffer and shader motion vectors | games with **no** DLSS: D3D10/11/12, Vulkan, OpenGL, 32-bit (host64 helper, DirectX 8 and 9 through DXVK) | work area 50-100 % (64-bit D3D11) |
 | **standalone-dlssnr** | kibblerz's add-on: own feed, DLAA or DLSS Super Resolution, frame generation, shown through its own window | 64-bit D3D11/12, with or without DLSS; experimental | run the game below native |
@@ -359,7 +359,7 @@ are there for a board with no navigation cluster at all.
 | optiscaler | **Insert** opens the overlay; neural rendering is already on |
 | native · bridge | **Home** → DLSS 5 tab → neural rendering on (F5 toggles it in add-on 4.6+); keep the game's DLSS on |
 | neural-upstream | **Home** → NR Pre-Upscale tab; keep the game's DLSS on; with DLSS Frame Generation set the cadence to Quality |
-| feeder | **Home** → tick `LUMENITE: Kernel 2.0` (or VORT) and `DLSS 5 Feed`, provider above the feed → DLSS 5 panel → on. 32-bit games: the panel is a separate helper window beside the game |
+| feeder | **Home** → tick `LUMENITE: Kernel 2.0` (or VORT) and `DLSS 5 Feed`, provider above the feed (with built-in motion vectors, `DLSS 5 Feed` alone) → DLSS 5 panel → on. **Alt+C** opens the feeder's own menu (feeder 2.0.0 and newer). 32-bit games and the helper mode: the panel is a separate helper window beside the game |
 | renodx-dlss | **Home** → RenoDX DLSS tab; already on |
 | remix | **Alt+X** → Developer Settings → Post-Processing → Enable Neural Uplift |
 | standalone-dlssnr | **F10** compares |
@@ -383,7 +383,13 @@ matters.
   tool pins it. OpenGL games are pinned to 4.60 (4.70 stalls on GL).
 - **motion vectors** (feeder): LumeniteFX Kernel by default; **VORT
   Motion** (optical flow) on OpenGL, where LumeniteFX reads nothing - the
-  tool installs whichever is chosen and puts it above the feed.
+  tool installs whichever is chosen and puts it above the feed. **Built in**
+  (feeder 2.0.0 and newer, not on Direct3D 10 or Vulkan) uses the estimator
+  inside `DLSS5_Feed.fx`: nothing to download, no second technique.
+- **run DLSS in a helper process** (feeder, 64-bit games, feeder 1.18.0 and
+  newer): DLSS runs in `host64\dlss5-feed-host64.exe` instead of the game's
+  own process, for a game whose process cannot start it. The work area is
+  100 % there.
 - **profile**: save the dials under a name; Quality / Balanced /
   Performance are built in.
 - **read the library when the tool opens** (the library's **view** menu): off means no scan at all -
@@ -568,7 +574,7 @@ On a machine with an NVIDIA card and a second GPU - a laptop, or a desktop
 with the processor's graphics switched on - Windows picks the GPU per
 program, and DLSS 5 only exists on the NVIDIA one. The install sets Windows'
 graphics setting (Settings > System > Display > Graphics) to High performance for the
-game and, on 32-bit feeder installs, for the helper in `host64`. A choice
+game and, on feeder installs that use it (32-bit games, the helper mode), for the helper in `host64`. A choice
 already made there is left alone, and uninstall takes the setting back out
 while it still says High performance. Turning **use the NVIDIA card (Windows
 setting)** off in the game's settings, or `--no-gpu-pref`, skips it, and
@@ -710,6 +716,8 @@ dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build y4my4my4m   
 dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2     ...the neural pass before the upscaler, 1-3 passes
 dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build wilsjo2-mfg   ...the same with RTX 40 multi-frame generation (RTX 40 only)
 dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build janblade     ...Janblade's fork of wilsjo2's, the same placement
+dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --opti-build jlrouzies    ...jlrouzies' fork of wilsjo2's, settings applied while the game runs
+dlss5-autopilot.exe "D:\Games\Game" --route feeder --feed-helper                 DLSS in the feeder's helper process (64-bit games)
 dlss5-autopilot.exe "D:\Games\Game" --route optiscaler --own-fg "D:\Downloads\version.dll"   your dlssg_for_sm86 / DLSS Enabler files, D3D12 (after the first time its name: sm86, sm86-winmm, enabler...; experimental)
 dlss5-autopilot.exe --video ["D:\DLSS5 Player"]     set up the video player
 ```
@@ -804,6 +812,7 @@ component stays under its own licence, fetched from its own publisher.
 | OptiScaler fork, multi-frame generation | [y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG) | GPL-3.0 |
 | OptiScaler fork, neural pass before the upscaler | [wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass](https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass) | GPL-3.0 |
 | OptiScaler fork of wilsjo2's fork | [Janblade/OptiScaler-F5-DLSSNR-Multipass](https://github.com/Janblade/OptiScaler-F5-DLSSNR-Multipass) | GPL-3.0 |
+| OptiScaler fork of wilsjo2's fork, live settings | [jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass](https://github.com/jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass) | GPL-3.0 |
 | LumeniteFX · VORT shaders | [umar-afzaal/LumeniteFX](https://github.com/umar-afzaal/LumeniteFX) · [vortigern11/vort_Shaders](https://github.com/vortigern11/vort_Shaders) | AGNYA · MIT |
 | DXVK | [doitsujin/dxvk](https://github.com/doitsujin/dxvk) | zlib/libpng |
 | REFramework (RE Engine games only) | [praydog/REFramework-nightly](https://github.com/praydog/REFramework-nightly) | MIT |

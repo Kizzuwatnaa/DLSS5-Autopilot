@@ -332,7 +332,7 @@ class Support:
 # says the nvngx runtimes beside them arrived with that install - whether it
 # was this tool, a half-removed one of ours, or a hand-made setup. No game
 # ever shipped any of these.
-DLSS5_MARKERS = ("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-feed.cfg",
+DLSS5_MARKERS = ("dlss5-feed.addon64", "dlss5-feed.addon32", "dlss5-feed-helper.addon64", "dlss5-feed.cfg",
                  "dlss5-bridge.addon64", "dlss5-bridge.cfg",
                  "standalone-dlssnr.addon64", "renodx-dlss5.addon64",
                  "nvngx_dlssnr.dll")

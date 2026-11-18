@@ -724,7 +724,7 @@ def _analyse_remix(install_dir: Path, rep: "Report", since: float,
     return rep
 
 
-def _analyse_uplift(rep: Report, rtext: str) -> Report:
+def _analyse_uplift(rep: Report, rtext: str, install_dir: Path | None = None) -> Report:
     """GITC-Uplift's own lines in ReShade.log ([Uplift] ...), worst first.
 
     The words are the add-on's (read from its 1.7.0 binary). Whether NR is
@@ -781,6 +781,22 @@ def _analyse_uplift(rep: Report, rtext: str) -> Report:
                        "tab in ReShade.")
         return rep
     if reg:
+        # Its switch is [Uplift] Enabled in the game's ReShade.ini, and the
+        # add-on logs "Enabled set to N in ReShade.ini" when it is ticked.
+        # The log line is this session's; the file is the state now.
+        sw = line(r"Enabled set to (\w+) in ReShade\.ini")
+        switch = sw.group(1) if sw else None
+        if switch is None and install_dir is not None:
+            try:
+                from .. import reshade_ini as _ri
+                switch = _ri.Ini.load(Path(install_dir) / "ReShade.ini").get("Uplift", "Enabled")
+            except Exception:
+                switch = None
+        if (switch or "").strip().lower() in ("1", "true", "on"):
+            rep.add(INFO, f"Enable is ticked in the GITC Uplift tab ([Uplift] Enabled={switch}).")
+            rep.verdict = ("Switched on, but no frame got NR in this session - the "
+                           "card at the top of the GITC Uplift tab says why.")
+            return rep
         rep.verdict = ("Loaded and set up; no neural frame yet - open the GITC "
                        "Uplift tab in ReShade and tick Enable.")
         return rep

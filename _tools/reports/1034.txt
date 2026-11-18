@@ -1,0 +1,31 @@
+**Did the game start?** it never started
+
+**What happened**
+no funtion, i downloaded and it do not start
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 621.24
+- game: -
+- exe: -
+- arch/api: - / -
+- route: -
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error in this session (not from an install into this folder)**
+```
+downloading a video
+Traceback (most recent call last):
+  File "core\ui\ctl_video.py", line 182, in work
+  File "core\video.py", line 676, in download
+RuntimeError: yt-dlp failed: [download] 100% of  130.43MiB in 00:00:44 at 2.93MiB/s | [FixupM3u8] Fixing MPEG-TS in MP4 container of "C:\Users\<user>\Videos\DLSS5 Player\downloads\index-f2-v1-a1 [index-f2-v1-a1.m3u8t=xXPPchshS88J_cB4K1qlBLjDW1HqR8xg7J717G5MEcA&s=1794768011&e=14400&f=77937052&node=cz3DFCjiIzenp3kfbi4NrS0Z7awYmLIXYy+RKlzqxL4=&i=91].mp4" | C:\Users\<user>\Videos\DLSS5 Player\downloads\index-f2-v1-a1 [index-f2-v1-a1.m3u8t=xXPPchshS88J_cB4K1qlBLjDW1HqR8xg7J717G5MEcA&s=1794768011&e=14400&f=77937052&node=cz3DFCjiIzenp3kfbi4NrS0Z7awYmLIXYy+RKlzqxL4=&i=91].mp4
+```

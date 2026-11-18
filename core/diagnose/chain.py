@@ -516,6 +516,10 @@ def analyse(install_dir: Path, last_error: str = "") -> Report:
                                foreign)
 
 
+_INVALID_REDIST = re.compile(
+    r"D3D12CreateDevice failed (?:with error code )?0x887e0003", re.I)
+
+
 def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
     rep = Report()
     since = _installed_at(install_dir)
@@ -767,8 +771,13 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                 "quarantine, most likely. Restore it and install again.")
 
     # The motion-vector provider is named several times; the last is real.
-    prov = re.findall(
-        r"DLSS5_MV_PROVIDER=(\d+) \(([^)]+)\) -> (\S+) \(([^)]+)\)", text) if text else []
+    # Feeder 2.0.0's built-in estimator (provider 5) has no technique to name:
+    # "-> DLSS5_Feed.fx's own estimator (nothing to enable)". Unmatched, the
+    # last provider-3 line of an earlier session stood in for it and told a
+    # person on built-in vectors to switch LumeniteFX on (2.1.1).
+    prov = [(n, name, t or "", state or "builtin") for n, name, t, state in re.findall(
+        r"DLSS5_MV_PROVIDER=(\d+) \(([^)]+)\) -> "
+        r"(?:DLSS5_Feed\.fx's own estimator|(\S+) \(([^)]+)\))", text)] if text else []
     provider_tech = prov[-1][2] if prov and prov[-1][2] != "none" else ""
 
     # ReShade attaching to a D3D9 device while the install is for DXGI means
@@ -1158,7 +1167,10 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
 
         if prov and not pending:
             _n, name, _t, state = prov[-1]
-            if "enabled" in state:
+            if state == "builtin":
+                rep.add(OK, "Motion vectors: the feeder's built-in estimator "
+                            "(nothing to enable).")
+            elif "enabled" in state:
                 rep.add(OK, f"Motion vectors: {name} is enabled.")
             elif "not installed" in state:
                 # Issue #101: the report said "not installed" over a file
@@ -1211,11 +1223,38 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                         "The sampled depth is flat. " + _DEPTH_HINT)
 
         if "host spawned" in text:
-            rep.add(OK, "The 32-bit helper process started.")
+            rep.add(OK, "The helper process (host64) started.")
             if "host connected" in text:
                 rep.add(OK, "The game and the helper are talking.")
             else:
-                rep.add(BAD, "The helper started but never connected.")
+                mis = re.search(r"speaks protocol v(\d+), this (?:add-on|host) v(\d+)",
+                                "\n".join(x for x in (text, htext) if x))
+                if mis:
+                    # Feeder 2.0.0 (IPC v12): an add-on and a host from
+                    # different releases refuse each other.
+                    rep.add(BAD, "The add-on and host64\\dlss5-feed-host64.exe "
+                                 "are from different DLSS5-Feeder releases.",
+                            f"One side speaks protocol v{mis.group(1)}, the other "
+                            f"v{mis.group(2)}, and they refuse each other. Close "
+                            f"the game, wait until dlss5-feed-host64.exe has "
+                            f"exited, and install again.")
+                    rs_verdict = ("The feeder's add-on and its helper are from "
+                                   "different releases - close the game and "
+                                   "install again.")
+                else:
+                    rep.add(BAD, "The helper started but never connected.")
+            # #987: the game threw its device away seconds after start, before
+            # the helper connected, and ReShade refused the add-on on the new
+            # one; the crash came a second later.
+            if "rejected late add-on registration" in text:
+                rep.add(WARN, "The game rebuilt its graphics device during "
+                              "start-up, and ReShade refused the add-on on the "
+                              "new one.",
+                        "The feeder's log: 'a new Vulkan device generation "
+                        "appeared, but ReShade rejected late add-on "
+                        "registration'. Start the game in fullscreen or "
+                        "borderless at the display's own resolution, so it "
+                        "starts in the mode it ends up in and does not rebuild.")
             rep.add(INFO, "On 32-bit the DLSS 5 page in the game's overlay "
                           "drives the 64-bit helper; the helper's own window "
                           "is there too, but do not alt-tab to it while "
@@ -1266,6 +1305,38 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                     "Changing resolution while neural rendering is on forces a "
                     "rebuild and is a common cause of freezes.")
 
+    # D3D12_ERROR_INVALID_REDIST (#1035): Windows refused every Direct3D 12
+    # device in this process, ours included. The exe exports
+    # D3D12SDKVersion/D3D12SDKPath (AoE3DE: 4 and ".\\"), the Agility SDK
+    # it points at is not on disk, and Windows' own D3D12 is older than the
+    # version asked for. ReShade logs it whichever route made the device,
+    # and the feeder, standalone and renodx routes all need one - so it is
+    # read before the route readers, which return early (standalone).
+    # The helper mode makes its device in host64's process, where the game's
+    # request does not apply; ReShade there may still log the game's own
+    # probe, so a helper install is not answered with this (gate 2.1.1).
+    if not man.get("feed_helper") and _INVALID_REDIST.search(
+            "\n".join(x for x in (text, htext, rtext) if x)):
+        from .. import pe as _pe
+        exe = install_dir / str(man.get("exe") or "")
+        why = _pe.agility_unmet(exe) if man.get("exe") else ""
+        rep.add(BAD, "Windows would not create a Direct3D 12 device in this "
+                     "game's process (D3D12_ERROR_INVALID_REDIST, 0x887E0003).",
+                (why + " " if why else
+                 "The usual cause: the game asks Windows for a Direct3D 12 "
+                 "Agility SDK it does not ship, and this Windows' own is "
+                 "older. ")
+                + "The game itself does not draw with Direct3D 12 and never "
+                "notices; every route that needs a Direct3D 12 device inside "
+                "the game fails the same way. Nothing this install wrote "
+                "causes it. The feeder route can run DLSS outside the game, "
+                "which may get past this: pick the feeder route, tick 'run "
+                "DLSS in a helper process' in the game's settings, install "
+                "again and press 'did it work?'.")
+        rep.verdict = ("Direct3D 12 cannot start inside this game on this "
+                       "Windows - see below for the feeder's helper mode.")
+        return rep
+
     # The standalone add-on keeps a log of its own, outside the folder; it
     # says more than ReShade.log ever can on this route.
     if rep.route == "standalone":
@@ -1278,7 +1349,7 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
         return _analyse_upstream(rep, rtext)
     # GITC-Uplift says in ReShade.log what it is doing (#946).
     if rep.route == "uplift" and "Uplift" in rtext:
-        return _analyse_uplift(rep, rtext)
+        return _analyse_uplift(rep, rtext, install_dir)
 
     # --- the decisive part, from whichever log has it --------------------
     joined = "\n".join(x for x in (text, htext, rtext) if x)
@@ -1551,9 +1622,9 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                      "and dlss5-feed-helper.addon64.",
                 "The feed logged that dlss5-feed-helper.addon64 is beside "
                 "it, so dlss5-feed.addon64 stood down and did nothing in the "
-                "game's process. This tool "
-                "does not install the helper mode. If you added it on "
-                "purpose, take dlss5-feed.addon64 out; if not, delete "
+                "game's process. For the helper mode, tick 'run DLSS in a "
+                "helper process' in the game's settings and install again - "
+                "it puts in the helper add-on alone. Otherwise delete "
                 "dlss5-feed-helper.addon64. Then start the game again.")
         rep.verdict = "Two feeder add-ons in one folder - keep one of the two."
         return rep
@@ -1575,13 +1646,13 @@ def _analyse(install_dir: Path, last_error: str, foreign: list) -> Report:
                          f"inside this game's process{code}.",
                     "That is the feeder's own reading: this game's process "
                     "is the problem, not necessarily the GPU or driver. Try "
-                    "the standalone-dlssnr or optiscaler route for this game. "
-                    "Feeder "
-                    "1.18.0-beta also has a 64-bit helper mode "
-                    "(dlss5-feed-helper.addon64) that this tool does not "
-                    "install; its release page explains it.")
+                    "the standalone-dlssnr or optiscaler route for this game, "
+                    "or keep the feeder and tick 'run DLSS in a helper "
+                    "process' in the game's settings: DLSS then runs in "
+                    "host64\\dlss5-feed-host64.exe, outside the game.")
             rep.verdict = ("DLSS could not start inside this game's process - "
-                           "try another route.")
+                           "tick 'run DLSS in a helper process', or try another "
+                           "route.")
         else:
             rep.add(BAD, f"NGX refused to set DLSS up{code}.",
                     "Try another route for this game. If you press 'report a "

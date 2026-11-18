@@ -1,0 +1,41 @@
+**Did the game start?** it started and ran
+
+**What happened**
+but no DLSS5
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 621.01
+- game: World of Warcraft
+- exe: Wow.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: renodx
+
+**Diagnosis**: Wow.exe ran at 04 Nov 12:00 and loaded nothing from this folder - try another proxy name.
+- [bad] Something in the game's own files changed after the install.
+- [bad] Wow.exe ran at 04 Nov 12:00 with none of this folder's files loaded.
+
+**Files in the folder**
+- dxgi.dll: present
+- renodx-dlss.addon64: present
+- ReShade.ini: present
+- nvngx_dlssnr.dll: present
+
+**What ran, and what it loaded** (seen at 04 Nov 12:00)
+- process: Wow.exe
+- ran from: Wow.exe
+- DLLs in the process: 62
+- graphics DLLs in the process: none
+- ours, loaded: none
+- ours, not loaded: dxgi.dll, nvngx_dlssnr.dll, renodx-dlss.addon64
+- also written, loaded only if the game asks: nvngx_dlss.dll
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```

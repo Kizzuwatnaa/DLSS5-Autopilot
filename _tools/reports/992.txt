@@ -1,0 +1,60 @@
+**Did the game start?** it never started
+
+**What happened**
+游戏安全系统检测到非法劫持模块，请删除游戏exe目录下的非法模块（dxgi.dll）
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 2070 SUPER (sm_75), driver 621.01
+- game: Endfield Game
+- exe: Endfield.exe
+- arch/api: 64-bit / DX12 (no graphics DLL imported statically, but ships a D3D12 Agility SDK or DLSS Frame Generation/Ray Reconstruction - the real renderer is D3D12)
+- route: optiscaler
+- work area: 75%
+
+**Diagnosis**: The game never started with this install in - see below for what to take out first.
+- [bad] You said the game never started.
+- [bad] Neural rendering was switched on, but the model never drew a frame.
+- [info] OptiScaler runs the model around the game's own upscaler. Turn DLSS (or FSR 2 or later, or XeSS) on in the game's graphics menu - FSR 1.0 does not count, it makes no call OptiScaler can take over. With no upscaler running there is nothing for neural rendering to attach to, which is what the overlay means by 'waiting for the upscaler to run'. If the game has no upscaler at all, use the feeder route.
+
+**Files in the folder**
+- dxgi.dll: present
+- nvngx_dlssnr.dll: present
+- Windows graphics setting: Endfield.exe: High performance
+- nvngx_dlss.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- nvngx_dlssg.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- nvngx_dlssd.dll: present (updated on the dlss page to 310.9.16 (NVIDIA SDK); the game's own 310.5.2 kept beside it)
+- optiscaler build: Dagherbou (v0.2.0-dlssnr)
+- d3dcompiler_47.dll: present (the game's own)
+
+**What ran, and what it loaded** (seen at 07 Nov 20:22)
+- process: Endfield.exe
+- ran from: Endfield.exe
+- DLL list: refused - the process is protected (anti-cheat, or a store build) and will not be opened
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**OptiScaler.log**
+```
+[20:21:52.418492] [I] DlssNr.WorkingScale: 0.75
+[20:21:52.472506] [W] Config::CheckUpscalerFiles libxess.dll not found!
+[20:21:53.017530] [I] NVNGXProxy::InitNVNGX Getting nvngx method addresses
+[20:21:53.017541] [I] HookNgxApi NVSDK_NGX_XXXXXX_GetFeatureRequirements found, hooking!
+[20:21:53.017593] [I]
+[20:21:53.017612] [I] HookFSR2ExeInputs Trying to hook FSR2 methods
+[20:21:53.017689] [I] HookFSR3ExeInputs Trying to hook FSR3 methods
+[20:21:53.017730] [I]
+[20:21:53.017737] [I] Init done
+[20:21:53.017744] [I] ---------------------------------------------
+[20:21:53.017750] [I]
+[20:21:55.486723] [W] DxgiSpoofing::AttachToAdapter DxgiSpoofing and DxgiVRAM is disabled, skipping hooking
+[20:21:59.179882] [I] Hooked_Vulkan_GetFeatureRequirements Spoofing support!
+```

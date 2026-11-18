@@ -1,0 +1,34 @@
+**Did the game start?** it never started
+
+**What happened**
+i say ssomething went wrong when i tried to reneder a file though dlss5
+
+---
+- version: 2.1.0
+- gpu: NVIDIA GeForce RTX 5080 (sm_120), driver 621.14
+- game: -
+- exe: -
+- arch/api: - / -
+- route: -
+
+**ReShade.log**
+```
+(none)
+```
+
+**dlss5-feed.log**
+```
+(none)
+```
+
+**Last error in this session (not from an install into this folder)**
+```
+ceback (most recent call last):
+  File "core\ui\ctl_video.py", line 214, in work
+  File "core\video.py", line 475, in process
+RuntimeError: processing failed: video: 1440x960 -> 2880x1920, style 0, intensity 1.00, detail 1.00 (pipelined) | ERROR: could not load forwarder nvngx.dll_dlssnr.dll (err 127) | [rawvideo @ 000001ece6933180] Packet too small (274)
+[vist#0:0/rawvideo @ 000001ece345af80] [dec:rawvideo @ 000001ece6933000] Error submitting packet to decoder: Invalid data found when processing input
+[vist#0:0/rawvideo @ 000001ece345af80] [dec:rawvideo @ 000001ece6933000] Decode error rate 1 exceeds maximum 0.666667
+[vist#0:0/rawvideo @ 000001ece345af80] [dec:rawvideo @ 000001ece6933000] Task finished with error: Error number -1145393733 occurred
+[vist#0:0/rawvideo @ 000001ece345af80] [dec:rawvideo @ 000001ece6933000] Terminating thread with error: Error number -1145393733 occurred
+```
