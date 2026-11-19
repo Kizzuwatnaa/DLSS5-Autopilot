@@ -3,7 +3,7 @@
   "DX11/dlss": {
    "bridge": {
     "failed": 3,
-    "worked": 13
+    "worked": 14
    },
    "optiscaler": {
     "failed": 0,
@@ -341,7 +341,7 @@
   "617.14": {
    "bridge": {
     "failed": 6,
-    "worked": 2
+    "worked": 3
    },
    "feeder": {
     "failed": 8,
@@ -1928,6 +1928,10 @@
      "failed": 0,
      "worked": 1
     },
+    "617.14": {
+     "failed": 0,
+     "worked": 1
+    },
     "621.14": {
      "failed": 0,
      "worked": 1
@@ -1940,11 +1944,11 @@
      "res": 75
     }
    },
-   "name": "Dead Space",
+   "name": "Dead Space Remake",
    "routes": {
     "bridge": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     },
     "optiscaler": {
      "failed": 0,
@@ -6912,6 +6916,6 @@
    }
   }
  },
- "generated": "2026-11-18T18:46:40Z",
- "reports": 702
+ "generated": "2026-11-19T07:45:01Z",
+ "reports": 703
 }
