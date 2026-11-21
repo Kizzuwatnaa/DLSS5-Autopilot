@@ -66,7 +66,7 @@
     "worked": 2
    },
    "upstream": {
-    "failed": 5,
+    "failed": 6,
     "worked": 9
    }
   },
@@ -392,6 +392,10 @@
    "standalone": {
     "failed": 6,
     "worked": 7
+   },
+   "upstream": {
+    "failed": 1,
+    "worked": 0
    }
   },
   "617.70": {
@@ -4800,7 +4804,7 @@
      "worked": 1
     },
     "617.42": {
-     "failed": 0,
+     "failed": 1,
      "worked": 1
     }
    },
@@ -4813,6 +4817,10 @@
     "renodx": {
      "failed": 0,
      "worked": 1
+    },
+    "upstream": {
+     "failed": 1,
+     "worked": 0
     }
    }
   },
@@ -6944,6 +6952,6 @@
    }
   }
  },
- "generated": "2026-11-21T05:08:16Z",
- "reports": 707
+ "generated": "2026-11-21T05:35:32Z",
+ "reports": 708
 }
