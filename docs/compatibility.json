@@ -51,7 +51,7 @@
    },
    "optiscaler": {
     "failed": 36,
-    "worked": 172
+    "worked": 173
    },
    "renodx": {
     "failed": 1,
@@ -415,7 +415,7 @@
    },
    "optiscaler": {
     "failed": 5,
-    "worked": 30
+    "worked": 31
    },
    "renodx": {
     "failed": 1,
@@ -1760,7 +1760,7 @@
     },
     "621.01": {
      "failed": 0,
-     "worked": 4
+     "worked": 5
     }
    },
    "measured": {
@@ -1770,11 +1770,11 @@
      "res": 75
     }
    },
-   "name": "Cyberpunk 2077 - EP1",
+   "name": "Cyberpunk 2077 Phantom Liberty",
    "routes": {
     "optiscaler": {
      "failed": 3,
-     "worked": 20
+     "worked": 21
     },
     "upstream": {
      "failed": 0,
@@ -6974,6 +6974,6 @@
    }
   }
  },
- "generated": "2026-11-21T10:02:54Z",
- "reports": 709
+ "generated": "2026-11-21T10:39:57Z",
+ "reports": 710
 }
