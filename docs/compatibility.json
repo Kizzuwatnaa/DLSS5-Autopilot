@@ -51,7 +51,7 @@
    },
    "optiscaler": {
     "failed": 36,
-    "worked": 171
+    "worked": 172
    },
    "renodx": {
     "failed": 1,
@@ -471,7 +471,7 @@
    },
    "optiscaler": {
     "failed": 2,
-    "worked": 1
+    "worked": 2
    },
    "renodx": {
     "failed": 0,
@@ -5344,6 +5344,28 @@
     }
    }
   },
+  "returnal-win64-shipping.exe": {
+   "drivers": {
+    "621.24": {
+     "failed": 0,
+     "worked": 1
+    }
+   },
+   "measured": {
+    "optiscaler": {
+     "ms": 3.91,
+     "n": 1,
+     "res": 75
+    }
+   },
+   "name": "Returnal\u2122",
+   "routes": {
+    "optiscaler": {
+     "failed": 0,
+     "worked": 1
+    }
+   }
+  },
   "risk of rain 2.exe": {
    "drivers": {
     "616.56": {
@@ -6952,6 +6974,6 @@
    }
   }
  },
- "generated": "2026-11-21T05:35:32Z",
- "reports": 708
+ "generated": "2026-11-21T10:02:54Z",
+ "reports": 709
 }
