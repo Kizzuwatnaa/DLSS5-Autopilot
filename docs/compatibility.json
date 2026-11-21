@@ -33,7 +33,7 @@
    },
    "uplift": {
     "failed": 0,
-    "worked": 1
+    "worked": 2
    }
   },
   "DX12/dlss": {
@@ -392,6 +392,10 @@
    "standalone": {
     "failed": 6,
     "worked": 7
+   },
+   "uplift": {
+    "failed": 0,
+    "worked": 1
    },
    "upstream": {
     "failed": 1,
@@ -2900,11 +2904,19 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
-   "name": "FINAL FANTASY X/X-2 HD Remaster",
+   "name": "Final Fantasy X and X-2 HD Remaster",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
+    "uplift": {
      "failed": 0,
      "worked": 1
     }
@@ -6974,6 +6986,6 @@
    }
   }
  },
- "generated": "2026-11-21T12:38:41Z",
- "reports": 710
+ "generated": "2026-11-21T13:55:18Z",
+ "reports": 711
 }
