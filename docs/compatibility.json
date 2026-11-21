@@ -8,6 +8,10 @@
    "optiscaler": {
     "failed": 0,
     "worked": 5
+   },
+   "renodx": {
+    "failed": 0,
+    "worked": 1
    }
   },
   "DX11/none": {
@@ -383,7 +387,7 @@
    },
    "renodx": {
     "failed": 4,
-    "worked": 13
+    "worked": 14
    },
    "standalone": {
     "failed": 6,
@@ -4794,11 +4798,19 @@
     "616.92": {
      "failed": 0,
      "worked": 1
+    },
+    "617.42": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "name": "PCSX2 (PlayStation 2)",
    "routes": {
     "feeder": {
+     "failed": 0,
+     "worked": 1
+    },
+    "renodx": {
      "failed": 0,
      "worked": 1
     }
@@ -6932,6 +6944,6 @@
    }
   }
  },
- "generated": "2026-11-21T00:34:39Z",
- "reports": 706
+ "generated": "2026-11-21T05:08:16Z",
+ "reports": 707
 }
