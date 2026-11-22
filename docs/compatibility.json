@@ -51,7 +51,7 @@
    },
    "optiscaler": {
     "failed": 37,
-    "worked": 176
+    "worked": 177
    },
    "renodx": {
     "failed": 1,
@@ -449,7 +449,7 @@
    },
    "optiscaler": {
     "failed": 1,
-    "worked": 6
+    "worked": 7
    },
    "renodx": {
     "failed": 0,
@@ -6159,6 +6159,10 @@
     "617.14": {
      "failed": 0,
      "worked": 1
+    },
+    "621.14": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -6168,11 +6172,11 @@
      "res": 50
     }
    },
-   "name": "STAR WARS Zero Company\u2122",
+   "name": "STAR.WARS.Zero.Company-InsaneRamZes",
    "routes": {
     "optiscaler": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -7012,6 +7016,6 @@
    }
   }
  },
- "generated": "2026-11-22T12:34:55Z",
- "reports": 715
+ "generated": "2026-11-22T13:27:46Z",
+ "reports": 716
 }
