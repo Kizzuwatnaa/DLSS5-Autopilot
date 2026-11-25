@@ -50,7 +50,7 @@
     "worked": 3
    },
    "optiscaler": {
-    "failed": 37,
+    "failed": 38,
     "worked": 177
    },
    "renodx": {
@@ -260,7 +260,7 @@
     "worked": 2
    },
    "optiscaler": {
-    "failed": 7,
+    "failed": 8,
     "worked": 33
    },
    "remix": {
@@ -3331,15 +3331,19 @@
   },
   "gowde-steam.exe": {
    "drivers": {
+    "616.56": {
+     "failed": 1,
+     "worked": 0
+    },
     "617.14": {
      "failed": 1,
      "worked": 0
     }
    },
-   "name": "Gears of War Reloaded 2025",
+   "name": "Gears.of.War.Reloaded-InsaneRamZes",
    "routes": {
     "optiscaler": {
-     "failed": 1,
+     "failed": 2,
      "worked": 0
     }
    }
@@ -7020,6 +7024,6 @@
    }
   }
  },
- "generated": "2026-11-24T14:51:57Z",
- "reports": 717
+ "generated": "2026-11-25T01:18:40Z",
+ "reports": 718
 }
