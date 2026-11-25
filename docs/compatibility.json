@@ -29,7 +29,7 @@
    },
    "standalone": {
     "failed": 5,
-    "worked": 17
+    "worked": 18
    },
    "uplift": {
     "failed": 0,
@@ -488,6 +488,10 @@
   },
   "621.40": {
    "optiscaler": {
+    "failed": 0,
+    "worked": 1
+   },
+   "standalone": {
     "failed": 0,
     "worked": 1
    }
@@ -5736,6 +5740,10 @@
     "617.42": {
      "failed": 0,
      "worked": 1
+    },
+    "621.40": {
+     "failed": 0,
+     "worked": 1
     }
    },
    "measured": {
@@ -5745,7 +5753,7 @@
      "res": 100
     }
    },
-   "name": "The Elder Scrolls V: Skyrim Special Edition",
+   "name": "Skyrim Anniversary Edition",
    "routes": {
     "feeder": {
      "failed": 1,
@@ -5753,7 +5761,7 @@
     },
     "standalone": {
      "failed": 0,
-     "worked": 1
+     "worked": 2
     }
    }
   },
@@ -7034,6 +7042,6 @@
    }
   }
  },
- "generated": "2026-11-25T14:21:15Z",
- "reports": 719
+ "generated": "2026-11-25T16:01:02Z",
+ "reports": 720
 }
