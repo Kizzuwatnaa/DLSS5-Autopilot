@@ -4,6 +4,7 @@ uninstalls cleanly, and the guard rails actually fire.
 Run this before cutting a release.
 """
 import atexit
+import errno
 import inspect
 import json
 import os
@@ -782,6 +783,59 @@ check("original restored after a REinstall",
       (g.install_dir / "nvngx_dlss.dll").is_file()
       and (g.install_dir / "nvngx_dlss.dll").read_bytes() == orig)
 shutil.rmtree(d, ignore_errors=True)
+
+# A backup that cannot be written - a full drive - used to be passed over in
+# silence, and the file it was for was overwritten or deleted right after,
+# with nothing left to restore it from. The copy fails here only for the
+# backup, the way a drive with a few kilobytes left fails the one big copy:
+# part way, with the first bytes already written. That stub must not stay
+# behind either - the install that follows, once there is room, took it for
+# the backup already made, and uninstall then restored eight bytes.
+_real_copy2 = shutil.copy2
+
+
+def _no_room_for_backups(src, dst, *a, **k):
+    if str(dst).endswith(installer.BACKUP_SUFFIX):
+        Path(dst).write_bytes(Path(src).read_bytes()[:8])
+        raise OSError(errno.ENOSPC, "No space left on device", str(dst))
+    return _real_copy2(src, dst, *a, **k)
+
+
+# The game's own nvngx_dlss.dll, replaced inside the install proper; and a
+# second ReShade of the person's own under d3d11.dll, moved aside before it
+# starts, where a failed move is only a warning.
+for name, own, opts in (
+        ("nvngx_dlss.dll", orig, dict(keep_game_dlss=False)),
+        ("d3d11.dll", b"MZ" + bytes(1 << 20) + b"ReShade", {})):
+    d = Path(tempfile.mkdtemp(prefix="bak_full_"))
+    shutil.copyfile(X64, d / "Game.exe")
+    (d / name).write_bytes(own)
+    g = games.manual(d)
+    try:
+        with patch("shutil.copy2", _no_room_for_backups):
+            installer.install(g, installer.Options(**opts), on_log=lambda t: None)
+        failed = ""
+    except installer.InstallError as e:
+        failed = str(e)
+    except Exception as e:
+        failed = f"(not worded) {type(e).__name__}: {e}"
+    check(f"a {name} that cannot be backed up is left byte for byte",
+          (d / name).is_file() and (d / name).read_bytes() == own)
+    check(f"...and an install over that {name} stops, in words, not with success",
+          failed and not failed.startswith("(not worded)"), failed[:90])
+    bak = d / (name + installer.BACKUP_SUFFIX)
+    try:
+        installer.install(g, installer.Options(**opts), on_log=lambda t: None)
+        check(f"...installed again with room, the {name} backup is the whole original",
+              bak.is_file() and bak.read_bytes() == own,
+              str(bak.stat().st_size if bak.is_file() else None))
+        installer.uninstall(g, on_log=lambda t: None)
+        check(f"...and uninstall puts that {name} back byte for byte",
+              (d / name).is_file() and (d / name).read_bytes() == own)
+    except Exception as e:
+        check(f"...installed again with room over that {name}", False,
+              f"{type(e).__name__}: {e}")
+    shutil.rmtree(d, ignore_errors=True)
 
 # ------------------------------------------------- 5b. nothing is destroyed
 section("5b. pre-existing files survive every route, byte for byte")
@@ -4105,6 +4159,67 @@ check("a foreign dinput8.dll survives a manifest-less uninstall",
       (_d / refw.DINPUT8).is_file())
 shutil.rmtree(_d, ignore_errors=True)
 
+# REFramework and DXVK keep their own backups, and a failed one (a full
+# drive) was a logged WARNING followed by the overwrite. DXVK writes a pair
+# for DirectX 11: the second name's backup failing must not leave the first
+# DLL in the folder either, unrecorded, with the game now on DXVK.
+_d = Path(tempfile.mkdtemp(prefix="reengine_full_"))
+(_d / refw.DINPUT8).write_bytes(b"USER OWN DINPUT8" + bytes(200))
+try:
+    with patch("shutil.copy2", _no_room_for_backups):
+        refw.install(_d, lambda t: None)
+    _failed = ""
+except OSError as e:
+    _failed = str(e)
+check("REFramework stops when the person's dinput8.dll cannot be backed up",
+      bool(_failed), _failed[:90])
+check("...and that dinput8.dll is left byte for byte, with no partial backup beside it",
+      (_d / refw.DINPUT8).read_bytes() == b"USER OWN DINPUT8" + bytes(200)
+      and not (_d / (refw.DINPUT8 + installer.BACKUP_SUFFIX)).exists())
+shutil.rmtree(_d, ignore_errors=True)
+
+_d = Path(tempfile.mkdtemp(prefix="dxvk_full_"))
+shutil.copyfile(X64, _d / "Game.exe")
+_own_dx = {"dxgi.dll": b"USER OWN DXGI" + bytes(300),
+           "d3d11.dll": b"USER OWN D3D11" + bytes(300)}
+for _n, _c in _own_dx.items():
+    (_d / _n).write_bytes(_c)
+
+
+def _no_room_for_d3d11(src, dst, *a, **k):
+    if Path(dst).name == "d3d11.dll" + installer.BACKUP_SUFFIX:
+        Path(dst).write_bytes(Path(src).read_bytes()[:8])
+        raise OSError(errno.ENOSPC, "No space left on device", str(dst))
+    return _real_copy2(src, dst, *a, **k)
+
+
+try:
+    with patch("shutil.copy2", _no_room_for_d3d11):
+        dxvk.install(_d, True, lambda t: None, api="DX11")
+    _failed = ""
+except OSError as e:
+    _failed = str(e)
+check("DXVK stops when the second of its pair cannot be backed up",
+      bool(_failed), _failed[:90])
+_changed = [n for n, c in _own_dx.items() if (_d / n).read_bytes() != c]
+check("...and neither DLL was written over - no DXVK left in the folder",
+      not _changed, str(_changed))
+# Once there is room: the backups are whole, not the eight bytes the failed
+# copy left, and an uninstall puts both DLLs back as they were.
+try:
+    dxvk.install(_d, True, lambda t: None, api="DX11")
+    _short = [n for n, c in _own_dx.items()
+              if (_d / (n + installer.BACKUP_SUFFIX)).read_bytes() != c]
+    check("DXVK installed again with room keeps whole backups of both",
+          not _short, str(_short))
+    installer.uninstall(games.Game(name="dxvk_full", folder=_d, exe=_d / "Game.exe",
+                                   bitness=64, api="DX11"), on_log=lambda t: None)
+    _changed = [n for n, c in _own_dx.items() if (_d / n).read_bytes() != c]
+    check("...and uninstall puts both back byte for byte", not _changed, str(_changed))
+except Exception as e:
+    check("DXVK installed again with room", False, f"{type(e).__name__}: {e}")
+shutil.rmtree(_d, ignore_errors=True)
+
 # Installing twice must not turn our own file into "the game's own file".
 # It did: the second install backed up the first install's copy, uninstall
 # restored that backup, and the layer stayed in the folder for good - the
@@ -4516,6 +4631,31 @@ check("an ini that existed before is not listed as ours; the backup and the load
 check("Options carries mfg and the manifest round-trips it",
       installer.Options().mfg is False and '"mfg": opt.mfg' in src_of(installer)
       and 'mfg=bool(data.get("mfg"' in src_of(installer.options_from_manifest))
+# The person's own loader, and no room for its backup: it used to be a
+# logged WARNING, then written over - after the unlock's three files had
+# gone in, which a raise there would have left in the folder unrecorded.
+_g3 = _d / "game3"; _g3.mkdir(); shutil.copyfile(X64, _g3 / "Game.exe")
+_own_ual = b"MZ" + b"Ultimate ASI Loader" + b"\0" * (1 << 18)
+(_g3 / _lname).write_bytes(_own_ual)
+_saved = (_m.resolve, _m.resolve_loader, net.download)
+_m.resolve = lambda: ("v9.9", "mfg")
+_m.resolve_loader = lambda: ("v1", "ual")
+net.download = lambda url, name, **k: _rz if url == "mfg" else _lz
+try:
+    with patch("shutil.copy2", _no_room_for_backups):
+        _m.install(_g3, _g3 / "Game.exe")
+    _failed = ""
+except OSError as e:
+    _failed = str(e)
+finally:
+    _m.resolve, _m.resolve_loader, net.download = _saved
+check("the unlock stops when the person's loader cannot be backed up",
+      bool(_failed), _failed[:90])
+check("...and the loader is left byte for byte, with none of the unlock's files beside it",
+      (_g3 / _lname).read_bytes() == _own_ual
+      and not (_g3 / (_lname + _m.BACKUP_SUFFIX)).exists()
+      and not any((_g3 / n).exists() for n in _m.FILES),
+      str(sorted(p.name for p in _g3.iterdir())))
 shutil.rmtree(_d, ignore_errors=True)
 
 section("38. screen and window capture through the player (video.py)")

@@ -70,12 +70,19 @@ def install(exe_dir: Path, log=None) -> list[str]:
     bak = existing.with_name(DINPUT8 + BACKUP_SUFFIX)
     if existing.is_file() and not bak.exists() and not is_reframework(existing):
         import shutil
+        # Raised when it fails (a full drive): written over without a
+        # backup, the person's own dinput8.dll was gone for good. A copy cut
+        # short is removed first, or the next install took it for the backup.
         try:
             shutil.copy2(existing, bak)
-            written.append(bak.name)
-            log(f"      kept your existing {DINPUT8} as {bak.name}")
         except OSError:
-            log(f"      WARNING: could not back up the existing {DINPUT8}")
+            try:
+                bak.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        written.append(bak.name)
+        log(f"      kept your existing {DINPUT8} as {bak.name}")
 
     net.extract_one(z, DINPUT8, existing)
     written.append(DINPUT8)

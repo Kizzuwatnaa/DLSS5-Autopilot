@@ -384,20 +384,30 @@ def install(exe_dir: Path, exe: Path | None, log=None,
 
     ours = {str(p).replace("\\", "/").lower() for p in preinstalled}
     written: list[str] = []
-    for n in FILES:
-        net.extract_one(z, n, exe_dir / n)
-        written.append(n)
-    log(f"      {', '.join(FILES)}")
-
+    # The loader's backup first, before any file of the unlock goes in. One
+    # that fails (a full drive) is raised: logged and written over, the
+    # person's own loader was gone for good - and raised after the unlock's
+    # files, those stayed in the folder with no record of them. A copy cut
+    # short is removed first, or the next install took it for the backup.
     dest = exe_dir / name
     bak = dest.with_name(name + BACKUP_SUFFIX)
     if dest.is_file() and not bak.exists() and name.lower() not in ours:
         try:
             shutil.copy2(dest, bak)
-            written.append(bak.name)
-            log(f"      kept your existing {name} as {bak.name}")
         except OSError:
-            log(f"      WARNING: could not back up the existing {name}")
+            try:
+                bak.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        written.append(bak.name)
+        log(f"      kept your existing {name} as {bak.name}")
+
+    for n in FILES:
+        net.extract_one(z, n, exe_dir / n)
+        written.append(n)
+    log(f"      {', '.join(FILES)}")
+
     net.extract_one(lz, LOADER_DLL, dest)
     written.append(name)
     ini = dest.with_suffix(".ini")

@@ -742,7 +742,33 @@ def _backup(dst: Path, rep: Report, root: Path) -> None:
         rep.written.append(rel)
         rep.notes.append(f"backed up the game's own {dst.name}")
     except OSError:
-        pass
+        # Every caller overwrites or deletes the file next. A backup that
+        # failed quietly - a full drive, the usual case - let it go ahead,
+        # and the game's own file was gone with nothing to restore it from.
+        # Raised, install() records the failure, rolls back and words it.
+        # What the copy got down before it failed goes first: it was not
+        # there before (checked above), and left behind it was taken for
+        # the backup by the next install, and restored by every uninstall.
+        try:
+            bak.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _backup_or_refuse(dst: Path, rep: Report, root: Path) -> None:
+    """_backup() where the file is moved out of the way before the install
+    proper starts: outside install()'s handlers, and inside a local
+    `except OSError` that would read a failed backup as "could not move it"
+    and carry on. Said in words, with the file left where it is."""
+    try:
+        _backup(dst, rep, root)
+    except OSError as e:
+        raise InstallError(
+            f"{dst.name} could not be backed up ({e.strerror or e}), so it "
+            f"was left as it is - nothing was overwritten or deleted. Free "
+            f"some space on the drive, or close whatever has the file open, "
+            f"and install again.") from e
 
 
 def _overlay_key_pref() -> int:
@@ -2633,7 +2659,7 @@ def _clear_stale_reshade(root: Path, keep: str, rep: Report, log) -> None:
                     p.rename(aside)
                     rep.written.append(aside.name)
             else:
-                _backup(p, rep, root)
+                _backup_or_refuse(p, rep, root)
                 p.unlink()
         except OSError as e:
             log(f"      could not move {name} aside ({e}) - if the game will "
@@ -2677,7 +2703,7 @@ def _purge_foreign_addons(root: Path, keep: str, rep: Report, log) -> None:
                     # Might be the user's own build. Preserve it the normal
                     # way so uninstall puts it back, then move it out of
                     # ReShade's reach for now.
-                    _backup(p, rep, root)
+                    _backup_or_refuse(p, rep, root)
                     p.unlink()
                 rep.notes.append(f"moved aside an orphaned {route} add-on: {name}")
                 log(f"      moved {name} out of the way - it is a {route} "
@@ -3210,12 +3236,12 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
             # refusing sends people to delete files by hand - so it is backed
             # up (uninstall puts it back) and moved out of the way, with the
             # other OptiScaler files it came with.
-            _backup(existing, rep, root)
+            _backup_or_refuse(existing, rep, root)
             existing.unlink()
             for extra in (optiscaler.FORWARDER, optiscaler.INI):
                 p_ = root / extra
                 if p_.is_file():
-                    _backup(p_, rep, root)
+                    _backup_or_refuse(p_, rep, root)
                     p_.unlink()
             rep.notes.append(f"an OptiScaler installed by hand as {proxy} was "
                              f"backed up and moved aside - two injectors "

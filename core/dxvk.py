@@ -167,16 +167,28 @@ def install(exe_dir: Path, x64: bool, log=None, api: str = "DX11") -> tuple[str,
     names = files_for(api) or FILES
     sub = target_dir(exe_dir, x64, api)
     pre = f"{sub}/" if sub else ""
+    # Every backup before the first DLL goes in. A backup that fails (a full
+    # drive) is raised, not logged and written over - and raised half way
+    # through the pair it left DXVK's d3d11.dll in the folder with no record
+    # of it, so the game ran on DXVK after a refused install. A copy cut
+    # short is removed before the raise: left behind, the next install took
+    # it for the backup and wrote over the original.
     for name in names:
         dest = exe_dir / pre / name if sub else exe_dir / name
         bak = dest.with_name(name + BACKUP_SUFFIX)
         if dest.is_file() and not bak.exists() and not is_dxvk(dest):
             try:
                 shutil.copy2(dest, bak)
-                written.append(pre + bak.name)
-                log(f"      kept your existing {pre}{name} as {bak.name}")
             except OSError:
-                log(f"      WARNING: could not back up the existing {pre}{name}")
+                try:
+                    bak.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+            written.append(pre + bak.name)
+            log(f"      kept your existing {pre}{name} as {bak.name}")
+    for name in names:
+        dest = exe_dir / pre / name if sub else exe_dir / name
         _extract(tgz, f"{arch}/{name}", dest)
         written.append(pre + name)
     if sub:
