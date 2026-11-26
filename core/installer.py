@@ -3323,6 +3323,14 @@ def install(g: games.Game, opt: Options, on_step=None, on_prog=None, on_log=None
         log(f"[0] removing the previous {previous} install first")
         for line in uninstall(g, on_log=lambda s: None):
             pass
+        # Ownership was read from the record that uninstall just took away.
+        # The files it named are gone, and the person's own ReShade.ini,
+        # dxgi.dll or nvngx_dlss.dll it restored from their backups are under
+        # those same names again: still counted as ours, they were overwritten
+        # without a backup and recorded as ours, and the next uninstall
+        # deleted them. What is ours now is what the record still says - the
+        # locked files an incomplete uninstall left on it, or nothing.
+        rep.preinstalled = _previously_ours(root)
         log(f"    the {previous} route was removed; installing {opt.path}")
         rep.notes.append(f"replaced a previous {previous} install")
 

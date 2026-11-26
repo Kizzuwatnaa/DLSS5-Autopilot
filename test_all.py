@@ -817,6 +817,44 @@ for route in (dlss.FEEDER, dlss.OPTI, dlss.BRIDGE, dlss.NATIVE):
               f"{type(e).__name__}: {e}")
     shutil.rmtree(d, ignore_errors=True)
 
+# ...and across a change of route. The second install takes the first one
+# out, which puts the person's own files back under their own names - and
+# then went on treating those names as ours, read from the record that
+# uninstall had just deleted: no backup, overwritten, recorded as ours, and
+# deleted by the next uninstall. autopilot.attempt chains installs exactly
+# like this. Their own ReShade (a dxgi.dll that is ReShade, its two ini
+# files), and the game's own nvngx_dlss.dll with "keep game DLSS" off.
+OWN_RESHADE = {"dxgi.dll": b"ReShade" + bytes(1 << 20),
+               "ReShade.ini": PRE["ReShade.ini"],
+               "ReShadePreset.ini": PRE["ReShadePreset.ini"]}
+for a, b, keep, own in (
+        (dict(path=dlss.FEEDER), dict(path=dlss.OPTI), True, OWN_RESHADE),
+        (dict(path=dlss.NATIVE), dict(path=dlss.BRIDGE), True, OWN_RESHADE),
+        (dict(path=dlss.FEEDER), dict(path=dlss.FEEDER, feed_helper=True), True,
+         OWN_RESHADE),
+        (dict(path=dlss.FEEDER), dict(path=dlss.BRIDGE), False,
+         {"nvngx_dlss.dll": PRE["nvngx_dlss.dll"] + bytes(300)})):
+    label = (f"{a['path']} -> {b['path']}"
+             + (" (helper mode)" if b.get("feed_helper") else "")
+             + (": the game's nvngx_dlss.dll" if not keep else ": their own ReShade"))
+    d = Path(tempfile.mkdtemp(prefix="own_switch_"))
+    shutil.copyfile(X64, d / "Game.exe")
+    for n, c in own.items():
+        (d / n).write_bytes(c)
+    g = games.manual(d)
+    try:
+        for o in (a, b):
+            installer.install(g, installer.Options(native_dlss=True,
+                                                   keep_game_dlss=keep, **o),
+                              on_log=lambda t: None)
+        installer.uninstall(g, on_log=lambda t: None)
+        lost = [n for n, c in own.items()
+                if not (d / n).is_file() or (d / n).read_bytes() != c]
+        check(f"{label} survives the switch byte for byte", not lost, str(lost))
+    except Exception as e:
+        check(f"{label} survives the switch", False, f"{type(e).__name__}: {e}")
+    shutil.rmtree(d, ignore_errors=True)
+
 # A manifest-less uninstall (record deleted, corrupted, or a pre-manifest
 # v1.0/v1.1 install) used to delete dxgi.dll/opengl32.dll unconditionally -
 # unlike every other proxy name, which was only ever removed after
